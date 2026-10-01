@@ -1,3 +1,3 @@
-module github.com/invaldibuild/invaldi-gateway
+module github.com/ivaldibuild/ivaldi-gateway
 
 go 1.27.1

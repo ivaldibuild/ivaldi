@@ -24,7 +24,7 @@ func NewLoggerOptions() *LoggerOptions {
 		LogOutput:     "console",
 		LogFormat:     "text",
 		LogDirectory:  "logs",
-		LogFilePrefix: "mimir",
+		LogFilePrefix: "ivaldi",
 		MaxFileSize:   50,
 		MaxAge:        7,
 	}

@@ -33,8 +33,8 @@ There is no lint config or Makefile target yet; `go vet` and `gofmt` are the che
 ## Module layout gotchas
 
 - Every app and `pkg/` is a separate Go module. Root `go.work` stitches together `pkg` and every app except `apps/cli`, so apps import shared code as `github.com/ivaldibuild/ivaldi/pkg/...` without `replace` directives. `apps/cli` would need it added to `go.work` (or a `replace`) to use `pkg/`.
-- Module paths are inconsistent: `pkg` is `github.com/ivaldibuild/ivaldi/pkg`, apps are `github.com/ivaldibuild/ivaldi-<app>`, and the CLI is `github.com/ivalidbuild/cli` (note the `ivalid` typo, also in the CLI's help text). Check the `go.mod` before writing an import path.
-- `pkg/env/README.md` and `pkg/logging/README.md` were ported from another project: they reference a `dispatch` import path and a `surv` package name. The real packages are `env` and `logging` (e.g. `logging.NewLogger`, `logging.F`, `logging.NewMockLogger`); the documented behavior is otherwise accurate.
+- Module paths: `pkg` is `github.com/ivaldibuild/ivaldi/pkg`, while each app (including the CLI) is its own `github.com/ivaldibuild/ivaldi-<app>` module.
+- `pkg/env` and `pkg/logging` were ported from another project; leftover fixture names (e.g. `dispatch` in `env_test.go`) are test data only.
 
 ## Shared packages
 

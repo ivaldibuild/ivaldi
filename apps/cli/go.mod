@@ -1,4 +1,4 @@
-module github.com/ivalidbuild/cli
+module github.com/ivaldibuild/ivaldi-cli
 
 go 1.27.0
 

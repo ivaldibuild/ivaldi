@@ -7,7 +7,7 @@ Only third-party dependency is `gopkg.in/yaml.v3` for YAML parsing. All env pars
 ## Usage
 
 ```go
-import "github.com/NOLLYWOOD-COM/dispatch/pkg/env"
+import "github.com/ivaldibuild/ivaldi/pkg/env"
 
 var cfg Config
 err := env.Load(&cfg, env.Options{YAMLPath: "config.yaml"})

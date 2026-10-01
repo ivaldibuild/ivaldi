@@ -89,7 +89,7 @@ func (z *zapLogger) Sync() error {
 	return z.logger.Sync()
 }
 
-// toZapFields converts surv.Field values to zap.Field values.
+// toZapFields converts logging.Field values to zap.Field values.
 func toZapFields(fields []Field) []zap.Field {
 	zapFields := make([]zap.Field, len(fields))
 	for i, f := range fields {

@@ -4,10 +4,10 @@ Consequential architecture decisions, one per file. Each record states its conte
 
 | ADR | Title | Status |
 |---|---|---|
-| [0001](0001-deployment-topology.md) | Deployment topology: control plane and data plane | Proposed |
-| [0002](0002-gateway-integration-ingress.md) | Gateway as the integration ingress | Proposed |
-| [0003](0003-identity-access-and-policy.md) | Identity and access management, and its boundary with policy | Proposed |
-| [0004](0004-credentials-and-keys.md) | Credentials and customer-managed keys | Proposed |
-| [0005](0005-data-model-ownership.md) | Data model ownership and placement | Proposed |
+| [0001](0001-deployment-topology.md) | Deployment topology: control plane and data plane | Accepted |
+| [0002](0002-gateway-integration-ingress.md) | Gateway as the integration ingress | Accepted |
+| [0003](0003-identity-access-and-policy.md) | Identity and access management, and its boundary with policy | Accepted |
+| [0004](0004-credentials-and-keys.md) | Credentials and customer-managed keys | Accepted |
+| [0005](0005-data-model-ownership.md) | Data model ownership and placement | Accepted |
 
 New records take the next number and use the same section headings.

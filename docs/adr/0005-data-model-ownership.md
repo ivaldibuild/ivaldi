@@ -1,6 +1,6 @@
 # ADR 0005: Data model ownership and placement
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-01
 
 ## Context
@@ -37,7 +37,7 @@ What crosses the plane boundary is versioned contracts, such as events, work ass
 
 ### Migrations belong to the app that owns the database
 
-Migrations are the source of truth for the schema. They move from `migrations/postgres/` to `apps/control-plane/migrations/`, so ownership is obvious and the migrations are versioned and released with the control plane.
+Migrations are the source of truth for the schema. They live in `apps/control-plane/migrations/` (moved from the former top-level `migrations/postgres/`), so ownership is obvious and the migrations are versioned and released with the control plane.
 
 ### Tenant scoping is enforced in two layers
 

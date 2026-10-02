@@ -1,6 +1,6 @@
 # ADR 0002: Gateway as the integration ingress
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-01
 
 ## Context

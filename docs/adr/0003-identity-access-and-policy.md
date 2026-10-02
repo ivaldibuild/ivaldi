@@ -1,6 +1,6 @@
 # ADR 0003: Identity and access management, and its boundary with policy
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-01
 
 ## Context

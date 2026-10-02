@@ -1,6 +1,6 @@
 # ADR 0001: Deployment topology: control plane and data plane
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-01
 
 ## Context

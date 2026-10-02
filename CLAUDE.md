@@ -14,7 +14,7 @@ The repo is an early scaffold. Most of the layout is reserved but empty, so don'
 
 - Only `apps/control-plane` (Cobra root command `serve`, no subcommands) and `apps/cli` (Cobra root `ivaldi`) have code. `gateway`, `indexer`, `worker`, and `helm-agent` contain only `go.mod` plus empty `cmd/` and `internal/` dirs.
 - Implemented shared code in `pkg/` is `env`, `logging`, and `homedir`. `pkg/events`, `graph`, `orchestration`, `policy`, `release`, and `vcs` are empty placeholders for the capability boundaries in `docs/vision.md`.
-- `Makefile` and `README.md` are empty; `deploy/`, `migrations/`, `schemas/`, `scripts/`, and `.github/actions/` have no tracked files yet.
+- `Makefile` and `README.md` are empty; `deploy/`, `schemas/`, `scripts/`, and `.github/actions/` have no tracked files yet. Control-plane database migrations live in `apps/control-plane/migrations/` (see ADR 0005), empty so far apart from a `.gitkeep`.
 
 ## Commands
 

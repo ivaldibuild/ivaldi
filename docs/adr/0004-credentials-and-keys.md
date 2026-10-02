@@ -1,6 +1,6 @@
 # ADR 0004: Credentials and customer-managed keys
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-01
 
 ## Context

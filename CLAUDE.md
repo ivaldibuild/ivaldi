@@ -6,6 +6,8 @@ Product direction, architecture principles, domain vocabulary, style, and commit
 
 @AGENTS.md
 
+Architecture decisions are recorded in `docs/adr/`. Read them before changing deployment topology, the gateway, identity and access, policy, credential handling, or where data models live.
+
 ## Current state of the repository
 
 The repo is an early scaffold. Most of the layout is reserved but empty, so don't assume code exists because a directory does:

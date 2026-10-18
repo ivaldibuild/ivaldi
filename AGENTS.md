@@ -8,9 +8,9 @@ Preserve the lifecycle `Intent → Context → Plan → Craft → Verify → Rev
 
 ## Project Structure & Module Organization
 
-Ivaldi is a multi-module Go repository. Deployable components live under `apps/`: `control-plane`, `gateway`, `indexer`, `worker`, `helm-agent`, and the standalone `cli`. Shared libraries live in `pkg/`, currently including configuration (`env`), home-directory helpers, and structured logging. Keep package tests beside their implementation as `*_test.go`. Architecture and product notes belong in `docs/`.
+Ivaldi is a multi-module Go repository. Deployable components live under `apps/`: `control-plane`, `gateway`, `indexer`, `worker`, `helm-agent`, and `cli`. Shared libraries live in `pkg/`, currently including configuration (`env`), home-directory helpers, and structured logging. Keep package tests beside their implementation as `*_test.go`. Architecture and product notes belong in `docs/`.
 
-The root `go.work` includes the shared package module and all app modules except `apps/cli`; run CLI commands with `GOWORK=off` unless you intentionally add it to the workspace.
+The root `go.work` includes the shared package module and every app module, so run Go commands from the repository root.
 
 ## Architecture Principles
 
@@ -27,10 +27,9 @@ Use established terms consistently: Workspace, Project, Source, Work Item, Sessi
 ## Build, Test, and Development Commands
 
 - `mise install` installs the repository's pinned Go toolchain (Go 1.27.1).
-- `go test ./pkg/... ./apps/control-plane/... ./apps/gateway/... ./apps/indexer/... ./apps/worker/... ./apps/helm-agent/...` tests every module in the root workspace.
-- `(cd apps/cli && GOWORK=off go test ./...)` tests the standalone CLI module.
+- `go test ./pkg/... ./apps/cli/... ./apps/control-plane/... ./apps/gateway/... ./apps/indexer/... ./apps/worker/... ./apps/helm-agent/...` tests every module in the root workspace. List each module; `./apps/...` fails in workspace mode because `apps/` is not itself a module.
 - `go run ./apps/control-plane/cmd` starts the control-plane command locally.
-- `(cd apps/cli && GOWORK=off go run ./cmd)` runs the CLI from source.
+- `go run ./apps/cli/cmd` runs the CLI from source.
 - `go vet <package-pattern>` performs static checks before review.
 
 ## Coding Style & Naming Conventions

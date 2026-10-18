@@ -14,7 +14,7 @@ The repo is an early scaffold. Most of the layout is reserved but empty, so don'
 
 - Only `apps/control-plane` (Cobra root command `serve`, no subcommands) and `apps/cli` (Cobra root `ivaldi`) have code. `gateway`, `indexer`, `worker`, and `helm-agent` contain only `go.mod` plus empty `cmd/` and `internal/` dirs.
 - Implemented shared code in `pkg/` is `env`, `logging`, and `homedir`. `pkg/events`, `graph`, `orchestration`, `policy`, `release`, and `vcs` are empty placeholders for the capability boundaries in `docs/vision.md`.
-- `Makefile` and `README.md` are empty; `deploy/`, `migrations/`, `schemas/`, `scripts/`, and `.github/actions/` have no tracked files yet.
+- `Makefile` has a single target, `iam_migration_generate name=<name>`, which creates a numbered IAM migration pair with golang-migrate's `migrate` CLI. `deploy/`, `migrations/`, `schemas/`, `scripts/`, and `.github/actions/` have no tracked files yet.
 
 ## Commands
 
@@ -24,17 +24,17 @@ Toolchain is pinned by `mise.toml` (`mise install`). Beyond the commands in `AGE
 # Single test (pkg is its own module, so run from the workspace root by package path)
 go test ./pkg/env -run TestParseTag_Required -v
 
-# Single CLI test (CLI is outside go.work)
-(cd apps/cli && GOWORK=off go test ./... -run TestName)
+# Single CLI test
+go test ./apps/cli/... -run TestName
 
 gofmt -l .        # list unformatted files
 ```
 
-There is no lint config or Makefile target yet; `go vet` and `gofmt` are the checks.
+There is no lint config or lint target yet; `go vet` and `gofmt` are the checks.
 
 ## Module layout gotchas
 
-- Every app and `pkg/` is a separate Go module. Root `go.work` stitches together `pkg` and every app except `apps/cli`, so apps import shared code as `github.com/ivaldibuild/ivaldi/pkg/...` without `replace` directives. `apps/cli` would need it added to `go.work` (or a `replace`) to use `pkg/`.
+- Every app and `pkg/` is a separate Go module. Root `go.work` stitches together `pkg` and every app, including `apps/cli`, so apps import shared code as `github.com/ivaldibuild/ivaldi/pkg/...` without `replace` directives. Builds that run with `GOWORK=off` (for example, a per-module Docker build) lose that and would need a `replace` or a published `pkg` version.
 - Module paths: `pkg` is `github.com/ivaldibuild/ivaldi/pkg`, while each app (including the CLI) is its own `github.com/ivaldibuild/ivaldi-<app>` module.
 - `pkg/env` and `pkg/logging` were ported from another project; leftover fixture names (e.g. `dispatch` in `env_test.go`) are test data only.
 

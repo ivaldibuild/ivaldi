@@ -2,6 +2,7 @@
 
 - Status: Proposed
 - Date: 2026-10-01
+- Amended by: [ADR 0007](0007-teams-and-agent-identity.md), which adds durable Agent identities and Sessions without a human delegator
 
 ## Context
 

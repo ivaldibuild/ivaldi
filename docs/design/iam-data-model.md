@@ -2,14 +2,14 @@
 
 - Status: Draft for review
 - Date: 2026-10-02
-- Related: [ADR 0001](../adr/0001-deployment-topology.md), [ADR 0003](../adr/0003-identity-access-and-policy.md), [ADR 0004](../adr/0004-credentials-and-keys.md), [ADR 0005](../adr/0005-data-model-ownership.md)
+- Related: [ADR 0001](../adr/0001-deployment-topology.md), [ADR 0003](../adr/0003-identity-access-and-policy.md), [ADR 0004](../adr/0004-credentials-and-keys.md), [ADR 0005](../adr/0005-data-model-ownership.md), [ADR 0006](../adr/0006-release-and-delivery-tracking.md)
 
 This document defines the data model for the IAM capability in the control plane (`apps/control-plane/internal/iam`). Once it is approved, the schema in the appendix becomes the first golang-migrate migration, and the Go domain types and repository interface follow from it.
 
 ## Decisions this model is built on
 
 - **The tenant is the Organization.** An Organization sits above Workspace. It owns members, identity-provider configuration, and billing, and it contains many Workspaces. A self-hosted installation is the same system with one Organization. This answers the open question in ADR 0001.
-- **Access uses built-in roles granted at a scope.** Fixed roles (owner, admin, member, viewer) are granted at Organization, Workspace, Project, or Source scope, and a grant applies to everything beneath that scope. Roles are rows in a table, so custom roles can be added later without a schema rewrite.
+- **Access uses built-in roles granted at a scope.** Fixed roles (owner, admin, member, viewer) are granted at Organization, Workspace, Project, Environment, or Source scope, and a grant applies to everything beneath that scope. Roles are rows in a table, so custom roles can be added later without a schema rewrite.
 - **Grants only allow; policy denies.** IAM has no deny grants. Restrictions such as "this Session may not reach production" belong to policy ([ADR 0003](../adr/0003-identity-access-and-policy.md)).
 - **IAM tables live in their own PostgreSQL schema, `iam`.** Each capability gets its own schema, which makes ownership visible in the database and keeps cross-capability joins obvious in review ([ADR 0005](../adr/0005-data-model-ownership.md)).
 - **golang-migrate manages the schema.** Hand-written, versioned `.up.sql`/`.down.sql` files live in `apps/control-plane/internal/iam/migrations/`, embedded via `go:embed` and applied together with every other capability's migrations at control-plane startup; there is no separate desired-state schema file to diff against ([ADR 0005](../adr/0005-data-model-ownership.md)).
@@ -74,9 +74,9 @@ erDiagram
 
 ### Resource hierarchy
 
-- **resources** — IAM's own copy of the hierarchy that grants attach to: Organization → Workspace → Project → Source.
+- **resources** — IAM's own copy of the hierarchy that grants attach to: Organization → Workspace → Project → Source, with Environments beside Projects under their Workspace (Organization → Workspace → Environment). Granting at an Environment controls who may deploy there, for example to staging but not to production ([ADR 0006](../adr/0006-release-and-delivery-tracking.md)).
 
-  Workspaces, Projects, and Sources are owned by other capabilities, and IAM must not join their tables. So each owning capability registers its resources through the IAM interface when it creates, moves, or deletes them. A resource row uses the same ID as the entity it mirrors, and the Organization's root row uses the Organization's ID.
+  Workspaces, Projects, Environments, and Sources are owned by other capabilities (Environments by the delivery capability), and IAM must not join their tables. So each owning capability registers its resources through the IAM interface when it creates, moves, or deletes them. A resource row uses the same ID as the entity it mirrors, and the Organization's root row uses the Organization's ID.
 
 ### Principals
 
@@ -88,6 +88,7 @@ Every actor is a row in **principals**, the common parent table that grants and 
 | `service_account` | **service_accounts** | A non-human integration that uses API tokens, e.g. CI or SCIM provisioning. |
 | `agent_session` | **agent_sessions** | The identity of one orchestrated Session. Links to the Session and Work Item, the delegating principal, an expiry, and a revocation time. |
 | `workload` | **workloads** | An enrolled data-plane component (worker, indexer, gateway, helm-agent) with its pool and last-seen time. |
+| `agent` | **agents** | A durable agent identity, such as `release-agent`, that can belong to Teams and hold grants. Every agent Session runs as one Agent. How the Agent runs (harness, model, instructions) belongs to orchestration, not IAM. *Proposed in [ADR 0007](../adr/0007-teams-and-agent-identity.md); not yet migrated.* |
 
 **Principals are never hard-deleted.** Audit and provenance records refer to them, so they are suspended or deactivated instead.
 
@@ -119,28 +120,28 @@ Every actor is a row in **principals**, the common parent table that grants and 
 ### Authorization
 
 - **roles** — built-in roles are rows with no Organization (`organization_id` is NULL), seeded by migration. A future custom role is a row that belongs to an Organization. The permissions of built-in roles are defined in Go code, so they are versioned with the binary.
-- **groups** and **group_members** — manual or SCIM-provisioned groups.
+- **groups** and **group_members** — manual or SCIM-provisioned groups. *Proposed in [ADR 0007](../adr/0007-teams-and-agent-identity.md):* a third kind, team-managed groups, mirrors each Team so it can receive grants. Only the Team capability changes their membership, and their members can include Agents.
 - **grants** — gives a role to exactly one principal or one group, on one resource. Grants can optionally expire.
 - **agent_session_scopes** — the resources an agent Session is limited to.
 
 | Built-in role | Grantable at | Summary |
 |---|---|---|
 | owner | Organization only | Everything, including identity-provider setup, billing, managing owners, and deleting the Organization |
-| admin | Organization, Workspace | Manage members, grants, Workspaces, Projects, Sources, policies, and credentials; cannot manage owners or delete the Organization |
+| admin | Organization, Workspace | Manage members, grants, Workspaces, Projects, Environments, Sources, policies, and credentials; cannot manage owners or delete the Organization |
 | member | Any scope | Create and work on Work Items, start Sessions, read code intelligence for resources in scope |
 | viewer | Any scope | Read-only |
 
-Permissions are strings named by resource and verb, such as `source.read`, `session.create`, `grant.manage`, and `identity_provider.manage`. The full catalog lives in code next to the role definitions.
+Permissions are strings named by resource and verb, such as `source.read`, `session.create`, `grant.manage`, `deployment.create`, and `identity_provider.manage`. The full catalog lives in code next to the role definitions.
 
 ## How an authorization check is evaluated
 
 `Authorize(principal, permission, resource)`:
 
 1. **Load the resource's ancestors.** Fetch the resource and its parents from `resources` with a recursive query. The hierarchy is at most four levels deep.
-2. **Expand the principal's identity.** Use the principal plus the groups it belongs to. If the principal is an agent Session, use its **delegator** instead, and check that the Session is not expired or revoked.
+2. **Expand the principal's identity.** Use the principal plus the groups it belongs to. If the principal is an agent Session, use its **delegator** instead, and check that the Session is not expired or revoked. *Proposed in [ADR 0007](../adr/0007-teams-and-agent-identity.md):* also use the Agent the Session runs as. An autonomous Session has no delegator, so only the Agent's access is used.
 3. **Collect grants.** Gather the unexpired grants for those identities on the resource or any of its ancestors.
 4. **Check the permission.** Map the granted roles to permissions in code; the check passes if any role includes the requested permission.
-5. **Apply the Session scope.** For an agent Session, the resource must also be one of its scope resources or a descendant of one. Effective access is the delegator's access intersected with the Session's scope.
+5. **Apply the Session scope.** For an agent Session, the resource must also be one of its scope resources or a descendant of one. Effective access is the delegator's access intersected with the Session's scope. *Proposed in [ADR 0007](../adr/0007-teams-and-agent-identity.md):* it is also intersected with the access of the Agent the Session runs as.
 6. **Continue to policy.** A successful IAM check is followed by policy evaluation in the single authorizer ([ADR 0003](../adr/0003-identity-access-and-policy.md)).
 
 Every step uses indexed lookups bounded by tenant. The results can be cached per request. Caching across requests requires invalidation whenever grants or group memberships change.
@@ -152,8 +153,8 @@ Every step uses indexed lookups bounded by tenant. The results can be cached per
 - **No raw secrets are stored.** Tokens are hashed (SHA-256), passwords are hashed with argon2id, and identity-provider secrets and private signing keys are credential references.
 - **Subtypes match their principal kind.** A `users` row must belong to a principal of kind `user`, and so on. The repository layer enforces this when it creates principals.
 - **Every Organization keeps at least one active owner.** The service layer enforces this when grants are removed or principals are deactivated.
-- **A Session's delegator must be an active user or service account.** Deactivating the delegator makes the Session's authorization checks fail.
-- **Resource rows mirror their owning capability.** Deleting a Workspace, Project, or Source soft-deletes its resource row and its descendants, and the grants on them stop applying.
+- **A Session's delegator must be an active user or service account.** Deactivating the delegator makes the Session's authorization checks fail. *Proposed in [ADR 0007](../adr/0007-teams-and-agent-identity.md):* the delegator becomes optional. An autonomous Session has none, and policy requires a human user's approval before it releases any change.
+- **Resource rows mirror their owning capability.** Deleting a Workspace, Project, Environment, or Source soft-deletes its resource row and its descendants, and the grants on them stop applying.
 - **IAM changes emit audit events.** Grants, token issuance, sign-ins, and enrollments produce events for the audit and provenance capability. IAM does not keep its own audit tables.
 
 ## Open questions

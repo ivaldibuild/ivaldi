@@ -9,5 +9,7 @@ Consequential architecture decisions, one per file. Each record states its conte
 | [0003](0003-identity-access-and-policy.md) | Identity and access management, and its boundary with policy | Proposed |
 | [0004](0004-credentials-and-keys.md) | Credentials and customer-managed keys | Proposed |
 | [0005](0005-data-model-ownership.md) | Data model ownership and placement | Proposed |
+| [0006](0006-release-and-delivery-tracking.md) | Release and delivery tracking | Proposed |
+| [0007](0007-teams-and-agent-identity.md) | Teams and durable Agent identity | Proposed |
 
 New records take the next number and use the same section headings.

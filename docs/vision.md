@@ -8,6 +8,7 @@ Core capabilities:
 - VCS integration
 - CI/CD integration
 - Deployment and release tracking
+- Observability: deployment, infrastructure, and session visibility
 
 Core lifecycle:
 

@@ -35,13 +35,17 @@ Domain logic never imports a database driver.
 
 What crosses the plane boundary is versioned contracts, such as events, work assignments, and API messages. These are defined in the top-level `schemas/` directory (Protobuf or JSON Schema), and code is generated from them. Database rows are never sent between the planes directly.
 
-### Migrations belong to the app that owns the database
+### Migrations belong to the app that owns the database, colocated per capability
 
-Migrations are the source of truth for the schema. They move from `migrations/postgres/` to `apps/control-plane/migrations/`, so ownership is obvious and the migrations are versioned and released with the control plane.
+Migrations are the source of truth for the schema. They move from `migrations/postgres/` into the control plane, and live inside the capability package that owns the tables they create — e.g. `apps/control-plane/internal/iam/migrations/` — rather than in one shared `apps/control-plane/migrations/` directory. Each capability embeds its own migration files (`go:embed`) through its package, and the control plane applies every capability's migrations together at startup. This keeps ownership obvious at the file-tree level, consistent with each capability owning its tables, and the migrations still version and release with the control plane binary.
 
-### Tenant scoping is enforced in two layers
+### Migrations are managed with golang-migrate
 
-Every tenant-scoped table carries a tenant identifier ([ADR 0001](0001-deployment-topology.md)). The repository layer requires a tenant in every query. PostgreSQL row-level security is a second line of defense against a missing filter.
+golang-migrate applies versioned, hand-written `.up.sql`/`.down.sql` files directly; there is no separate desired-state schema file to diff against. This fits the decision above that migrations themselves are the source of truth, and keeps the mental model simpler than a schema-diffing tool such as Atlas.
+
+### Tenant scoping is enforced in application code
+
+Every tenant-scoped table carries a tenant identifier ([ADR 0001](0001-deployment-topology.md)). The repository layer requires a tenant in every query; PostgreSQL row-level security is not used. Composite foreign keys that include the tenant identifier make cross-tenant references impossible at the database level, but a missing tenant filter in a query is caught only by code review and tests, so repository tests must cover tenant isolation.
 
 ### Code-intelligence data is out of scope
 
@@ -62,5 +66,4 @@ The indexer's graph and vector data lives in the data plane, behind Ivaldi's gra
 
 ## Open questions
 
-- Which migration tool to use (e.g. goose, golang-migrate, or Atlas).
 - Whether to generate query code with sqlc or write repositories by hand.

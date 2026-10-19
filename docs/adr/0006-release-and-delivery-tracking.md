@@ -92,11 +92,11 @@ A running workload is matched to a Build by its image digest, never by tag, beca
 
 ### Registry lookups run where the registry can be reached
 
-Ivaldi contacts a Registry only to look artifacts up: to resolve a tag to a digest when a Release is created, and to fetch a deployment definition such as a Helm chart when executing. Clusters keep pulling images themselves. A customer's private registry is usually unreachable from Ivaldi's cloud, and its credentials should stay in the customer's environment ([ADR 0004](0004-credentials-and-keys.md)). So each Registry records whether lookups run from the control plane or from a data-plane workload, and a Registry marked for the data plane is never contacted from the control plane.
+Ivaldi contacts a Registry only to look artifacts up: to resolve a tag to a digest when a Release is created, and to fetch a deployment definition such as a Helm chart when executing. Clusters keep pulling images themselves. A customer's private registry is usually unreachable from Ivaldi's cloud, and its credentials should stay in the customer's environment ([ADR 0004](0004-credentials-and-keys.md)). So each Registry records whether lookups run from the control plane or from a data-plane workload, and a Registry marked for the data plane is never contacted from the control plane. [ADR 0008](0008-reaching-customer-systems.md) makes this the rule for every customer system Ivaldi queries.
 
 ### What changed is derived from commits
 
-Each Build records only the commit and ref it was built from. The commits, Changes, Sessions, and Work Items between two Releases are derived through the VCS and Change capabilities when they are needed, rather than copied from CI as Octopus build information does. Ivaldi already owns those records, so deriving them keeps one source of truth.
+Each Build records only the commit and ref it was built from. The commits, Changes, Sessions, and Work Items between two Releases are derived through the version-control and Change capabilities when they are needed, rather than copied from CI as Octopus build information does. Ivaldi already owns those records, so deriving them keeps one source of truth.
 
 ### Messages between the planes are contracts in `schemas/`
 

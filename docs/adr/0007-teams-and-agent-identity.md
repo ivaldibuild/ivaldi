@@ -19,7 +19,7 @@ Two gaps stand in the way:
 
 Teams live in `apps/control-plane/internal/team`. A Team belongs to an Organization and has a `slug`, a display name, a description, and members. A member is either a user or an Agent, with a role on the Team (`lead` or `member`).
 
-**Ownership is recorded by the capability that owns the thing.** The delivery capability stores an Application's owning Team ([delivery data model](../design/delivery-data-model.md)); later capabilities do the same for what they own. The Team capability does not keep a list of what each Team owns, so no capability has to query another's tables ([ADR 0005](0005-data-model-ownership.md)).
+**Ownership is recorded by the capability that owns the thing.** The workspace capability stores a Project's owning Team ([workspace data model](../design/workspace-data-model.md)), and the delivery capability stores an Application's, which defaults to its Project's ([delivery data model](../design/delivery-data-model.md)). Later capabilities do the same for what they own. The Team capability does not keep a list of what each Team owns, so no capability has to query another's tables ([ADR 0005](0005-data-model-ownership.md)).
 
 **Ownership means responsibility, not access.** The owning Team is where work is routed: approval requests, alerts about degraded Deployments, findings on observed Deployments, and Work Items created from incidents. Ownership grants nothing. Access still comes only from IAM grants, which keeps access separate from everything else ([ADR 0003](0003-identity-access-and-policy.md)).
 
@@ -55,7 +55,13 @@ For these actions, policy always returns "requires approval" when the Session is
 
 The approval must come from a human user, never from an Agent or a service account. The approver must hold the access the action needs, so approving does not let anyone ship something they could not ship themselves. The approval is recorded by the policy capability and linked to the Session. For what ships, the approving human becomes the accountable person in the provenance chain. Before anything ships, the Agent's Team is accountable.
 
-Sessions with a human delegator are unchanged: their actions follow the Organization's policies, which may or may not require approval.
+Sessions with a human delegator are unchanged for these actions: they follow the Organization's policies, which may or may not require approval.
+
+### Every agent Session needs a human's approval to change settings
+
+Settings change how Ivaldi behaves for everyone in their scope, for example which Lifecycle new Channels follow ([workspace data model](../design/workspace-data-model.md)). So any agent Session, **with or without a delegator**, needs a human's approval to change or remove a setting of any kind, at any level. This is a second built-in policy rule that an Organization's policies can add to but not remove.
+
+The approver must be a human user who could make the change themselves. In a Session with a delegator, the delegator can approve. The pending change is held by the policy capability with the value it proposes, and it applies only if the setting has not changed since the request. If it has, the approval lapses and the Agent must ask again, so nobody approves a change against a value they did not see.
 
 ### Teams and Agents are domain terms
 
@@ -72,6 +78,7 @@ Team and Agent are added to the domain vocabulary in `AGENTS.md`. Agent is alrea
 - Agents can do useful work, such as triaging an incident overnight, without waiting for a human to start them. Nothing they produce reaches a shared branch, a published Release, or an Environment until a human approves it.
 - During an incident, an autonomous Agent can prepare a rollback but cannot apply it alone. Rollbacks wait for a human, which costs time when every minute counts. This is accepted for now; see the open questions.
 - Every Change that ships is still traceable to a person, either the Session's delegator or the human who approved the release.
+- Agents can propose configuration changes but never apply one alone, so how Ivaldi behaves is always set by a person.
 - Teams depend on IAM for grants through their group, but IAM does not depend on Teams.
 
 ## Alternatives considered

@@ -61,7 +61,7 @@ For details, see [`docs/vision.md`](docs/vision.md) and the [architecture decisi
 
 ## Development
 
-Ivaldi is a multi-module Go repository. The toolchain version is pinned in `mise.toml`.
+Ivaldi is a multi-module Go repository. Tool versions, Go and the golang-migrate CLI, are pinned in `mise.toml`.
 
 ```sh
 mise install

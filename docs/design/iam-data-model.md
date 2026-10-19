@@ -68,7 +68,7 @@ erDiagram
 
 ### Tenancy
 
-- **organizations** — the tenant. Has a globally unique `slug`, a required `display_name`, a status (`active`, `suspended`, `deleted`), and optional `logo_url` and `metadata` for product-facing presentation.
+- **organizations** — the tenant. Has a globally unique `slug`, a required `display_name`, a status (`active`, `suspended`, `deleted`), and optional `logo_url` and `metadata` for product-facing presentation. Creating an Organization also provisions its default Workspace, in the same transaction, through a provisioning interface that the workspace capability implements ([workspace data model](workspace-data-model.md)).
 - **organization_domains** — email domains an Organization has verified. Used to route a login to the right identity provider in the managed cloud. Ownership is proven with a DNS TXT token, stored only as a hash. Several Organizations may claim a domain, but only one can hold it verified.
 - **accounts** — the person, **platform-scoped** (no `organization_id`), like `oauth_clients`. Holds the sign-in email (unique across the platform, case-insensitive), a default display name, and a status. An account has no access on its own; access comes only through its memberships.
 
@@ -76,7 +76,7 @@ erDiagram
 
 - **resources** — IAM's own copy of the hierarchy that grants attach to: Organization → Workspace → Project → Source, with Environments beside Projects under their Workspace (Organization → Workspace → Environment). Granting at an Environment controls who may deploy there, for example to staging but not to production ([ADR 0006](../adr/0006-release-and-delivery-tracking.md)).
 
-  Workspaces, Projects, Environments, and Sources are owned by other capabilities (Environments by the delivery capability), and IAM must not join their tables. So each owning capability registers its resources through the IAM interface when it creates, moves, or deletes them. A resource row uses the same ID as the entity it mirrors, and the Organization's root row uses the Organization's ID.
+  Workspaces, Projects, Environments, and Sources are owned by other capabilities (Workspaces and Projects by the [workspace capability](workspace-data-model.md), Sources by the [version-control capability](version-control-data-model.md), Environments by the delivery capability), and IAM must not join their tables. So each owning capability registers its resources through the IAM interface when it creates, moves, or deletes them. A resource row uses the same ID as the entity it mirrors, and the Organization's root row uses the Organization's ID.
 
 ### Principals
 

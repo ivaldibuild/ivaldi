@@ -26,7 +26,7 @@ Use established terms consistently: Workspace, Project, Source, Work Item, Sessi
 
 ## Build, Test, and Development Commands
 
-- `mise install` installs the repository's pinned Go toolchain (Go 1.27.1).
+- `mise install` installs the repository's pinned tools: the Go toolchain (Go 1.27.1) and the golang-migrate CLI (`migrate` 4.20.1) used by the Makefile's migration targets.
 - `go test ./pkg/... ./apps/cli/... ./apps/control-plane/... ./apps/gateway/... ./apps/indexer/... ./apps/worker/... ./apps/helm-agent/...` tests every module in the root workspace. List each module; `./apps/...` fails in workspace mode because `apps/` is not itself a module.
 - `go run ./apps/control-plane/cmd` starts the control-plane command locally.
 - `go run ./apps/cli/cmd` runs the CLI from source.

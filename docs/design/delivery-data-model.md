@@ -108,6 +108,8 @@ Ivaldi uses a Registry only for lookups: resolving a tag to a digest when a Rele
   - `version` — matches a version. With no `artifact_id`, it matches the Release's version; with one, it matches the version of that artifact's Build. `config` is either a SemVer range with an optional pre-release tag pattern (for example `[2.0,3.0)` with `^$` for no pre-release, or `^beta` for betas), or, for versions that are not SemVer, a pattern for the whole version string (for example `^build-\d+$`).
   - `git_ref` — matches the Git refs that Builds were built from, as glob patterns such as `refs/heads/main` or `refs/heads/hotfix/**`. With no `artifact_id`, every Build in the Release must match; with one, only that artifact's Build must, so a rule can apply to the `api` image but not to a third-party sidecar.
 
+  `config` is stored in canonical form, so equal rules store equal JSON: `{"range":"[2.0,3.0)","pre_release":"^$"}` or `{"pattern":"^build-\\d+$"}` for `version`, and `{"patterns":["refs/heads/main"]}` for `git_ref`. Version ranges use NuGet's interval notation (`1.0`, `[1.0]`, `[1.0,2.0)`, `(,2.0]`), as Octopus does.
+
 ### What was built and released
 
 - **builds** — one version of one artifact, identified by `artifact_name` and `digest`. The pair is unique within an Organization. `artifact_kind` matches the artifact kinds above. A CI-reported Build records its `version` (if CI gave one), `source_id`, `commit_sha`, `source_ref` (the branch or tag it was built from), `ci_provider`, `ci_run_ref`, and `built_at`, and its `provenance` is `ci_reported`. A Build that the agent saw running without any CI record is created with `provenance` set to `observed` and no commit. `reported_tags` lists tags seen with the digest, as hints only.
@@ -186,6 +188,8 @@ Ivaldi uses a Registry only for lookups: resolving a tag to a digest when a Rele
 - **Every Release belongs to an active Channel of its own Application**, and its Channel cannot change after it is published.
 - **A published Release has a Build for every required artifact**, and each Build's `artifact_name` matches its artifact's.
 - **An Environment appears at most once in a Lifecycle**, enforced by the unique `(lifecycle_id, environment_id)` key.
+- **Configuration is not archived out from under what uses it.** An Environment cannot be archived while it has active Targets or is in an active Lifecycle's phase, a Lifecycle while an active Channel follows it, or an artifact while an active Channel's rule is scoped to it or a placement's `apply_config` names it as the deployment definition. That artifact cannot be renamed either. Restoring a record requires what it belongs to, and what it uses, to be active.
+- **Registry URLs carry no credentials.** A URL with a user or password is refused; credentials are referenced through `credential_ref`.
 - **Nothing an autonomous agent Session asks for ships without a human.** Publishing a Release or executing a Deployment for a Session with no human delegator requires a human user's approval, recorded in `publish_decision_id` or `policy_decision_id`. Policy enforces this; delivery stores the decision and never skips the call.
 - **Executed Deployments respect their Lifecycle.** An executed Deployment's Environment is in its Release's Channel's Lifecycle, in a phase that was open when the Deployment was requested.
 - **At most one Deployment per Application and Target is in flight.** A partial unique index on `(organization_id, application_id, target_id)` where `finished_at` is NULL enforces it.

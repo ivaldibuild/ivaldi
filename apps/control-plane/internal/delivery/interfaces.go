@@ -1,0 +1,280 @@
+package delivery
+
+// The interfaces this capability defines for itself: its repositories, the
+// lookups it needs from the workspace capability, and its services.
+// Contracts shared with other capabilities live with their owners.
+
+import (
+	"context"
+
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
+	"github.com/ivaldibuild/ivaldi/pkg/identity"
+	"github.com/ivaldibuild/ivaldi/pkg/pagination"
+)
+
+// Repositories persist and retrieve domain objects, and nothing more: IDs,
+// timestamps, and every rule come from the domain. Every method is scoped to
+// an Organization. Methods return ErrNotFound when no row matches, and
+// ErrSlugTaken for a slug clash. Update methods write the whole object as
+// its Snapshot gives it; the fields that identify it, and what it belongs
+// to, never change.
+//
+// List methods sort by the fields their query documents, with the ID
+// breaking ties, and return ErrInvalid for an unknown field or a cursor from
+// another sort.
+
+// ListEnvironmentsQuery lists a Workspace's Environments. It sorts by
+// "created_at" (the default), "slug", or "display_name".
+type ListEnvironmentsQuery struct {
+	OrganizationID string
+	WorkspaceID    string
+	// IncludeArchived specifies whether to include archived environments in the results.
+	IncludeArchived bool
+	Page            pagination.Query
+}
+
+type EnvironmentRepository interface {
+	// CreateEnvironment creates a new environment in the repository.
+	CreateEnvironment(ctx context.Context, env *Environment) error
+	// GetEnvironment retrieves an environment by its ID.
+	GetEnvironment(ctx context.Context, organizationID, environmentID string) (*Environment, error)
+	// GetEnvironmentForUpdate is GetEnvironment that also locks the row until
+	// the transaction ends. It must be called inside a transaction.
+	GetEnvironmentForUpdate(ctx context.Context, organizationID, environmentID string) (*Environment, error)
+	// GetEnvironmentBySlug retrieves the active environment with the slug in a workspace.
+	GetEnvironmentBySlug(ctx context.Context, organizationID, workspaceID, slug string) (*Environment, error)
+	// GetEnvironments retrieves the environments with the given IDs, in no
+	// particular order. IDs that match nothing are left out.
+	GetEnvironments(ctx context.Context, organizationID string, environmentIDs []string) ([]*Environment, error)
+	// ListEnvironments lists environments based on the provided query parameters.
+	ListEnvironments(ctx context.Context, query ListEnvironmentsQuery) (*pagination.Result[*Environment], error)
+	// UpdateEnvironment writes the environment's state.
+	UpdateEnvironment(ctx context.Context, env *Environment) error
+	// CountActiveEnvironments counts a workspace's active environments.
+	CountActiveEnvironments(ctx context.Context, organizationID, workspaceID string) (int, error)
+}
+
+// ListLifecyclesQuery lists a Workspace's Lifecycles. It sorts by
+// "created_at" (the default), "slug", or "display_name".
+type ListLifecyclesQuery struct {
+	OrganizationID  string
+	WorkspaceID     string
+	IncludeArchived bool
+	Page            pagination.Query
+}
+
+// LifecycleRepository stores Lifecycles with their phases.
+type LifecycleRepository interface {
+	CreateLifecycle(ctx context.Context, l *Lifecycle) error
+	GetLifecycle(ctx context.Context, organizationID, lifecycleID string) (*Lifecycle, error)
+	// GetLifecycleForUpdate is GetLifecycle that also locks the row until the
+	// transaction ends. It must be called inside a transaction.
+	GetLifecycleForUpdate(ctx context.Context, organizationID, lifecycleID string) (*Lifecycle, error)
+	GetLifecycleBySlug(ctx context.Context, organizationID, workspaceID, slug string) (*Lifecycle, error)
+	ListLifecycles(ctx context.Context, query ListLifecyclesQuery) (*pagination.Result[*Lifecycle], error)
+	// UpdateLifecycle writes the lifecycle's state, including adding,
+	// changing, reordering, and removing its phases.
+	UpdateLifecycle(ctx context.Context, l *Lifecycle) error
+	CountActiveLifecycles(ctx context.Context, organizationID, workspaceID string) (int, error)
+	// CountActiveLifecyclesWithEnvironment counts the active lifecycles with
+	// the environment in one of their phases.
+	CountActiveLifecyclesWithEnvironment(ctx context.Context, organizationID, environmentID string) (int, error)
+}
+
+// ListTargetsQuery lists an Environment's Targets. It sorts by "created_at"
+// (the default), "slug", or "display_name".
+type ListTargetsQuery struct {
+	OrganizationID  string
+	EnvironmentID   string
+	IncludeArchived bool
+	Page            pagination.Query
+}
+
+type TargetRepository interface {
+	CreateTarget(ctx context.Context, t *Target) error
+	GetTarget(ctx context.Context, organizationID, targetID string) (*Target, error)
+	GetTargetBySlug(ctx context.Context, organizationID, environmentID, slug string) (*Target, error)
+	ListTargets(ctx context.Context, query ListTargetsQuery) (*pagination.Result[*Target], error)
+	UpdateTarget(ctx context.Context, t *Target) error
+	CountActiveTargets(ctx context.Context, organizationID, environmentID string) (int, error)
+}
+
+// ListRegistriesQuery lists a Workspace's Registries. It sorts by
+// "created_at" (the default), "slug", or "display_name".
+type ListRegistriesQuery struct {
+	OrganizationID  string
+	WorkspaceID     string
+	IncludeArchived bool
+	Page            pagination.Query
+}
+
+type RegistryRepository interface {
+	CreateRegistry(ctx context.Context, r *Registry) error
+	GetRegistry(ctx context.Context, organizationID, registryID string) (*Registry, error)
+	GetRegistryBySlug(ctx context.Context, organizationID, workspaceID, slug string) (*Registry, error)
+	ListRegistries(ctx context.Context, query ListRegistriesQuery) (*pagination.Result[*Registry], error)
+	UpdateRegistry(ctx context.Context, r *Registry) error
+	CountActiveRegistries(ctx context.Context, organizationID, workspaceID string) (int, error)
+}
+
+// ListApplicationsQuery lists Applications in a Project, or in a Workspace
+// when ProjectID is empty, optionally only one Team's. It sorts by
+// "created_at" (the default), "slug", or "display_name".
+type ListApplicationsQuery struct {
+	OrganizationID  string
+	WorkspaceID     string
+	ProjectID       string
+	OwnerTeamID     string
+	IncludeArchived bool
+	Page            pagination.Query
+}
+
+// ApplicationRepository stores Applications and the records that belong to
+// them: artifacts, Channels with their rules, and placements on Targets. An
+// Application's artifacts, Channels, and placements are few, so they are
+// listed whole rather than paged.
+type ApplicationRepository interface {
+	CreateApplication(ctx context.Context, a *Application) error
+	GetApplication(ctx context.Context, organizationID, applicationID string) (*Application, error)
+	// GetApplicationForUpdate is GetApplication that also locks the row until
+	// the transaction ends. It must be called inside a transaction.
+	GetApplicationForUpdate(ctx context.Context, organizationID, applicationID string) (*Application, error)
+	GetApplicationBySlug(ctx context.Context, organizationID, projectID, slug string) (*Application, error)
+	ListApplications(ctx context.Context, query ListApplicationsQuery) (*pagination.Result[*Application], error)
+	UpdateApplication(ctx context.Context, a *Application) error
+	CountActiveApplications(ctx context.Context, organizationID, projectID string) (int, error)
+
+	CreateArtifact(ctx context.Context, a *Artifact) error
+	GetArtifact(ctx context.Context, organizationID, artifactID string) (*Artifact, error)
+	ListArtifacts(ctx context.Context, organizationID, applicationID string, includeArchived bool) ([]*Artifact, error)
+	UpdateArtifact(ctx context.Context, a *Artifact) error
+
+	// CreateChannel stores a Channel with its rules.
+	CreateChannel(ctx context.Context, c *Channel) error
+	GetChannel(ctx context.Context, organizationID, channelID string) (*Channel, error)
+	GetDefaultChannel(ctx context.Context, organizationID, applicationID string) (*Channel, error)
+	ListChannels(ctx context.Context, organizationID, applicationID string, includeArchived bool) ([]*Channel, error)
+	// UpdateChannel writes the channel's state, including adding, changing,
+	// and removing its rules. It returns ErrConflict if it would make a
+	// second default Channel for the Application.
+	UpdateChannel(ctx context.Context, c *Channel) error
+	// CountActiveChannelsWithLifecycle counts the active channels of active
+	// applications that follow the lifecycle.
+	CountActiveChannelsWithLifecycle(ctx context.Context, organizationID, lifecycleID string) (int, error)
+
+	// CreatePlacement returns ErrAlreadyExists if the Application is already on the Target.
+	CreatePlacement(ctx context.Context, p *Placement) error
+	GetPlacement(ctx context.Context, organizationID, applicationID, targetID string) (*Placement, error)
+	ListPlacements(ctx context.Context, organizationID, applicationID string) ([]*Placement, error)
+	UpdatePlacement(ctx context.Context, p *Placement) error
+	// DeletePlacement returns ErrInUse if Deployments refer to the placement.
+	DeletePlacement(ctx context.Context, organizationID, applicationID, targetID string) error
+}
+
+// Workspaces looks up Workspaces and Projects in the workspace capability,
+// without authorizing, to check the boundaries delivery records must keep.
+// workspace.Service implements it.
+type Workspaces interface {
+	LookupWorkspace(ctx context.Context, organizationID, workspaceID string) (*workspace.Workspace, error)
+	LookupProject(ctx context.Context, organizationID, projectID string) (*workspace.Project, error)
+}
+
+// EnvironmentService manages Environments and the Targets they run on.
+type EnvironmentService interface {
+	CreateEnvironment(ctx context.Context, actor identity.Actor, in CreateEnvironmentInput) (*Environment, error)
+	GetEnvironment(ctx context.Context, actor identity.Actor, organizationID, environmentID string) (*Environment, error)
+	GetEnvironmentBySlug(ctx context.Context, actor identity.Actor, organizationID, workspaceID, slug string) (*Environment, error)
+	ListEnvironments(ctx context.Context, actor identity.Actor, query ListEnvironmentsQuery) (*pagination.Result[*Environment], error)
+	UpdateEnvironment(ctx context.Context, actor identity.Actor, organizationID, environmentID string, props UpdateEnvironmentProps) (*Environment, error)
+	// ArchiveEnvironments archives the Environments together, or none of them.
+	ArchiveEnvironments(ctx context.Context, actor identity.Actor, organizationID string, environmentIDs []string) ([]*Environment, error)
+	// RestoreEnvironments restores the Environments together, or none of them.
+	RestoreEnvironments(ctx context.Context, actor identity.Actor, organizationID string, environmentIDs []string) ([]*Environment, error)
+
+	CreateTarget(ctx context.Context, actor identity.Actor, in CreateTargetInput) (*Target, error)
+	GetTarget(ctx context.Context, actor identity.Actor, organizationID, targetID string) (*Target, error)
+	ListTargets(ctx context.Context, actor identity.Actor, query ListTargetsQuery) (*pagination.Result[*Target], error)
+	UpdateTarget(ctx context.Context, actor identity.Actor, organizationID, targetID string, props UpdateTargetProps) (*Target, error)
+	// AssignTargetAgent makes a runtime agent's workload principal the only
+	// one that may report on the Target; an empty principalID unassigns it.
+	AssignTargetAgent(ctx context.Context, actor identity.Actor, organizationID, targetID, principalID string) (*Target, error)
+	// RecordTargetReport notes that the Target's agent, the actor, is in contact.
+	RecordTargetReport(ctx context.Context, actor identity.Actor, organizationID, targetID string) error
+	ArchiveTarget(ctx context.Context, actor identity.Actor, organizationID, targetID string) (*Target, error)
+	RestoreTarget(ctx context.Context, actor identity.Actor, organizationID, targetID string) (*Target, error)
+}
+
+// LifecycleService manages Lifecycles and their phases.
+type LifecycleService interface {
+	CreateLifecycle(ctx context.Context, actor identity.Actor, in CreateLifecycleInput) (*Lifecycle, error)
+	GetLifecycle(ctx context.Context, actor identity.Actor, organizationID, lifecycleID string) (*Lifecycle, error)
+	ListLifecycles(ctx context.Context, actor identity.Actor, query ListLifecyclesQuery) (*pagination.Result[*Lifecycle], error)
+	UpdateLifecycle(ctx context.Context, actor identity.Actor, organizationID, lifecycleID string, props UpdateLifecycleProps) (*Lifecycle, error)
+	AddLifecyclePhase(ctx context.Context, actor identity.Actor, organizationID, lifecycleID string, props LifecyclePhaseProps) (*Lifecycle, error)
+	UpdateLifecyclePhase(ctx context.Context, actor identity.Actor, organizationID, lifecycleID, phaseID string, props LifecyclePhaseProps) (*Lifecycle, error)
+	MoveLifecyclePhase(ctx context.Context, actor identity.Actor, organizationID, lifecycleID, phaseID string, position int) (*Lifecycle, error)
+	RemoveLifecyclePhase(ctx context.Context, actor identity.Actor, organizationID, lifecycleID, phaseID string) (*Lifecycle, error)
+	ArchiveLifecycle(ctx context.Context, actor identity.Actor, organizationID, lifecycleID string) (*Lifecycle, error)
+	RestoreLifecycle(ctx context.Context, actor identity.Actor, organizationID, lifecycleID string) (*Lifecycle, error)
+}
+
+// RegistryService manages Registries.
+type RegistryService interface {
+	CreateRegistry(ctx context.Context, actor identity.Actor, in CreateRegistryInput) (*Registry, error)
+	GetRegistry(ctx context.Context, actor identity.Actor, organizationID, registryID string) (*Registry, error)
+	ListRegistries(ctx context.Context, actor identity.Actor, query ListRegistriesQuery) (*pagination.Result[*Registry], error)
+	UpdateRegistry(ctx context.Context, actor identity.Actor, organizationID, registryID string, props UpdateRegistryProps) (*Registry, error)
+	// SetRegistryCredential points the Registry at a credential; an empty
+	// credentialRef makes it anonymous.
+	SetRegistryCredential(ctx context.Context, actor identity.Actor, organizationID, registryID, credentialRef string) (*Registry, error)
+	SetRegistryLookup(ctx context.Context, actor identity.Actor, organizationID, registryID string, from LookupFrom, pool string) (*Registry, error)
+	ArchiveRegistry(ctx context.Context, actor identity.Actor, organizationID, registryID string) (*Registry, error)
+	RestoreRegistry(ctx context.Context, actor identity.Actor, organizationID, registryID string) (*Registry, error)
+}
+
+// ApplicationService manages Applications, their artifacts, their Channels,
+// and their placements on Targets.
+type ApplicationService interface {
+	// CreateApplication creates an Application with its default Channel.
+	CreateApplication(ctx context.Context, actor identity.Actor, in CreateApplicationInput) (*Application, *Channel, error)
+	GetApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID string) (*Application, error)
+	ListApplications(ctx context.Context, actor identity.Actor, query ListApplicationsQuery) (*pagination.Result[*Application], error)
+	UpdateApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID string, props UpdateApplicationProps) (*Application, error)
+	// LinkApplicationSource records the Source the Application is built
+	// from; an empty sourceID removes it.
+	LinkApplicationSource(ctx context.Context, actor identity.Actor, organizationID, applicationID, sourceID string) (*Application, error)
+	TransferApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID, ownerTeamID string) (*Application, error)
+	ArchiveApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID string) (*Application, error)
+	RestoreApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID string) (*Application, error)
+
+	CreateArtifact(ctx context.Context, actor identity.Actor, in CreateArtifactInput) (*Artifact, error)
+	ListArtifacts(ctx context.Context, actor identity.Actor, organizationID, applicationID string, includeArchived bool) ([]*Artifact, error)
+	UpdateArtifact(ctx context.Context, actor identity.Actor, organizationID, artifactID string, props UpdateArtifactProps) (*Artifact, error)
+	// SetArtifactRegistry records the Registry an artifact is looked up in;
+	// an empty registryID removes it.
+	SetArtifactRegistry(ctx context.Context, actor identity.Actor, organizationID, artifactID, registryID string) (*Artifact, error)
+	DeclareArtifact(ctx context.Context, actor identity.Actor, organizationID, artifactID string) (*Artifact, error)
+	ArchiveArtifact(ctx context.Context, actor identity.Actor, organizationID, artifactID string) (*Artifact, error)
+	RestoreArtifact(ctx context.Context, actor identity.Actor, organizationID, artifactID string) (*Artifact, error)
+
+	CreateChannel(ctx context.Context, actor identity.Actor, in CreateChannelInput) (*Channel, error)
+	GetChannel(ctx context.Context, actor identity.Actor, organizationID, channelID string) (*Channel, error)
+	ListChannels(ctx context.Context, actor identity.Actor, organizationID, applicationID string, includeArchived bool) ([]*Channel, error)
+	UpdateChannel(ctx context.Context, actor identity.Actor, organizationID, channelID string, props UpdateChannelProps) (*Channel, error)
+	SetChannelLifecycle(ctx context.Context, actor identity.Actor, organizationID, channelID, lifecycleID string) (*Channel, error)
+	AddChannelRule(ctx context.Context, actor identity.Actor, organizationID, channelID string, props ChannelRuleProps) (*Channel, error)
+	UpdateChannelRule(ctx context.Context, actor identity.Actor, organizationID, channelID, ruleID string, props ChannelRuleProps) (*Channel, error)
+	RemoveChannelRule(ctx context.Context, actor identity.Actor, organizationID, channelID, ruleID string) (*Channel, error)
+	// SetDefaultChannel makes an active Channel its Application's default, in
+	// place of the current one.
+	SetDefaultChannel(ctx context.Context, actor identity.Actor, organizationID, channelID string) (*Channel, error)
+	ArchiveChannel(ctx context.Context, actor identity.Actor, organizationID, channelID string) (*Channel, error)
+	RestoreChannel(ctx context.Context, actor identity.Actor, organizationID, channelID string) (*Channel, error)
+
+	CreatePlacement(ctx context.Context, actor identity.Actor, in CreatePlacementInput) (*Placement, error)
+	ListPlacements(ctx context.Context, actor identity.Actor, organizationID, applicationID string) ([]*Placement, error)
+	// ConfigurePlacement sets how Releases are applied to the Target; nil
+	// removes it, so Deployments there are tracked only.
+	ConfigurePlacement(ctx context.Context, actor identity.Actor, organizationID, applicationID, targetID string, config *ApplyConfig) (*Placement, error)
+	RemovePlacement(ctx context.Context, actor identity.Actor, organizationID, applicationID, targetID string) error
+}

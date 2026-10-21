@@ -1,0 +1,151 @@
+package iam
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/ivaldibuild/ivaldi/pkg/clock"
+	"github.com/ivaldibuild/ivaldi/pkg/id"
+)
+
+// WorkloadEnrollmentToken lets one data-plane component enroll as a
+// Workload in a pool. It is single-use and short-lived, and only its
+// SHA-256 hash is stored.
+type WorkloadEnrollmentToken struct {
+	id                   string
+	organizationID       string
+	tokenHash            []byte
+	pool                 string
+	createdByPrincipalID string
+	expiresAt            time.Time
+	usedAt               *time.Time
+	usedByPrincipalID    *string
+	createdAt            time.Time
+}
+
+// WorkloadEnrollmentTokenSnapshot is a WorkloadEnrollmentToken's state, for
+// repositories and audit records.
+type WorkloadEnrollmentTokenSnapshot struct {
+	ID                   string
+	OrganizationID       string
+	TokenHash            []byte
+	Pool                 string
+	CreatedByPrincipalID string
+	ExpiresAt            time.Time
+	UsedAt               *time.Time
+	UsedByPrincipalID    *string
+	CreatedAt            time.Time
+}
+
+// NewWorkloadEnrollmentTokenProps describes a WorkloadEnrollmentToken. A
+// new one leaves UsedAt, UsedByPrincipalID, and CreatedAt nil; a repository
+// loading a stored one sets them.
+type NewWorkloadEnrollmentTokenProps struct {
+	OrganizationID string
+	// TokenHash is the SHA-256 hash of the token.
+	TokenHash []byte
+	// Pool is the pool the enrolled Workload joins.
+	Pool                 string
+	CreatedByPrincipalID string
+	ExpiresAt            time.Time
+	UsedAt               *time.Time
+	UsedByPrincipalID    *string
+	CreatedAt            *time.Time
+}
+
+// NewWorkloadEnrollmentToken returns a WorkloadEnrollmentToken, with a new
+// ID unless tokenID gives a stored one.
+func NewWorkloadEnrollmentToken(props NewWorkloadEnrollmentTokenProps, tokenID *string) (*WorkloadEnrollmentToken, error) {
+	if err := validateID("organization ID", Organization{}.Prefix(), props.OrganizationID); err != nil {
+		return nil, err
+	}
+	if err := validateOwnID(WorkloadEnrollmentToken{}.Prefix(), tokenID); err != nil {
+		return nil, err
+	}
+	if err := validateTokenHash("token hash", props.TokenHash); err != nil {
+		return nil, err
+	}
+	if err := validateName("pool", props.Pool, maxPoolLength); err != nil {
+		return nil, err
+	}
+	if err := validateID("creator", principalPrefix, props.CreatedByPrincipalID); err != nil {
+		return nil, err
+	}
+	createdAt := timeOr(props.CreatedAt, clock.Now())
+	if err := validateExpiry(props.ExpiresAt, createdAt); err != nil {
+		return nil, err
+	}
+	usedBy := optionalString(props.UsedByPrincipalID)
+	if (props.UsedAt == nil) != (usedBy == nil) {
+		return nil, NewErrInvalidInput("a used enrollment token needs both when and by whom it was used")
+	}
+	if usedBy != nil {
+		if err := validateID("enrolled workload", principalPrefix, *usedBy); err != nil {
+			return nil, err
+		}
+	}
+
+	t := &WorkloadEnrollmentToken{
+		organizationID:       props.OrganizationID,
+		tokenHash:            copyBytes(props.TokenHash),
+		pool:                 props.Pool,
+		createdByPrincipalID: props.CreatedByPrincipalID,
+		expiresAt:            props.ExpiresAt,
+		usedAt:               clock.CopyTime(props.UsedAt),
+		usedByPrincipalID:    usedBy,
+		createdAt:            createdAt,
+	}
+	if tokenID != nil {
+		t.id = *tokenID
+	}
+	id.Assign(&t.id, t)
+	return t, nil
+}
+
+func (WorkloadEnrollmentToken) Prefix() string                  { return "wet" }
+func (t *WorkloadEnrollmentToken) ID() string                   { return t.id }
+func (t *WorkloadEnrollmentToken) OrganizationID() string       { return t.organizationID }
+func (t *WorkloadEnrollmentToken) TokenHash() []byte            { return copyBytes(t.tokenHash) }
+func (t *WorkloadEnrollmentToken) Pool() string                 { return t.pool }
+func (t *WorkloadEnrollmentToken) CreatedByPrincipalID() string { return t.createdByPrincipalID }
+func (t *WorkloadEnrollmentToken) ExpiresAt() time.Time         { return t.expiresAt }
+func (t *WorkloadEnrollmentToken) UsedAt() *time.Time           { return clock.CopyTime(t.usedAt) }
+func (t *WorkloadEnrollmentToken) UsedByPrincipalID() *string   { return copyString(t.usedByPrincipalID) }
+func (t *WorkloadEnrollmentToken) CreatedAt() time.Time         { return t.createdAt }
+
+func (t *WorkloadEnrollmentToken) Used() bool    { return t.usedAt != nil }
+func (t *WorkloadEnrollmentToken) Expired() bool { return !clock.Now().Before(t.expiresAt) }
+
+func (t *WorkloadEnrollmentToken) Snapshot() WorkloadEnrollmentTokenSnapshot {
+	return WorkloadEnrollmentTokenSnapshot{
+		ID:                   t.id,
+		OrganizationID:       t.organizationID,
+		TokenHash:            copyBytes(t.tokenHash),
+		Pool:                 t.pool,
+		CreatedByPrincipalID: t.createdByPrincipalID,
+		ExpiresAt:            t.expiresAt,
+		UsedAt:               clock.CopyTime(t.usedAt),
+		UsedByPrincipalID:    copyString(t.usedByPrincipalID),
+		CreatedAt:            t.createdAt,
+	}
+}
+
+// Redeem uses the token to enroll a Workload, which must be in the token's
+// Organization and pool. A token can be redeemed once, before it expires.
+func (t *WorkloadEnrollmentToken) Redeem(w *Workload) error {
+	switch {
+	case t.Used():
+		return fmt.Errorf("%w: enrollment token %s", ErrAlreadyUsed, t.id)
+	case t.Expired():
+		return fmt.Errorf("%w: enrollment token %s", ErrExpired, t.id)
+	case w.OrganizationID() != t.organizationID:
+		return NewErrInvalidInput(fmt.Sprintf("workload %s is not in the enrollment token's organization", w.ID()))
+	case w.Pool() != t.pool:
+		return NewErrInvalidInput(fmt.Sprintf("workload %s is in pool %q, not the enrollment token's pool %q", w.ID(), w.Pool(), t.pool))
+	}
+	now := clock.Now()
+	workloadID := w.ID()
+	t.usedAt = &now
+	t.usedByPrincipalID = &workloadID
+	return nil
+}

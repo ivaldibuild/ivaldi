@@ -14,7 +14,7 @@ Both have authentication needs that differ from human login. Under bring-your-ow
 
 ## Decision
 
-`apps/gateway` is Ivaldi's **integration ingress** for inbound provider events and inbound MCP tool calls. It is not the entry point for the control plane's own user-facing API.
+The gateway (`ivaldi gateway`, code in `apps/control-plane/internal/gateway`; [ADR 0010](0010-one-binary-for-the-components.md)) is Ivaldi's **integration ingress** for inbound provider events and inbound MCP tool calls. It is not the entry point for the control plane's own user-facing API.
 
 **It verifies identities, never issues them.** The gateway checks credentials and signatures. It does not store identity data, issue tokens, or decide access on its own; it calls the single authorizer described in [ADR 0003](0003-identity-access-and-policy.md).
 

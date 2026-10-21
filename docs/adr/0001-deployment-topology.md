@@ -21,9 +21,9 @@ Split Ivaldi into two planes, and ship one codebase with deployment profiles ins
 
 **Control plane:** `apps/control-plane`. It owns orchestration state, Work Items, Sessions, identity and access, policy, credential references, and provenance records. In the managed cloud, Ivaldi operates it.
 
-**Data plane:** `apps/worker`, `apps/indexer`, sandboxes, and `apps/helm-agent`. It runs where the code and compute live. It holds source checkouts, code-intelligence indexes, and execution environments.
+**Data plane:** the worker, the indexer, sandboxes, and the runtime agent. It runs where the code and compute live. It holds source checkouts, code-intelligence indexes, and execution environments.
 
-`apps/gateway` can run in either plane (see [ADR 0002](0002-gateway-integration-ingress.md)).
+The gateway can run in either plane (see [ADR 0002](0002-gateway-integration-ingress.md)). The control plane, gateway, worker, and indexer ship as one binary, and the runtime agent as another ([ADR 0010](0010-one-binary-for-the-components.md)); the split here is between where components run, not how they are packaged.
 
 | Mode | Control plane | Data plane |
 |---|---|---|

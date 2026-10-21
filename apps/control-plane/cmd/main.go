@@ -5,7 +5,7 @@ import (
 )
 
 func main() {
-	err := rootCmd.Execute()
+	err := Execute()
 	if err != nil {
 		log.Fatalf("failed to start: %v", err)
 	}

@@ -47,15 +47,17 @@ Because of this split, one codebase supports three deployment modes:
 | Managed cloud | Ivaldi | Ivaldi |
 | Managed cloud + bring your own compute | Ivaldi | You |
 
-| Component | Plane | Role |
-|---|---|---|
-| [`apps/control-plane`](apps/control-plane) | Control | Work Items, Sessions, identity and access, policy, credential references, provenance |
-| [`apps/gateway`](apps/gateway) | Either | Receives provider webhooks and inbound MCP tool calls |
-| [`apps/worker`](apps/worker) | Data | Runs agent Sessions and other execution |
-| [`apps/indexer`](apps/indexer) | Data | Builds code-intelligence indexes from source |
-| [`apps/helm-agent`](apps/helm-agent) | Data | Carries out and reports Kubernetes deployments |
-| [`apps/cli`](apps/cli) | — | `ivaldi` command-line client |
-| [`pkg/`](pkg) | Shared | Libraries used by more than one component |
+| Component | Plane | Binary | Role |
+|---|---|---|---|
+| Control plane | Control | `ivaldi serve` | Work Items, Sessions, identity and access, policy, credential references, provenance |
+| Gateway | Either | `ivaldi gateway` | Receives provider webhooks and inbound MCP tool calls |
+| Worker | Data | `ivaldi worker` | Runs agent Sessions and other execution |
+| Indexer | Data | `ivaldi indexer` | Builds code-intelligence indexes from source |
+| [Runtime agent](apps/runtime-agent) | Data | its own | Observes, carries out, and reports Kubernetes deployments |
+| [CLI](apps/cli) | — | `ivaldictl` | Command-line client |
+| [`pkg/`](pkg) | Shared | — | Libraries used by more than one component |
+
+The control plane, gateway, worker, and indexer are one binary, built from [`apps/control-plane`](apps/control-plane), so a deployment runs the same image with a different subcommand ([ADR 0010](docs/adr/0010-one-binary-for-the-components.md)).
 
 For details, see [`docs/vision.md`](docs/vision.md) and the [architecture decision records](docs/adr/README.md).
 
@@ -67,7 +69,7 @@ Ivaldi is a multi-module Go repository. Tool versions, Go and the golang-migrate
 mise install
 
 # Test every module in the Go workspace
-go test ./pkg/... ./apps/cli/... ./apps/control-plane/... ./apps/gateway/... ./apps/indexer/... ./apps/worker/... ./apps/helm-agent/...
+go test ./pkg/... ./apps/cli/... ./apps/control-plane/... ./apps/runtime-agent/...
 
 # Run the control plane or the CLI from source
 go run ./apps/control-plane/cmd

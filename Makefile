@@ -1,3 +1,10 @@
+CLI_BINARY_NAME := ivaldictl
+SERVER_BINARY_NAME := ivaldi
+
+# Stamped into both binaries' --version.
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+LDFLAGS := -ldflags "-X main.VERSION=$(VERSION)"
+
 # Control-plane capabilities with their own migrations, in the order they are applied.
 # There are no foreign keys between capabilities, so the order is for readability only.
 CAPABILITIES := iam workspace versioncontrol delivery
@@ -16,15 +23,34 @@ migrations_table = $(if $(filter versioncontrol,$(1)),version_control,$(1))_sche
 # Appends x-migrations-table to DATABASE_URL, whether or not it already has a query string.
 database_url = $$(case "$(DATABASE_URL)" in *\?*) printf '%s&' "$(DATABASE_URL)";; *) printf '%s?' "$(DATABASE_URL)";; esac)x-migrations-table=$(call migrations_table,$(1))
 
-.PHONY: help migration_generate migrate_up migrate_down migrate_version check_capability check_database_url
+.PHONY: help prepare build build-cli build-server migration_generate migrate_up migrate_down migrate_version check_capability check_database_url
 
 help:
+	@echo "Build (into bin/, version $(VERSION))"
+	@echo "  make build                                         Build $(SERVER_BINARY_NAME) and $(CLI_BINARY_NAME)"
+	@echo "  make build-server                                  Build $(SERVER_BINARY_NAME): control plane, gateway, worker, indexer"
+	@echo "  make build-cli                                     Build $(CLI_BINARY_NAME)"
+	@echo ""
 	@echo "Migrations (capabilities: $(CAPABILITIES))"
 	@echo "  make <capability>_migration_generate name=<name>   Create a numbered up/down pair"
 	@echo "  make migrate_up DATABASE_URL=<url> [capability=<c>] Apply all, or one capability's, migrations"
 	@echo "  make migrate_down DATABASE_URL=<url> capability=<c> [steps=<n>]"
 	@echo "                                                     Roll back one capability (default: 1 step)"
 	@echo "  make migrate_version DATABASE_URL=<url>            Show each capability's current version"
+
+prepare:
+	@echo "Preparing build environment..."
+	@mkdir -p bin
+
+build: build-server build-cli
+
+build-cli: prepare
+	@echo "Building CLI binary..."
+	@go build $(LDFLAGS) -o bin/$(CLI_BINARY_NAME) ./apps/cli/cmd
+
+build-server: prepare
+	@echo "Building server binary..."
+	@go build $(LDFLAGS) -o bin/$(SERVER_BINARY_NAME) ./apps/control-plane/cmd
 
 # make iam_migration_generate name=create_agents_table
 %_migration_generate:

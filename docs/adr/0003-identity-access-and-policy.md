@@ -10,7 +10,7 @@ Ivaldi must know who is acting and decide what they may do. The actors are:
 
 - **Humans** using the web UI, CLI, or API.
 - **Agent Sessions** that act on behalf of a human with a narrower scope.
-- **Data-plane runners and services** (worker, indexer, helm-agent, gateway).
+- **Data-plane runners and services** (worker, indexer, runtime agent, gateway).
 - **External MCP clients** used by developers.
 
 Self-hosted installations must work without depending on any external SaaS. Managed-cloud tenants each bring their own identity provider. See [ADR 0001](0001-deployment-topology.md).

@@ -77,7 +77,7 @@ This generalizes the existing pattern into a rule for every capability: **the st
 
 ### A runtime agent applies and observes
 
-`apps/helm-agent` is renamed `apps/runtime-agent`. It runs inside the customer's environment, enrolls and authenticates as a workload ([ADR 0003](0003-identity-access-and-policy.md)), and connects out to the control plane. It never touches the control-plane database.
+`apps/helm-agent` is renamed `apps/runtime-agent`, and stays a binary of its own ([ADR 0010](0010-one-binary-for-the-components.md)). It runs inside the customer's environment, enrolls and authenticates as a workload ([ADR 0003](0003-identity-access-and-policy.md)), and connects out to the control plane. It never touches the control-plane database.
 
 It does two jobs:
 

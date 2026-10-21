@@ -1,3 +1,4 @@
 package main
 
-const VERSION = "dev"
+// VERSION is set at build time with -ldflags "-X main.VERSION=<version>".
+var VERSION = "dev"

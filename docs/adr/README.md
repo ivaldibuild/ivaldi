@@ -13,5 +13,6 @@ Consequential architecture decisions, one per file. Each record states its conte
 | [0007](0007-teams-and-agent-identity.md) | Teams and durable Agent identity | Proposed |
 | [0008](0008-reaching-customer-systems.md) | Reaching systems inside customer networks | Proposed |
 | [0009](0009-gateway-event-transport.md) | Redis Streams carry events from the gateway to the control plane | Proposed |
+| [0010](0010-one-binary-for-the-components.md) | One binary runs the control plane, gateway, worker, and indexer | Proposed |
 
 New records take the next number and use the same section headings.

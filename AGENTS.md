@@ -8,7 +8,7 @@ Preserve the lifecycle `Intent → Context → Plan → Craft → Verify → Rev
 
 ## Project Structure & Module Organization
 
-Ivaldi is a multi-module Go repository. Deployable components live under `apps/`: `control-plane`, `gateway`, `indexer`, `worker`, `helm-agent`, and `cli`. Shared libraries live in `pkg/`, currently including configuration (`env`), home-directory helpers, and structured logging. Keep package tests beside their implementation as `*_test.go`. Architecture and product notes belong in `docs/`.
+Ivaldi is a multi-module Go repository that builds three binaries ([ADR 0010](docs/adr/0010-one-binary-for-the-components.md)). `apps/control-plane` builds `ivaldi`, which runs the control plane, gateway, worker, and indexer as subcommands: each component's command is in `cmd/<component>` and its code in `internal/<component>`. `apps/runtime-agent` builds the runtime agent, and `apps/cli` builds the `ivaldictl` CLI. Components in `ivaldi` never import each other or the control plane, a rule `internal/boundaries` tests; what they share goes in `pkg/`. Shared libraries live in `pkg/`. Keep package tests beside their implementation as `*_test.go`. Architecture and product notes belong in `docs/`.
 
 The root `go.work` includes the shared package module and every app module, so run Go commands from the repository root.
 
@@ -27,8 +27,9 @@ Use established terms consistently: Workspace, Project, Source, Work Item, Sessi
 ## Build, Test, and Development Commands
 
 - `mise install` installs the repository's pinned tools: the Go toolchain (Go 1.27.1) and the golang-migrate CLI (`migrate` 4.20.1) used by the Makefile's migration targets.
-- `go test ./pkg/... ./apps/cli/... ./apps/control-plane/... ./apps/gateway/... ./apps/indexer/... ./apps/worker/... ./apps/helm-agent/...` tests every module in the root workspace. List each module; `./apps/...` fails in workspace mode because `apps/` is not itself a module.
-- `go run ./apps/control-plane/cmd` starts the control-plane command locally.
+- `go test ./pkg/... ./apps/cli/... ./apps/control-plane/... ./apps/runtime-agent/...` tests every module in the root workspace. List each module; `./apps/...` fails in workspace mode because `apps/` is not itself a module.
+- `make build` builds `bin/ivaldi` and `bin/ivaldictl`, stamped with the version from `git describe`.
+- `go run ./apps/control-plane/cmd serve` starts the control plane locally; `gateway`, `worker`, and `indexer` start the other components.
 - `go run ./apps/cli/cmd` runs the CLI from source.
 - `go vet <package-pattern>` performs static checks before review.
 

@@ -22,7 +22,7 @@ The root `go.work` includes the shared package module and every app module, so r
 - Preserve provenance: indexed knowledge identifies its repository and commit/generation; changes link to Sessions and Work Items; deployments link to builds and commits.
 - Keep humans in the workflow through review, approval, steering, and intervention.
 
-Use established terms consistently: Workspace, Project, Source, Work Item, Session, Agent, Policy, Change, Build, Deployment, and Release. PostgreSQL, AWS SQS, AWS/EKS, Next.js, and individual sandbox or intelligence providers are current directions or replaceable choices—not reasons to couple domain logic to infrastructure.
+Use established terms consistently: Workspace, Project, Source, Work Item, Session, Agent, Policy, Change, Build, Deployment, and Release. PostgreSQL, Redis Streams, AWS/EKS, Next.js, and individual sandbox or intelligence providers are current directions or replaceable choices—not reasons to couple domain logic to infrastructure.
 
 ## Build, Test, and Development Commands
 

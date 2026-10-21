@@ -27,7 +27,7 @@ Both have authentication needs that differ from human login. Under bring-your-ow
 - **Verify the provider signature** using that installation's secret, e.g. GitHub's `X-Hub-Signature-256`, GitLab's token header, or Bitbucket's signatures. Webhook secrets come from the credentials capability ([ADR 0004](0004-credentials-and-keys.md)).
 - **Map the event to a tenant.** Resolve the provider's installation, app, or organization ID to an Ivaldi tenant and Source. Reject events that map to no tenant.
 - **Protect against replays and duplicates** using delivery IDs and timestamp windows, because providers retry.
-- **Normalize and hand off.** Convert provider payloads into Ivaldi events and enqueue them. The gateway acknowledges quickly and does not call domain logic synchronously.
+- **Normalize and hand off.** Convert provider payloads into Ivaldi events and enqueue them, on a Redis stream the control plane consumes ([ADR 0009](0009-gateway-event-transport.md)). The gateway acknowledges quickly and does not call domain logic synchronously.
 - **Private VCS under BYOC:** when the VCS cannot reach Ivaldi's cloud, a gateway running in the customer's data plane receives webhooks and relays them over the runner's outbound connection. Polling is the fallback.
 
 ### MCP (`internal/mcp`)

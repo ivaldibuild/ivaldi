@@ -66,7 +66,10 @@ An agent Session's effective permissions are the intersection of:
 **Humans** authenticate through the control-plane API against their tenant's identity provider:
 
 - OIDC or SAML for sign-in, plus SCIM for provisioning in the managed cloud.
-- Self-hosted installations support any OIDC provider (e.g. Keycloak, Dex, Entra ID, Okta) and a basic built-in account option for small installations.
+- Self-hosted installations support Google and GitHub sign-in, which most of them are expected to use, any OIDC provider (e.g. Keycloak, Dex, Entra ID, Okta), and a basic built-in account option for small installations.
+- Google is used through OIDC. GitHub's OAuth sign-in is not OIDC: it issues no ID token, so the user is read from GitHub's API, identified by the stable numeric user ID rather than the login name, which can change, and their email is accepted only if GitHub marks it verified.
+- **A self-hosted installation's sign-in providers come from its configuration.** The operator registers an OAuth app with each provider they want, and gives the control plane its client ID and secret. The control plane applies them on every start as identity providers of the installation's Organization, so the configuration stays their source of truth: they cannot be edited through the API, and removing one disables it. In the managed cloud, each Organization configures its own identity providers in IAM.
+- **A public provider must be restricted.** Any Google or GitHub account can authenticate, so an identity provider of either kind must name who may sign in: Google Workspace domains (the ID token's `hd` claim), GitHub organizations the user belongs to, or individual email addresses. One without any restriction is refused.
 - The identity provider sits behind an Ivaldi-owned interface. No single auth vendor is hard-wired.
 
 **The control plane is the OAuth 2.1 authorization server** for MCP clients and other API consumers. It delegates the human login step to the tenant's identity provider.

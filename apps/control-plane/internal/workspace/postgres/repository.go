@@ -74,7 +74,7 @@ func (r *Repository) getWorkspace(db *gorm.DB, organizationID, workspaceID strin
 	if err != nil {
 		return nil, translate(err)
 	}
-	return rec.toDomain(), nil
+	return rec.toDomain()
 }
 
 func (r *Repository) GetDefaultWorkspace(ctx context.Context, organizationID string) (*workspace.Workspace, error) {
@@ -83,7 +83,7 @@ func (r *Repository) GetDefaultWorkspace(ctx context.Context, organizationID str
 	if err != nil {
 		return nil, translate(err)
 	}
-	return rec.toDomain(), nil
+	return rec.toDomain()
 }
 
 func (r *Repository) ListWorkspaces(ctx context.Context, organizationID string, includeArchived bool) ([]*workspace.Workspace, error) {
@@ -97,7 +97,11 @@ func (r *Repository) ListWorkspaces(ctx context.Context, organizationID string, 
 	}
 	out := make([]*workspace.Workspace, len(recs))
 	for i := range recs {
-		out[i] = recs[i].toDomain()
+		d, err := recs[i].toDomain()
+		if err != nil {
+			return nil, err
+		}
+		out[i] = d
 	}
 	return out, nil
 }
@@ -141,7 +145,7 @@ func (r *Repository) GetProject(ctx context.Context, organizationID, projectID s
 	if err != nil {
 		return nil, translate(err)
 	}
-	return rec.toDomain(), nil
+	return rec.toDomain()
 }
 
 func (r *Repository) ListProjects(ctx context.Context, organizationID, workspaceID string, includeArchived bool) ([]*workspace.Project, error) {
@@ -155,7 +159,11 @@ func (r *Repository) ListProjects(ctx context.Context, organizationID, workspace
 	}
 	out := make([]*workspace.Project, len(recs))
 	for i := range recs {
-		out[i] = recs[i].toDomain()
+		d, err := recs[i].toDomain()
+		if err != nil {
+			return nil, err
+		}
+		out[i] = d
 	}
 	return out, nil
 }
@@ -204,7 +212,7 @@ func (r *Repository) GetSetting(ctx context.Context, scope workspace.Scope, key 
 	if err != nil {
 		return nil, translate(err)
 	}
-	return rec.toDomain(), nil
+	return rec.toDomain()
 }
 
 func (r *Repository) ListSettings(ctx context.Context, scope workspace.Scope) ([]*workspace.Setting, error) {
@@ -214,7 +222,11 @@ func (r *Repository) ListSettings(ctx context.Context, scope workspace.Scope) ([
 	}
 	out := make([]*workspace.Setting, len(recs))
 	for i := range recs {
-		out[i] = recs[i].toDomain()
+		d, err := recs[i].toDomain()
+		if err != nil {
+			return nil, err
+		}
+		out[i] = d
 	}
 	return out, nil
 }
@@ -237,7 +249,11 @@ func (r *Repository) SettingsForResolution(ctx context.Context, scope workspace.
 	}
 	out := make([]*workspace.Setting, len(recs))
 	for i := range recs {
-		out[i] = recs[i].toDomain()
+		d, err := recs[i].toDomain()
+		if err != nil {
+			return nil, err
+		}
+		out[i] = d
 	}
 	return out, nil
 }

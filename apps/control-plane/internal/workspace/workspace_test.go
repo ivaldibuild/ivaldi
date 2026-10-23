@@ -103,9 +103,9 @@ func TestWorkspaceUpdate(t *testing.T) {
 	assert.Equal(t, t1, w.UpdatedAt())
 
 	t.Run("an invalid update changes nothing", func(t *testing.T) {
-		before := w.Data()
+		before := w.Snapshot()
 		require.ErrorIs(t, w.Update(UpdateWorkspaceProps{Slug: new("Not A Slug"), DisplayName: new("Changed")}), ErrInvalid)
-		assert.Equal(t, before, w.Data())
+		assert.Equal(t, before, w.Snapshot())
 	})
 
 	t.Run("an archived workspace cannot be updated", func(t *testing.T) {
@@ -163,24 +163,37 @@ func TestWorkspaceStateCannotBeChangedFromOutside(t *testing.T) {
 	archivedAt := *w.ArchivedAt()
 
 	*w.ArchivedAt() = t0
-	d := w.Data()
+	d := w.Snapshot()
 	d.Slug = "changed"
 	*d.ArchivedAt = t0
 
-	assert.Equal(t, archivedAt, *w.ArchivedAt(), "getters and Data return copies")
+	assert.Equal(t, archivedAt, *w.ArchivedAt(), "getters and Snapshot return copies")
 	assert.Equal(t, "platform", w.Slug())
 }
 
-func TestReconstituteWorkspace(t *testing.T) {
+func TestNewWorkspaceRebuildsAStoredWorkspace(t *testing.T) {
 	archived := t1
-	d := WorkspaceData{
+	d := WorkspaceSnapshot{
 		ID: "wsp_01ARZ3NDEKTSV4RRFFQ69G5FAV", OrganizationID: testOrg, Slug: "default", DisplayName: "Default",
 		Description: "Stored", IsDefault: true, CreatedByPrincipalID: "prn_alice", CreatedAt: t0, UpdatedAt: t1, ArchivedAt: &archived,
 	}
 
-	w := ReconstituteWorkspace(d)
+	w, err := NewWorkspace(NewWorkspaceProps{
+		OrganizationID: d.OrganizationID, Slug: d.Slug, DisplayName: d.DisplayName, Description: d.Description,
+		IsDefault: d.IsDefault, CreatedByPrincipalID: d.CreatedByPrincipalID,
+		CreatedAt: &d.CreatedAt, UpdatedAt: &d.UpdatedAt, ArchivedAt: d.ArchivedAt,
+	}, &d.ID)
 
-	assert.Equal(t, d, w.Data(), "stored state comes back as it was, even a combination creation would refuse")
+	require.NoError(t, err)
+	assert.Equal(t, d, w.Snapshot(), "stored state comes back as it was, even an archived default the methods would refuse")
 	archived = t0
-	assert.Equal(t, t1, *w.ArchivedAt(), "changing the data afterwards does not change the workspace")
+	assert.Equal(t, t1, *w.ArchivedAt(), "changing the props afterwards does not change the workspace")
+}
+
+func TestNewWorkspaceRefusesAMalformedStoredID(t *testing.T) {
+	for _, given := range []string{"wsp_1", "prj_01ARZ3NDEKTSV4RRFFQ69G5FAV", ""} {
+		_, err := NewWorkspace(NewWorkspaceProps{OrganizationID: testOrg, Slug: "platform", DisplayName: "Platform"}, &given)
+
+		assert.ErrorIs(t, err, ErrInvalid, "stored ID %q", given)
+	}
 }

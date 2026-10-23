@@ -31,7 +31,7 @@ func TestProvisionOrganization(t *testing.T) {
 	assert.Equal(t, EventWorkspaceCreated, e.Type)
 	assert.Equal(t, identity.ActorSystem, e.Actor.Kind)
 	assert.Equal(t, fixedNow, e.OccurredAt, "audit records use the domain clock")
-	assert.Equal(t, w.Data(), e.After)
+	assert.Equal(t, w.Snapshot(), e.After)
 	assert.Empty(t, f.authz.requests, "provisioning is called by IAM, not authorized per actor")
 }
 
@@ -98,7 +98,7 @@ func TestCreateWorkspace(t *testing.T) {
 
 			stored, err := f.repo.GetWorkspace(context.Background(), testOrg, w.ID())
 			require.NoError(t, err)
-			assert.Equal(t, w.Data(), stored.Data(), "the repository stores the workspace as the domain made it")
+			assert.Equal(t, w.Snapshot(), stored.Snapshot(), "the repository stores the workspace as the domain made it")
 		})
 	}
 }
@@ -125,8 +125,8 @@ func TestUpdateWorkspaceRenamesTheDefault(t *testing.T) {
 	assert.True(t, w.IsDefault())
 	e := f.audit.last()
 	assert.Equal(t, EventWorkspaceUpdated, e.Type)
-	assert.Equal(t, "default", e.Before.(WorkspaceData).Slug)
-	assert.Equal(t, "main", e.After.(WorkspaceData).Slug)
+	assert.Equal(t, "default", e.Before.(WorkspaceSnapshot).Slug)
+	assert.Equal(t, "main", e.After.(WorkspaceSnapshot).Slug)
 }
 
 func TestUpdateArchivedWorkspaceIsRefused(t *testing.T) {
@@ -311,7 +311,7 @@ func TestCreateProject(t *testing.T) {
 		assert.Equal(t, w.ID(), f.authz.last().ResourceID, "projects are created under the workspace")
 		assert.Equal(t, resourceCall{"register", iam.Resource{ID: p.ID(), OrganizationID: testOrg, Type: iam.ResourceProject, ParentID: w.ID()}}, f.resources.calls[len(f.resources.calls)-1])
 		assert.Equal(t, EventProjectCreated, f.audit.last().Type)
-		assert.Equal(t, p.Data(), f.audit.last().After)
+		assert.Equal(t, p.Snapshot(), f.audit.last().After)
 	})
 }
 
@@ -326,7 +326,7 @@ func TestUpdateProject(t *testing.T) {
 	assert.Equal(t, "Payments", got.DisplayName())
 	e := f.audit.last()
 	assert.Equal(t, EventProjectUpdated, e.Type)
-	assert.Equal(t, "checkout", e.Before.(ProjectData).DisplayName)
+	assert.Equal(t, "checkout", e.Before.(ProjectSnapshot).DisplayName)
 	assert.Equal(t, p.ID(), f.authz.last().ResourceID)
 }
 
@@ -343,8 +343,8 @@ func TestTransferProject(t *testing.T) {
 	assert.Equal(t, "tem_2", got.OwnerTeamID())
 	e := f.audit.last()
 	assert.Equal(t, EventProjectOwnerChanged, e.Type)
-	assert.Equal(t, testTeam, e.Before.(ProjectData).OwnerTeamID)
-	assert.Equal(t, "tem_2", e.After.(ProjectData).OwnerTeamID)
+	assert.Equal(t, testTeam, e.Before.(ProjectSnapshot).OwnerTeamID)
+	assert.Equal(t, "tem_2", e.After.(ProjectSnapshot).OwnerTeamID)
 }
 
 func TestArchiveAndRestoreProject(t *testing.T) {

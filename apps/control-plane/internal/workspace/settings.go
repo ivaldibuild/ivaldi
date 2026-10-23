@@ -100,64 +100,71 @@ type Setting struct {
 	updatedAt            time.Time
 }
 
-// SettingData is a Setting's state as plain values, for repositories.
+// SettingSnapshot is a Setting's state as plain values, for repositories.
 // Changing it does not change the Setting.
-type SettingData struct {
-	Scope Scope
-	Key   string
-	Value json.RawMessage
+type SettingSnapshot struct {
+	Scope Scope           `json:"scope"`
+	Key   string          `json:"key"`
+	Value json.RawMessage `json:"value"`
 	// Version increases with every change. Updates compare it so that
 	// concurrent changes cannot silently overwrite each other.
-	Version              int64
-	UpdatedByPrincipalID string
+	Version              int64  `json:"version"`
+	UpdatedByPrincipalID string `json:"updated_by_principal_id"`
 	// PolicyDecisionID is the authorizer's decision for the last change,
 	// including any human approval.
-	PolicyDecisionID string
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	PolicyDecisionID string    `json:"policy_decision_id"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
-// NewSetting creates the first value for a key at a level, at version 1.
-// Checking the value against the key's definition is the caller's job,
-// because the definition's validation may need other capabilities.
-func NewSetting(scope Scope, key string, value json.RawMessage, updatedBy, decisionID string) (*Setting, error) {
-	if err := scope.validate(); err != nil {
+// NewSettingProps describes a Setting. A new one leaves Version zero and the
+// timestamps nil; a repository loading a stored one sets them.
+type NewSettingProps struct {
+	Scope                Scope
+	Key                  string
+	Value                json.RawMessage
+	UpdatedByPrincipalID string
+	PolicyDecisionID     string
+	Version              int64
+	CreatedAt            *time.Time
+	UpdatedAt            *time.Time
+}
+
+// NewSetting returns a Setting: the first value for a key at a level, at
+// version 1, or a stored one at its version. Checking the value against the
+// key's definition is the caller's job, because the definition's validation
+// may need other capabilities.
+func NewSetting(p NewSettingProps) (*Setting, error) {
+	if err := p.Scope.validate(); err != nil {
 		return nil, err
 	}
-	if !settingKeyFormat.MatchString(key) {
-		return nil, fmt.Errorf("%w: setting key %q must be namespaced, such as capability.name", ErrInvalid, key)
+	if !settingKeyFormat.MatchString(p.Key) {
+		return nil, fmt.Errorf("%w: setting key %q must be namespaced, such as capability.name", ErrInvalid, p.Key)
 	}
-	if err := checkValue(value); err != nil {
+	if err := checkValue(p.Value); err != nil {
 		return nil, err
+	}
+	if p.Version < 0 {
+		return nil, fmt.Errorf("%w: setting version %d is negative", ErrInvalid, p.Version)
+	}
+
+	version := p.Version
+	if version == 0 {
+		version = 1
 	}
 
 	now := now()
 
 	return &Setting{
-		scope:                scope,
-		key:                  key,
-		value:                bytes.Clone(value),
-		version:              1,
-		updatedByPrincipalID: updatedBy,
-		policyDecisionID:     decisionID,
-		createdAt:            now,
-		updatedAt:            now,
+		scope:                p.Scope,
+		key:                  p.Key,
+		value:                bytes.Clone(p.Value),
+		version:              version,
+		updatedByPrincipalID: p.UpdatedByPrincipalID,
+		policyDecisionID:     p.PolicyDecisionID,
+		createdAt:            timeOr(p.CreatedAt, now),
+		updatedAt:            timeOr(p.UpdatedAt, now),
 	}, nil
-}
-
-// ReconstituteSetting rebuilds a Setting that is already stored, without
-// applying creation rules. It is for repositories only.
-func ReconstituteSetting(d SettingData) *Setting {
-	return &Setting{
-		scope:                d.Scope,
-		key:                  d.Key,
-		value:                bytes.Clone(d.Value),
-		version:              d.Version,
-		updatedByPrincipalID: d.UpdatedByPrincipalID,
-		policyDecisionID:     d.PolicyDecisionID,
-		createdAt:            d.CreatedAt,
-		updatedAt:            d.UpdatedAt,
-	}
 }
 
 func (s *Setting) Scope() Scope                 { return s.scope }
@@ -169,9 +176,9 @@ func (s *Setting) PolicyDecisionID() string     { return s.policyDecisionID }
 func (s *Setting) CreatedAt() time.Time         { return s.createdAt }
 func (s *Setting) UpdatedAt() time.Time         { return s.updatedAt }
 
-// Data returns the Setting's state.
-func (s *Setting) Data() SettingData {
-	return SettingData{
+// Snapshot returns the Setting's state.
+func (s *Setting) Snapshot() SettingSnapshot {
+	return SettingSnapshot{
 		Scope:                s.scope,
 		Key:                  s.key,
 		Value:                bytes.Clone(s.value),

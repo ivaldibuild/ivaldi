@@ -65,7 +65,7 @@ func TestDefinitionsRegister(t *testing.T) {
 
 func TestResolve(t *testing.T) {
 	stored := func(scope Scope, v string) *Setting {
-		return ReconstituteSetting(SettingData{Scope: scope, Key: lifecycleKey, Value: json.RawMessage(v), Version: 1})
+		return fakeSetting(SettingSnapshot{Scope: scope, Key: lifecycleKey, Value: json.RawMessage(v), Version: 1})
 	}
 	org := stored(OrganizationScope(testOrg), `"lfc_org"`)
 	ws := stored(WorkspaceScope(testOrg, "wsp_1"), `"lfc_ws"`)
@@ -292,7 +292,7 @@ func TestNewSetting(t *testing.T) {
 	fixClock(t, t0)
 	scope := WorkspaceScope(testOrg, "wsp_1")
 
-	s, err := NewSetting(scope, lifecycleKey, json.RawMessage(`"lfc_std"`), "prn_alice", "dec_1")
+	s, err := NewSetting(NewSettingProps{Scope: scope, Key: lifecycleKey, Value: json.RawMessage(`"lfc_std"`), UpdatedByPrincipalID: "prn_alice", PolicyDecisionID: "dec_1"})
 
 	require.NoError(t, err)
 	assert.Equal(t, scope, s.Scope())
@@ -320,7 +320,7 @@ func TestNewSettingIsRefused(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := NewSetting(tt.scope, tt.key, json.RawMessage(tt.value), "prn_alice", "dec_1")
+			_, err := NewSetting(NewSettingProps{Scope: tt.scope, Key: tt.key, Value: json.RawMessage(tt.value), UpdatedByPrincipalID: "prn_alice", PolicyDecisionID: "dec_1"})
 			require.ErrorIs(t, err, ErrInvalid)
 		})
 	}
@@ -328,7 +328,7 @@ func TestNewSettingIsRefused(t *testing.T) {
 
 func TestSettingChange(t *testing.T) {
 	fixClock(t, t0)
-	s, err := NewSetting(WorkspaceScope(testOrg, "wsp_1"), lifecycleKey, json.RawMessage(`"lfc_std"`), "prn_alice", "dec_1")
+	s, err := NewSetting(NewSettingProps{Scope: WorkspaceScope(testOrg, "wsp_1"), Key: lifecycleKey, Value: json.RawMessage(`"lfc_std"`), UpdatedByPrincipalID: "prn_alice", PolicyDecisionID: "dec_1"})
 	require.NoError(t, err)
 	fixClock(t, t1)
 
@@ -342,33 +342,40 @@ func TestSettingChange(t *testing.T) {
 	assert.Equal(t, t1, s.UpdatedAt())
 
 	t.Run("an invalid change leaves the setting as it was", func(t *testing.T) {
-		before := s.Data()
+		before := s.Snapshot()
 		require.ErrorIs(t, s.Change(json.RawMessage(`{`), "prn_eve", "dec_3"), ErrInvalid)
-		assert.Equal(t, before, s.Data())
+		assert.Equal(t, before, s.Snapshot())
 	})
 }
 
 func TestSettingValueCannotBeChangedFromOutside(t *testing.T) {
 	value := json.RawMessage(`"lfc_std"`)
-	s, err := NewSetting(WorkspaceScope(testOrg, "wsp_1"), lifecycleKey, value, "prn_alice", "dec_1")
+	s, err := NewSetting(NewSettingProps{Scope: WorkspaceScope(testOrg, "wsp_1"), Key: lifecycleKey, Value: value, UpdatedByPrincipalID: "prn_alice", PolicyDecisionID: "dec_1"})
 	require.NoError(t, err)
 
 	value[1] = 'X'
 	got := s.Value()
 	got[1] = 'Y'
-	d := s.Data()
+	d := s.Snapshot()
 	d.Value[1] = 'Z'
 
-	assert.JSONEq(t, `"lfc_std"`, string(s.Value()), "the value given, returned, and in Data are all copies")
+	assert.JSONEq(t, `"lfc_std"`, string(s.Value()), "the value given, returned, and in Snapshot are all copies")
 }
 
-func TestReconstituteSetting(t *testing.T) {
-	d := SettingData{
+func TestNewSettingRebuildsAStoredSetting(t *testing.T) {
+	d := SettingSnapshot{
 		Scope: ProjectScope(testOrg, "wsp_1", "prj_1"), Key: lifecycleKey, Value: json.RawMessage(`"lfc_std"`), Version: 7,
 		UpdatedByPrincipalID: "prn_alice", PolicyDecisionID: "dec_1", CreatedAt: t0, UpdatedAt: t1,
 	}
 
-	s := ReconstituteSetting(d)
+	s, err := NewSetting(NewSettingProps{
+		Scope: d.Scope, Key: d.Key, Value: d.Value, UpdatedByPrincipalID: d.UpdatedByPrincipalID,
+		PolicyDecisionID: d.PolicyDecisionID, Version: d.Version, CreatedAt: &d.CreatedAt, UpdatedAt: &d.UpdatedAt,
+	})
 
-	assert.Equal(t, d, s.Data(), "stored state comes back as it was, including its version")
+	require.NoError(t, err)
+	assert.Equal(t, d, s.Snapshot(), "stored state comes back as it was, including its version")
+
+	_, err = NewSetting(NewSettingProps{Scope: d.Scope, Key: d.Key, Value: d.Value, Version: -1})
+	assert.ErrorIs(t, err, ErrInvalid, "a stored version cannot be negative")
 }

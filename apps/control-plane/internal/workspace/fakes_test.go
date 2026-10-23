@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -20,20 +21,20 @@ import (
 // returns rebuilt objects, so callers never share an object with it.
 type fakeRepo struct {
 	mu         sync.Mutex
-	workspaces map[string]WorkspaceData
-	projects   map[string]ProjectData
-	settings   map[string]SettingData
+	workspaces map[string]WorkspaceSnapshot
+	projects   map[string]ProjectSnapshot
+	settings   map[string]SettingSnapshot
 }
 
 func newFakeRepo() *fakeRepo {
-	return &fakeRepo{workspaces: map[string]WorkspaceData{}, projects: map[string]ProjectData{}, settings: map[string]SettingData{}}
+	return &fakeRepo{workspaces: map[string]WorkspaceSnapshot{}, projects: map[string]ProjectSnapshot{}, settings: map[string]SettingSnapshot{}}
 }
 
 func settingKey(s Scope, key string) string {
 	return s.OrganizationID + "/" + s.WorkspaceID + "/" + s.ProjectID + "/" + key
 }
 
-func (r *fakeRepo) checkWorkspace(w WorkspaceData) error {
+func (r *fakeRepo) checkWorkspace(w WorkspaceSnapshot) error {
 	for _, o := range r.workspaces {
 		if o.ID == w.ID || o.OrganizationID != w.OrganizationID {
 			continue
@@ -54,7 +55,7 @@ func (r *fakeRepo) checkWorkspace(w WorkspaceData) error {
 func (r *fakeRepo) CreateWorkspace(_ context.Context, w *Workspace) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	d := w.Data()
+	d := w.Snapshot()
 	if err := r.checkWorkspace(d); err != nil {
 		return err
 	}
@@ -69,7 +70,7 @@ func (r *fakeRepo) GetWorkspace(_ context.Context, org, wsID string) (*Workspace
 	if !ok || d.OrganizationID != org {
 		return nil, ErrNotFound
 	}
-	return ReconstituteWorkspace(d), nil
+	return fakeWorkspace(d), nil
 }
 
 func (r *fakeRepo) GetWorkspaceForUpdate(ctx context.Context, org, wsID string) (*Workspace, error) {
@@ -81,7 +82,7 @@ func (r *fakeRepo) GetDefaultWorkspace(_ context.Context, org string) (*Workspac
 	defer r.mu.Unlock()
 	for _, d := range r.workspaces {
 		if d.OrganizationID == org && d.IsDefault {
-			return ReconstituteWorkspace(d), nil
+			return fakeWorkspace(d), nil
 		}
 	}
 	return nil, ErrNotFound
@@ -93,7 +94,7 @@ func (r *fakeRepo) ListWorkspaces(_ context.Context, org string, includeArchived
 	var out []*Workspace
 	for _, d := range r.workspaces {
 		if d.OrganizationID == org && (includeArchived || d.ArchivedAt == nil) {
-			out = append(out, ReconstituteWorkspace(d))
+			out = append(out, fakeWorkspace(d))
 		}
 	}
 	return out, nil
@@ -102,7 +103,7 @@ func (r *fakeRepo) ListWorkspaces(_ context.Context, org string, includeArchived
 func (r *fakeRepo) UpdateWorkspace(_ context.Context, w *Workspace) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	d := w.Data()
+	d := w.Snapshot()
 	if o, ok := r.workspaces[d.ID]; !ok || o.OrganizationID != d.OrganizationID {
 		return ErrNotFound
 	}
@@ -125,7 +126,7 @@ func (r *fakeRepo) CountActiveProjects(_ context.Context, org, wsID string) (int
 	return n, nil
 }
 
-func (r *fakeRepo) checkProject(p ProjectData) error {
+func (r *fakeRepo) checkProject(p ProjectSnapshot) error {
 	for _, o := range r.projects {
 		if o.ID != p.ID && o.OrganizationID == p.OrganizationID && o.WorkspaceID == p.WorkspaceID &&
 			o.ArchivedAt == nil && p.ArchivedAt == nil && o.Slug == p.Slug {
@@ -138,7 +139,7 @@ func (r *fakeRepo) checkProject(p ProjectData) error {
 func (r *fakeRepo) CreateProject(_ context.Context, p *Project) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	d := p.Data()
+	d := p.Snapshot()
 	if err := r.checkProject(d); err != nil {
 		return err
 	}
@@ -153,7 +154,7 @@ func (r *fakeRepo) GetProject(_ context.Context, org, prjID string) (*Project, e
 	if !ok || d.OrganizationID != org {
 		return nil, ErrNotFound
 	}
-	return ReconstituteProject(d), nil
+	return fakeProject(d), nil
 }
 
 func (r *fakeRepo) ListProjects(_ context.Context, org, wsID string, includeArchived bool) ([]*Project, error) {
@@ -162,7 +163,7 @@ func (r *fakeRepo) ListProjects(_ context.Context, org, wsID string, includeArch
 	var out []*Project
 	for _, d := range r.projects {
 		if d.OrganizationID == org && d.WorkspaceID == wsID && (includeArchived || d.ArchivedAt == nil) {
-			out = append(out, ReconstituteProject(d))
+			out = append(out, fakeProject(d))
 		}
 	}
 	return out, nil
@@ -171,7 +172,7 @@ func (r *fakeRepo) ListProjects(_ context.Context, org, wsID string, includeArch
 func (r *fakeRepo) UpdateProject(_ context.Context, p *Project) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	d := p.Data()
+	d := p.Snapshot()
 	if o, ok := r.projects[d.ID]; !ok || o.OrganizationID != d.OrganizationID {
 		return ErrNotFound
 	}
@@ -189,7 +190,7 @@ func (r *fakeRepo) GetSetting(_ context.Context, s Scope, key string) (*Setting,
 	if !ok {
 		return nil, ErrNotFound
 	}
-	return ReconstituteSetting(d), nil
+	return fakeSetting(d), nil
 }
 
 func (r *fakeRepo) ListSettings(_ context.Context, s Scope) ([]*Setting, error) {
@@ -198,7 +199,7 @@ func (r *fakeRepo) ListSettings(_ context.Context, s Scope) ([]*Setting, error) 
 	var out []*Setting
 	for _, d := range r.settings {
 		if d.Scope == s {
-			out = append(out, ReconstituteSetting(d))
+			out = append(out, fakeSetting(d))
 		}
 	}
 	return out, nil
@@ -217,7 +218,7 @@ func (r *fakeRepo) SettingsForResolution(_ context.Context, s Scope, key string)
 			continue
 		}
 		if d, ok := r.settings[settingKey(scope, key)]; ok {
-			out = append(out, ReconstituteSetting(d))
+			out = append(out, fakeSetting(d))
 		}
 	}
 	return out, nil
@@ -226,7 +227,7 @@ func (r *fakeRepo) SettingsForResolution(_ context.Context, s Scope, key string)
 func (r *fakeRepo) InsertSetting(_ context.Context, s *Setting) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	d := s.Data()
+	d := s.Snapshot()
 	k := settingKey(d.Scope, d.Key)
 	if _, ok := r.settings[k]; ok {
 		return ErrConflict
@@ -238,7 +239,7 @@ func (r *fakeRepo) InsertSetting(_ context.Context, s *Setting) error {
 func (r *fakeRepo) UpdateSetting(_ context.Context, s *Setting, expectedVersion int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	d := s.Data()
+	d := s.Snapshot()
 	k := settingKey(d.Scope, d.Key)
 	if cur, ok := r.settings[k]; !ok || cur.Version != expectedVersion {
 		return ErrConflict
@@ -469,3 +470,54 @@ func (f *fixture) project(t *testing.T, ws *Workspace, slug string) *Project {
 }
 
 var errBoom = errors.New("boom")
+
+// Rebuilding, as the PostgreSQL repository does.
+
+func fakeMust[T any](v T, err error) T {
+	if err != nil {
+		panic(fmt.Sprintf("fake repo: rebuild: %v", err))
+	}
+	return v
+}
+
+func fakeWorkspace(s WorkspaceSnapshot) *Workspace {
+	return fakeMust(NewWorkspace(NewWorkspaceProps{
+		OrganizationID:       s.OrganizationID,
+		Slug:                 s.Slug,
+		DisplayName:          s.DisplayName,
+		Description:          s.Description,
+		IsDefault:            s.IsDefault,
+		CreatedByPrincipalID: s.CreatedByPrincipalID,
+		CreatedAt:            &s.CreatedAt,
+		UpdatedAt:            &s.UpdatedAt,
+		ArchivedAt:           s.ArchivedAt,
+	}, &s.ID))
+}
+
+func fakeProject(s ProjectSnapshot) *Project {
+	return fakeMust(NewProject(NewProjectProps{
+		OrganizationID:       s.OrganizationID,
+		WorkspaceID:          s.WorkspaceID,
+		OwnerTeamID:          s.OwnerTeamID,
+		Slug:                 s.Slug,
+		DisplayName:          s.DisplayName,
+		Description:          s.Description,
+		CreatedByPrincipalID: s.CreatedByPrincipalID,
+		CreatedAt:            &s.CreatedAt,
+		UpdatedAt:            &s.UpdatedAt,
+		ArchivedAt:           s.ArchivedAt,
+	}, &s.ID))
+}
+
+func fakeSetting(s SettingSnapshot) *Setting {
+	return fakeMust(NewSetting(NewSettingProps{
+		Scope:                s.Scope,
+		Key:                  s.Key,
+		Value:                s.Value,
+		UpdatedByPrincipalID: s.UpdatedByPrincipalID,
+		PolicyDecisionID:     s.PolicyDecisionID,
+		Version:              s.Version,
+		CreatedAt:            &s.CreatedAt,
+		UpdatedAt:            &s.UpdatedAt,
+	}))
+}

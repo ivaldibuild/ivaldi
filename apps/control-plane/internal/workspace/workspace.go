@@ -10,8 +10,10 @@
 // unexported, they are created through New functions that apply the creation
 // rules, and they change only through their methods, which enforce the rest.
 // The service orchestrates: it authorizes, loads, calls those methods, and
-// persists. Repositories read state through Data and rebuild stored objects
-// with the Reconstitute functions; they never change an object.
+// persists. Repositories read state through Snapshot and rebuild stored
+// objects with the same New functions, passing the stored ID and timestamps;
+// they never change an object. Creation rules therefore also run on load, so
+// a rule added later must still accept existing rows.
 package workspace
 
 import (
@@ -20,6 +22,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
 )
 
@@ -32,7 +35,7 @@ func init() {
 
 // Workspace is a space in an Organization where related work happens.
 type Workspace struct {
-	id                   string
+	aggregate.Root
 	organizationID       string
 	slug                 string
 	displayName          string
@@ -44,37 +47,48 @@ type Workspace struct {
 	archivedAt           *time.Time
 }
 
-// WorkspaceData is a Workspace's state as plain values, for repositories and
+// WorkspaceSnapshot is a Workspace's state as plain values, for repositories and
 // audit records. Changing it does not change the Workspace.
-type WorkspaceData struct {
-	ID             string
-	OrganizationID string
-	Slug           string
-	DisplayName    string
-	Description    string
+type WorkspaceSnapshot struct {
+	ID             string `json:"id"`
+	OrganizationID string `json:"organization_id"`
+	Slug           string `json:"slug"`
+	DisplayName    string `json:"display_name"`
+	Description    string `json:"description"`
 	// IsDefault marks the Organization's default Workspace. There is exactly
 	// one, and it cannot be archived.
-	IsDefault bool
+	IsDefault bool `json:"is_default"`
 	// CreatedByPrincipalID is empty for the default Workspace, which the system creates.
-	CreatedByPrincipalID string
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
-	ArchivedAt           *time.Time
+	CreatedByPrincipalID string     `json:"created_by_principal_id"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
+	ArchivedAt           *time.Time `json:"archived_at"`
 }
 
-// NewWorkspaceProps describes a new Workspace.
+// NewWorkspaceProps describes a Workspace. A new one leaves the timestamps
+// nil; a repository loading a stored one sets them.
 type NewWorkspaceProps struct {
 	OrganizationID       string
 	Slug                 string
 	DisplayName          string
 	Description          string
+	IsDefault            bool
 	CreatedByPrincipalID string
+	CreatedAt            *time.Time
+	UpdatedAt            *time.Time
+	ArchivedAt           *time.Time
 }
 
-// NewWorkspace creates a Workspace with a new ID, after checking its organization, slug, and display name.
+// NewWorkspace returns a Workspace, with a new ID unless workspaceID gives a
+// stored one, after checking its organization, slug, and display name.
 func NewWorkspace(p NewWorkspaceProps, workspaceID *string) (*Workspace, error) {
 	if p.OrganizationID == "" {
 		return nil, fmt.Errorf("%w: organization ID is required", ErrInvalid)
+	}
+
+	root, err := newRoot(Workspace{}.Prefix(), workspaceID)
+	if err != nil {
+		return nil, err
 	}
 
 	if err := ValidateSlug(p.Slug); err != nil {
@@ -88,57 +102,29 @@ func NewWorkspace(p NewWorkspaceProps, workspaceID *string) (*Workspace, error) 
 	now := now()
 
 	w := &Workspace{
+		Root:                 root,
 		organizationID:       p.OrganizationID,
 		slug:                 p.Slug,
 		displayName:          p.DisplayName,
 		description:          p.Description,
+		isDefault:            p.IsDefault,
 		createdByPrincipalID: p.CreatedByPrincipalID,
-		createdAt:            now,
-		updatedAt:            now,
+		createdAt:            timeOr(p.CreatedAt, now),
+		updatedAt:            timeOr(p.UpdatedAt, now),
+		archivedAt:           copyTime(p.ArchivedAt),
 	}
-
-	if workspaceID != nil {
-		w.id = *workspaceID
-	}
-
-	id.Assign(&w.id, w)
 
 	return w, nil
 }
 
 // NewDefaultWorkspace creates the default Workspace for a new Organization.
 func NewDefaultWorkspace(organizationID string) (*Workspace, error) {
-	w, err := NewWorkspace(NewWorkspaceProps{OrganizationID: organizationID, Slug: DefaultWorkspaceSlug, DisplayName: DefaultWorkspaceName}, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	w.isDefault = true
-
-	return w, nil
-}
-
-// ReconstituteWorkspace rebuilds a Workspace that is already stored, without
-// applying creation rules. It is for repositories only.
-func ReconstituteWorkspace(d WorkspaceData) *Workspace {
-	return &Workspace{
-		id:                   d.ID,
-		organizationID:       d.OrganizationID,
-		slug:                 d.Slug,
-		displayName:          d.DisplayName,
-		description:          d.Description,
-		isDefault:            d.IsDefault,
-		createdByPrincipalID: d.CreatedByPrincipalID,
-		createdAt:            d.CreatedAt,
-		updatedAt:            d.UpdatedAt,
-		archivedAt:           copyTime(d.ArchivedAt),
-	}
+	return NewWorkspace(NewWorkspaceProps{OrganizationID: organizationID, Slug: DefaultWorkspaceSlug, DisplayName: DefaultWorkspaceName, IsDefault: true}, nil)
 }
 
 // Prefix is the type prefix of Workspace IDs.
 func (Workspace) Prefix() string { return "wsp" }
 
-func (w *Workspace) ID() string                   { return w.id }
 func (w *Workspace) OrganizationID() string       { return w.organizationID }
 func (w *Workspace) Slug() string                 { return w.slug }
 func (w *Workspace) DisplayName() string          { return w.displayName }
@@ -152,10 +138,10 @@ func (w *Workspace) ArchivedAt() *time.Time       { return copyTime(w.archivedAt
 // Archived reports whether the Workspace is archived.
 func (w *Workspace) Archived() bool { return w.archivedAt != nil }
 
-// Data returns the Workspace's state.
-func (w *Workspace) Data() WorkspaceData {
-	return WorkspaceData{
-		ID:                   w.id,
+// Snapshot returns the Workspace's state.
+func (w *Workspace) Snapshot() WorkspaceSnapshot {
+	return WorkspaceSnapshot{
+		ID:                   w.ID(),
 		OrganizationID:       w.organizationID,
 		Slug:                 w.slug,
 		DisplayName:          w.displayName,
@@ -195,7 +181,7 @@ func (p UpdateWorkspaceProps) Validate() error {
 // Update renames or redescribes an active Workspace, including the default one.
 func (w *Workspace) Update(p UpdateWorkspaceProps) error {
 	if w.Archived() {
-		return fmt.Errorf("update workspace %s: %w", w.id, ErrArchived)
+		return fmt.Errorf("update workspace %s: %w", w.ID(), ErrArchived)
 	}
 
 	if err := p.Validate(); err != nil {
@@ -223,7 +209,7 @@ func (w *Workspace) Update(p UpdateWorkspaceProps) error {
 // previous default first, because an Organization has only one.
 func (w *Workspace) MakeDefault() error {
 	if w.Archived() {
-		return fmt.Errorf("make workspace %s the default: %w", w.id, ErrArchived)
+		return fmt.Errorf("make workspace %s the default: %w", w.ID(), ErrArchived)
 	}
 
 	w.isDefault = true
@@ -247,7 +233,7 @@ func (w *Workspace) Archive() error {
 	}
 
 	if w.isDefault {
-		return fmt.Errorf("archive workspace %s: %w; make another workspace the default first", w.id, ErrDefaultWorkspace)
+		return fmt.Errorf("archive workspace %s: %w; make another workspace the default first", w.ID(), ErrDefaultWorkspace)
 	}
 
 	t := now()
@@ -293,4 +279,22 @@ func copyTime(t *time.Time) *time.Time {
 	}
 	c := *t
 	return &c
+}
+
+// timeOr returns a stored timestamp, or fallback for a new object.
+func timeOr(t *time.Time, fallback time.Time) time.Time {
+	if t == nil {
+		return fallback
+	}
+	return *t
+}
+
+// newRoot returns an aggregate's identity: storedID, a stored row's ID given
+// to a New constructor, which must have the type's prefix, or a new ID.
+func newRoot(prefix string, storedID *string) (aggregate.Root, error) {
+	r, err := aggregate.NewRoot(prefix, storedID)
+	if err != nil {
+		return aggregate.Root{}, fmt.Errorf("%w: %w", ErrInvalid, err)
+	}
+	return r, nil
 }

@@ -140,7 +140,7 @@ func (s *Service) ProvisionOrganization(ctx context.Context, organizationID stri
 		if err := s.resources.RegisterResource(ctx, iam.Resource{ID: w.ID(), OrganizationID: organizationID, Type: iam.ResourceWorkspace, ParentID: organizationID}); err != nil {
 			return fmt.Errorf("register workspace resource: %w", err)
 		}
-		return s.record(ctx, audit.Event{Type: EventWorkspaceCreated, OrganizationID: organizationID, ResourceID: w.ID(), Actor: identity.Actor{Kind: identity.ActorSystem}, After: w.Data()})
+		return s.record(ctx, audit.Event{Type: EventWorkspaceCreated, OrganizationID: organizationID, ResourceID: w.ID(), Actor: identity.Actor{Kind: identity.ActorSystem}, After: w.Snapshot()})
 	})
 	if err != nil {
 		return nil, err
@@ -182,7 +182,7 @@ func (s *Service) CreateWorkspace(ctx context.Context, actor identity.Actor, in 
 		if err := s.resources.RegisterResource(ctx, iam.Resource{ID: w.ID(), OrganizationID: w.OrganizationID(), Type: iam.ResourceWorkspace, ParentID: w.OrganizationID()}); err != nil {
 			return fmt.Errorf("register workspace resource: %w", err)
 		}
-		return s.record(ctx, audit.Event{Type: EventWorkspaceCreated, OrganizationID: w.OrganizationID(), ResourceID: w.ID(), Actor: actor, After: w.Data()})
+		return s.record(ctx, audit.Event{Type: EventWorkspaceCreated, OrganizationID: w.OrganizationID(), ResourceID: w.ID(), Actor: actor, After: w.Snapshot()})
 	})
 	if err != nil {
 		return nil, err
@@ -239,14 +239,14 @@ func (s *Service) UpdateWorkspace(ctx context.Context, actor identity.Actor, org
 		if err != nil {
 			return err
 		}
-		before := w.Data()
+		before := w.Snapshot()
 		if err := w.Update(u); err != nil {
 			return err
 		}
 		if err := s.repo.UpdateWorkspace(ctx, w); err != nil {
 			return fmt.Errorf("update workspace: %w", err)
 		}
-		return s.record(ctx, audit.Event{Type: EventWorkspaceUpdated, OrganizationID: organizationID, ResourceID: w.ID(), Actor: actor, Before: before, After: w.Data()})
+		return s.record(ctx, audit.Event{Type: EventWorkspaceUpdated, OrganizationID: organizationID, ResourceID: w.ID(), Actor: actor, Before: before, After: w.Snapshot()})
 	})
 	if err != nil {
 		return nil, err

@@ -16,7 +16,7 @@ func validProjectProps() NewProjectProps {
 
 func newTestProject(t *testing.T) *Project {
 	t.Helper()
-	p, err := NewProject(validProjectProps())
+	p, err := NewProject(validProjectProps(), nil)
 	require.NoError(t, err)
 	return p
 }
@@ -24,7 +24,7 @@ func newTestProject(t *testing.T) *Project {
 func TestNewProject(t *testing.T) {
 	fixClock(t, t0)
 
-	p, err := NewProject(validProjectProps())
+	p, err := NewProject(validProjectProps(), nil)
 
 	require.NoError(t, err)
 	assert.True(t, id.Valid(Project{}.Prefix(), p.ID()), "a new project gets a prefixed ID: %q", p.ID())
@@ -54,7 +54,7 @@ func TestNewProjectIsRefused(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			props := validProjectProps()
 			tt.change(&props)
-			_, err := NewProject(props)
+			_, err := NewProject(props, nil)
 			require.ErrorIs(t, err, ErrInvalid)
 		})
 	}
@@ -73,9 +73,9 @@ func TestProjectUpdate(t *testing.T) {
 	assert.Equal(t, "wsp_1", p.WorkspaceID(), "a project's workspace never changes")
 	assert.Equal(t, t1, p.UpdatedAt())
 
-	before := p.Data()
+	before := p.Snapshot()
 	require.ErrorIs(t, p.Update(UpdateProjectProps{DisplayName: new("")}), ErrInvalid)
-	assert.Equal(t, before, p.Data(), "an invalid update changes nothing")
+	assert.Equal(t, before, p.Snapshot(), "an invalid update changes nothing")
 }
 
 func TestProjectTransferTo(t *testing.T) {
@@ -116,17 +116,26 @@ func TestProjectArchiveAndRestore(t *testing.T) {
 	assert.Equal(t, t1.Add(time.Hour), p.UpdatedAt())
 }
 
-func TestReconstituteProject(t *testing.T) {
+func TestNewProjectRebuildsAStoredProject(t *testing.T) {
 	archived := t1
-	d := ProjectData{
+	d := ProjectSnapshot{
 		ID: "prj_01ARZ3NDEKTSV4RRFFQ69G5FAV", OrganizationID: testOrg, WorkspaceID: "wsp_1", OwnerTeamID: testTeam,
 		Slug: "checkout", DisplayName: "Checkout", Description: "Stored", CreatedByPrincipalID: "prn_alice",
 		CreatedAt: t0, UpdatedAt: t1, ArchivedAt: &archived,
 	}
 
-	p := ReconstituteProject(d)
+	p, err := NewProject(NewProjectProps{
+		OrganizationID: d.OrganizationID, WorkspaceID: d.WorkspaceID, OwnerTeamID: d.OwnerTeamID,
+		Slug: d.Slug, DisplayName: d.DisplayName, Description: d.Description, CreatedByPrincipalID: d.CreatedByPrincipalID,
+		CreatedAt: &d.CreatedAt, UpdatedAt: &d.UpdatedAt, ArchivedAt: d.ArchivedAt,
+	}, &d.ID)
 
-	assert.Equal(t, d, p.Data())
+	require.NoError(t, err)
+	assert.Equal(t, d, p.Snapshot())
+
+	bad := "wsp_01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	_, err = NewProject(validProjectProps(), &bad)
+	assert.ErrorIs(t, err, ErrInvalid, "a stored ID must be a project's")
 	*p.ArchivedAt() = t0
 	assert.Equal(t, t1, *p.ArchivedAt(), "getters return copies")
 }

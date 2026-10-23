@@ -58,7 +58,7 @@ type settingEntity struct {
 func (settingEntity) TableName() string { return "workspace.settings" }
 
 func toWorkspaceEntity(w *workspace.Workspace) *workspaceEntity {
-	d := w.Data()
+	d := w.Snapshot()
 	return &workspaceEntity{
 		ID:                   d.ID,
 		OrganizationID:       d.OrganizationID,
@@ -73,23 +73,22 @@ func toWorkspaceEntity(w *workspace.Workspace) *workspaceEntity {
 	}
 }
 
-func (e *workspaceEntity) toDomain() *workspace.Workspace {
-	return workspace.ReconstituteWorkspace(workspace.WorkspaceData{
-		ID:                   e.ID,
+func (e *workspaceEntity) toDomain() (*workspace.Workspace, error) {
+	return workspace.NewWorkspace(workspace.NewWorkspaceProps{
 		OrganizationID:       e.OrganizationID,
 		Slug:                 e.Slug,
 		DisplayName:          e.DisplayName,
 		Description:          value(e.Description),
 		IsDefault:            e.IsDefault,
 		CreatedByPrincipalID: value(e.CreatedByPrincipalID),
-		CreatedAt:            e.CreatedAt.UTC(),
-		UpdatedAt:            e.UpdatedAt.UTC(),
+		CreatedAt:            utcTime(e.CreatedAt),
+		UpdatedAt:            utcTime(e.UpdatedAt),
 		ArchivedAt:           utc(e.ArchivedAt),
-	})
+	}, &e.ID)
 }
 
 func toProjectEntity(p *workspace.Project) *projectEntity {
-	d := p.Data()
+	d := p.Snapshot()
 	return &projectEntity{
 		ID:                   d.ID,
 		OrganizationID:       d.OrganizationID,
@@ -105,9 +104,8 @@ func toProjectEntity(p *workspace.Project) *projectEntity {
 	}
 }
 
-func (e *projectEntity) toDomain() *workspace.Project {
-	return workspace.ReconstituteProject(workspace.ProjectData{
-		ID:                   e.ID,
+func (e *projectEntity) toDomain() (*workspace.Project, error) {
+	return workspace.NewProject(workspace.NewProjectProps{
 		OrganizationID:       e.OrganizationID,
 		WorkspaceID:          e.WorkspaceID,
 		OwnerTeamID:          e.OwnerTeamID,
@@ -115,14 +113,14 @@ func (e *projectEntity) toDomain() *workspace.Project {
 		DisplayName:          e.DisplayName,
 		Description:          value(e.Description),
 		CreatedByPrincipalID: value(e.CreatedByPrincipalID),
-		CreatedAt:            e.CreatedAt.UTC(),
-		UpdatedAt:            e.UpdatedAt.UTC(),
+		CreatedAt:            utcTime(e.CreatedAt),
+		UpdatedAt:            utcTime(e.UpdatedAt),
 		ArchivedAt:           utc(e.ArchivedAt),
-	})
+	}, &e.ID)
 }
 
 func toSettingEntity(s *workspace.Setting) *settingEntity {
-	d := s.Data()
+	d := s.Snapshot()
 	return &settingEntity{
 		OrganizationID:       d.Scope.OrganizationID,
 		WorkspaceID:          nullable(d.Scope.WorkspaceID),
@@ -137,8 +135,8 @@ func toSettingEntity(s *workspace.Setting) *settingEntity {
 	}
 }
 
-func (e *settingEntity) toDomain() *workspace.Setting {
-	return workspace.ReconstituteSetting(workspace.SettingData{
+func (e *settingEntity) toDomain() (*workspace.Setting, error) {
+	return workspace.NewSetting(workspace.NewSettingProps{
 		Scope: workspace.Scope{
 			OrganizationID: e.OrganizationID,
 			WorkspaceID:    value(e.WorkspaceID),
@@ -149,8 +147,8 @@ func (e *settingEntity) toDomain() *workspace.Setting {
 		Version:              e.Version,
 		UpdatedByPrincipalID: value(e.UpdatedByPrincipalID),
 		PolicyDecisionID:     value(e.PolicyDecisionID),
-		CreatedAt:            e.CreatedAt.UTC(),
-		UpdatedAt:            e.UpdatedAt.UTC(),
+		CreatedAt:            utcTime(e.CreatedAt),
+		UpdatedAt:            utcTime(e.UpdatedAt),
 	})
 }
 
@@ -167,6 +165,12 @@ func value(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// utcTime returns a stored timestamp in UTC, for New…Props.
+func utcTime(t time.Time) *time.Time {
+	u := t.UTC()
+	return &u
 }
 
 func utc(t *time.Time) *time.Time {

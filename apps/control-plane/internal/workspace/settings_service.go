@@ -66,7 +66,10 @@ func (s *Service) ChangeSetting(ctx context.Context, actor identity.Actor, in Ch
 	// current one moved to its next version.
 	setting := current
 	if setting == nil {
-		setting, err = NewSetting(in.Scope, in.Key, in.Value, actor.PrincipalID, decision.ID)
+		setting, err = NewSetting(NewSettingProps{
+			Scope: in.Scope, Key: in.Key, Value: in.Value,
+			UpdatedByPrincipalID: actor.PrincipalID, PolicyDecisionID: decision.ID,
+		})
 	} else {
 		err = setting.Change(in.Value, actor.PrincipalID, decision.ID)
 	}

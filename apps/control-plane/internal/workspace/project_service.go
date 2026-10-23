@@ -31,7 +31,7 @@ func (s *Service) CreateProject(ctx context.Context, actor identity.Actor, in Cr
 		DisplayName:          in.DisplayName,
 		Description:          in.Description,
 		CreatedByPrincipalID: actor.PrincipalID,
-	})
+	}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +60,7 @@ func (s *Service) CreateProject(ctx context.Context, actor identity.Actor, in Cr
 		if err := s.resources.RegisterResource(ctx, iam.Resource{ID: p.ID(), OrganizationID: p.OrganizationID(), Type: iam.ResourceProject, ParentID: p.WorkspaceID()}); err != nil {
 			return fmt.Errorf("register project resource: %w", err)
 		}
-		return s.record(ctx, audit.Event{Type: EventProjectCreated, OrganizationID: p.OrganizationID(), ResourceID: p.ID(), Actor: actor, After: p.Data()})
+		return s.record(ctx, audit.Event{Type: EventProjectCreated, OrganizationID: p.OrganizationID(), ResourceID: p.ID(), Actor: actor, After: p.Snapshot()})
 	})
 	if err != nil {
 		return nil, err
@@ -141,14 +141,14 @@ func (s *Service) changeProject(ctx context.Context, actor identity.Actor, organ
 		if err != nil {
 			return err
 		}
-		before := p.Data()
+		before := p.Snapshot()
 		if err := change(p); err != nil {
 			return err
 		}
 		if err := s.repo.UpdateProject(ctx, p); err != nil {
 			return fmt.Errorf("update project: %w", err)
 		}
-		return s.record(ctx, audit.Event{Type: event, OrganizationID: organizationID, ResourceID: p.ID(), Actor: actor, Before: before, After: p.Data()})
+		return s.record(ctx, audit.Event{Type: event, OrganizationID: organizationID, ResourceID: p.ID(), Actor: actor, Before: before, After: p.Snapshot()})
 	})
 	if err != nil {
 		return nil, err

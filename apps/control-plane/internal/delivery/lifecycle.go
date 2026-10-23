@@ -5,6 +5,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
 )
@@ -13,7 +14,7 @@ import (
 // its phases: they change only through the Lifecycle's methods, which keep
 // every Environment in at most one phase.
 type Lifecycle struct {
-	id             string
+	aggregate.Root
 	organizationID string
 	workspaceID    string
 	slug           string
@@ -28,7 +29,7 @@ type Lifecycle struct {
 // LifecyclePhase is one step in a Lifecycle. Its position is its index in
 // the Lifecycle's phases.
 type LifecyclePhase struct {
-	id              string
+	aggregate.Entity
 	name            string
 	optional        bool
 	minEnvironments *int
@@ -37,34 +38,35 @@ type LifecyclePhase struct {
 	updatedAt       time.Time
 }
 
-// LifecycleSnapshot is a Lifecycle's state, for repositories and audit records.
+// LifecycleSnapshot is a Lifecycle's state, for repositories, audit records, and
+// events. Its JSON form is part of the Lifecycle events' contract.
 type LifecycleSnapshot struct {
-	ID             string
-	OrganizationID string
-	WorkspaceID    string
-	Slug           string
-	DisplayName    string
-	Description    *string
+	ID             string  `json:"id"`
+	OrganizationID string  `json:"organization_id"`
+	WorkspaceID    string  `json:"workspace_id"`
+	Slug           string  `json:"slug"`
+	DisplayName    string  `json:"display_name"`
+	Description    *string `json:"description"`
 	// Phases are in order; each one's Position is its index.
-	Phases    []LifecyclePhaseSnapshot
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	DeletedAt *time.Time
+	Phases    []LifecyclePhaseSnapshot `json:"phases"`
+	CreatedAt time.Time                `json:"created_at"`
+	UpdatedAt time.Time                `json:"updated_at"`
+	DeletedAt *time.Time               `json:"deleted_at"`
 }
 
 // LifecyclePhaseSnapshot is a phase's state.
 type LifecyclePhaseSnapshot struct {
-	ID       string
-	Position int
-	Name     string
-	Optional bool
+	ID       string `json:"id"`
+	Position int    `json:"position"`
+	Name     string `json:"name"`
+	Optional bool   `json:"optional"`
 	// MinEnvironments is how many of the phase's Environments need a
 	// successful Deployment before the next phase opens; nil means all.
-	MinEnvironments *int
+	MinEnvironments *int `json:"min_environments"`
 	// EnvironmentIDs are sorted: order within a phase means nothing.
-	EnvironmentIDs []string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	EnvironmentIDs []string  `json:"environment_ids"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // NewLifecycleProps describes a Lifecycle. A new one leaves the timestamps
@@ -120,7 +122,8 @@ func NewLifecycle(props NewLifecycleProps, lifecycleID *string) (*Lifecycle, err
 	if err := validateRequired("workspace ID", props.WorkspaceID); err != nil {
 		return nil, err
 	}
-	if err := validateOwnID(Lifecycle{}.Prefix(), lifecycleID); err != nil {
+	root, err := newRoot(Lifecycle{}.Prefix(), lifecycleID)
+	if err != nil {
 		return nil, err
 	}
 	if err := validateDisplayName(props.DisplayName); err != nil {
@@ -133,6 +136,7 @@ func NewLifecycle(props NewLifecycleProps, lifecycleID *string) (*Lifecycle, err
 
 	now := clock.Now()
 	l := &Lifecycle{
+		Root:           root,
 		organizationID: props.OrganizationID,
 		workspaceID:    props.WorkspaceID,
 		slug:           s,
@@ -147,24 +151,23 @@ func NewLifecycle(props NewLifecycleProps, lifecycleID *string) (*Lifecycle, err
 		if err != nil {
 			return nil, err
 		}
-		if slices.ContainsFunc(l.phases, func(o *LifecyclePhase) bool { return o.id == phase.id }) {
-			return nil, NewErrInvalidInput(fmt.Sprintf("phase %s appears twice", phase.id))
+		if slices.ContainsFunc(l.phases, func(o *LifecyclePhase) bool { return o.ID() == phase.ID() }) {
+			return nil, NewErrInvalidInput(fmt.Sprintf("phase %s appears twice", phase.ID()))
 		}
 		l.phases = append(l.phases, phase)
 	}
 	if err := checkPhases(l.phases); err != nil {
 		return nil, err
 	}
-	if lifecycleID != nil {
-		l.id = *lifecycleID
+	if l.IsNew() {
+		l.RecordEvent(LifecycleCreated{l.Snapshot()})
 	}
-	id.Assign(&l.id, l)
-
 	return l, nil
 }
 
 func newLifecyclePhase(p NewLifecyclePhaseProps, now time.Time) (*LifecyclePhase, error) {
-	if err := validateOwnID(LifecyclePhase{}.Prefix(), p.ID); err != nil {
+	entity, err := newEntity(LifecyclePhase{}.Prefix(), p.ID)
+	if err != nil {
 		return nil, err
 	}
 	props := LifecyclePhaseProps{Name: p.Name, Optional: p.Optional, MinEnvironments: p.MinEnvironments, EnvironmentIDs: p.EnvironmentIDs}
@@ -172,6 +175,7 @@ func newLifecyclePhase(p NewLifecyclePhaseProps, now time.Time) (*LifecyclePhase
 		return nil, err
 	}
 	phase := &LifecyclePhase{
+		Entity:          entity,
 		name:            p.Name,
 		optional:        p.Optional,
 		minEnvironments: copyInt(p.MinEnvironments),
@@ -179,10 +183,6 @@ func newLifecyclePhase(p NewLifecyclePhaseProps, now time.Time) (*LifecyclePhase
 		createdAt:       timeOr(p.CreatedAt, now),
 		updatedAt:       timeOr(p.UpdatedAt, now),
 	}
-	if p.ID != nil {
-		phase.id = *p.ID
-	}
-	id.Assign(&phase.id, phase)
 	return phase, nil
 }
 
@@ -228,7 +228,6 @@ func checkPhases(phases []*LifecyclePhase) error {
 func (Lifecycle) Prefix() string      { return "lfc" }
 func (LifecyclePhase) Prefix() string { return "lfp" }
 
-func (l *Lifecycle) ID() string             { return l.id }
 func (l *Lifecycle) OrganizationID() string { return l.organizationID }
 func (l *Lifecycle) WorkspaceID() string    { return l.workspaceID }
 func (l *Lifecycle) Slug() string           { return l.slug }
@@ -260,7 +259,7 @@ func (l *Lifecycle) EnvironmentIDs() []string {
 
 func (p *LifecyclePhase) snapshot(position int) LifecyclePhaseSnapshot {
 	return LifecyclePhaseSnapshot{
-		ID:              p.id,
+		ID:              p.ID(),
 		Position:        position,
 		Name:            p.name,
 		Optional:        p.optional,
@@ -273,7 +272,7 @@ func (p *LifecyclePhase) snapshot(position int) LifecyclePhaseSnapshot {
 
 func (l *Lifecycle) Snapshot() LifecycleSnapshot {
 	return LifecycleSnapshot{
-		ID:             l.id,
+		ID:             l.ID(),
 		OrganizationID: l.organizationID,
 		WorkspaceID:    l.workspaceID,
 		Slug:           l.slug,
@@ -288,7 +287,7 @@ func (l *Lifecycle) Snapshot() LifecycleSnapshot {
 
 func (l *Lifecycle) checkActive() error {
 	if l.Archived() {
-		return fmt.Errorf("%w: lifecycle %s", ErrArchived, l.id)
+		return fmt.Errorf("%w: lifecycle %s", ErrArchived, l.ID())
 	}
 	return nil
 }
@@ -309,16 +308,15 @@ func (l *Lifecycle) Update(props UpdateLifecycleProps) error {
 		}
 	}
 
-	if props.Slug != nil {
-		l.slug = *props.Slug
-	}
-	if props.DisplayName != nil {
-		l.displayName = *props.DisplayName
-	}
-	if props.Description != nil {
-		l.description = optionalString(props.Description)
-	}
+	changed := anyTrue(
+		set(&l.slug, props.Slug),
+		set(&l.displayName, props.DisplayName),
+		setOptional(&l.description, props.Description),
+	)
 	l.updatedAt = clock.Now()
+	if changed {
+		l.RecordEvent(LifecycleUpdated{l.Snapshot()})
+	}
 	return nil
 }
 
@@ -340,6 +338,7 @@ func (l *Lifecycle) AddPhase(props LifecyclePhaseProps) (LifecyclePhaseSnapshot,
 	}
 	l.phases = phases
 	l.updatedAt = now
+	l.RecordEvent(LifecyclePhaseAdded{Lifecycle: l.Snapshot(), PhaseID: phase.ID()})
 	return phase.snapshot(len(phases) - 1), nil
 }
 
@@ -368,9 +367,20 @@ func (l *Lifecycle) UpdatePhase(phaseID string, props LifecyclePhaseProps) error
 	if err := checkPhases(phases); err != nil {
 		return err
 	}
+	changed := !l.phases[i].sameContent(&updated)
 	l.phases = phases
 	l.updatedAt = now
+	if changed {
+		l.RecordEvent(LifecyclePhaseUpdated{Lifecycle: l.Snapshot(), PhaseID: phaseID})
+	}
 	return nil
+}
+
+// sameContent reports whether two versions of a phase have the same name,
+// flags, and Environments.
+func (p *LifecyclePhase) sameContent(o *LifecyclePhase) bool {
+	return p.name == o.name && p.optional == o.optional &&
+		equalPtr(p.minEnvironments, o.minEnvironments) && slices.Equal(p.environmentIDs, o.environmentIDs)
 }
 
 // RemovePhase removes a phase; the phases after it move up.
@@ -384,6 +394,7 @@ func (l *Lifecycle) RemovePhase(phaseID string) error {
 	}
 	l.phases = slices.Delete(slices.Clone(l.phases), i, i+1)
 	l.updatedAt = clock.Now()
+	l.RecordEvent(LifecyclePhaseRemoved{Lifecycle: l.Snapshot(), PhaseID: phaseID})
 	return nil
 }
 
@@ -403,13 +414,16 @@ func (l *Lifecycle) MovePhase(phaseID string, position int) error {
 	phases := slices.Delete(slices.Clone(l.phases), i, i+1)
 	l.phases = slices.Insert(phases, position, phase)
 	l.updatedAt = clock.Now()
+	if position != i {
+		l.RecordEvent(LifecyclePhaseMoved{Lifecycle: l.Snapshot(), PhaseID: phaseID})
+	}
 	return nil
 }
 
 func (l *Lifecycle) phaseIndex(phaseID string) (int, error) {
-	i := slices.IndexFunc(l.phases, func(p *LifecyclePhase) bool { return p.id == phaseID })
+	i := slices.IndexFunc(l.phases, func(p *LifecyclePhase) bool { return p.ID() == phaseID })
 	if i < 0 {
-		return 0, fmt.Errorf("%w: phase %s in lifecycle %s", ErrNotFound, phaseID, l.id)
+		return 0, fmt.Errorf("%w: phase %s in lifecycle %s", ErrNotFound, phaseID, l.ID())
 	}
 	return i, nil
 }
@@ -420,6 +434,7 @@ func (l *Lifecycle) Archive() {
 		now := clock.Now()
 		l.deletedAt = &now
 		l.updatedAt = now
+		l.RecordEvent(LifecycleArchived{l.Snapshot()})
 	}
 }
 
@@ -428,5 +443,6 @@ func (l *Lifecycle) Restore() {
 	if l.Archived() {
 		l.deletedAt = nil
 		l.updatedAt = clock.Now()
+		l.RecordEvent(LifecycleRestored{l.Snapshot()})
 	}
 }

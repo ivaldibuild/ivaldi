@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
-	"github.com/ivaldibuild/ivaldi/pkg/id"
 )
 
 // Tier classifies an Environment so policy rules can match on it.
@@ -21,7 +21,7 @@ const (
 // Environment is a named stage in a Workspace, such as staging or
 // production. It is registered with IAM as a resource under its Workspace.
 type Environment struct {
-	id               string
+	aggregate.Root
 	organizationID   string
 	workspaceID      string
 	slug             string
@@ -33,18 +33,19 @@ type Environment struct {
 	deletedAt        *time.Time
 }
 
-// EnvironmentSnapshot is an Environment's state, for repositories and audit records.
+// EnvironmentSnapshot is an Environment's state, for repositories, audit records, and
+// events. Its JSON form is part of the Environment events' contract.
 type EnvironmentSnapshot struct {
-	ID               string
-	OrganizationID   string
-	WorkspaceID      string
-	Slug             string
-	DisplayName      string
-	Tier             Tier
-	ExecutionEnabled bool
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-	DeletedAt        *time.Time
+	ID               string     `json:"id"`
+	OrganizationID   string     `json:"organization_id"`
+	WorkspaceID      string     `json:"workspace_id"`
+	Slug             string     `json:"slug"`
+	DisplayName      string     `json:"display_name"`
+	Tier             Tier       `json:"tier"`
+	ExecutionEnabled bool       `json:"execution_enabled"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+	DeletedAt        *time.Time `json:"deleted_at"`
 }
 
 // NewEnvironmentProps describes an Environment. A new one leaves the
@@ -79,7 +80,8 @@ func NewEnvironment(props NewEnvironmentProps, environmentID *string) (*Environm
 	if err := validateRequired("workspace ID", props.WorkspaceID); err != nil {
 		return nil, err
 	}
-	if err := validateOwnID(Environment{}.Prefix(), environmentID); err != nil {
+	root, err := newRoot(Environment{}.Prefix(), environmentID)
+	if err != nil {
 		return nil, err
 	}
 	if err := validateDisplayName(props.DisplayName); err != nil {
@@ -95,6 +97,7 @@ func NewEnvironment(props NewEnvironmentProps, environmentID *string) (*Environm
 
 	now := clock.Now()
 	e := &Environment{
+		Root:             root,
 		organizationID:   props.OrganizationID,
 		workspaceID:      props.WorkspaceID,
 		slug:             s,
@@ -105,11 +108,9 @@ func NewEnvironment(props NewEnvironmentProps, environmentID *string) (*Environm
 		updatedAt:        timeOr(props.UpdatedAt, now),
 		deletedAt:        clock.CopyTime(props.DeletedAt),
 	}
-	if environmentID != nil {
-		e.id = *environmentID
+	if e.IsNew() {
+		e.RecordEvent(EnvironmentCreated{e.Snapshot()})
 	}
-	id.Assign(&e.id, e)
-
 	return e, nil
 }
 
@@ -122,7 +123,6 @@ func validateTier(t Tier) error {
 }
 
 func (Environment) Prefix() string            { return "env" }
-func (e *Environment) ID() string             { return e.id }
 func (e *Environment) OrganizationID() string { return e.organizationID }
 func (e *Environment) WorkspaceID() string    { return e.workspaceID }
 func (e *Environment) Slug() string           { return e.slug }
@@ -137,7 +137,7 @@ func (e *Environment) Archived() bool { return e.deletedAt != nil }
 
 func (e *Environment) Snapshot() EnvironmentSnapshot {
 	return EnvironmentSnapshot{
-		ID:               e.id,
+		ID:               e.ID(),
 		OrganizationID:   e.organizationID,
 		WorkspaceID:      e.workspaceID,
 		Slug:             e.slug,
@@ -153,7 +153,7 @@ func (e *Environment) Snapshot() EnvironmentSnapshot {
 // Update changes an active Environment. Nothing changes if any field is invalid.
 func (e *Environment) Update(props UpdateEnvironmentProps) error {
 	if e.Archived() {
-		return fmt.Errorf("%w: environment %s", ErrArchived, e.id)
+		return fmt.Errorf("%w: environment %s", ErrArchived, e.ID())
 	}
 	if props.Slug != nil {
 		if err := validateSlug(*props.Slug); err != nil {
@@ -171,20 +171,16 @@ func (e *Environment) Update(props UpdateEnvironmentProps) error {
 		}
 	}
 
-	if props.Slug != nil {
-		e.slug = *props.Slug
-	}
-	if props.DisplayName != nil {
-		e.displayName = *props.DisplayName
-	}
-	if props.Tier != nil {
-		e.tier = *props.Tier
-	}
-	if props.ExecutionEnabled != nil {
-		e.executionEnabled = *props.ExecutionEnabled
-	}
+	changed := anyTrue(
+		set(&e.slug, props.Slug),
+		set(&e.displayName, props.DisplayName),
+		set(&e.tier, props.Tier),
+		set(&e.executionEnabled, props.ExecutionEnabled),
+	)
 	e.updatedAt = clock.Now()
-
+	if changed {
+		e.RecordEvent(EnvironmentUpdated{e.Snapshot()})
+	}
 	return nil
 }
 
@@ -194,6 +190,7 @@ func (e *Environment) Archive() {
 		now := clock.Now()
 		e.deletedAt = &now
 		e.updatedAt = now
+		e.RecordEvent(EnvironmentArchived{e.Snapshot()})
 	}
 }
 
@@ -202,5 +199,6 @@ func (e *Environment) Restore() {
 	if e.Archived() {
 		e.deletedAt = nil
 		e.updatedAt = clock.Now()
+		e.RecordEvent(EnvironmentRestored{e.Snapshot()})
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
 	"github.com/ivaldibuild/ivaldi/pkg/slug"
@@ -27,7 +28,7 @@ const (
 // Kubernetes cluster. It holds no credentials: its runtime agent reaches the
 // cluster with its own in-cluster identity. Access follows its Environment.
 type Target struct {
-	id               string
+	aggregate.Root
 	organizationID   string
 	environmentID    string
 	slug             string
@@ -41,20 +42,21 @@ type Target struct {
 	deletedAt        *time.Time
 }
 
-// TargetSnapshot is a Target's state, for repositories and audit records.
+// TargetSnapshot is a Target's state, for repositories, audit records, and
+// events. Its JSON form is part of the Target events' contract.
 type TargetSnapshot struct {
-	ID               string
-	OrganizationID   string
-	EnvironmentID    string
-	Slug             string
-	DisplayName      string
-	Runtime          Runtime
-	Locator          map[string]string
-	AgentPrincipalID *string
-	LastReportedAt   *time.Time
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-	DeletedAt        *time.Time
+	ID               string            `json:"id"`
+	OrganizationID   string            `json:"organization_id"`
+	EnvironmentID    string            `json:"environment_id"`
+	Slug             string            `json:"slug"`
+	DisplayName      string            `json:"display_name"`
+	Runtime          Runtime           `json:"runtime"`
+	Locator          map[string]string `json:"locator"`
+	AgentPrincipalID *string           `json:"agent_principal_id"`
+	LastReportedAt   *time.Time        `json:"last_reported_at"`
+	CreatedAt        time.Time         `json:"created_at"`
+	UpdatedAt        time.Time         `json:"updated_at"`
+	DeletedAt        *time.Time        `json:"deleted_at"`
 }
 
 // NewTargetProps describes a Target. A new one leaves the timestamps nil; a
@@ -94,7 +96,8 @@ func NewTarget(props NewTargetProps, targetID *string) (*Target, error) {
 	if !id.Valid(Environment{}.Prefix(), props.EnvironmentID) {
 		return nil, NewErrInvalidInput("a target needs an environment ID")
 	}
-	if err := validateOwnID(Target{}.Prefix(), targetID); err != nil {
+	root, err := newRoot(Target{}.Prefix(), targetID)
+	if err != nil {
 		return nil, err
 	}
 	if err := validateDisplayName(props.DisplayName); err != nil {
@@ -111,6 +114,7 @@ func NewTarget(props NewTargetProps, targetID *string) (*Target, error) {
 
 	now := clock.Now()
 	t := &Target{
+		Root:             root,
 		organizationID:   props.OrganizationID,
 		environmentID:    props.EnvironmentID,
 		slug:             s,
@@ -123,10 +127,9 @@ func NewTarget(props NewTargetProps, targetID *string) (*Target, error) {
 		updatedAt:        timeOr(props.UpdatedAt, now),
 		deletedAt:        clock.CopyTime(props.DeletedAt),
 	}
-	if targetID != nil {
-		t.id = *targetID
+	if t.IsNew() {
+		t.RecordEvent(TargetCreated{t.Snapshot()})
 	}
-	id.Assign(&t.id, t)
 	return t, nil
 }
 
@@ -155,7 +158,6 @@ func validateLocator(runtime Runtime, locator map[string]string) error {
 }
 
 func (Target) Prefix() string                { return "tgt" }
-func (t *Target) ID() string                 { return t.id }
 func (t *Target) OrganizationID() string     { return t.organizationID }
 func (t *Target) EnvironmentID() string      { return t.environmentID }
 func (t *Target) Slug() string               { return t.slug }
@@ -172,7 +174,7 @@ func (t *Target) Archived() bool { return t.deletedAt != nil }
 
 func (t *Target) Snapshot() TargetSnapshot {
 	return TargetSnapshot{
-		ID:               t.id,
+		ID:               t.ID(),
 		OrganizationID:   t.organizationID,
 		EnvironmentID:    t.environmentID,
 		Slug:             t.slug,
@@ -189,7 +191,7 @@ func (t *Target) Snapshot() TargetSnapshot {
 
 func (t *Target) checkActive() error {
 	if t.Archived() {
-		return fmt.Errorf("%w: target %s", ErrArchived, t.id)
+		return fmt.Errorf("%w: target %s", ErrArchived, t.ID())
 	}
 	return nil
 }
@@ -215,16 +217,18 @@ func (t *Target) Update(props UpdateTargetProps) error {
 		}
 	}
 
-	if props.Slug != nil {
-		t.slug = *props.Slug
-	}
-	if props.DisplayName != nil {
-		t.displayName = *props.DisplayName
-	}
-	if props.Locator != nil {
+	changed := anyTrue(
+		set(&t.slug, props.Slug),
+		set(&t.displayName, props.DisplayName),
+	)
+	if props.Locator != nil && !maps.Equal(props.Locator, t.locator) {
 		t.locator = maps.Clone(props.Locator)
+		changed = true
 	}
 	t.updatedAt = clock.Now()
+	if changed {
+		t.RecordEvent(TargetUpdated{t.Snapshot()})
+	}
 	return nil
 }
 
@@ -237,9 +241,13 @@ func (t *Target) AssignAgent(principalID string) error {
 	if principalID == "" {
 		return NewErrInvalidInput("an agent principal ID is required")
 	}
+	previous := t.agentPrincipalID
 	t.agentPrincipalID = &principalID
 	t.lastReportedAt = nil
 	t.updatedAt = clock.Now()
+	if !equalPtr(previous, &principalID) {
+		t.RecordEvent(TargetAgentAssigned{Target: t.Snapshot(), PreviousAgentPrincipalID: previous})
+	}
 	return nil
 }
 
@@ -249,9 +257,11 @@ func (t *Target) UnassignAgent() error {
 		return err
 	}
 	if t.agentPrincipalID != nil {
+		previous := *t.agentPrincipalID
 		t.agentPrincipalID = nil
 		t.lastReportedAt = nil
 		t.updatedAt = clock.Now()
+		t.RecordEvent(TargetAgentUnassigned{Target: t.Snapshot(), PreviousAgentPrincipalID: previous})
 	}
 	return nil
 }
@@ -264,7 +274,7 @@ func (t *Target) RecordReport(principalID string) error {
 		return err
 	}
 	if t.agentPrincipalID == nil || *t.agentPrincipalID != principalID {
-		return fmt.Errorf("%w: %s does not serve target %s", ErrNotTargetAgent, principalID, t.id)
+		return fmt.Errorf("%w: %s does not serve target %s", ErrNotTargetAgent, principalID, t.ID())
 	}
 	now := clock.Now()
 	t.lastReportedAt = &now
@@ -277,6 +287,7 @@ func (t *Target) Archive() {
 		now := clock.Now()
 		t.deletedAt = &now
 		t.updatedAt = now
+		t.RecordEvent(TargetArchived{t.Snapshot()})
 	}
 }
 
@@ -285,5 +296,6 @@ func (t *Target) Restore() {
 	if t.Archived() {
 		t.deletedAt = nil
 		t.updatedAt = clock.Now()
+		t.RecordEvent(TargetRestored{t.Snapshot()})
 	}
 }

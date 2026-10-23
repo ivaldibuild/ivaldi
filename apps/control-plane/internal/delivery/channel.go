@@ -7,6 +7,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
 	"github.com/ivaldibuild/ivaldi/pkg/release"
@@ -18,7 +19,7 @@ import (
 // through the Channel's methods. Every Application has exactly one default
 // Channel, which cannot be archived.
 type Channel struct {
-	id             string
+	aggregate.Root
 	organizationID string
 	applicationID  string
 	lifecycleID    string
@@ -34,7 +35,7 @@ type Channel struct {
 
 // ChannelRule is one condition a Release must meet to join its Channel.
 type ChannelRule struct {
-	id         string
+	aggregate.Entity
 	kind       release.RuleKind
 	artifactID *string
 	config     json.RawMessage
@@ -42,30 +43,31 @@ type ChannelRule struct {
 	updatedAt  time.Time
 }
 
-// ChannelSnapshot is a Channel's state, for repositories and audit records.
+// ChannelSnapshot is a Channel's state, for repositories, audit records, and
+// events. Its JSON form is part of the Channel events' contract.
 type ChannelSnapshot struct {
-	ID             string
-	OrganizationID string
-	ApplicationID  string
-	LifecycleID    string
-	Slug           string
-	DisplayName    string
-	Description    *string
-	IsDefault      bool
-	Rules          []ChannelRuleSnapshot
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	ArchivedAt     *time.Time
+	ID             string                `json:"id"`
+	OrganizationID string                `json:"organization_id"`
+	ApplicationID  string                `json:"application_id"`
+	LifecycleID    string                `json:"lifecycle_id"`
+	Slug           string                `json:"slug"`
+	DisplayName    string                `json:"display_name"`
+	Description    *string               `json:"description"`
+	IsDefault      bool                  `json:"is_default"`
+	Rules          []ChannelRuleSnapshot `json:"rules"`
+	CreatedAt      time.Time             `json:"created_at"`
+	UpdatedAt      time.Time             `json:"updated_at"`
+	ArchivedAt     *time.Time            `json:"archived_at"`
 }
 
 // ChannelRuleSnapshot is a rule's state.
 type ChannelRuleSnapshot struct {
-	ID         string
-	Kind       release.RuleKind
-	ArtifactID *string
-	Config     json.RawMessage
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	ID         string           `json:"id"`
+	Kind       release.RuleKind `json:"kind"`
+	ArtifactID *string          `json:"artifact_id"`
+	Config     json.RawMessage  `json:"config"`
+	CreatedAt  time.Time        `json:"created_at"`
+	UpdatedAt  time.Time        `json:"updated_at"`
 }
 
 // NewChannelProps describes a Channel. A new one leaves the timestamps nil;
@@ -124,7 +126,8 @@ func NewChannel(props NewChannelProps, channelID *string) (*Channel, error) {
 	if !id.Valid(Lifecycle{}.Prefix(), props.LifecycleID) {
 		return nil, NewErrInvalidInput("a channel needs a lifecycle ID")
 	}
-	if err := validateOwnID(Channel{}.Prefix(), channelID); err != nil {
+	root, err := newRoot(Channel{}.Prefix(), channelID)
+	if err != nil {
 		return nil, err
 	}
 	if err := validateDisplayName(props.DisplayName); err != nil {
@@ -143,6 +146,7 @@ func NewChannel(props NewChannelProps, channelID *string) (*Channel, error) {
 
 	now := clock.Now()
 	c := &Channel{
+		Root:           root,
 		organizationID: props.OrganizationID,
 		applicationID:  props.ApplicationID,
 		lifecycleID:    props.LifecycleID,
@@ -159,20 +163,20 @@ func NewChannel(props NewChannelProps, channelID *string) (*Channel, error) {
 		if err != nil {
 			return nil, err
 		}
-		if slices.ContainsFunc(c.rules, func(o *ChannelRule) bool { return o.id == rule.id }) {
-			return nil, NewErrInvalidInput(fmt.Sprintf("rule %s appears twice", rule.id))
+		if slices.ContainsFunc(c.rules, func(o *ChannelRule) bool { return o.ID() == rule.ID() }) {
+			return nil, NewErrInvalidInput(fmt.Sprintf("rule %s appears twice", rule.ID()))
 		}
 		c.rules = append(c.rules, rule)
 	}
-	if channelID != nil {
-		c.id = *channelID
+	if c.IsNew() {
+		c.RecordEvent(ChannelCreated{c.Snapshot()})
 	}
-	id.Assign(&c.id, c)
 	return c, nil
 }
 
 func newChannelRule(p NewChannelRuleProps, now time.Time) (*ChannelRule, error) {
-	if err := validateOwnID(ChannelRule{}.Prefix(), p.ID); err != nil {
+	entity, err := newEntity(ChannelRule{}.Prefix(), p.ID)
+	if err != nil {
 		return nil, err
 	}
 	content, err := ChannelRuleProps{Kind: p.Kind, ArtifactID: p.ArtifactID, Config: p.Config}.normalize()
@@ -180,16 +184,13 @@ func newChannelRule(p NewChannelRuleProps, now time.Time) (*ChannelRule, error) 
 		return nil, err
 	}
 	r := &ChannelRule{
+		Entity:     entity,
 		kind:       content.Kind,
 		artifactID: content.ArtifactID,
 		config:     content.Config,
 		createdAt:  timeOr(p.CreatedAt, now),
 		updatedAt:  timeOr(p.UpdatedAt, now),
 	}
-	if p.ID != nil {
-		r.id = *p.ID
-	}
-	id.Assign(&r.id, r)
 	return r, nil
 }
 
@@ -210,7 +211,6 @@ func (p ChannelRuleProps) normalize() (ChannelRuleProps, error) {
 func (Channel) Prefix() string     { return "chn" }
 func (ChannelRule) Prefix() string { return "chr" }
 
-func (c *Channel) ID() string             { return c.id }
 func (c *Channel) OrganizationID() string { return c.organizationID }
 func (c *Channel) ApplicationID() string  { return c.applicationID }
 func (c *Channel) LifecycleID() string    { return c.lifecycleID }
@@ -246,7 +246,7 @@ func (c *Channel) ArtifactIDs() []string {
 
 func (r *ChannelRule) snapshot() ChannelRuleSnapshot {
 	return ChannelRuleSnapshot{
-		ID:         r.id,
+		ID:         r.ID(),
 		Kind:       r.kind,
 		ArtifactID: copyString(r.artifactID),
 		Config:     bytes.Clone(r.config),
@@ -257,7 +257,7 @@ func (r *ChannelRule) snapshot() ChannelRuleSnapshot {
 
 func (c *Channel) Snapshot() ChannelSnapshot {
 	return ChannelSnapshot{
-		ID:             c.id,
+		ID:             c.ID(),
 		OrganizationID: c.organizationID,
 		ApplicationID:  c.applicationID,
 		LifecycleID:    c.lifecycleID,
@@ -274,7 +274,7 @@ func (c *Channel) Snapshot() ChannelSnapshot {
 
 func (c *Channel) checkActive() error {
 	if c.Archived() {
-		return fmt.Errorf("%w: channel %s", ErrArchived, c.id)
+		return fmt.Errorf("%w: channel %s", ErrArchived, c.ID())
 	}
 	return nil
 }
@@ -295,16 +295,15 @@ func (c *Channel) Update(props UpdateChannelProps) error {
 		}
 	}
 
-	if props.Slug != nil {
-		c.slug = *props.Slug
-	}
-	if props.DisplayName != nil {
-		c.displayName = *props.DisplayName
-	}
-	if props.Description != nil {
-		c.description = optionalString(props.Description)
-	}
+	changed := anyTrue(
+		set(&c.slug, props.Slug),
+		set(&c.displayName, props.DisplayName),
+		setOptional(&c.description, props.Description),
+	)
 	c.updatedAt = clock.Now()
+	if changed {
+		c.RecordEvent(ChannelUpdated{c.Snapshot()})
+	}
 	return nil
 }
 
@@ -317,8 +316,12 @@ func (c *Channel) UseLifecycle(lifecycleID string) error {
 	if !id.Valid(Lifecycle{}.Prefix(), lifecycleID) {
 		return NewErrInvalidInput(fmt.Sprintf("%q is not a lifecycle ID", lifecycleID))
 	}
+	previous := c.lifecycleID
 	c.lifecycleID = lifecycleID
 	c.updatedAt = clock.Now()
+	if lifecycleID != previous {
+		c.RecordEvent(ChannelLifecycleChanged{Channel: c.Snapshot(), PreviousLifecycleID: previous})
+	}
 	return nil
 }
 
@@ -338,6 +341,7 @@ func (c *Channel) AddRule(props ChannelRuleProps) (ChannelRuleSnapshot, error) {
 	}
 	c.rules = append(slices.Clone(c.rules), rule)
 	c.updatedAt = now
+	c.RecordEvent(ChannelRuleAdded{Channel: c.Snapshot(), RuleID: rule.ID()})
 	return rule.snapshot(), nil
 }
 
@@ -361,11 +365,21 @@ func (c *Channel) UpdateRule(ruleID string, props ChannelRuleProps) error {
 	updated.config = content.Config
 	updated.updatedAt = now
 
+	changed := !c.rules[i].sameContent(&updated)
 	rules := slices.Clone(c.rules)
 	rules[i] = &updated
 	c.rules = rules
 	c.updatedAt = now
+	if changed {
+		c.RecordEvent(ChannelRuleUpdated{Channel: c.Snapshot(), RuleID: ruleID})
+	}
 	return nil
+}
+
+// sameContent reports whether two versions of a rule have the same kind,
+// scope, and configuration.
+func (r *ChannelRule) sameContent(o *ChannelRule) bool {
+	return r.kind == o.kind && equalPtr(r.artifactID, o.artifactID) && bytes.Equal(r.config, o.config)
 }
 
 // RemoveRule removes a rule.
@@ -379,13 +393,14 @@ func (c *Channel) RemoveRule(ruleID string) error {
 	}
 	c.rules = slices.Delete(slices.Clone(c.rules), i, i+1)
 	c.updatedAt = clock.Now()
+	c.RecordEvent(ChannelRuleRemoved{Channel: c.Snapshot(), RuleID: ruleID})
 	return nil
 }
 
 func (c *Channel) ruleIndex(ruleID string) (int, error) {
-	i := slices.IndexFunc(c.rules, func(r *ChannelRule) bool { return r.id == ruleID })
+	i := slices.IndexFunc(c.rules, func(r *ChannelRule) bool { return r.ID() == ruleID })
 	if i < 0 {
-		return 0, fmt.Errorf("%w: rule %s in channel %s", ErrNotFound, ruleID, c.id)
+		return 0, fmt.Errorf("%w: rule %s in channel %s", ErrNotFound, ruleID, c.ID())
 	}
 	return i, nil
 }
@@ -399,6 +414,7 @@ func (c *Channel) MakeDefault() error {
 	if !c.isDefault {
 		c.isDefault = true
 		c.updatedAt = clock.Now()
+		c.RecordEvent(ChannelMadeDefault{c.Snapshot()})
 	}
 	return nil
 }
@@ -408,6 +424,7 @@ func (c *Channel) ClearDefault() {
 	if c.isDefault {
 		c.isDefault = false
 		c.updatedAt = clock.Now()
+		c.RecordEvent(ChannelDefaultCleared{c.Snapshot()})
 	}
 }
 
@@ -421,6 +438,7 @@ func (c *Channel) Archive() error {
 		now := clock.Now()
 		c.archivedAt = &now
 		c.updatedAt = now
+		c.RecordEvent(ChannelArchived{c.Snapshot()})
 	}
 	return nil
 }
@@ -430,5 +448,6 @@ func (c *Channel) Restore() {
 	if c.Archived() {
 		c.archivedAt = nil
 		c.updatedAt = clock.Now()
+		c.RecordEvent(ChannelRestored{c.Snapshot()})
 	}
 }

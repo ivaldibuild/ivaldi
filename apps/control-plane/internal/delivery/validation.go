@@ -7,7 +7,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/ivaldibuild/ivaldi/pkg/id"
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/slug"
 )
 
@@ -44,13 +44,23 @@ func validateRequired(name, value string) error {
 	return nil
 }
 
-// validateOwnID checks an ID given to a New… constructor: a stored row's ID,
-// which must have the type's prefix.
-func validateOwnID(prefix string, given *string) error {
-	if given != nil && !id.Valid(prefix, *given) {
-		return NewErrInvalidInput(fmt.Sprintf("%q is not a valid %s_ ID", *given, prefix))
+// newRoot returns an aggregate's identity: storedID, a stored row's ID given
+// to a New… constructor, which must have the type's prefix, or a new ID.
+func newRoot(prefix string, storedID *string) (aggregate.Root, error) {
+	r, err := aggregate.NewRoot(prefix, storedID)
+	if err != nil {
+		return aggregate.Root{}, NewErrInvalidInput(err.Error())
 	}
-	return nil
+	return r, nil
+}
+
+// newEntity is newRoot for a child record an aggregate owns.
+func newEntity(prefix string, storedID *string) (aggregate.Entity, error) {
+	e, err := aggregate.NewEntity(prefix, storedID)
+	if err != nil {
+		return aggregate.Entity{}, NewErrInvalidInput(err.Error())
+	}
+	return e, nil
 }
 
 // optionalString returns a copy of s, with "" meaning none.
@@ -94,6 +104,43 @@ func copyStrings(s []string) []string {
 
 func sortedStrings(s []string) []string {
 	return slices.Sorted(slices.Values(s))
+}
+
+// set assigns *v to *dst when v is given and differs, and reports whether it
+// changed anything, so a method records an event only for a real change.
+func set[T comparable](dst *T, v *T) bool {
+	if v == nil || *dst == *v {
+		return false
+	}
+	*dst = *v
+	return true
+}
+
+// setOptional is set for an optional string, where an empty v clears it.
+func setOptional(dst **string, v *string) bool {
+	if v == nil {
+		return false
+	}
+	next := optionalString(v)
+	if equalPtr(*dst, next) {
+		return false
+	}
+	*dst = next
+	return true
+}
+
+// equalPtr reports whether a and b are both nil or point to equal values.
+func equalPtr[T comparable](a, b *T) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
+// anyTrue reports whether any of changes is true. Every argument is
+// evaluated, so it combines several set calls without short-circuiting.
+func anyTrue(changes ...bool) bool {
+	return slices.Contains(changes, true)
 }
 
 func timeOr(t *time.Time, fallback time.Time) time.Time {

@@ -7,8 +7,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
-	"github.com/ivaldibuild/ivaldi/pkg/id"
 )
 
 // RegistryKind names the protocol a Registry speaks. OCI covers container
@@ -31,7 +31,7 @@ const (
 // registry. Ivaldi uses it only for lookups; clusters pull with their own
 // credentials. It refers to its credentials by reference and never holds them.
 type Registry struct {
-	id             string
+	aggregate.Root
 	organizationID string
 	workspaceID    string
 	slug           string
@@ -46,21 +46,22 @@ type Registry struct {
 	deletedAt      *time.Time
 }
 
-// RegistrySnapshot is a Registry's state, for repositories and audit records.
+// RegistrySnapshot is a Registry's state, for repositories, audit records, and
+// events. Its JSON form is part of the Registry events' contract.
 type RegistrySnapshot struct {
-	ID             string
-	OrganizationID string
-	WorkspaceID    string
-	Slug           string
-	DisplayName    string
-	Kind           RegistryKind
-	URL            string
-	CredentialRef  *string
-	LookupFrom     LookupFrom
-	LookupPool     *string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	DeletedAt      *time.Time
+	ID             string       `json:"id"`
+	OrganizationID string       `json:"organization_id"`
+	WorkspaceID    string       `json:"workspace_id"`
+	Slug           string       `json:"slug"`
+	DisplayName    string       `json:"display_name"`
+	Kind           RegistryKind `json:"kind"`
+	URL            string       `json:"url"`
+	CredentialRef  *string      `json:"credential_ref"`
+	LookupFrom     LookupFrom   `json:"lookup_from"`
+	LookupPool     *string      `json:"lookup_pool"`
+	CreatedAt      time.Time    `json:"created_at"`
+	UpdatedAt      time.Time    `json:"updated_at"`
+	DeletedAt      *time.Time   `json:"deleted_at"`
 }
 
 // NewRegistryProps describes a Registry. A new one leaves the timestamps
@@ -101,7 +102,8 @@ func NewRegistry(props NewRegistryProps, registryID *string) (*Registry, error) 
 	if err := validateRequired("workspace ID", props.WorkspaceID); err != nil {
 		return nil, err
 	}
-	if err := validateOwnID(Registry{}.Prefix(), registryID); err != nil {
+	root, err := newRoot(Registry{}.Prefix(), registryID)
+	if err != nil {
 		return nil, err
 	}
 	if err := validateDisplayName(props.DisplayName); err != nil {
@@ -127,6 +129,7 @@ func NewRegistry(props NewRegistryProps, registryID *string) (*Registry, error) 
 
 	now := clock.Now()
 	r := &Registry{
+		Root:           root,
 		organizationID: props.OrganizationID,
 		workspaceID:    props.WorkspaceID,
 		slug:           s,
@@ -140,10 +143,9 @@ func NewRegistry(props NewRegistryProps, registryID *string) (*Registry, error) 
 		updatedAt:      timeOr(props.UpdatedAt, now),
 		deletedAt:      clock.CopyTime(props.DeletedAt),
 	}
-	if registryID != nil {
-		r.id = *registryID
+	if r.IsNew() {
+		r.RecordEvent(RegistryCreated{r.Snapshot()})
 	}
-	id.Assign(&r.id, r)
 	return r, nil
 }
 
@@ -181,7 +183,6 @@ func validateLookup(from LookupFrom, pool *string) error {
 }
 
 func (Registry) Prefix() string            { return "reg" }
-func (r *Registry) ID() string             { return r.id }
 func (r *Registry) OrganizationID() string { return r.organizationID }
 func (r *Registry) WorkspaceID() string    { return r.workspaceID }
 func (r *Registry) Slug() string           { return r.slug }
@@ -199,7 +200,7 @@ func (r *Registry) Archived() bool { return r.deletedAt != nil }
 
 func (r *Registry) Snapshot() RegistrySnapshot {
 	return RegistrySnapshot{
-		ID:             r.id,
+		ID:             r.ID(),
 		OrganizationID: r.organizationID,
 		WorkspaceID:    r.workspaceID,
 		Slug:           r.slug,
@@ -217,7 +218,7 @@ func (r *Registry) Snapshot() RegistrySnapshot {
 
 func (r *Registry) checkActive() error {
 	if r.Archived() {
-		return fmt.Errorf("%w: registry %s", ErrArchived, r.id)
+		return fmt.Errorf("%w: registry %s", ErrArchived, r.ID())
 	}
 	return nil
 }
@@ -243,16 +244,15 @@ func (r *Registry) Update(props UpdateRegistryProps) error {
 		}
 	}
 
-	if props.Slug != nil {
-		r.slug = *props.Slug
-	}
-	if props.DisplayName != nil {
-		r.displayName = *props.DisplayName
-	}
-	if props.URL != nil {
-		r.url = *props.URL
-	}
+	changed := anyTrue(
+		set(&r.slug, props.Slug),
+		set(&r.displayName, props.DisplayName),
+		set(&r.url, props.URL),
+	)
 	r.updatedAt = clock.Now()
+	if changed {
+		r.RecordEvent(RegistryUpdated{r.Snapshot()})
+	}
 	return nil
 }
 
@@ -264,8 +264,12 @@ func (r *Registry) SetCredential(credentialRef string) error {
 	if credentialRef == "" {
 		return NewErrInvalidInput("a credential reference is required; use ClearCredential to remove it")
 	}
+	changed := !equalPtr(r.credentialRef, &credentialRef)
 	r.credentialRef = &credentialRef
 	r.updatedAt = clock.Now()
+	if changed {
+		r.RecordEvent(RegistryCredentialSet{r.Snapshot()})
+	}
 	return nil
 }
 
@@ -274,8 +278,12 @@ func (r *Registry) ClearCredential() error {
 	if err := r.checkActive(); err != nil {
 		return err
 	}
+	changed := r.credentialRef != nil
 	r.credentialRef = nil
 	r.updatedAt = clock.Now()
+	if changed {
+		r.RecordEvent(RegistryCredentialCleared{r.Snapshot()})
+	}
 	return nil
 }
 
@@ -289,9 +297,13 @@ func (r *Registry) SetLookup(from LookupFrom, pool string) error {
 	if err := validateLookup(from, p); err != nil {
 		return err
 	}
+	changed := from != r.lookupFrom || !equalPtr(p, r.lookupPool)
 	r.lookupFrom = from
 	r.lookupPool = p
 	r.updatedAt = clock.Now()
+	if changed {
+		r.RecordEvent(RegistryLookupChanged{r.Snapshot()})
+	}
 	return nil
 }
 
@@ -301,6 +313,7 @@ func (r *Registry) Archive() {
 		now := clock.Now()
 		r.deletedAt = &now
 		r.updatedAt = now
+		r.RecordEvent(RegistryArchived{r.Snapshot()})
 	}
 }
 
@@ -309,5 +322,6 @@ func (r *Registry) Restore() {
 	if r.Archived() {
 		r.deletedAt = nil
 		r.updatedAt = clock.Now()
+		r.RecordEvent(RegistryRestored{r.Snapshot()})
 	}
 }

@@ -201,6 +201,35 @@ func fakeSorted[S any](m map[string]S, keep func(S) bool, created func(S) (time.
 
 // Rebuilding, as the PostgreSQL mappers do.
 
+func fakeWorkspace(s workspace.WorkspaceSnapshot) *workspace.Workspace {
+	return fakeMust(workspace.NewWorkspace(workspace.NewWorkspaceProps{
+		OrganizationID:       s.OrganizationID,
+		Slug:                 s.Slug,
+		DisplayName:          s.DisplayName,
+		Description:          s.Description,
+		IsDefault:            s.IsDefault,
+		CreatedByPrincipalID: s.CreatedByPrincipalID,
+		CreatedAt:            &s.CreatedAt,
+		UpdatedAt:            &s.UpdatedAt,
+		ArchivedAt:           s.ArchivedAt,
+	}, &s.ID))
+}
+
+func fakeProject(s workspace.ProjectSnapshot) *workspace.Project {
+	return fakeMust(workspace.NewProject(workspace.NewProjectProps{
+		OrganizationID:       s.OrganizationID,
+		WorkspaceID:          s.WorkspaceID,
+		OwnerTeamID:          s.OwnerTeamID,
+		Slug:                 s.Slug,
+		DisplayName:          s.DisplayName,
+		Description:          s.Description,
+		CreatedByPrincipalID: s.CreatedByPrincipalID,
+		CreatedAt:            &s.CreatedAt,
+		UpdatedAt:            &s.UpdatedAt,
+		ArchivedAt:           s.ArchivedAt,
+	}, &s.ID))
+}
+
 func fakeEnvironment(s EnvironmentSnapshot) *Environment {
 	return fakeMust(NewEnvironment(NewEnvironmentProps{
 		OrganizationID:   s.OrganizationID,
@@ -1297,24 +1326,24 @@ func (a *fakeAudit) last() audit.Event {
 // fakeWorkspaces is the workspace capability's lookups, over stored data.
 type fakeWorkspaces struct {
 	mu         sync.Mutex
-	workspaces map[string]workspace.WorkspaceData
-	projects   map[string]workspace.ProjectData
+	workspaces map[string]workspace.WorkspaceSnapshot
+	projects   map[string]workspace.ProjectSnapshot
 }
 
 func newFakeWorkspaces() *fakeWorkspaces {
-	return &fakeWorkspaces{workspaces: map[string]workspace.WorkspaceData{}, projects: map[string]workspace.ProjectData{}}
+	return &fakeWorkspaces{workspaces: map[string]workspace.WorkspaceSnapshot{}, projects: map[string]workspace.ProjectSnapshot{}}
 }
 
 func (f *fakeWorkspaces) putWorkspace(w *workspace.Workspace) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.workspaces[w.ID()] = w.Data()
+	f.workspaces[w.ID()] = w.Snapshot()
 }
 
 func (f *fakeWorkspaces) putProject(p *workspace.Project) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.projects[p.ID()] = p.Data()
+	f.projects[p.ID()] = p.Snapshot()
 }
 
 func (f *fakeWorkspaces) LookupWorkspace(_ context.Context, org, wsID string) (*workspace.Workspace, error) {
@@ -1324,7 +1353,7 @@ func (f *fakeWorkspaces) LookupWorkspace(_ context.Context, org, wsID string) (*
 	if !ok || d.OrganizationID != org {
 		return nil, workspace.ErrNotFound
 	}
-	return workspace.ReconstituteWorkspace(d), nil
+	return fakeWorkspace(d), nil
 }
 
 func (f *fakeWorkspaces) LookupProject(_ context.Context, org, prjID string) (*workspace.Project, error) {
@@ -1334,7 +1363,7 @@ func (f *fakeWorkspaces) LookupProject(_ context.Context, org, prjID string) (*w
 	if !ok || d.OrganizationID != org {
 		return nil, workspace.ErrNotFound
 	}
-	return workspace.ReconstituteProject(d), nil
+	return fakeProject(d), nil
 }
 
 // The fixture.
@@ -1414,7 +1443,7 @@ func (f *svcFixture) addWorkspace(t *testing.T, wsSlug, projectSlug string) (*wo
 	w, err := workspace.NewWorkspace(workspace.NewWorkspaceProps{OrganizationID: svcOrg, Slug: wsSlug, DisplayName: wsSlug}, nil)
 	require.NoError(t, err)
 	f.workspaces.putWorkspace(w)
-	p, err := workspace.NewProject(workspace.NewProjectProps{OrganizationID: svcOrg, WorkspaceID: w.ID(), OwnerTeamID: svcTeam, Slug: projectSlug, DisplayName: projectSlug})
+	p, err := workspace.NewProject(workspace.NewProjectProps{OrganizationID: svcOrg, WorkspaceID: w.ID(), OwnerTeamID: svcTeam, Slug: projectSlug, DisplayName: projectSlug}, nil)
 	require.NoError(t, err)
 	f.workspaces.putProject(p)
 	return w, p

@@ -2,8 +2,10 @@ package delivery
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
 )
@@ -22,6 +24,7 @@ const (
 // Release are current there is set by Deployments, not by this capability's
 // configuration methods.
 type Placement struct {
+	aggregate.Events
 	organizationID      string
 	applicationID       string
 	targetID            string
@@ -49,6 +52,13 @@ func (c ApplyConfig) clone() *ApplyConfig {
 	return &c
 }
 
+func (c *ApplyConfig) equal(o *ApplyConfig) bool {
+	if c == nil || o == nil {
+		return c == o
+	}
+	return c.DefinitionArtifact == o.DefinitionArtifact && slices.Equal(c.ValuesRefs, o.ValuesRefs)
+}
+
 func (c ApplyConfig) validate() error {
 	if err := validateArtifactName(c.DefinitionArtifact); err != nil {
 		return NewErrInvalidInput("apply config needs the name of the artifact that holds the deployment definition")
@@ -64,17 +74,18 @@ func (c ApplyConfig) validate() error {
 	return nil
 }
 
-// PlacementSnapshot is a Placement's state, for repositories and audit records.
+// PlacementSnapshot is a Placement's state, for repositories, audit records, and
+// events. Its JSON form is part of the Placement events' contract.
 type PlacementSnapshot struct {
-	OrganizationID      string
-	ApplicationID       string
-	TargetID            string
-	Source              PlacementSource
-	ApplyConfig         *ApplyConfig
-	CurrentDeploymentID *string
-	CurrentReleaseID    *string
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
+	OrganizationID      string          `json:"organization_id"`
+	ApplicationID       string          `json:"application_id"`
+	TargetID            string          `json:"target_id"`
+	Source              PlacementSource `json:"source"`
+	ApplyConfig         *ApplyConfig    `json:"apply_config"`
+	CurrentDeploymentID *string         `json:"current_deployment_id"`
+	CurrentReleaseID    *string         `json:"current_release_id"`
+	CreatedAt           time.Time       `json:"created_at"`
+	UpdatedAt           time.Time       `json:"updated_at"`
 }
 
 // NewPlacementProps describes a Placement. A new one leaves the current
@@ -126,6 +137,11 @@ func NewPlacement(props NewPlacementProps) (*Placement, error) {
 	now := clock.Now()
 	p.createdAt = timeOr(props.CreatedAt, now)
 	p.updatedAt = timeOr(props.UpdatedAt, now)
+	// A Placement has no ID to tell a new one from a stored one; a stored one
+	// has its creation time.
+	if props.CreatedAt == nil {
+		p.RecordEvent(PlacementCreated{p.Snapshot()})
+	}
 	return p, nil
 }
 
@@ -168,9 +184,13 @@ func (p *Placement) Configure(c ApplyConfig) error {
 	if err := c.validate(); err != nil {
 		return err
 	}
+	changed := p.source != PlacementConfigured || !p.applyConfig.equal(&c)
 	p.applyConfig = c.clone()
 	p.source = PlacementConfigured
 	p.updatedAt = clock.Now()
+	if changed {
+		p.RecordEvent(PlacementApplyConfigSet{p.Snapshot()})
+	}
 	return nil
 }
 
@@ -180,5 +200,6 @@ func (p *Placement) ClearApplyConfig() {
 	if p.applyConfig != nil {
 		p.applyConfig = nil
 		p.updatedAt = clock.Now()
+		p.RecordEvent(PlacementApplyConfigCleared{p.Snapshot()})
 	}
 }

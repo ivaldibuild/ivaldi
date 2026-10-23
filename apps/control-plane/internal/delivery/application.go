@@ -2,11 +2,12 @@ package delivery
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
-	"github.com/ivaldibuild/ivaldi/pkg/id"
 )
 
 // WorkloadSelectorLabel is the label an Application's workloads carry when
@@ -18,7 +19,7 @@ const WorkloadSelectorLabel = "ivaldi.build/application"
 // grants no access, which follows the Project. Applications are archived,
 // never deleted, because Deployments refer to them.
 type Application struct {
-	id               string
+	aggregate.Root
 	organizationID   string
 	workspaceID      string
 	projectID        string
@@ -32,20 +33,23 @@ type Application struct {
 	archivedAt       *time.Time
 }
 
-// ApplicationSnapshot is an Application's state, for repositories and audit records.
+// ApplicationSnapshot is an Application's state, for repositories, audit
+// records, and events. Its JSON form is part of the Application events'
+// contract, so a change to it that consumers would misread needs new event
+// versions.
 type ApplicationSnapshot struct {
-	ID               string
-	OrganizationID   string
-	WorkspaceID      string
-	ProjectID        string
-	OwnerTeamID      string
-	Slug             string
-	DisplayName      string
-	SourceID         *string
-	WorkloadSelector map[string]string
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-	ArchivedAt       *time.Time
+	ID               string            `json:"id"`
+	OrganizationID   string            `json:"organization_id"`
+	WorkspaceID      string            `json:"workspace_id"`
+	ProjectID        string            `json:"project_id"`
+	OwnerTeamID      string            `json:"owner_team_id"`
+	Slug             string            `json:"slug"`
+	DisplayName      string            `json:"display_name"`
+	SourceID         *string           `json:"source_id"`
+	WorkloadSelector map[string]string `json:"workload_selector"`
+	CreatedAt        time.Time         `json:"created_at"`
+	UpdatedAt        time.Time         `json:"updated_at"`
+	ArchivedAt       *time.Time        `json:"archived_at"`
 }
 
 // NewApplicationProps describes an Application. A new one leaves the
@@ -83,25 +87,33 @@ func NewApplication(props NewApplicationProps, applicationID *string) (*Applicat
 	if err := validateRequired("organization ID", props.OrganizationID); err != nil {
 		return nil, err
 	}
+
 	if err := validateRequired("workspace ID", props.WorkspaceID); err != nil {
 		return nil, err
 	}
+
 	if err := validateRequired("project ID", props.ProjectID); err != nil {
 		return nil, err
 	}
+
 	if err := validateRequired("owning team ID", props.OwnerTeamID); err != nil {
 		return nil, err
 	}
-	if err := validateOwnID(Application{}.Prefix(), applicationID); err != nil {
+
+	root, err := newRoot(Application{}.Prefix(), applicationID)
+	if err != nil {
 		return nil, err
 	}
+
 	if err := validateDisplayName(props.DisplayName); err != nil {
 		return nil, err
 	}
+
 	s, err := slugOrDerived(props.Slug, props.DisplayName)
 	if err != nil {
 		return nil, err
 	}
+
 	if len(props.WorkloadSelector) > 0 {
 		if err := validateSelector(props.WorkloadSelector); err != nil {
 			return nil, err
@@ -109,7 +121,9 @@ func NewApplication(props NewApplicationProps, applicationID *string) (*Applicat
 	}
 
 	now := clock.Now()
+
 	a := &Application{
+		Root:             root,
 		organizationID:   props.OrganizationID,
 		workspaceID:      props.WorkspaceID,
 		projectID:        props.ProjectID,
@@ -122,18 +136,20 @@ func NewApplication(props NewApplicationProps, applicationID *string) (*Applicat
 		updatedAt:        timeOr(props.UpdatedAt, now),
 		archivedAt:       clock.CopyTime(props.ArchivedAt),
 	}
-	if applicationID != nil {
-		a.id = *applicationID
-	}
-	id.Assign(&a.id, a)
+
 	if len(a.workloadSelector) == 0 {
 		a.workloadSelector = a.defaultSelector()
 	}
+
+	if a.IsNew() {
+		a.RecordEvent(ApplicationCreated{a.Snapshot()})
+	}
+
 	return a, nil
 }
 
 func (a *Application) defaultSelector() map[string]string {
-	return map[string]string{WorkloadSelectorLabel: a.id}
+	return map[string]string{WorkloadSelectorLabel: a.ID()}
 }
 
 // validateSelector checks a label selector loosely: a bounded number of
@@ -154,7 +170,6 @@ func validateSelector(selector map[string]string) error {
 }
 
 func (Application) Prefix() string                         { return "app" }
-func (a *Application) ID() string                          { return a.id }
 func (a *Application) OrganizationID() string              { return a.organizationID }
 func (a *Application) WorkspaceID() string                 { return a.workspaceID }
 func (a *Application) ProjectID() string                   { return a.projectID }
@@ -171,7 +186,7 @@ func (a *Application) Archived() bool { return a.archivedAt != nil }
 
 func (a *Application) Snapshot() ApplicationSnapshot {
 	return ApplicationSnapshot{
-		ID:               a.id,
+		ID:               a.ID(),
 		OrganizationID:   a.organizationID,
 		WorkspaceID:      a.workspaceID,
 		ProjectID:        a.projectID,
@@ -188,7 +203,7 @@ func (a *Application) Snapshot() ApplicationSnapshot {
 
 func (a *Application) checkActive() error {
 	if a.Archived() {
-		return fmt.Errorf("%w: application %s", ErrArchived, a.id)
+		return fmt.Errorf("%w: application %s", ErrArchived, a.ID())
 	}
 	return nil
 }
@@ -198,35 +213,44 @@ func (a *Application) Update(props UpdateApplicationProps) error {
 	if err := a.checkActive(); err != nil {
 		return err
 	}
+
 	if props.Slug != nil {
 		if err := validateSlug(*props.Slug); err != nil {
 			return err
 		}
 	}
+
 	if props.DisplayName != nil {
 		if err := validateDisplayName(*props.DisplayName); err != nil {
 			return err
 		}
 	}
+
 	if len(props.WorkloadSelector) > 0 {
 		if err := validateSelector(props.WorkloadSelector); err != nil {
 			return err
 		}
 	}
 
-	if props.Slug != nil {
-		a.slug = *props.Slug
-	}
-	if props.DisplayName != nil {
-		a.displayName = *props.DisplayName
-	}
+	changed := anyTrue(
+		set(&a.slug, props.Slug),
+		set(&a.displayName, props.DisplayName),
+	)
 	if props.WorkloadSelector != nil {
-		a.workloadSelector = copyLabels(props.WorkloadSelector)
-		if len(a.workloadSelector) == 0 {
-			a.workloadSelector = a.defaultSelector()
+		selector := copyLabels(props.WorkloadSelector)
+		if len(selector) == 0 {
+			selector = a.defaultSelector()
+		}
+		if !maps.Equal(selector, a.workloadSelector) {
+			a.workloadSelector = selector
+			changed = true
 		}
 	}
 	a.updatedAt = clock.Now()
+
+	if changed {
+		a.RecordEvent(ApplicationUpdated{a.Snapshot()})
+	}
 	return nil
 }
 
@@ -238,8 +262,12 @@ func (a *Application) LinkSource(sourceID string) error {
 	if sourceID == "" {
 		return NewErrInvalidInput("a source ID is required; use UnlinkSource to remove it")
 	}
+	changed := a.sourceID == nil || *a.sourceID != sourceID
 	a.sourceID = &sourceID
 	a.updatedAt = clock.Now()
+	if changed {
+		a.RecordEvent(ApplicationSourceLinked{a.Snapshot()})
+	}
 	return nil
 }
 
@@ -248,8 +276,12 @@ func (a *Application) UnlinkSource() error {
 	if err := a.checkActive(); err != nil {
 		return err
 	}
+	changed := a.sourceID != nil
 	a.sourceID = nil
 	a.updatedAt = clock.Now()
+	if changed {
+		a.RecordEvent(ApplicationSourceUnlinked{a.Snapshot()})
+	}
 	return nil
 }
 
@@ -262,8 +294,12 @@ func (a *Application) TransferTo(ownerTeamID string) error {
 	if ownerTeamID == "" {
 		return NewErrInvalidInput("an application needs an owning team")
 	}
+	previous := a.ownerTeamID
 	a.ownerTeamID = ownerTeamID
 	a.updatedAt = clock.Now()
+	if ownerTeamID != previous {
+		a.RecordEvent(ApplicationTransferred{Application: a.Snapshot(), PreviousOwnerTeamID: previous})
+	}
 	return nil
 }
 
@@ -273,6 +309,7 @@ func (a *Application) Archive() {
 		now := clock.Now()
 		a.archivedAt = &now
 		a.updatedAt = now
+		a.RecordEvent(ApplicationArchived{a.Snapshot()})
 	}
 }
 
@@ -281,5 +318,6 @@ func (a *Application) Restore() {
 	if a.Archived() {
 		a.archivedAt = nil
 		a.updatedAt = clock.Now()
+		a.RecordEvent(ApplicationRestored{a.Snapshot()})
 	}
 }

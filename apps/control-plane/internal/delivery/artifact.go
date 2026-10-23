@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
 	"github.com/ivaldibuild/ivaldi/pkg/slug"
@@ -32,7 +33,7 @@ const (
 // api image, its migrate image, or its Helm chart. A Release has one Build
 // for each artifact.
 type Artifact struct {
-	id             string
+	aggregate.Root
 	organizationID string
 	applicationID  string
 	name           string
@@ -46,20 +47,21 @@ type Artifact struct {
 	archivedAt     *time.Time
 }
 
-// ArtifactSnapshot is an Artifact's state, for repositories and audit records.
+// ArtifactSnapshot is an Artifact's state, for repositories, audit records, and
+// events. Its JSON form is part of the Artifact events' contract.
 type ArtifactSnapshot struct {
-	ID             string
-	OrganizationID string
-	ApplicationID  string
-	Name           string
-	ArtifactKind   ArtifactKind
-	ArtifactName   string
-	RegistryID     *string
-	Required       bool
-	Source         ArtifactSource
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	ArchivedAt     *time.Time
+	ID             string         `json:"id"`
+	OrganizationID string         `json:"organization_id"`
+	ApplicationID  string         `json:"application_id"`
+	Name           string         `json:"name"`
+	ArtifactKind   ArtifactKind   `json:"artifact_kind"`
+	ArtifactName   string         `json:"artifact_name"`
+	RegistryID     *string        `json:"registry_id"`
+	Required       bool           `json:"required"`
+	Source         ArtifactSource `json:"source"`
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
+	ArchivedAt     *time.Time     `json:"archived_at"`
 }
 
 // NewArtifactProps describes an Artifact. A new one leaves the timestamps
@@ -98,7 +100,8 @@ func NewArtifact(props NewArtifactProps, artifactID *string) (*Artifact, error) 
 	if !id.Valid(Application{}.Prefix(), props.ApplicationID) {
 		return nil, NewErrInvalidInput("an artifact needs an application ID")
 	}
-	if err := validateOwnID(Artifact{}.Prefix(), artifactID); err != nil {
+	root, err := newRoot(Artifact{}.Prefix(), artifactID)
+	if err != nil {
 		return nil, err
 	}
 	if err := validateArtifactName(props.Name); err != nil {
@@ -125,6 +128,7 @@ func NewArtifact(props NewArtifactProps, artifactID *string) (*Artifact, error) 
 
 	now := clock.Now()
 	a := &Artifact{
+		Root:           root,
 		organizationID: props.OrganizationID,
 		applicationID:  props.ApplicationID,
 		name:           props.Name,
@@ -137,10 +141,9 @@ func NewArtifact(props NewArtifactProps, artifactID *string) (*Artifact, error) 
 		updatedAt:      timeOr(props.UpdatedAt, now),
 		archivedAt:     clock.CopyTime(props.ArchivedAt),
 	}
-	if artifactID != nil {
-		a.id = *artifactID
+	if a.IsNew() {
+		a.RecordEvent(ArtifactCreated{a.Snapshot()})
 	}
-	id.Assign(&a.id, a)
 	return a, nil
 }
 
@@ -163,7 +166,6 @@ func validatePublishedName(name string) error {
 }
 
 func (Artifact) Prefix() string                { return "art" }
-func (a *Artifact) ID() string                 { return a.id }
 func (a *Artifact) OrganizationID() string     { return a.organizationID }
 func (a *Artifact) ApplicationID() string      { return a.applicationID }
 func (a *Artifact) Name() string               { return a.name }
@@ -180,7 +182,7 @@ func (a *Artifact) Archived() bool { return a.archivedAt != nil }
 
 func (a *Artifact) Snapshot() ArtifactSnapshot {
 	return ArtifactSnapshot{
-		ID:             a.id,
+		ID:             a.ID(),
 		OrganizationID: a.organizationID,
 		ApplicationID:  a.applicationID,
 		Name:           a.name,
@@ -197,7 +199,7 @@ func (a *Artifact) Snapshot() ArtifactSnapshot {
 
 func (a *Artifact) checkActive() error {
 	if a.Archived() {
-		return fmt.Errorf("%w: artifact %s", ErrArchived, a.id)
+		return fmt.Errorf("%w: artifact %s", ErrArchived, a.ID())
 	}
 	return nil
 }
@@ -219,16 +221,15 @@ func (a *Artifact) Update(props UpdateArtifactProps) error {
 		}
 	}
 
-	if props.Name != nil {
-		a.name = *props.Name
-	}
-	if props.ArtifactName != nil {
-		a.artifactName = *props.ArtifactName
-	}
-	if props.Required != nil {
-		a.required = *props.Required
-	}
+	changed := anyTrue(
+		set(&a.name, props.Name),
+		set(&a.artifactName, props.ArtifactName),
+		set(&a.required, props.Required),
+	)
 	a.updatedAt = clock.Now()
+	if changed {
+		a.RecordEvent(ArtifactUpdated{a.Snapshot()})
+	}
 	return nil
 }
 
@@ -241,8 +242,12 @@ func (a *Artifact) UseRegistry(registryID string) error {
 	if !id.Valid(Registry{}.Prefix(), registryID) {
 		return NewErrInvalidInput(fmt.Sprintf("%q is not a registry ID", registryID))
 	}
+	changed := !equalPtr(a.registryID, &registryID)
 	a.registryID = &registryID
 	a.updatedAt = clock.Now()
+	if changed {
+		a.RecordEvent(ArtifactRegistrySet{a.Snapshot()})
+	}
 	return nil
 }
 
@@ -251,8 +256,12 @@ func (a *Artifact) ClearRegistry() error {
 	if err := a.checkActive(); err != nil {
 		return err
 	}
+	changed := a.registryID != nil
 	a.registryID = nil
 	a.updatedAt = clock.Now()
+	if changed {
+		a.RecordEvent(ArtifactRegistryCleared{a.Snapshot()})
+	}
 	return nil
 }
 
@@ -265,6 +274,7 @@ func (a *Artifact) Declare() error {
 	if a.source != ArtifactDeclared {
 		a.source = ArtifactDeclared
 		a.updatedAt = clock.Now()
+		a.RecordEvent(ArtifactConfirmed{a.Snapshot()})
 	}
 	return nil
 }
@@ -275,6 +285,7 @@ func (a *Artifact) Archive() {
 		now := clock.Now()
 		a.archivedAt = &now
 		a.updatedAt = now
+		a.RecordEvent(ArtifactArchived{a.Snapshot()})
 	}
 }
 
@@ -283,5 +294,6 @@ func (a *Artifact) Restore() {
 	if a.Archived() {
 		a.archivedAt = nil
 		a.updatedAt = clock.Now()
+		a.RecordEvent(ArtifactRestored{a.Snapshot()})
 	}
 }

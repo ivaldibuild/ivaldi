@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
-	"github.com/ivaldibuild/ivaldi/pkg/id"
 )
 
 // OAuthRefreshToken is a rotating refresh token. Every use replaces it with
@@ -13,7 +13,7 @@ import (
 // whole family must be revoked, because one of its tokens leaked. Only its
 // SHA-256 hash is stored.
 type OAuthRefreshToken struct {
-	id             string
+	aggregate.Root
 	organizationID string
 	principalID    string
 	clientID       string
@@ -71,7 +71,8 @@ func NewOAuthRefreshToken(props NewOAuthRefreshTokenProps, tokenID *string) (*OA
 	if err := validateID("organization ID", Organization{}.Prefix(), props.OrganizationID); err != nil {
 		return nil, err
 	}
-	if err := validateOwnID(prefix, tokenID); err != nil {
+	root, err := newRoot(prefix, tokenID)
+	if err != nil {
 		return nil, err
 	}
 	if err := validateID("principal ID", principalPrefix, props.PrincipalID); err != nil {
@@ -106,6 +107,7 @@ func NewOAuthRefreshToken(props NewOAuthRefreshTokenProps, tokenID *string) (*OA
 	}
 
 	t := &OAuthRefreshToken{
+		Root:           root,
 		organizationID: props.OrganizationID,
 		principalID:    props.PrincipalID,
 		clientID:       props.ClientID,
@@ -118,18 +120,13 @@ func NewOAuthRefreshToken(props NewOAuthRefreshTokenProps, tokenID *string) (*OA
 		revokedAt:      clock.CopyTime(props.RevokedAt),
 		createdAt:      createdAt,
 	}
-	if tokenID != nil {
-		t.id = *tokenID
-	}
-	id.Assign(&t.id, t)
 	if t.familyID == "" {
-		t.familyID = t.id
+		t.familyID = t.ID()
 	}
 	return t, nil
 }
 
 func (OAuthRefreshToken) Prefix() string            { return "ort" }
-func (t *OAuthRefreshToken) ID() string             { return t.id }
 func (t *OAuthRefreshToken) OrganizationID() string { return t.organizationID }
 func (t *OAuthRefreshToken) PrincipalID() string    { return t.principalID }
 func (t *OAuthRefreshToken) ClientID() string       { return t.clientID }
@@ -148,7 +145,7 @@ func (t *OAuthRefreshToken) Expired() bool  { return !clock.Now().Before(t.expir
 
 func (t *OAuthRefreshToken) Snapshot() OAuthRefreshTokenSnapshot {
 	return OAuthRefreshTokenSnapshot{
-		ID:             t.id,
+		ID:             t.ID(),
 		OrganizationID: t.organizationID,
 		PrincipalID:    t.principalID,
 		ClientID:       t.clientID,
@@ -170,13 +167,13 @@ func (t *OAuthRefreshToken) Snapshot() OAuthRefreshTokenSnapshot {
 func (t *OAuthRefreshToken) Rotate(clientID string, tokenHash []byte, expiresAt time.Time) (*OAuthRefreshToken, error) {
 	switch {
 	case t.Revoked():
-		return nil, fmt.Errorf("%w: refresh token %s", ErrRevoked, t.id)
+		return nil, fmt.Errorf("%w: refresh token %s", ErrRevoked, t.ID())
 	case t.Replaced():
-		return nil, fmt.Errorf("%w: refresh token %s was rotated; revoke family %s", ErrAlreadyUsed, t.id, t.familyID)
+		return nil, fmt.Errorf("%w: refresh token %s was rotated; revoke family %s", ErrAlreadyUsed, t.ID(), t.familyID)
 	case t.Expired():
-		return nil, fmt.Errorf("%w: refresh token %s", ErrExpired, t.id)
+		return nil, fmt.Errorf("%w: refresh token %s", ErrExpired, t.ID())
 	case clientID != t.clientID:
-		return nil, fmt.Errorf("%w: refresh token %s was issued to another client", ErrGrantMismatch, t.id)
+		return nil, fmt.Errorf("%w: refresh token %s was issued to another client", ErrGrantMismatch, t.ID())
 	}
 	next, err := NewOAuthRefreshToken(NewOAuthRefreshTokenProps{
 		OrganizationID: t.organizationID,
@@ -191,7 +188,7 @@ func (t *OAuthRefreshToken) Rotate(clientID string, tokenHash []byte, expiresAt 
 	if err != nil {
 		return nil, err
 	}
-	nextID := next.id
+	nextID := next.ID()
 	t.replacedBy = &nextID
 	return next, nil
 }

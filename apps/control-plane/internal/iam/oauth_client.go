@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
-	"github.com/ivaldibuild/ivaldi/pkg/id"
 )
 
 // ClientRegistration is how an OAuth client became known.
@@ -28,7 +28,7 @@ const (
 // server. Clients are platform-scoped, because they register before any
 // Organization is known; consent and tokens are per Organization.
 type OAuthClient struct {
-	id           string
+	aggregate.Root
 	clientID     string
 	registration ClientRegistration
 	name         string
@@ -68,7 +68,8 @@ type NewOAuthClientProps struct {
 
 // NewOAuthClient returns an OAuthClient, with a new ID unless clientID gives a stored one.
 func NewOAuthClient(props NewOAuthClientProps, clientID *string) (*OAuthClient, error) {
-	if err := validateOwnID(OAuthClient{}.Prefix(), clientID); err != nil {
+	root, err := newRoot(OAuthClient{}.Prefix(), clientID)
+	if err != nil {
 		return nil, err
 	}
 	if err := validateName("name", props.Name, maxNameLength); err != nil {
@@ -104,6 +105,7 @@ func NewOAuthClient(props NewOAuthClientProps, clientID *string) (*OAuthClient, 
 	}
 
 	c := &OAuthClient{
+		Root:         root,
 		clientID:     props.ClientID,
 		registration: props.Registration,
 		name:         props.Name,
@@ -112,12 +114,8 @@ func NewOAuthClient(props NewOAuthClientProps, clientID *string) (*OAuthClient, 
 		createdAt:    timeOr(props.CreatedAt, clock.Now()),
 		lastUsedAt:   clock.CopyTime(props.LastUsedAt),
 	}
-	if clientID != nil {
-		c.id = *clientID
-	}
-	id.Assign(&c.id, c)
 	if c.clientID == "" {
-		c.clientID = c.id
+		c.clientID = c.ID()
 	}
 	return c, nil
 }
@@ -162,7 +160,6 @@ func isLoopback(host string) bool {
 }
 
 func (OAuthClient) Prefix() string                      { return "ocl" }
-func (c *OAuthClient) ID() string                       { return c.id }
 func (c *OAuthClient) ClientID() string                 { return c.clientID }
 func (c *OAuthClient) Registration() ClientRegistration { return c.registration }
 func (c *OAuthClient) Name() string                     { return c.name }
@@ -194,7 +191,7 @@ func (c *OAuthClient) AllowsRedirect(uri string) bool {
 
 func (c *OAuthClient) Snapshot() OAuthClientSnapshot {
 	return OAuthClientSnapshot{
-		ID:           c.id,
+		ID:           c.ID(),
 		ClientID:     c.clientID,
 		Registration: c.registration,
 		Name:         c.name,

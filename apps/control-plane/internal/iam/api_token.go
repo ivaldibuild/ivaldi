@@ -4,15 +4,15 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
-	"github.com/ivaldibuild/ivaldi/pkg/id"
 )
 
 // APIToken is a long-lived token for a User (CLI, API) or a ServiceAccount.
 // It acts with its owner's grants. Only its SHA-256 hash and a short prefix
 // for display are stored.
 type APIToken struct {
-	id             string
+	aggregate.Root
 	organizationID string
 	principalID    string
 	name           string
@@ -62,7 +62,8 @@ func NewAPIToken(props NewAPITokenProps, apiTokenID *string) (*APIToken, error) 
 	if err := validateID("organization ID", Organization{}.Prefix(), props.OrganizationID); err != nil {
 		return nil, err
 	}
-	if err := validateOwnID(APIToken{}.Prefix(), apiTokenID); err != nil {
+	root, err := newRoot(APIToken{}.Prefix(), apiTokenID)
+	if err != nil {
 		return nil, err
 	}
 	if err := validateID("principal ID", principalPrefix, props.PrincipalID); err != nil {
@@ -83,6 +84,7 @@ func NewAPIToken(props NewAPITokenProps, apiTokenID *string) (*APIToken, error) 
 	}
 
 	t := &APIToken{
+		Root:           root,
 		organizationID: props.OrganizationID,
 		principalID:    props.PrincipalID,
 		name:           props.Name,
@@ -93,15 +95,10 @@ func NewAPIToken(props NewAPITokenProps, apiTokenID *string) (*APIToken, error) 
 		revokedAt:      clock.CopyTime(props.RevokedAt),
 		createdAt:      createdAt,
 	}
-	if apiTokenID != nil {
-		t.id = *apiTokenID
-	}
-	id.Assign(&t.id, t)
 	return t, nil
 }
 
 func (APIToken) Prefix() string            { return "tok" }
-func (t *APIToken) ID() string             { return t.id }
 func (t *APIToken) OrganizationID() string { return t.organizationID }
 func (t *APIToken) PrincipalID() string    { return t.principalID }
 func (t *APIToken) Name() string           { return t.name }
@@ -120,16 +117,16 @@ func (t *APIToken) Expired() bool { return t.expiresAt != nil && !clock.Now().Be
 func (t *APIToken) CheckUsable() error {
 	switch {
 	case t.Revoked():
-		return fmt.Errorf("%w: api token %s", ErrRevoked, t.id)
+		return fmt.Errorf("%w: api token %s", ErrRevoked, t.ID())
 	case t.Expired():
-		return fmt.Errorf("%w: api token %s", ErrExpired, t.id)
+		return fmt.Errorf("%w: api token %s", ErrExpired, t.ID())
 	}
 	return nil
 }
 
 func (t *APIToken) Snapshot() APITokenSnapshot {
 	return APITokenSnapshot{
-		ID:             t.id,
+		ID:             t.ID(),
 		OrganizationID: t.organizationID,
 		PrincipalID:    t.principalID,
 		Name:           t.name,

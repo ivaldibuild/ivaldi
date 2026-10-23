@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
-	"github.com/ivaldibuild/ivaldi/pkg/id"
 )
 
 // WorkloadCredentialKind is how an enrolled Workload proves who it is.
@@ -24,7 +24,7 @@ const (
 // WorkloadCredential is one way an enrolled Workload authenticates. Each
 // (kind, identifier) belongs to one Workload.
 type WorkloadCredential struct {
-	id             string
+	aggregate.Root
 	organizationID string
 	principalID    string
 	kind           WorkloadCredentialKind
@@ -68,7 +68,8 @@ func NewWorkloadCredential(props NewWorkloadCredentialProps, credentialID *strin
 	if err := validateID("organization ID", Organization{}.Prefix(), props.OrganizationID); err != nil {
 		return nil, err
 	}
-	if err := validateOwnID(WorkloadCredential{}.Prefix(), credentialID); err != nil {
+	root, err := newRoot(WorkloadCredential{}.Prefix(), credentialID)
+	if err != nil {
 		return nil, err
 	}
 	if err := validateID("principal ID", principalPrefix, props.PrincipalID); err != nil {
@@ -88,6 +89,7 @@ func NewWorkloadCredential(props NewWorkloadCredentialProps, credentialID *strin
 	}
 
 	c := &WorkloadCredential{
+		Root:           root,
 		organizationID: props.OrganizationID,
 		principalID:    props.PrincipalID,
 		kind:           props.Kind,
@@ -96,15 +98,10 @@ func NewWorkloadCredential(props NewWorkloadCredentialProps, credentialID *strin
 		revokedAt:      clock.CopyTime(props.RevokedAt),
 		createdAt:      createdAt,
 	}
-	if credentialID != nil {
-		c.id = *credentialID
-	}
-	id.Assign(&c.id, c)
 	return c, nil
 }
 
 func (WorkloadCredential) Prefix() string                  { return "wcr" }
-func (c *WorkloadCredential) ID() string                   { return c.id }
 func (c *WorkloadCredential) OrganizationID() string       { return c.organizationID }
 func (c *WorkloadCredential) PrincipalID() string          { return c.principalID }
 func (c *WorkloadCredential) Kind() WorkloadCredentialKind { return c.kind }
@@ -123,16 +120,16 @@ func (c *WorkloadCredential) Expired() bool {
 func (c *WorkloadCredential) CheckUsable() error {
 	switch {
 	case c.Revoked():
-		return fmt.Errorf("%w: workload credential %s", ErrRevoked, c.id)
+		return fmt.Errorf("%w: workload credential %s", ErrRevoked, c.ID())
 	case c.Expired():
-		return fmt.Errorf("%w: workload credential %s", ErrExpired, c.id)
+		return fmt.Errorf("%w: workload credential %s", ErrExpired, c.ID())
 	}
 	return nil
 }
 
 func (c *WorkloadCredential) Snapshot() WorkloadCredentialSnapshot {
 	return WorkloadCredentialSnapshot{
-		ID:             c.id,
+		ID:             c.ID(),
 		OrganizationID: c.organizationID,
 		PrincipalID:    c.principalID,
 		Kind:           c.kind,

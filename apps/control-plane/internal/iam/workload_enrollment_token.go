@@ -4,15 +4,15 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
-	"github.com/ivaldibuild/ivaldi/pkg/id"
 )
 
 // WorkloadEnrollmentToken lets one data-plane component enroll as a
 // Workload in a pool. It is single-use and short-lived, and only its
 // SHA-256 hash is stored.
 type WorkloadEnrollmentToken struct {
-	id                   string
+	aggregate.Root
 	organizationID       string
 	tokenHash            []byte
 	pool                 string
@@ -59,7 +59,8 @@ func NewWorkloadEnrollmentToken(props NewWorkloadEnrollmentTokenProps, tokenID *
 	if err := validateID("organization ID", Organization{}.Prefix(), props.OrganizationID); err != nil {
 		return nil, err
 	}
-	if err := validateOwnID(WorkloadEnrollmentToken{}.Prefix(), tokenID); err != nil {
+	root, err := newRoot(WorkloadEnrollmentToken{}.Prefix(), tokenID)
+	if err != nil {
 		return nil, err
 	}
 	if err := validateTokenHash("token hash", props.TokenHash); err != nil {
@@ -86,6 +87,7 @@ func NewWorkloadEnrollmentToken(props NewWorkloadEnrollmentTokenProps, tokenID *
 	}
 
 	t := &WorkloadEnrollmentToken{
+		Root:                 root,
 		organizationID:       props.OrganizationID,
 		tokenHash:            copyBytes(props.TokenHash),
 		pool:                 props.Pool,
@@ -95,15 +97,10 @@ func NewWorkloadEnrollmentToken(props NewWorkloadEnrollmentTokenProps, tokenID *
 		usedByPrincipalID:    usedBy,
 		createdAt:            createdAt,
 	}
-	if tokenID != nil {
-		t.id = *tokenID
-	}
-	id.Assign(&t.id, t)
 	return t, nil
 }
 
 func (WorkloadEnrollmentToken) Prefix() string                  { return "wet" }
-func (t *WorkloadEnrollmentToken) ID() string                   { return t.id }
 func (t *WorkloadEnrollmentToken) OrganizationID() string       { return t.organizationID }
 func (t *WorkloadEnrollmentToken) TokenHash() []byte            { return copyBytes(t.tokenHash) }
 func (t *WorkloadEnrollmentToken) Pool() string                 { return t.pool }
@@ -118,7 +115,7 @@ func (t *WorkloadEnrollmentToken) Expired() bool { return !clock.Now().Before(t.
 
 func (t *WorkloadEnrollmentToken) Snapshot() WorkloadEnrollmentTokenSnapshot {
 	return WorkloadEnrollmentTokenSnapshot{
-		ID:                   t.id,
+		ID:                   t.ID(),
 		OrganizationID:       t.organizationID,
 		TokenHash:            copyBytes(t.tokenHash),
 		Pool:                 t.pool,
@@ -135,9 +132,9 @@ func (t *WorkloadEnrollmentToken) Snapshot() WorkloadEnrollmentTokenSnapshot {
 func (t *WorkloadEnrollmentToken) Redeem(w *Workload) error {
 	switch {
 	case t.Used():
-		return fmt.Errorf("%w: enrollment token %s", ErrAlreadyUsed, t.id)
+		return fmt.Errorf("%w: enrollment token %s", ErrAlreadyUsed, t.ID())
 	case t.Expired():
-		return fmt.Errorf("%w: enrollment token %s", ErrExpired, t.id)
+		return fmt.Errorf("%w: enrollment token %s", ErrExpired, t.ID())
 	case w.OrganizationID() != t.organizationID:
 		return NewErrInvalidInput(fmt.Sprintf("workload %s is not in the enrollment token's organization", w.ID()))
 	case w.Pool() != t.pool:

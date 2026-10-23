@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
-	"github.com/ivaldibuild/ivaldi/pkg/id"
 )
 
 // ExternalIdentity links a User to the subject an identity provider asserts
@@ -13,7 +13,7 @@ import (
 // the Account, so an Organization's identity provider can only sign people
 // in to that Organization. Each subject links to one User per provider.
 type ExternalIdentity struct {
-	id                 string
+	aggregate.Root
 	organizationID     string
 	principalID        string
 	identityProviderID string
@@ -52,7 +52,8 @@ func NewExternalIdentity(props NewExternalIdentityProps, externalIdentityID *str
 	if err := validateID("organization ID", Organization{}.Prefix(), props.OrganizationID); err != nil {
 		return nil, err
 	}
-	if err := validateOwnID(ExternalIdentity{}.Prefix(), externalIdentityID); err != nil {
+	root, err := newRoot(ExternalIdentity{}.Prefix(), externalIdentityID)
+	if err != nil {
 		return nil, err
 	}
 	if err := validateID("principal ID", principalPrefix, props.PrincipalID); err != nil {
@@ -66,6 +67,7 @@ func NewExternalIdentity(props NewExternalIdentityProps, externalIdentityID *str
 	}
 
 	e := &ExternalIdentity{
+		Root:               root,
 		organizationID:     props.OrganizationID,
 		principalID:        props.PrincipalID,
 		identityProviderID: props.IdentityProviderID,
@@ -73,15 +75,10 @@ func NewExternalIdentity(props NewExternalIdentityProps, externalIdentityID *str
 		lastLoginAt:        clock.CopyTime(props.LastLoginAt),
 		createdAt:          timeOr(props.CreatedAt, clock.Now()),
 	}
-	if externalIdentityID != nil {
-		e.id = *externalIdentityID
-	}
-	id.Assign(&e.id, e)
 	return e, nil
 }
 
 func (ExternalIdentity) Prefix() string                { return "xid" }
-func (e *ExternalIdentity) ID() string                 { return e.id }
 func (e *ExternalIdentity) OrganizationID() string     { return e.organizationID }
 func (e *ExternalIdentity) PrincipalID() string        { return e.principalID }
 func (e *ExternalIdentity) IdentityProviderID() string { return e.identityProviderID }
@@ -91,7 +88,7 @@ func (e *ExternalIdentity) CreatedAt() time.Time       { return e.createdAt }
 
 func (e *ExternalIdentity) Snapshot() ExternalIdentitySnapshot {
 	return ExternalIdentitySnapshot{
-		ID:                 e.id,
+		ID:                 e.ID(),
 		OrganizationID:     e.organizationID,
 		PrincipalID:        e.principalID,
 		IdentityProviderID: e.identityProviderID,

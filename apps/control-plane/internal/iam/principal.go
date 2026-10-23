@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
-	"github.com/ivaldibuild/ivaldi/pkg/id"
 )
 
 // principalPrefix is shared by every kind of principal, whose subtype rows
@@ -36,7 +36,7 @@ const (
 // in principals that grants, group memberships, and audit records point to.
 // User, ServiceAccount, AgentSession, and Workload embed it.
 type principal struct {
-	id             string
+	aggregate.Root
 	organizationID string
 	kind           PrincipalKind
 	displayName    string
@@ -75,7 +75,8 @@ func newPrincipal(kind PrincipalKind, props PrincipalProps, principalID *string)
 	if err := validateID("organization ID", Organization{}.Prefix(), props.OrganizationID); err != nil {
 		return principal{}, err
 	}
-	if err := validateOwnID(principalPrefix, principalID); err != nil {
+	root, err := newRoot(principalPrefix, principalID)
+	if err != nil {
 		return principal{}, err
 	}
 	if err := validateName("display name", props.DisplayName, maxNameLength); err != nil {
@@ -93,6 +94,7 @@ func newPrincipal(kind PrincipalKind, props PrincipalProps, principalID *string)
 
 	now := clock.Now()
 	p := principal{
+		Root:           root,
 		organizationID: props.OrganizationID,
 		kind:           kind,
 		displayName:    props.DisplayName,
@@ -101,10 +103,6 @@ func newPrincipal(kind PrincipalKind, props PrincipalProps, principalID *string)
 		createdAt:      timeOr(props.CreatedAt, now),
 		updatedAt:      timeOr(props.UpdatedAt, now),
 	}
-	if principalID != nil {
-		p.id = *principalID
-	}
-	id.Assign(&p.id, p)
 	return p, nil
 }
 
@@ -117,7 +115,6 @@ func validatePrincipalStatus(s PrincipalStatus) error {
 }
 
 func (principal) Prefix() string                 { return principalPrefix }
-func (p *principal) ID() string                  { return p.id }
 func (p *principal) OrganizationID() string      { return p.organizationID }
 func (p *principal) Kind() PrincipalKind         { return p.kind }
 func (p *principal) DisplayName() string         { return p.displayName }
@@ -130,7 +127,7 @@ func (p *principal) Active() bool { return p.status == PrincipalActive }
 
 func (p *principal) snapshot() PrincipalSnapshot {
 	return PrincipalSnapshot{
-		ID:             p.id,
+		ID:             p.ID(),
 		OrganizationID: p.organizationID,
 		Kind:           p.kind,
 		DisplayName:    p.displayName,
@@ -190,5 +187,5 @@ func (p *principal) setStatus(status PrincipalStatus, from ...PrincipalStatus) e
 			return nil
 		}
 	}
-	return fmt.Errorf("%w: principal %s is %s", ErrStatus, p.id, p.status)
+	return fmt.Errorf("%w: principal %s is %s", ErrStatus, p.ID(), p.status)
 }

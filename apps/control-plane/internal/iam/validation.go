@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
 	"github.com/ivaldibuild/ivaldi/pkg/slug"
 )
@@ -45,13 +46,14 @@ func validateID(field, prefix, value string) error {
 	return nil
 }
 
-// validateOwnID checks an ID given to a New… constructor: a stored row's ID,
-// which must have the type's prefix.
-func validateOwnID(prefix string, given *string) error {
-	if given != nil && !id.Valid(prefix, *given) {
-		return NewErrInvalidInput(fmt.Sprintf("%q is not a valid %s_ ID", *given, prefix))
+// newRoot returns an aggregate's identity: storedID, a stored row's ID given
+// to a New… constructor, which must have the type's prefix, or a new ID.
+func newRoot(prefix string, storedID *string) (aggregate.Root, error) {
+	r, err := aggregate.NewRoot(prefix, storedID)
+	if err != nil {
+		return aggregate.Root{}, NewErrInvalidInput(err.Error())
 	}
-	return nil
+	return r, nil
 }
 
 // validateTokenHash checks a SHA-256 hash of a token or code. IAM stores

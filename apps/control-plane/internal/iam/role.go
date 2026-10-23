@@ -5,8 +5,8 @@ import (
 	"slices"
 	"time"
 
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
-	"github.com/ivaldibuild/ivaldi/pkg/id"
 )
 
 // Keys of the built-in roles, which every installation has.
@@ -44,7 +44,7 @@ func BuiltInRoleID(key string) (string, bool) {
 // roles belong to no Organization, and their permissions are defined in
 // code. A custom role belongs to one Organization.
 type Role struct {
-	id             string
+	aggregate.Root
 	organizationID *string
 	key            string
 	name           string
@@ -74,7 +74,8 @@ type NewRoleProps struct {
 // NewRole returns a Role, with a new ID unless roleID gives a stored one. A
 // built-in role must have its key and fixed ID.
 func NewRole(props NewRoleProps, roleID *string) (*Role, error) {
-	if err := validateOwnID(Role{}.Prefix(), roleID); err != nil {
+	root, err := newRoot(Role{}.Prefix(), roleID)
+	if err != nil {
 		return nil, err
 	}
 	org := optionalString(props.OrganizationID)
@@ -102,20 +103,16 @@ func NewRole(props NewRoleProps, roleID *string) (*Role, error) {
 	}
 
 	r := &Role{
+		Root:           root,
 		organizationID: org,
 		key:            props.Key,
 		name:           props.Name,
 		createdAt:      timeOr(props.CreatedAt, clock.Now()),
 	}
-	if roleID != nil {
-		r.id = *roleID
-	}
-	id.Assign(&r.id, r)
 	return r, nil
 }
 
 func (Role) Prefix() string             { return "rol" }
-func (r *Role) ID() string              { return r.id }
 func (r *Role) OrganizationID() *string { return copyString(r.organizationID) }
 func (r *Role) Key() string             { return r.key }
 func (r *Role) Name() string            { return r.name }
@@ -145,7 +142,7 @@ func (r *Role) AvailableIn(organizationID string) bool {
 
 func (r *Role) Snapshot() RoleSnapshot {
 	return RoleSnapshot{
-		ID:             r.id,
+		ID:             r.ID(),
 		OrganizationID: copyString(r.organizationID),
 		Key:            r.key,
 		Name:           r.name,

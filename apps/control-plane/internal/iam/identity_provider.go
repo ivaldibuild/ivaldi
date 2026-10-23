@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
-	"github.com/ivaldibuild/ivaldi/pkg/id"
 )
 
 // IdentityProtocol is how an identity provider signs people in.
@@ -68,7 +68,7 @@ func (c IdentityProviderConfig) clone() IdentityProviderConfig {
 // configuration are applied on every start and are managed by it: only
 // Configure and Unconfigure change them.
 type IdentityProvider struct {
-	id                     string
+	aggregate.Root
 	organizationID         string
 	protocol               IdentityProtocol
 	name                   string
@@ -130,7 +130,8 @@ func NewIdentityProvider(props NewIdentityProviderProps, identityProviderID *str
 	if err := validateID("organization ID", Organization{}.Prefix(), props.OrganizationID); err != nil {
 		return nil, err
 	}
-	if err := validateOwnID(IdentityProvider{}.Prefix(), identityProviderID); err != nil {
+	root, err := newRoot(IdentityProvider{}.Prefix(), identityProviderID)
+	if err != nil {
 		return nil, err
 	}
 	if err := validateName("name", props.Name, maxNameLength); err != nil {
@@ -152,6 +153,7 @@ func NewIdentityProvider(props NewIdentityProviderProps, identityProviderID *str
 
 	now := clock.Now()
 	p := &IdentityProvider{
+		Root:                   root,
 		organizationID:         props.OrganizationID,
 		protocol:               props.Protocol,
 		name:                   props.Name,
@@ -163,10 +165,6 @@ func NewIdentityProvider(props NewIdentityProviderProps, identityProviderID *str
 		createdAt:              timeOr(props.CreatedAt, now),
 		updatedAt:              timeOr(props.UpdatedAt, now),
 	}
-	if identityProviderID != nil {
-		p.id = *identityProviderID
-	}
-	id.Assign(&p.id, p)
 	return p, nil
 }
 
@@ -252,7 +250,6 @@ func validateIdentityProviderStatus(s IdentityProviderStatus) error {
 }
 
 func (IdentityProvider) Prefix() string                    { return "idp" }
-func (p *IdentityProvider) ID() string                     { return p.id }
 func (p *IdentityProvider) OrganizationID() string         { return p.organizationID }
 func (p *IdentityProvider) Protocol() IdentityProtocol     { return p.protocol }
 func (p *IdentityProvider) Name() string                   { return p.name }
@@ -268,7 +265,7 @@ func (p *IdentityProvider) Active() bool { return p.status == IdentityProviderAc
 
 func (p *IdentityProvider) Snapshot() IdentityProviderSnapshot {
 	return IdentityProviderSnapshot{
-		ID:                     p.id,
+		ID:                     p.ID(),
 		OrganizationID:         p.organizationID,
 		Protocol:               p.protocol,
 		Name:                   p.name,
@@ -284,7 +281,7 @@ func (p *IdentityProvider) Snapshot() IdentityProviderSnapshot {
 
 func (p *IdentityProvider) checkNotManaged() error {
 	if p.managedByConfiguration {
-		return fmt.Errorf("%w: identity provider %s", ErrManagedByConfiguration, p.id)
+		return fmt.Errorf("%w: identity provider %s", ErrManagedByConfiguration, p.ID())
 	}
 	return nil
 }
@@ -374,7 +371,7 @@ func (p *IdentityProvider) Configure(props UpdateIdentityProviderProps) error {
 // to the configuration enables it again.
 func (p *IdentityProvider) Unconfigure() error {
 	if !p.managedByConfiguration {
-		return NewErrInvalidInput(fmt.Sprintf("identity provider %s is not managed by configuration", p.id))
+		return NewErrInvalidInput(fmt.Sprintf("identity provider %s is not managed by configuration", p.ID()))
 	}
 	p.setStatus(IdentityProviderDisabled)
 	return nil

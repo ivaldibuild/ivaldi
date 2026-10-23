@@ -3,15 +3,15 @@ package iam
 import (
 	"time"
 
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
-	"github.com/ivaldibuild/ivaldi/pkg/id"
 )
 
 // Grant gives a Role to exactly one principal or one Group, on one
 // resource and everything beneath it. Grants only allow; restrictions
 // belong to policy. A grant does not change: it is removed and granted again.
 type Grant struct {
-	id                   string
+	aggregate.Root
 	organizationID       string
 	principalID          *string
 	groupID              *string
@@ -58,7 +58,8 @@ func NewGrant(props NewGrantProps, grantID *string) (*Grant, error) {
 	if err := validateID("organization ID", Organization{}.Prefix(), props.OrganizationID); err != nil {
 		return nil, err
 	}
-	if err := validateOwnID(Grant{}.Prefix(), grantID); err != nil {
+	root, err := newRoot(Grant{}.Prefix(), grantID)
+	if err != nil {
 		return nil, err
 	}
 	principalID := optionalString(props.PrincipalID)
@@ -90,6 +91,7 @@ func NewGrant(props NewGrantProps, grantID *string) (*Grant, error) {
 	}
 
 	g := &Grant{
+		Root:                 root,
 		organizationID:       props.OrganizationID,
 		principalID:          principalID,
 		groupID:              groupID,
@@ -99,15 +101,10 @@ func NewGrant(props NewGrantProps, grantID *string) (*Grant, error) {
 		expiresAt:            clock.CopyTime(props.ExpiresAt),
 		createdAt:            createdAt,
 	}
-	if grantID != nil {
-		g.id = *grantID
-	}
-	id.Assign(&g.id, g)
 	return g, nil
 }
 
 func (Grant) Prefix() string                  { return "grt" }
-func (g *Grant) ID() string                   { return g.id }
 func (g *Grant) OrganizationID() string       { return g.organizationID }
 func (g *Grant) PrincipalID() *string         { return copyString(g.principalID) }
 func (g *Grant) GroupID() *string             { return copyString(g.groupID) }
@@ -124,7 +121,7 @@ func (g *Grant) Expired() bool {
 
 func (g *Grant) Snapshot() GrantSnapshot {
 	return GrantSnapshot{
-		ID:                   g.id,
+		ID:                   g.ID(),
 		OrganizationID:       g.organizationID,
 		PrincipalID:          copyString(g.principalID),
 		GroupID:              copyString(g.groupID),

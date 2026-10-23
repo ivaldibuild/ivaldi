@@ -67,7 +67,7 @@ func NewAgentSession(props NewAgentSessionProps, principalID *string) (*AgentSes
 	if err := validateID("delegator", principalPrefix, props.DelegatorPrincipalID); err != nil {
 		return nil, err
 	}
-	if props.DelegatorPrincipalID == p.id {
+	if props.DelegatorPrincipalID == p.ID() {
 		return nil, NewErrInvalidInput("an agent session cannot delegate to itself")
 	}
 	if err := validateExpiry(props.ExpiresAt, p.createdAt); err != nil {
@@ -126,11 +126,11 @@ func (s *AgentSession) Expired() bool { return !clock.Now().Before(s.expiresAt) 
 func (s *AgentSession) CheckUsable() error {
 	switch {
 	case s.Revoked():
-		return fmt.Errorf("%w: agent session %s", ErrRevoked, s.id)
+		return fmt.Errorf("%w: agent session %s", ErrRevoked, s.ID())
 	case s.Expired():
-		return fmt.Errorf("%w: agent session %s", ErrExpired, s.id)
+		return fmt.Errorf("%w: agent session %s", ErrExpired, s.ID())
 	case !s.Active():
-		return fmt.Errorf("%w: agent session %s is %s", ErrStatus, s.id, s.status)
+		return fmt.Errorf("%w: agent session %s is %s", ErrStatus, s.ID(), s.status)
 	}
 	return nil
 }
@@ -173,7 +173,7 @@ func (s *AgentSession) Revoke() {
 // cannot be reactivated.
 func (s *AgentSession) Reactivate() error {
 	if s.Revoked() {
-		return fmt.Errorf("%w: agent session %s", ErrRevoked, s.id)
+		return fmt.Errorf("%w: agent session %s", ErrRevoked, s.ID())
 	}
 	return s.principal.Reactivate()
 }

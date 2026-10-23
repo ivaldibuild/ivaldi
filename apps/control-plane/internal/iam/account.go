@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
-	"github.com/ivaldibuild/ivaldi/pkg/id"
 )
 
 // AccountStatus is where an account is in its life. Accounts are never
@@ -24,7 +24,7 @@ const (
 // access comes through its memberships, one User per Organization. It is
 // platform-scoped, so it has no Organization.
 type Account struct {
-	id              string
+	aggregate.Root
 	email           string
 	emailVerifiedAt *time.Time
 	displayName     string
@@ -59,7 +59,8 @@ type NewAccountProps struct {
 
 // NewAccount returns an Account, with a new ID unless accountID gives a stored one.
 func NewAccount(props NewAccountProps, accountID *string) (*Account, error) {
-	if err := validateOwnID(Account{}.Prefix(), accountID); err != nil {
+	root, err := newRoot(Account{}.Prefix(), accountID)
+	if err != nil {
 		return nil, err
 	}
 	if err := validateEmail(props.Email); err != nil {
@@ -77,6 +78,7 @@ func NewAccount(props NewAccountProps, accountID *string) (*Account, error) {
 
 	now := clock.Now()
 	a := &Account{
+		Root:            root,
 		email:           props.Email,
 		emailVerifiedAt: clock.CopyTime(props.EmailVerifiedAt),
 		displayName:     props.DisplayName,
@@ -84,10 +86,6 @@ func NewAccount(props NewAccountProps, accountID *string) (*Account, error) {
 		createdAt:       timeOr(props.CreatedAt, now),
 		updatedAt:       timeOr(props.UpdatedAt, now),
 	}
-	if accountID != nil {
-		a.id = *accountID
-	}
-	id.Assign(&a.id, a)
 	return a, nil
 }
 
@@ -110,7 +108,6 @@ func validateAccountStatus(s AccountStatus) error {
 }
 
 func (Account) Prefix() string                 { return "acc" }
-func (a *Account) ID() string                  { return a.id }
 func (a *Account) Email() string               { return a.email }
 func (a *Account) EmailVerifiedAt() *time.Time { return clock.CopyTime(a.emailVerifiedAt) }
 func (a *Account) DisplayName() string         { return a.displayName }
@@ -128,7 +125,7 @@ func (a *Account) EmailDomain() string {
 
 func (a *Account) Snapshot() AccountSnapshot {
 	return AccountSnapshot{
-		ID:              a.id,
+		ID:              a.ID(),
 		Email:           a.email,
 		EmailVerifiedAt: clock.CopyTime(a.emailVerifiedAt),
 		DisplayName:     a.displayName,
@@ -200,5 +197,5 @@ func (a *Account) setStatus(status AccountStatus, from ...AccountStatus) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("%w: account %s is %s", ErrStatus, a.id, a.status)
+	return fmt.Errorf("%w: account %s is %s", ErrStatus, a.ID(), a.status)
 }

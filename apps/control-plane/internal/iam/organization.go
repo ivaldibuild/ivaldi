@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
-	"github.com/ivaldibuild/ivaldi/pkg/id"
 	"github.com/ivaldibuild/ivaldi/pkg/slug"
 )
 
@@ -23,7 +23,7 @@ const (
 // configuration, and billing, and contains many Workspaces. It is the root
 // of IAM's resource hierarchy, under its own ID.
 type Organization struct {
-	id          string
+	aggregate.Root
 	slug        string
 	name        string
 	displayName string
@@ -36,15 +36,15 @@ type Organization struct {
 
 // OrganizationSnapshot is an Organization's state, for repositories and audit records.
 type OrganizationSnapshot struct {
-	ID          string
-	Slug        string
-	Name        string
-	DisplayName string
-	LogoURL     *string
-	Status      OrganizationStatus
-	Metadata    map[string]string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID          string             `json:"id"`
+	Slug        string             `json:"slug"`
+	Name        string             `json:"name"`
+	DisplayName string             `json:"display_name"`
+	LogoURL     *string            `json:"logo_url"`
+	Status      OrganizationStatus `json:"status"`
+	Metadata    map[string]string  `json:"metadata"`
+	CreatedAt   time.Time          `json:"created_at"`
+	UpdatedAt   time.Time          `json:"updated_at"`
 }
 
 // NewOrganizationProps describes an Organization. A new one leaves Status
@@ -77,7 +77,8 @@ type UpdateOrganizationProps struct {
 // NewOrganization returns an Organization, with a new ID unless
 // organizationID gives a stored one.
 func NewOrganization(props NewOrganizationProps, organizationID *string) (*Organization, error) {
-	if err := validateOwnID(Organization{}.Prefix(), organizationID); err != nil {
+	root, err := newRoot(Organization{}.Prefix(), organizationID)
+	if err != nil {
 		return nil, err
 	}
 	if err := validateName("display name", props.DisplayName, maxNameLength); err != nil {
@@ -113,6 +114,7 @@ func NewOrganization(props NewOrganizationProps, organizationID *string) (*Organ
 
 	now := clock.Now()
 	o := &Organization{
+		Root:        root,
 		slug:        props.Slug,
 		name:        props.Name,
 		displayName: props.DisplayName,
@@ -122,10 +124,6 @@ func NewOrganization(props NewOrganizationProps, organizationID *string) (*Organ
 		createdAt:   timeOr(props.CreatedAt, now),
 		updatedAt:   timeOr(props.UpdatedAt, now),
 	}
-	if organizationID != nil {
-		o.id = *organizationID
-	}
-	id.Assign(&o.id, o)
 	return o, nil
 }
 
@@ -138,7 +136,6 @@ func validateOrganizationStatus(s OrganizationStatus) error {
 }
 
 func (Organization) Prefix() string                 { return "org" }
-func (o *Organization) ID() string                  { return o.id }
 func (o *Organization) Slug() string                { return o.slug }
 func (o *Organization) Name() string                { return o.name }
 func (o *Organization) DisplayName() string         { return o.displayName }
@@ -152,12 +149,12 @@ func (o *Organization) Active() bool { return o.status == OrganizationActive }
 
 // Resource returns the Organization's root entry in IAM's resource hierarchy.
 func (o *Organization) Resource() Resource {
-	return Resource{ID: o.id, OrganizationID: o.id, Type: ResourceOrganization}
+	return Resource{ID: o.ID(), OrganizationID: o.ID(), Type: ResourceOrganization}
 }
 
 func (o *Organization) Snapshot() OrganizationSnapshot {
 	return OrganizationSnapshot{
-		ID:          o.id,
+		ID:          o.ID(),
 		Slug:        o.slug,
 		Name:        o.name,
 		DisplayName: o.displayName,
@@ -171,7 +168,7 @@ func (o *Organization) Snapshot() OrganizationSnapshot {
 
 func (o *Organization) checkNotDeleted() error {
 	if o.status == OrganizationDeleted {
-		return fmt.Errorf("%w: organization %s is deleted", ErrStatus, o.id)
+		return fmt.Errorf("%w: organization %s is deleted", ErrStatus, o.ID())
 	}
 	return nil
 }

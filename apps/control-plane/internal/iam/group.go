@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
-	"github.com/ivaldibuild/ivaldi/pkg/id"
 )
 
 // GroupSource says who manages a group's membership.
@@ -24,7 +24,7 @@ const (
 // GroupMembers, kept apart from the Group because a provisioned group can
 // be large.
 type Group struct {
-	id             string
+	aggregate.Root
 	organizationID string
 	name           string
 	source         GroupSource
@@ -62,7 +62,8 @@ func NewGroup(props NewGroupProps, groupID *string) (*Group, error) {
 	if err := validateID("organization ID", Organization{}.Prefix(), props.OrganizationID); err != nil {
 		return nil, err
 	}
-	if err := validateOwnID(Group{}.Prefix(), groupID); err != nil {
+	root, err := newRoot(Group{}.Prefix(), groupID)
+	if err != nil {
 		return nil, err
 	}
 	if err := validateName("name", props.Name, maxNameLength); err != nil {
@@ -87,6 +88,7 @@ func NewGroup(props NewGroupProps, groupID *string) (*Group, error) {
 
 	now := clock.Now()
 	g := &Group{
+		Root:           root,
 		organizationID: props.OrganizationID,
 		name:           props.Name,
 		source:         props.Source,
@@ -94,15 +96,10 @@ func NewGroup(props NewGroupProps, groupID *string) (*Group, error) {
 		createdAt:      timeOr(props.CreatedAt, now),
 		updatedAt:      timeOr(props.UpdatedAt, now),
 	}
-	if groupID != nil {
-		g.id = *groupID
-	}
-	id.Assign(&g.id, g)
 	return g, nil
 }
 
 func (Group) Prefix() string            { return "grp" }
-func (g *Group) ID() string             { return g.id }
 func (g *Group) OrganizationID() string { return g.organizationID }
 func (g *Group) Name() string           { return g.name }
 func (g *Group) Source() GroupSource    { return g.source }
@@ -112,7 +109,7 @@ func (g *Group) UpdatedAt() time.Time   { return g.updatedAt }
 
 func (g *Group) Snapshot() GroupSnapshot {
 	return GroupSnapshot{
-		ID:             g.id,
+		ID:             g.ID(),
 		OrganizationID: g.organizationID,
 		Name:           g.name,
 		Source:         g.source,

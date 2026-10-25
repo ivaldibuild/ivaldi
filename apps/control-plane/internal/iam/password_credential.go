@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 )
 
@@ -15,17 +16,20 @@ const argon2idPrefix = "$argon2id$"
 // their Organizations, and is identified by its Account. Only an argon2id
 // hash is stored; hashing and checking passwords happen outside the domain.
 type PasswordCredential struct {
+	aggregate.Events
 	accountID    string
 	passwordHash string
 	updatedAt    time.Time
 }
 
 // PasswordCredentialSnapshot is a PasswordCredential's state, for
-// repositories. Audit records must leave out the hash.
+// repositories, audit records, and events. Its JSON form is part of the
+// PasswordCredential events' contract. Its hash is left out of JSON, so it
+// never reaches an event.
 type PasswordCredentialSnapshot struct {
-	AccountID    string
-	PasswordHash string
-	UpdatedAt    time.Time
+	AccountID    string    `json:"account_id"`
+	PasswordHash string    `json:"-"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // NewPasswordCredentialProps describes a PasswordCredential. A new one
@@ -46,11 +50,17 @@ func NewPasswordCredential(props NewPasswordCredentialProps) (*PasswordCredentia
 	if err := validatePasswordHash(props.PasswordHash); err != nil {
 		return nil, err
 	}
-	return &PasswordCredential{
+	c := &PasswordCredential{
 		accountID:    props.AccountID,
 		passwordHash: props.PasswordHash,
 		updatedAt:    timeOr(props.UpdatedAt, clock.Now()),
-	}, nil
+	}
+	// A PasswordCredential has no ID to tell a new one from a stored one; a
+	// stored one has the time it last changed.
+	if props.UpdatedAt == nil {
+		c.RecordEvent(PasswordCredentialCreated{c.Snapshot()})
+	}
+	return c, nil
 }
 
 // validatePasswordHash refuses anything but an argon2id hash, so a raw
@@ -79,7 +89,11 @@ func (c *PasswordCredential) Change(passwordHash string) error {
 	if err := validatePasswordHash(passwordHash); err != nil {
 		return err
 	}
+	changed := passwordHash != c.passwordHash
 	c.passwordHash = passwordHash
 	c.updatedAt = clock.Now()
+	if changed {
+		c.RecordEvent(PasswordCredentialChanged{c.Snapshot()})
+	}
 	return nil
 }

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 )
 
@@ -23,6 +24,7 @@ var pkceValue = regexp.MustCompile(`^[A-Za-z0-9._~-]{43,128}$`)
 // be S256, and to the resource the tokens are for (RFC 8707). It is
 // identified by the SHA-256 hash of the code; the code itself is not stored.
 type OAuthAuthorizationCode struct {
+	aggregate.Events
 	codeHash       []byte
 	organizationID string
 	principalID    string
@@ -36,18 +38,20 @@ type OAuthAuthorizationCode struct {
 }
 
 // OAuthAuthorizationCodeSnapshot is an OAuthAuthorizationCode's state, for
-// repositories and audit records.
+// repositories, audit records, and events. Its JSON form is part of the
+// OAuthAuthorizationCode events' contract. Its hash is left out of JSON, so
+// it never reaches an event.
 type OAuthAuthorizationCodeSnapshot struct {
-	CodeHash       []byte
-	OrganizationID string
-	PrincipalID    string
-	ClientID       string
-	RedirectURI    string
-	CodeChallenge  string
-	Resource       string
-	Scopes         []string
-	ExpiresAt      time.Time
-	UsedAt         *time.Time
+	CodeHash       []byte     `json:"-"`
+	OrganizationID string     `json:"organization_id"`
+	PrincipalID    string     `json:"principal_id"`
+	ClientID       string     `json:"client_id"`
+	RedirectURI    string     `json:"redirect_uri"`
+	CodeChallenge  string     `json:"code_challenge"`
+	Resource       string     `json:"resource"`
+	Scopes         []string   `json:"scopes"`
+	ExpiresAt      time.Time  `json:"expires_at"`
+	UsedAt         *time.Time `json:"used_at"`
 }
 
 // NewOAuthAuthorizationCodeProps describes an OAuthAuthorizationCode. A new
@@ -185,6 +189,7 @@ func (c *OAuthAuthorizationCode) Redeem(clientID, redirectURI, codeVerifier stri
 	}
 	now := clock.Now()
 	c.usedAt = &now
+	c.RecordEvent(OAuthAuthorizationCodeRedeemed{c.Snapshot()})
 	return nil
 }
 

@@ -2,6 +2,7 @@ package iam
 
 import (
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
@@ -46,17 +47,17 @@ type principal struct {
 	updatedAt      time.Time
 }
 
-// PrincipalSnapshot is the state every principal has, for repositories and
-// audit records. Each kind's snapshot embeds it.
+// PrincipalSnapshot is the state every principal has, for repositories,
+// audit records, and events. Each kind's snapshot embeds it.
 type PrincipalSnapshot struct {
-	ID             string
-	OrganizationID string
-	Kind           PrincipalKind
-	DisplayName    string
-	Status         PrincipalStatus
-	Metadata       map[string]string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID             string            `json:"id"`
+	OrganizationID string            `json:"organization_id"`
+	Kind           PrincipalKind     `json:"kind"`
+	DisplayName    string            `json:"display_name"`
+	Status         PrincipalStatus   `json:"status"`
+	Metadata       map[string]string `json:"metadata"`
+	CreatedAt      time.Time         `json:"created_at"`
+	UpdatedAt      time.Time         `json:"updated_at"`
 }
 
 // PrincipalProps describes what every principal has. A new one leaves
@@ -143,7 +144,10 @@ func (p *principal) Rename(displayName string) error {
 	if err := validateName("display name", displayName, maxNameLength); err != nil {
 		return err
 	}
-	p.displayName = displayName
+	if displayName != p.displayName {
+		p.displayName = displayName
+		p.RecordEvent(PrincipalRenamed{p.snapshot()})
+	}
 	p.updatedAt = clock.Now()
 	return nil
 }
@@ -153,8 +157,12 @@ func (p *principal) SetMetadata(metadata map[string]string) error {
 	if err := validateMetadata(metadata); err != nil {
 		return err
 	}
+	changed := !maps.Equal(metadata, p.metadata)
 	p.metadata = copyMetadata(metadata)
 	p.updatedAt = clock.Now()
+	if changed {
+		p.RecordEvent(PrincipalMetadataChanged{p.snapshot()})
+	}
 	return nil
 }
 
@@ -184,6 +192,7 @@ func (p *principal) setStatus(status PrincipalStatus, from ...PrincipalStatus) e
 		if p.status == f {
 			p.status = status
 			p.updatedAt = clock.Now()
+			p.RecordEvent(PrincipalStatusChanged{Principal: p.snapshot(), PreviousStatus: f})
 			return nil
 		}
 	}

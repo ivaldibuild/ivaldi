@@ -33,15 +33,16 @@ type Group struct {
 	updatedAt      time.Time
 }
 
-// GroupSnapshot is a Group's state, for repositories and audit records.
+// GroupSnapshot is a Group's state, for repositories, audit records, and
+// events. Its JSON form is part of the Group events' contract.
 type GroupSnapshot struct {
-	ID             string
-	OrganizationID string
-	Name           string
-	Source         GroupSource
-	ExternalID     *string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID             string      `json:"id"`
+	OrganizationID string      `json:"organization_id"`
+	Name           string      `json:"name"`
+	Source         GroupSource `json:"source"`
+	ExternalID     *string     `json:"external_id"`
+	CreatedAt      time.Time   `json:"created_at"`
+	UpdatedAt      time.Time   `json:"updated_at"`
 }
 
 // NewGroupProps describes a Group. A new one leaves the timestamps nil; a
@@ -96,6 +97,9 @@ func NewGroup(props NewGroupProps, groupID *string) (*Group, error) {
 		createdAt:      timeOr(props.CreatedAt, now),
 		updatedAt:      timeOr(props.UpdatedAt, now),
 	}
+	if g.IsNew() {
+		g.RecordEvent(GroupCreated{g.Snapshot()})
+	}
 	return g, nil
 }
 
@@ -124,7 +128,10 @@ func (g *Group) Rename(name string) error {
 	if err := validateName("name", name, maxNameLength); err != nil {
 		return err
 	}
-	g.name = name
+	if name != g.name {
+		g.name = name
+		g.RecordEvent(GroupRenamed{g.Snapshot()})
+	}
 	g.updatedAt = clock.Now()
 	return nil
 }
@@ -132,18 +139,21 @@ func (g *Group) Rename(name string) error {
 // GroupMember records that a principal belongs to a Group. It is
 // identified by the Group and principal.
 type GroupMember struct {
+	aggregate.Events
 	organizationID string
 	groupID        string
 	principalID    string
 	createdAt      time.Time
 }
 
-// GroupMemberSnapshot is a GroupMember's state, for repositories and audit records.
+// GroupMemberSnapshot is a GroupMember's state, for repositories, audit
+// records, and events. Its JSON form is part of the GroupMember events'
+// contract.
 type GroupMemberSnapshot struct {
-	OrganizationID string
-	GroupID        string
-	PrincipalID    string
-	CreatedAt      time.Time
+	OrganizationID string    `json:"organization_id"`
+	GroupID        string    `json:"group_id"`
+	PrincipalID    string    `json:"principal_id"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 // NewGroupMemberProps describes a GroupMember. A new one leaves CreatedAt
@@ -166,12 +176,18 @@ func NewGroupMember(props NewGroupMemberProps) (*GroupMember, error) {
 	if err := validateID("principal ID", principalPrefix, props.PrincipalID); err != nil {
 		return nil, err
 	}
-	return &GroupMember{
+	m := &GroupMember{
 		organizationID: props.OrganizationID,
 		groupID:        props.GroupID,
 		principalID:    props.PrincipalID,
 		createdAt:      timeOr(props.CreatedAt, clock.Now()),
-	}, nil
+	}
+	// A GroupMember has no ID to tell a new one from a stored one; a stored
+	// one has its creation time.
+	if props.CreatedAt == nil {
+		m.RecordEvent(GroupMemberAdded{m.Snapshot()})
+	}
+	return m, nil
 }
 
 func (m *GroupMember) OrganizationID() string { return m.organizationID }

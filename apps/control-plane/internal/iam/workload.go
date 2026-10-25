@@ -28,13 +28,14 @@ type Workload struct {
 	lastSeenAt *time.Time
 }
 
-// WorkloadSnapshot is a Workload's state, for repositories and audit records.
+// WorkloadSnapshot is a Workload's state, for repositories, audit records,
+// and events. Its JSON form is part of the Workload events' contract.
 type WorkloadSnapshot struct {
 	PrincipalSnapshot
-	Component  WorkloadComponent
-	Pool       string
-	EnrolledAt time.Time
-	LastSeenAt *time.Time
+	Component  WorkloadComponent `json:"component"`
+	Pool       string            `json:"pool"`
+	EnrolledAt time.Time         `json:"enrolled_at"`
+	LastSeenAt *time.Time        `json:"last_seen_at"`
 }
 
 // NewWorkloadProps describes a Workload. A new one leaves EnrolledAt and
@@ -60,13 +61,17 @@ func NewWorkload(props NewWorkloadProps, principalID *string) (*Workload, error)
 	if err := validateName("pool", props.Pool, maxPoolLength); err != nil {
 		return nil, err
 	}
-	return &Workload{
+	w := &Workload{
 		principal:  p,
 		component:  props.Component,
 		pool:       props.Pool,
 		enrolledAt: timeOr(props.EnrolledAt, clock.Now()),
 		lastSeenAt: clock.CopyTime(props.LastSeenAt),
-	}, nil
+	}
+	if w.IsNew() {
+		w.RecordEvent(WorkloadCreated{w.Snapshot()})
+	}
+	return w, nil
 }
 
 func validateComponent(c WorkloadComponent) error {

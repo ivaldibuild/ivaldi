@@ -1,11 +1,13 @@
 package iam
 
 import (
+	"bytes"
 	"fmt"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 )
 
@@ -18,6 +20,7 @@ var domainLabel = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 // in it. Several Organizations may claim a domain, but only one can hold it
 // verified. It is identified by its Organization and domain.
 type OrganizationDomain struct {
+	aggregate.Events
 	organizationID string
 	domain         string
 	// verificationTokenHash is the SHA-256 hash of the DNS TXT token that
@@ -28,13 +31,15 @@ type OrganizationDomain struct {
 }
 
 // OrganizationDomainSnapshot is an OrganizationDomain's state, for
-// repositories and audit records.
+// repositories, audit records, and events. Its JSON form is part of the
+// OrganizationDomain events' contract. Its hash is left out of JSON, so it
+// never reaches an event.
 type OrganizationDomainSnapshot struct {
-	OrganizationID        string
-	Domain                string
-	VerificationTokenHash []byte
-	VerifiedAt            *time.Time
-	CreatedAt             time.Time
+	OrganizationID        string     `json:"organization_id"`
+	Domain                string     `json:"domain"`
+	VerificationTokenHash []byte     `json:"-"`
+	VerifiedAt            *time.Time `json:"verified_at"`
+	CreatedAt             time.Time  `json:"created_at"`
 }
 
 // NewOrganizationDomainProps describes an OrganizationDomain. A new one
@@ -67,13 +72,19 @@ func NewOrganizationDomain(props NewOrganizationDomainProps) (*OrganizationDomai
 		return nil, NewErrInvalidInput("an unverified domain needs a verification token hash")
 	}
 
-	return &OrganizationDomain{
+	d := &OrganizationDomain{
 		organizationID:        props.OrganizationID,
 		domain:                domain,
 		verificationTokenHash: copyBytes(props.VerificationTokenHash),
 		verifiedAt:            clock.CopyTime(props.VerifiedAt),
 		createdAt:             timeOr(props.CreatedAt, clock.Now()),
-	}, nil
+	}
+	// An OrganizationDomain has no ID to tell a new one from a stored one; a
+	// stored one has its creation time.
+	if props.CreatedAt == nil {
+		d.RecordEvent(OrganizationDomainCreated{d.Snapshot()})
+	}
+	return d, nil
 }
 
 // validateDomain accepts a lowercase DNS name with at least two labels.
@@ -122,8 +133,12 @@ func (d *OrganizationDomain) Rechallenge(tokenHash []byte) error {
 	if err := validateTokenHash("verification token hash", tokenHash); err != nil {
 		return err
 	}
+	changed := d.verifiedAt != nil || !bytes.Equal(tokenHash, d.verificationTokenHash)
 	d.verificationTokenHash = copyBytes(tokenHash)
 	d.verifiedAt = nil
+	if changed {
+		d.RecordEvent(OrganizationDomainRechallenged{d.Snapshot()})
+	}
 	return nil
 }
 
@@ -133,5 +148,6 @@ func (d *OrganizationDomain) Verify() {
 	if !d.Verified() {
 		now := clock.Now()
 		d.verifiedAt = &now
+		d.RecordEvent(OrganizationDomainVerified{d.Snapshot()})
 	}
 }

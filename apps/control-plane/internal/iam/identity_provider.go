@@ -37,20 +37,20 @@ const (
 // Which fields apply depends on the protocol. It is a value object.
 type IdentityProviderConfig struct {
 	// Issuer is the OIDC issuer URL, required for oidc.
-	Issuer string
+	Issuer string `json:"issuer"`
 	// ClientID is required for oidc, google, and github.
-	ClientID string
+	ClientID string `json:"client_id"`
 	// MetadataURL is the SAML metadata URL, required for saml.
-	MetadataURL string
+	MetadataURL string `json:"metadata_url"`
 	// BaseURL is a GitHub Enterprise Server address, for github only.
-	BaseURL string
+	BaseURL string `json:"base_url"`
 	// AllowedDomains, AllowedOrganizations, and AllowedEmails say who may
 	// sign in through google or github, which anyone can otherwise use; at
 	// least one is required. Domains are Google Workspace domains, for google
 	// only; organizations are GitHub organizations, for github only.
-	AllowedDomains       []string
-	AllowedOrganizations []string
-	AllowedEmails        []string
+	AllowedDomains       []string `json:"allowed_domains"`
+	AllowedOrganizations []string `json:"allowed_organizations"`
+	AllowedEmails        []string `json:"allowed_emails"`
 }
 
 func (c IdentityProviderConfig) clone() IdentityProviderConfig {
@@ -58,6 +58,12 @@ func (c IdentityProviderConfig) clone() IdentityProviderConfig {
 	c.AllowedOrganizations = copyStrings(c.AllowedOrganizations)
 	c.AllowedEmails = copyStrings(c.AllowedEmails)
 	return c
+}
+
+func (c IdentityProviderConfig) equal(o IdentityProviderConfig) bool {
+	return c.Issuer == o.Issuer && c.ClientID == o.ClientID && c.MetadataURL == o.MetadataURL && c.BaseURL == o.BaseURL &&
+		slices.Equal(c.AllowedDomains, o.AllowedDomains) && slices.Equal(c.AllowedOrganizations, o.AllowedOrganizations) &&
+		slices.Equal(c.AllowedEmails, o.AllowedEmails)
 }
 
 // IdentityProvider is how people sign in to one Organization. Its secrets,
@@ -81,21 +87,22 @@ type IdentityProvider struct {
 	updatedAt              time.Time
 }
 
-// IdentityProviderSnapshot is an IdentityProvider's state, for repositories
-// and audit records. ManagedByConfiguration is stored in the config column
-// as managed_by.
+// IdentityProviderSnapshot is an IdentityProvider's state, for repositories,
+// audit records, and events. Its JSON form is part of the IdentityProvider
+// events' contract. ManagedByConfiguration is stored in the config column as
+// managed_by.
 type IdentityProviderSnapshot struct {
-	ID                     string
-	OrganizationID         string
-	Protocol               IdentityProtocol
-	Name                   string
-	Config                 IdentityProviderConfig
-	ManagedByConfiguration bool
-	SecretRef              *string
-	JITProvisioning        bool
-	Status                 IdentityProviderStatus
-	CreatedAt              time.Time
-	UpdatedAt              time.Time
+	ID                     string                 `json:"id"`
+	OrganizationID         string                 `json:"organization_id"`
+	Protocol               IdentityProtocol       `json:"protocol"`
+	Name                   string                 `json:"name"`
+	Config                 IdentityProviderConfig `json:"config"`
+	ManagedByConfiguration bool                   `json:"managed_by_configuration"`
+	SecretRef              *string                `json:"secret_ref"`
+	JITProvisioning        bool                   `json:"jit_provisioning"`
+	Status                 IdentityProviderStatus `json:"status"`
+	CreatedAt              time.Time              `json:"created_at"`
+	UpdatedAt              time.Time              `json:"updated_at"`
 }
 
 // NewIdentityProviderProps describes an IdentityProvider. A new one leaves
@@ -164,6 +171,9 @@ func NewIdentityProvider(props NewIdentityProviderProps, identityProviderID *str
 		status:                 props.Status,
 		createdAt:              timeOr(props.CreatedAt, now),
 		updatedAt:              timeOr(props.UpdatedAt, now),
+	}
+	if p.IsNew() {
+		p.RecordEvent(IdentityProviderCreated{p.Snapshot()})
 	}
 	return p, nil
 }
@@ -292,39 +302,44 @@ func (p *IdentityProvider) Update(props UpdateIdentityProviderProps) error {
 	if err := p.checkNotManaged(); err != nil {
 		return err
 	}
-	return p.update(props)
+	changed, err := p.update(props)
+	if err != nil {
+		return err
+	}
+	if changed {
+		p.RecordEvent(IdentityProviderUpdated{p.Snapshot()})
+	}
+	return nil
 }
 
-func (p *IdentityProvider) update(props UpdateIdentityProviderProps) error {
+// update applies props and reports whether anything changed.
+func (p *IdentityProvider) update(props UpdateIdentityProviderProps) (bool, error) {
 	if props.Name != nil {
 		if err := validateName("name", *props.Name, maxNameLength); err != nil {
-			return err
+			return false, err
 		}
 	}
 	if props.Config != nil {
 		if err := validateProviderConfig(p.protocol, *props.Config); err != nil {
-			return err
+			return false, err
 		}
 	}
 	secretRef := optionalString(props.SecretRef)
 	if p.protocol == ProtocolBuiltin && secretRef != nil {
-		return NewErrInvalidInput("the builtin identity provider has no secret")
+		return false, NewErrInvalidInput("the builtin identity provider has no secret")
 	}
 
-	if props.Name != nil {
-		p.name = *props.Name
-	}
-	if props.Config != nil {
+	changed := anyTrue(
+		set(&p.name, props.Name),
+		setOptional(&p.secretRef, props.SecretRef),
+		set(&p.jitProvisioning, props.JITProvisioning),
+	)
+	if props.Config != nil && !props.Config.equal(p.config) {
 		p.config = props.Config.clone()
-	}
-	if props.SecretRef != nil {
-		p.secretRef = secretRef
-	}
-	if props.JITProvisioning != nil {
-		p.jitProvisioning = *props.JITProvisioning
+		changed = true
 	}
 	p.updatedAt = clock.Now()
-	return nil
+	return changed, nil
 }
 
 // Enable lets a provider that is not managed by configuration accept
@@ -358,11 +373,18 @@ func (p *IdentityProvider) Configure(props UpdateIdentityProviderProps) error {
 	if props.SecretRef == nil {
 		props.SecretRef = new("")
 	}
-	if err := p.update(props); err != nil {
+	changed, err := p.update(props)
+	if err != nil {
 		return err
+	}
+	if !p.managedByConfiguration || p.status != IdentityProviderActive {
+		changed = true
 	}
 	p.managedByConfiguration = true
 	p.status = IdentityProviderActive
+	if changed {
+		p.RecordEvent(IdentityProviderConfigured{p.Snapshot()})
+	}
 	return nil
 }
 
@@ -379,7 +401,9 @@ func (p *IdentityProvider) Unconfigure() error {
 
 func (p *IdentityProvider) setStatus(s IdentityProviderStatus) {
 	if p.status != s {
+		previous := p.status
 		p.status = s
 		p.updatedAt = clock.Now()
+		p.RecordEvent(IdentityProviderStatusChanged{IdentityProvider: p.Snapshot(), PreviousStatus: previous})
 	}
 }

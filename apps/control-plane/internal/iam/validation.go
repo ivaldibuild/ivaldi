@@ -156,3 +156,40 @@ func timeOr(t *time.Time, fallback time.Time) time.Time {
 	}
 	return *t
 }
+
+// set assigns *v to *dst when v is given and differs, and reports whether it
+// changed anything, so a method records an event only for a real change.
+func set[T comparable](dst *T, v *T) bool {
+	if v == nil || *dst == *v {
+		return false
+	}
+	*dst = *v
+	return true
+}
+
+// setOptional is set for an optional string, where an empty v clears it.
+func setOptional(dst **string, v *string) bool {
+	if v == nil {
+		return false
+	}
+	next := optionalString(v)
+	if equalPtr(*dst, next) {
+		return false
+	}
+	*dst = next
+	return true
+}
+
+// equalPtr reports whether a and b are both nil or point to equal values.
+func equalPtr[T comparable](a, b *T) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
+// anyTrue reports whether any of changes is true. Every argument is
+// evaluated, so it combines several set calls without short-circuiting.
+func anyTrue(changes ...bool) bool {
+	return slices.Contains(changes, true)
+}

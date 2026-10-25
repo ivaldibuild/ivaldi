@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 )
 
@@ -37,6 +38,7 @@ var privateJWKMembers = []string{"d", "p", "q", "dp", "dq", "qi", "oth", "k"}
 // offline; its private half is held by the credentials capability or a KMS
 // and referred to by PrivateKeyRef. It is identified by its JWKS key ID.
 type SigningKey struct {
+	aggregate.Events
 	kid            string
 	organizationID string
 	algorithm      SigningAlgorithm
@@ -47,16 +49,18 @@ type SigningKey struct {
 	notAfter       *time.Time
 }
 
-// SigningKeySnapshot is a SigningKey's state, for repositories and audit records.
+// SigningKeySnapshot is a SigningKey's state, for repositories, audit
+// records, and events. Its JSON form is part of the SigningKey events'
+// contract.
 type SigningKeySnapshot struct {
-	KID            string
-	OrganizationID string
-	Algorithm      SigningAlgorithm
-	PublicJWK      json.RawMessage
-	PrivateKeyRef  string
-	Status         SigningKeyStatus
-	CreatedAt      time.Time
-	NotAfter       *time.Time
+	KID            string           `json:"kid"`
+	OrganizationID string           `json:"organization_id"`
+	Algorithm      SigningAlgorithm `json:"algorithm"`
+	PublicJWK      json.RawMessage  `json:"public_jwk"`
+	PrivateKeyRef  string           `json:"private_key_ref"`
+	Status         SigningKeyStatus `json:"status"`
+	CreatedAt      time.Time        `json:"created_at"`
+	NotAfter       *time.Time       `json:"not_after"`
 }
 
 // NewSigningKeyProps describes a SigningKey. A new one leaves Status and
@@ -109,7 +113,7 @@ func NewSigningKey(props NewSigningKeyProps) (*SigningKey, error) {
 		return nil, err
 	}
 
-	return &SigningKey{
+	k := &SigningKey{
 		kid:            props.KID,
 		organizationID: props.OrganizationID,
 		algorithm:      props.Algorithm,
@@ -118,7 +122,13 @@ func NewSigningKey(props NewSigningKeyProps) (*SigningKey, error) {
 		status:         props.Status,
 		createdAt:      createdAt,
 		notAfter:       clock.CopyTime(props.NotAfter),
-	}, nil
+	}
+	// A SigningKey has no ID of its own to tell a new one from a stored one; a
+	// stored one has its creation time.
+	if props.CreatedAt == nil {
+		k.RecordEvent(SigningKeyCreated{k.Snapshot()})
+	}
+	return k, nil
 }
 
 // validatePublicJWK accepts a JSON object with a key type and no private
@@ -185,8 +195,10 @@ func (k *SigningKey) StartRetiring(notAfter time.Time) error {
 	if !notAfter.After(clock.Now()) {
 		return NewErrInvalidInput("a retiring key must stay valid until a time in the future")
 	}
+	previous := k.status
 	k.status = SigningKeyRetiring
 	k.notAfter = &notAfter
+	k.RecordEvent(SigningKeyStatusChanged{SigningKey: k.Snapshot(), PreviousStatus: previous})
 	return nil
 }
 
@@ -196,9 +208,11 @@ func (k *SigningKey) StartRetiring(notAfter time.Time) error {
 func (k *SigningKey) Retire() {
 	if k.status != SigningKeyRetired {
 		now := clock.Now()
+		previous := k.status
 		k.status = SigningKeyRetired
 		if k.notAfter == nil || k.notAfter.After(now) {
 			k.notAfter = &now
 		}
+		k.RecordEvent(SigningKeyStatusChanged{SigningKey: k.Snapshot(), PreviousStatus: previous})
 	}
 }

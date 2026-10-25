@@ -28,20 +28,22 @@ type OAuthRefreshToken struct {
 }
 
 // OAuthRefreshTokenSnapshot is an OAuthRefreshToken's state, for
-// repositories and audit records.
+// repositories, audit records, and events. Its JSON form is part of the
+// OAuthRefreshToken events' contract. Its hash is left out of JSON, so it
+// never reaches an event.
 type OAuthRefreshTokenSnapshot struct {
-	ID             string
-	OrganizationID string
-	PrincipalID    string
-	ClientID       string
-	FamilyID       string
-	TokenHash      []byte
-	Resource       string
-	Scopes         []string
-	ExpiresAt      time.Time
-	ReplacedBy     *string
-	RevokedAt      *time.Time
-	CreatedAt      time.Time
+	ID             string     `json:"id"`
+	OrganizationID string     `json:"organization_id"`
+	PrincipalID    string     `json:"principal_id"`
+	ClientID       string     `json:"client_id"`
+	FamilyID       string     `json:"family_id"`
+	TokenHash      []byte     `json:"-"`
+	Resource       string     `json:"resource"`
+	Scopes         []string   `json:"scopes"`
+	ExpiresAt      time.Time  `json:"expires_at"`
+	ReplacedBy     *string    `json:"replaced_by"`
+	RevokedAt      *time.Time `json:"revoked_at"`
+	CreatedAt      time.Time  `json:"created_at"`
 }
 
 // NewOAuthRefreshTokenProps describes an OAuthRefreshToken. A new one
@@ -123,6 +125,9 @@ func NewOAuthRefreshToken(props NewOAuthRefreshTokenProps, tokenID *string) (*OA
 	if t.familyID == "" {
 		t.familyID = t.ID()
 	}
+	if t.IsNew() {
+		t.RecordEvent(OAuthRefreshTokenCreated{t.Snapshot()})
+	}
 	return t, nil
 }
 
@@ -190,6 +195,7 @@ func (t *OAuthRefreshToken) Rotate(clientID string, tokenHash []byte, expiresAt 
 	}
 	nextID := next.ID()
 	t.replacedBy = &nextID
+	t.RecordEvent(OAuthRefreshTokenRotated{t.Snapshot()})
 	return next, nil
 }
 
@@ -198,5 +204,6 @@ func (t *OAuthRefreshToken) Revoke() {
 	if !t.Revoked() {
 		now := clock.Now()
 		t.revokedAt = &now
+		t.RecordEvent(OAuthRefreshTokenRevoked{t.Snapshot()})
 	}
 }

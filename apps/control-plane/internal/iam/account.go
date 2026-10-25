@@ -33,15 +33,16 @@ type Account struct {
 	updatedAt       time.Time
 }
 
-// AccountSnapshot is an Account's state, for repositories and audit records.
+// AccountSnapshot is an Account's state, for repositories, audit records,
+// and events. Its JSON form is part of the Account events' contract.
 type AccountSnapshot struct {
-	ID              string
-	Email           string
-	EmailVerifiedAt *time.Time
-	DisplayName     string
-	Status          AccountStatus
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID              string        `json:"id"`
+	Email           string        `json:"email"`
+	EmailVerifiedAt *time.Time    `json:"email_verified_at"`
+	DisplayName     string        `json:"display_name"`
+	Status          AccountStatus `json:"status"`
+	CreatedAt       time.Time     `json:"created_at"`
+	UpdatedAt       time.Time     `json:"updated_at"`
 }
 
 // NewAccountProps describes an Account. A new one leaves Status and the
@@ -85,6 +86,9 @@ func NewAccount(props NewAccountProps, accountID *string) (*Account, error) {
 		status:          props.Status,
 		createdAt:       timeOr(props.CreatedAt, now),
 		updatedAt:       timeOr(props.UpdatedAt, now),
+	}
+	if a.IsNew() {
+		a.RecordEvent(AccountCreated{a.Snapshot()})
 	}
 	return a, nil
 }
@@ -140,7 +144,10 @@ func (a *Account) Rename(displayName string) error {
 	if err := validateName("display name", displayName, maxNameLength); err != nil {
 		return err
 	}
-	a.displayName = displayName
+	if displayName != a.displayName {
+		a.displayName = displayName
+		a.RecordEvent(AccountRenamed{a.Snapshot()})
+	}
 	a.updatedAt = clock.Now()
 	return nil
 }
@@ -151,11 +158,15 @@ func (a *Account) ChangeEmail(email string) error {
 	if err := validateEmail(email); err != nil {
 		return err
 	}
+	changed := email != a.email
 	if !strings.EqualFold(email, a.email) {
 		a.emailVerifiedAt = nil
 	}
 	a.email = email
 	a.updatedAt = clock.Now()
+	if changed {
+		a.RecordEvent(AccountEmailChanged{a.Snapshot()})
+	}
 	return nil
 }
 
@@ -166,6 +177,7 @@ func (a *Account) VerifyEmail() {
 		now := clock.Now()
 		a.emailVerifiedAt = &now
 		a.updatedAt = now
+		a.RecordEvent(AccountEmailVerified{a.Snapshot()})
 	}
 }
 
@@ -194,6 +206,7 @@ func (a *Account) setStatus(status AccountStatus, from ...AccountStatus) error {
 		if a.status == f {
 			a.status = status
 			a.updatedAt = clock.Now()
+			a.RecordEvent(AccountStatusChanged{Account: a.Snapshot(), PreviousStatus: f})
 			return nil
 		}
 	}

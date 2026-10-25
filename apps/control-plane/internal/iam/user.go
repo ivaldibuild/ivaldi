@@ -16,11 +16,12 @@ type User struct {
 	joinedAt  time.Time
 }
 
-// UserSnapshot is a User's state, for repositories and audit records.
+// UserSnapshot is a User's state, for repositories, audit records, and
+// events. Its JSON form is part of the User events' contract.
 type UserSnapshot struct {
 	PrincipalSnapshot
-	AccountID string
-	JoinedAt  time.Time
+	AccountID string    `json:"account_id"`
+	JoinedAt  time.Time `json:"joined_at"`
 }
 
 // NewUserProps describes a User. A new one leaves JoinedAt nil; a
@@ -40,11 +41,15 @@ func NewUser(props NewUserProps, principalID *string) (*User, error) {
 	if err := validateID("account ID", Account{}.Prefix(), props.AccountID); err != nil {
 		return nil, err
 	}
-	return &User{
+	u := &User{
 		principal: p,
 		accountID: props.AccountID,
 		joinedAt:  timeOr(props.JoinedAt, clock.Now()),
-	}, nil
+	}
+	if u.IsNew() {
+		u.RecordEvent(UserCreated{u.Snapshot()})
+	}
+	return u, nil
 }
 
 func (u *User) AccountID() string   { return u.accountID }

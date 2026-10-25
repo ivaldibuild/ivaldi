@@ -38,16 +38,18 @@ type OAuthClient struct {
 	lastUsedAt   *time.Time
 }
 
-// OAuthClientSnapshot is an OAuthClient's state, for repositories and audit records.
+// OAuthClientSnapshot is an OAuthClient's state, for repositories, audit
+// records, and events. Its JSON form is part of the OAuthClient events'
+// contract.
 type OAuthClientSnapshot struct {
-	ID           string
-	ClientID     string
-	Registration ClientRegistration
-	Name         string
-	RedirectURIs []string
-	MetadataURL  *string
-	CreatedAt    time.Time
-	LastUsedAt   *time.Time
+	ID           string             `json:"id"`
+	ClientID     string             `json:"client_id"`
+	Registration ClientRegistration `json:"registration"`
+	Name         string             `json:"name"`
+	RedirectURIs []string           `json:"redirect_uris"`
+	MetadataURL  *string            `json:"metadata_url"`
+	CreatedAt    time.Time          `json:"created_at"`
+	LastUsedAt   *time.Time         `json:"last_used_at"`
 }
 
 // NewOAuthClientProps describes an OAuthClient. A new one leaves the
@@ -116,6 +118,9 @@ func NewOAuthClient(props NewOAuthClientProps, clientID *string) (*OAuthClient, 
 	}
 	if c.clientID == "" {
 		c.clientID = c.ID()
+	}
+	if c.IsNew() {
+		c.RecordEvent(OAuthClientCreated{c.Snapshot()})
 	}
 	return c, nil
 }
@@ -211,8 +216,12 @@ func (c *OAuthClient) Update(name string, redirectURIs []string) error {
 	if err := validateRedirectURIs(redirectURIs); err != nil {
 		return err
 	}
+	changed := name != c.name || !slices.Equal(redirectURIs, c.redirectURIs)
 	c.name = name
 	c.redirectURIs = copyStrings(redirectURIs)
+	if changed {
+		c.RecordEvent(OAuthClientUpdated{c.Snapshot()})
+	}
 	return nil
 }
 

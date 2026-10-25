@@ -2,6 +2,7 @@ package iam
 
 import (
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
@@ -34,7 +35,9 @@ type Organization struct {
 	updatedAt   time.Time
 }
 
-// OrganizationSnapshot is an Organization's state, for repositories and audit records.
+// OrganizationSnapshot is an Organization's state, for repositories, audit
+// records, and events. Its JSON form is part of the Organization events'
+// contract.
 type OrganizationSnapshot struct {
 	ID          string             `json:"id"`
 	Slug        string             `json:"slug"`
@@ -124,6 +127,9 @@ func NewOrganization(props NewOrganizationProps, organizationID *string) (*Organ
 		createdAt:   timeOr(props.CreatedAt, now),
 		updatedAt:   timeOr(props.UpdatedAt, now),
 	}
+	if o.IsNew() {
+		o.RecordEvent(OrganizationCreated{o.Snapshot()})
+	}
 	return o, nil
 }
 
@@ -204,22 +210,20 @@ func (o *Organization) Update(props UpdateOrganizationProps) error {
 		return err
 	}
 
-	if props.Slug != nil {
-		o.slug = *props.Slug
-	}
-	if props.Name != nil {
-		o.name = *props.Name
-	}
-	if props.DisplayName != nil {
-		o.displayName = *props.DisplayName
-	}
-	if props.LogoURL != nil {
-		o.logoURL = logo
-	}
-	if props.Metadata != nil {
+	changed := anyTrue(
+		set(&o.slug, props.Slug),
+		set(&o.name, props.Name),
+		set(&o.displayName, props.DisplayName),
+		setOptional(&o.logoURL, props.LogoURL),
+	)
+	if props.Metadata != nil && !maps.Equal(props.Metadata, o.metadata) {
 		o.metadata = copyMetadata(props.Metadata)
+		changed = true
 	}
 	o.updatedAt = clock.Now()
+	if changed {
+		o.RecordEvent(OrganizationUpdated{o.Snapshot()})
+	}
 	return nil
 }
 
@@ -229,10 +233,7 @@ func (o *Organization) Suspend() error {
 	if err := o.checkNotDeleted(); err != nil {
 		return err
 	}
-	if o.status != OrganizationSuspended {
-		o.status = OrganizationSuspended
-		o.updatedAt = clock.Now()
-	}
+	o.setStatus(OrganizationSuspended)
 	return nil
 }
 
@@ -241,18 +242,22 @@ func (o *Organization) Reactivate() error {
 	if err := o.checkNotDeleted(); err != nil {
 		return err
 	}
-	if o.status != OrganizationActive {
-		o.status = OrganizationActive
-		o.updatedAt = clock.Now()
-	}
+	o.setStatus(OrganizationActive)
 	return nil
 }
 
 // Delete marks the Organization deleted, which cannot be undone. Deleting a
 // deleted one does nothing.
 func (o *Organization) Delete() {
-	if o.status != OrganizationDeleted {
-		o.status = OrganizationDeleted
+	o.setStatus(OrganizationDeleted)
+}
+
+// setStatus moves the Organization to status, recording the change.
+func (o *Organization) setStatus(status OrganizationStatus) {
+	if o.status != status {
+		previous := o.status
+		o.status = status
 		o.updatedAt = clock.Now()
+		o.RecordEvent(OrganizationStatusChanged{Organization: o.Snapshot(), PreviousStatus: previous})
 	}
 }

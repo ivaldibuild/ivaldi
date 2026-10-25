@@ -21,6 +21,7 @@ The root `go.work` includes the shared package module and every app module, so r
 - Apply least privilege by session, repository, environment, tool, credential, and network destination. Policy and approval decisions must not be buried in provider code.
 - Preserve provenance: indexed knowledge identifies its repository and commit/generation; changes link to Sessions and Work Items; deployments link to builds and commits.
 - Keep humans in the workflow through review, approval, steering, and intervention.
+- Before adding complexity for a speculative or vanishingly unlikely race or security edge case, explain the concrete failure mode, likelihood, and complexity cost to the user and get their buy-in. Do not silently expand scope for theoretical robustness.
 
 Use established terms consistently: Workspace, Project, Source, Work Item, Session, Agent, Policy, Change, Build, Deployment, and Release. PostgreSQL, Redis Streams, AWS/EKS, Next.js, and individual sandbox or intelligence providers are current directions or replaceable choices—not reasons to couple domain logic to infrastructure.
 

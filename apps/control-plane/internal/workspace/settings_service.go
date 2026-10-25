@@ -132,6 +132,7 @@ func (s *Service) RemoveSetting(ctx context.Context, actor identity.Actor, in Re
 		return err
 	}
 
+	current.Remove(actor.PrincipalID, decision.ID)
 	return s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		if err := s.repo.DeleteSetting(ctx, in.Scope, in.Key, in.ExpectedVersion); err != nil {
 			return fmt.Errorf("delete setting %s: %w", in.Key, err)

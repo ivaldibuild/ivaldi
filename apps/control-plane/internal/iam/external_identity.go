@@ -22,16 +22,17 @@ type ExternalIdentity struct {
 	createdAt          time.Time
 }
 
-// ExternalIdentitySnapshot is an ExternalIdentity's state, for repositories
-// and audit records.
+// ExternalIdentitySnapshot is an ExternalIdentity's state, for repositories,
+// audit records, and events. Its JSON form is part of the ExternalIdentity
+// events' contract.
 type ExternalIdentitySnapshot struct {
-	ID                 string
-	OrganizationID     string
-	PrincipalID        string
-	IdentityProviderID string
-	Subject            string
-	LastLoginAt        *time.Time
-	CreatedAt          time.Time
+	ID                 string     `json:"id"`
+	OrganizationID     string     `json:"organization_id"`
+	PrincipalID        string     `json:"principal_id"`
+	IdentityProviderID string     `json:"identity_provider_id"`
+	Subject            string     `json:"subject"`
+	LastLoginAt        *time.Time `json:"last_login_at"`
+	CreatedAt          time.Time  `json:"created_at"`
 }
 
 // NewExternalIdentityProps describes an ExternalIdentity. A new one leaves
@@ -74,6 +75,9 @@ func NewExternalIdentity(props NewExternalIdentityProps, externalIdentityID *str
 		subject:            props.Subject,
 		lastLoginAt:        clock.CopyTime(props.LastLoginAt),
 		createdAt:          timeOr(props.CreatedAt, clock.Now()),
+	}
+	if e.IsNew() {
+		e.RecordEvent(ExternalIdentityCreated{e.Snapshot()})
 	}
 	return e, nil
 }

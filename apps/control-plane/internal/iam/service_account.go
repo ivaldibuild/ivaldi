@@ -12,12 +12,13 @@ type ServiceAccount struct {
 	createdByPrincipalID string
 }
 
-// ServiceAccountSnapshot is a ServiceAccount's state, for repositories and
-// audit records.
+// ServiceAccountSnapshot is a ServiceAccount's state, for repositories,
+// audit records, and events. Its JSON form is part of the ServiceAccount
+// events' contract.
 type ServiceAccountSnapshot struct {
 	PrincipalSnapshot
-	Description          string
-	CreatedByPrincipalID string
+	Description          string `json:"description"`
+	CreatedByPrincipalID string `json:"created_by_principal_id"`
 }
 
 // NewServiceAccountProps describes a ServiceAccount.
@@ -37,11 +38,15 @@ func NewServiceAccount(props NewServiceAccountProps, principalID *string) (*Serv
 	if err := validateID("creator", principalPrefix, props.CreatedByPrincipalID); err != nil {
 		return nil, err
 	}
-	return &ServiceAccount{
+	s := &ServiceAccount{
 		principal:            p,
 		description:          props.Description,
 		createdByPrincipalID: props.CreatedByPrincipalID,
-	}, nil
+	}
+	if s.IsNew() {
+		s.RecordEvent(ServiceAccountCreated{s.Snapshot()})
+	}
+	return s, nil
 }
 
 func (s *ServiceAccount) Description() string          { return s.description }
@@ -57,6 +62,10 @@ func (s *ServiceAccount) Snapshot() ServiceAccountSnapshot {
 
 // SetDescription replaces the description; "" removes it.
 func (s *ServiceAccount) SetDescription(description string) {
+	changed := description != s.description
 	s.description = description
 	s.updatedAt = clock.Now()
+	if changed {
+		s.RecordEvent(ServiceAccountDescriptionChanged{s.Snapshot()})
+	}
 }

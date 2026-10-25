@@ -22,17 +22,18 @@ type AgentSession struct {
 	scopeResourceIDs     []string
 }
 
-// AgentSessionSnapshot is an AgentSession's state, for repositories and
-// audit records.
+// AgentSessionSnapshot is an AgentSession's state, for repositories, audit
+// records, and events. Its JSON form is part of the AgentSession events'
+// contract.
 type AgentSessionSnapshot struct {
 	PrincipalSnapshot
-	SessionID            string
-	WorkItemID           string
-	DelegatorPrincipalID string
-	ExpiresAt            time.Time
-	RevokedAt            *time.Time
+	SessionID            string     `json:"session_id"`
+	WorkItemID           string     `json:"work_item_id"`
+	DelegatorPrincipalID string     `json:"delegator_principal_id"`
+	ExpiresAt            time.Time  `json:"expires_at"`
+	RevokedAt            *time.Time `json:"revoked_at"`
 	// ScopeResourceIDs are sorted: their order means nothing.
-	ScopeResourceIDs []string
+	ScopeResourceIDs []string `json:"scope_resource_ids"`
 }
 
 // NewAgentSessionProps describes an AgentSession. A new one leaves
@@ -76,7 +77,7 @@ func NewAgentSession(props NewAgentSessionProps, principalID *string) (*AgentSes
 	if err := validateScope(props.ScopeResourceIDs); err != nil {
 		return nil, err
 	}
-	return &AgentSession{
+	s := &AgentSession{
 		principal:            p,
 		sessionID:            props.SessionID,
 		workItemID:           props.WorkItemID,
@@ -84,7 +85,11 @@ func NewAgentSession(props NewAgentSessionProps, principalID *string) (*AgentSes
 		expiresAt:            props.ExpiresAt,
 		revokedAt:            clock.CopyTime(props.RevokedAt),
 		scopeResourceIDs:     sortedStrings(props.ScopeResourceIDs),
-	}, nil
+	}
+	if s.IsNew() {
+		s.RecordEvent(AgentSessionCreated{s.Snapshot()})
+	}
+	return s, nil
 }
 
 // validateReference checks the ID of a record another capability owns,
@@ -166,6 +171,7 @@ func (s *AgentSession) Revoke() {
 		now := clock.Now()
 		s.revokedAt = &now
 		s.updatedAt = now
+		s.RecordEvent(AgentSessionRevoked{s.Snapshot()})
 	}
 }
 

@@ -9,6 +9,8 @@ import (
 	"slices"
 	"sync"
 	"time"
+
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 )
 
 // Level is where a setting value is stored.
@@ -36,9 +38,9 @@ func (l Level) rank() int {
 // Scope identifies a level: the Organization alone, a Workspace in it, or a
 // Project in that Workspace.
 type Scope struct {
-	OrganizationID string
-	WorkspaceID    string
-	ProjectID      string
+	OrganizationID string `json:"organization_id"`
+	WorkspaceID    string `json:"workspace_id,omitempty"`
+	ProjectID      string `json:"project_id,omitempty"`
 }
 
 // OrganizationScope, WorkspaceScope, and ProjectScope build scopes.
@@ -90,6 +92,7 @@ func (s Scope) validate() error {
 
 // Setting is one setting value stored at one level.
 type Setting struct {
+	aggregate.Events
 	scope                Scope
 	key                  string
 	value                json.RawMessage
@@ -155,7 +158,7 @@ func NewSetting(p NewSettingProps) (*Setting, error) {
 
 	now := now()
 
-	return &Setting{
+	s := &Setting{
 		scope:                p.Scope,
 		key:                  p.Key,
 		value:                bytes.Clone(p.Value),
@@ -164,7 +167,13 @@ func NewSetting(p NewSettingProps) (*Setting, error) {
 		policyDecisionID:     p.PolicyDecisionID,
 		createdAt:            timeOr(p.CreatedAt, now),
 		updatedAt:            timeOr(p.UpdatedAt, now),
-	}, nil
+	}
+	// A Setting has no ID to tell a new one from a stored one; a stored one
+	// has its creation time.
+	if p.CreatedAt == nil {
+		s.RecordEvent(SettingCreated{s.Snapshot()})
+	}
+	return s, nil
 }
 
 func (s *Setting) Scope() Scope                 { return s.scope }
@@ -197,12 +206,22 @@ func (s *Setting) Change(value json.RawMessage, updatedBy, decisionID string) er
 		return err
 	}
 
+	previous := s.value
 	s.value = bytes.Clone(value)
 	s.version++
 	s.updatedByPrincipalID = updatedBy
 	s.policyDecisionID = decisionID
 	s.updatedAt = now()
+	if !bytes.Equal(previous, value) {
+		s.RecordEvent(SettingChanged{Setting: s.Snapshot(), PreviousValue: bytes.Clone(previous)})
+	}
 	return nil
+}
+
+// Remove records that the value is being removed from its level, so the
+// value from the next level up applies again. The caller deletes it.
+func (s *Setting) Remove(removedBy, decisionID string) {
+	s.RecordEvent(SettingRemoved{Setting: s.Snapshot(), RemovedByPrincipalID: removedBy, PolicyDecisionID: decisionID})
 }
 
 // MaxSettingValueBytes is the largest value a setting may hold.

@@ -35,16 +35,17 @@ type WorkloadCredential struct {
 }
 
 // WorkloadCredentialSnapshot is a WorkloadCredential's state, for
-// repositories and audit records.
+// repositories, audit records, and events. Its JSON form is part of the
+// WorkloadCredential events' contract.
 type WorkloadCredentialSnapshot struct {
-	ID             string
-	OrganizationID string
-	PrincipalID    string
-	Kind           WorkloadCredentialKind
-	Identifier     string
-	NotAfter       *time.Time
-	RevokedAt      *time.Time
-	CreatedAt      time.Time
+	ID             string                 `json:"id"`
+	OrganizationID string                 `json:"organization_id"`
+	PrincipalID    string                 `json:"principal_id"`
+	Kind           WorkloadCredentialKind `json:"kind"`
+	Identifier     string                 `json:"identifier"`
+	NotAfter       *time.Time             `json:"not_after"`
+	RevokedAt      *time.Time             `json:"revoked_at"`
+	CreatedAt      time.Time              `json:"created_at"`
 }
 
 // NewWorkloadCredentialProps describes a WorkloadCredential. A new one
@@ -98,6 +99,9 @@ func NewWorkloadCredential(props NewWorkloadCredentialProps, credentialID *strin
 		revokedAt:      clock.CopyTime(props.RevokedAt),
 		createdAt:      createdAt,
 	}
+	if c.IsNew() {
+		c.RecordEvent(WorkloadCredentialCreated{c.Snapshot()})
+	}
 	return c, nil
 }
 
@@ -146,5 +150,6 @@ func (c *WorkloadCredential) Revoke() {
 	if !c.Revoked() {
 		now := clock.Now()
 		c.revokedAt = &now
+		c.RecordEvent(WorkloadCredentialRevoked{c.Snapshot()})
 	}
 }

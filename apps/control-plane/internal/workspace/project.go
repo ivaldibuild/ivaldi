@@ -100,6 +100,9 @@ func NewProject(p NewProjectProps, projectID *string) (*Project, error) {
 		updatedAt:            timeOr(p.UpdatedAt, now),
 		archivedAt:           copyTime(p.ArchivedAt),
 	}
+	if pr.IsNew() {
+		pr.RecordEvent(ProjectCreated{pr.Snapshot()})
+	}
 	return pr, nil
 }
 
@@ -160,16 +163,15 @@ func (p *Project) Update(u UpdateProjectProps) error {
 	if err := u.Validate(); err != nil {
 		return err
 	}
-	if u.Slug != nil {
-		p.slug = *u.Slug
-	}
-	if u.DisplayName != nil {
-		p.displayName = *u.DisplayName
-	}
-	if u.Description != nil {
-		p.description = *u.Description
-	}
+	changed := anyTrue(
+		set(&p.slug, u.Slug),
+		set(&p.displayName, u.DisplayName),
+		set(&p.description, u.Description),
+	)
 	p.updatedAt = now()
+	if changed {
+		p.RecordEvent(ProjectUpdated{p.Snapshot()})
+	}
 	return nil
 }
 
@@ -182,8 +184,12 @@ func (p *Project) TransferTo(ownerTeamID string) error {
 	if ownerTeamID == "" {
 		return fmt.Errorf("%w: a project needs an owning team", ErrInvalid)
 	}
+	previous := p.ownerTeamID
 	p.ownerTeamID = ownerTeamID
 	p.updatedAt = now()
+	if ownerTeamID != previous {
+		p.RecordEvent(ProjectTransferred{Project: p.Snapshot(), PreviousOwnerTeamID: previous})
+	}
 	return nil
 }
 
@@ -196,6 +202,7 @@ func (p *Project) Archive() {
 	t := now()
 	p.archivedAt = &t
 	p.updatedAt = t
+	p.RecordEvent(ProjectArchived{p.Snapshot()})
 }
 
 // Restore restores an archived Project. Restoring an active one does nothing.
@@ -206,4 +213,5 @@ func (p *Project) Restore() {
 	}
 	p.archivedAt = nil
 	p.updatedAt = now()
+	p.RecordEvent(ProjectRestored{p.Snapshot()})
 }

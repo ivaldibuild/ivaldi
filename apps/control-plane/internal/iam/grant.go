@@ -22,17 +22,18 @@ type Grant struct {
 	createdAt            time.Time
 }
 
-// GrantSnapshot is a Grant's state, for repositories and audit records.
+// GrantSnapshot is a Grant's state, for repositories, audit records, and
+// events. Its JSON form is part of the Grant events' contract.
 type GrantSnapshot struct {
-	ID                   string
-	OrganizationID       string
-	PrincipalID          *string
-	GroupID              *string
-	RoleID               string
-	ResourceID           string
-	GrantedByPrincipalID string
-	ExpiresAt            *time.Time
-	CreatedAt            time.Time
+	ID                   string     `json:"id"`
+	OrganizationID       string     `json:"organization_id"`
+	PrincipalID          *string    `json:"principal_id"`
+	GroupID              *string    `json:"group_id"`
+	RoleID               string     `json:"role_id"`
+	ResourceID           string     `json:"resource_id"`
+	GrantedByPrincipalID string     `json:"granted_by_principal_id"`
+	ExpiresAt            *time.Time `json:"expires_at"`
+	CreatedAt            time.Time  `json:"created_at"`
 }
 
 // NewGrantProps describes a Grant. A new one leaves CreatedAt nil; a
@@ -100,6 +101,9 @@ func NewGrant(props NewGrantProps, grantID *string) (*Grant, error) {
 		grantedByPrincipalID: props.GrantedByPrincipalID,
 		expiresAt:            clock.CopyTime(props.ExpiresAt),
 		createdAt:            createdAt,
+	}
+	if g.IsNew() {
+		g.RecordEvent(GrantCreated{g.Snapshot()})
 	}
 	return g, nil
 }

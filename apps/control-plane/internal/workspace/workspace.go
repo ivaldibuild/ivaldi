@@ -19,6 +19,7 @@ package workspace
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"time"
 	"unicode/utf8"
 
@@ -114,6 +115,10 @@ func NewWorkspace(p NewWorkspaceProps, workspaceID *string) (*Workspace, error) 
 		archivedAt:           copyTime(p.ArchivedAt),
 	}
 
+	if w.IsNew() {
+		w.RecordEvent(WorkspaceCreated{w.Snapshot()})
+	}
+
 	return w, nil
 }
 
@@ -188,19 +193,17 @@ func (w *Workspace) Update(p UpdateWorkspaceProps) error {
 		return err
 	}
 
-	if p.Slug != nil {
-		w.slug = *p.Slug
-	}
-
-	if p.DisplayName != nil {
-		w.displayName = *p.DisplayName
-	}
-
-	if p.Description != nil {
-		w.description = *p.Description
-	}
+	changed := anyTrue(
+		set(&w.slug, p.Slug),
+		set(&w.displayName, p.DisplayName),
+		set(&w.description, p.Description),
+	)
 
 	w.updatedAt = now()
+
+	if changed {
+		w.RecordEvent(WorkspaceUpdated{w.Snapshot()})
+	}
 
 	return nil
 }
@@ -212,16 +215,26 @@ func (w *Workspace) MakeDefault() error {
 		return fmt.Errorf("make workspace %s the default: %w", w.ID(), ErrArchived)
 	}
 
+	changed := !w.isDefault
 	w.isDefault = true
 	w.updatedAt = now()
+
+	if changed {
+		w.RecordEvent(WorkspaceMadeDefault{w.Snapshot()})
+	}
 
 	return nil
 }
 
 // ClearDefault stops the Workspace being the default, when another becomes the default.
 func (w *Workspace) ClearDefault() {
+	changed := w.isDefault
 	w.isDefault = false
 	w.updatedAt = now()
+
+	if changed {
+		w.RecordEvent(WorkspaceDefaultCleared{w.Snapshot()})
+	}
 }
 
 // Archive archives the Workspace. The default Workspace cannot be archived;
@@ -239,6 +252,7 @@ func (w *Workspace) Archive() error {
 	t := now()
 	w.archivedAt = &t
 	w.updatedAt = t
+	w.RecordEvent(WorkspaceArchived{w.Snapshot()})
 
 	return nil
 }
@@ -251,6 +265,7 @@ func (w *Workspace) Restore() {
 
 	w.archivedAt = nil
 	w.updatedAt = now()
+	w.RecordEvent(WorkspaceRestored{w.Snapshot()})
 }
 
 var slugFormat = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
@@ -279,6 +294,22 @@ func copyTime(t *time.Time) *time.Time {
 	}
 	c := *t
 	return &c
+}
+
+// set assigns *v to *dst when v is given and differs, and reports whether it
+// changed anything, so a method records an event only for a real change.
+func set[T comparable](dst *T, v *T) bool {
+	if v == nil || *dst == *v {
+		return false
+	}
+	*dst = *v
+	return true
+}
+
+// anyTrue reports whether any of changes is true. Every argument is
+// evaluated, so it combines several set calls without short-circuiting.
+func anyTrue(changes ...bool) bool {
+	return slices.Contains(changes, true)
 }
 
 // timeOr returns a stored timestamp, or fallback for a new object.

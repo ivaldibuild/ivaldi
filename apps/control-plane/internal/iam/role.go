@@ -51,13 +51,14 @@ type Role struct {
 	createdAt      time.Time
 }
 
-// RoleSnapshot is a Role's state, for repositories and audit records.
+// RoleSnapshot is a Role's state, for repositories, audit records, and
+// events. Its JSON form is part of the Role events' contract.
 type RoleSnapshot struct {
-	ID             string
-	OrganizationID *string
-	Key            string
-	Name           string
-	CreatedAt      time.Time
+	ID             string    `json:"id"`
+	OrganizationID *string   `json:"organization_id"`
+	Key            string    `json:"key"`
+	Name           string    `json:"name"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 // NewRoleProps describes a Role. A new one leaves CreatedAt nil; a
@@ -109,6 +110,9 @@ func NewRole(props NewRoleProps, roleID *string) (*Role, error) {
 		name:           props.Name,
 		createdAt:      timeOr(props.CreatedAt, clock.Now()),
 	}
+	if r.IsNew() {
+		r.RecordEvent(RoleCreated{r.Snapshot()})
+	}
 	return r, nil
 }
 
@@ -158,6 +162,9 @@ func (r *Role) Rename(name string) error {
 	if err := validateName("name", name, maxNameLength); err != nil {
 		return err
 	}
-	r.name = name
+	if name != r.name {
+		r.name = name
+		r.RecordEvent(RoleRenamed{r.Snapshot()})
+	}
 	return nil
 }

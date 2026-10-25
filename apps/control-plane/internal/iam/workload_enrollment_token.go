@@ -24,17 +24,19 @@ type WorkloadEnrollmentToken struct {
 }
 
 // WorkloadEnrollmentTokenSnapshot is a WorkloadEnrollmentToken's state, for
-// repositories and audit records.
+// repositories, audit records, and events. Its JSON form is part of the
+// WorkloadEnrollmentToken events' contract. Its hash is left out of JSON, so
+// it never reaches an event.
 type WorkloadEnrollmentTokenSnapshot struct {
-	ID                   string
-	OrganizationID       string
-	TokenHash            []byte
-	Pool                 string
-	CreatedByPrincipalID string
-	ExpiresAt            time.Time
-	UsedAt               *time.Time
-	UsedByPrincipalID    *string
-	CreatedAt            time.Time
+	ID                   string     `json:"id"`
+	OrganizationID       string     `json:"organization_id"`
+	TokenHash            []byte     `json:"-"`
+	Pool                 string     `json:"pool"`
+	CreatedByPrincipalID string     `json:"created_by_principal_id"`
+	ExpiresAt            time.Time  `json:"expires_at"`
+	UsedAt               *time.Time `json:"used_at"`
+	UsedByPrincipalID    *string    `json:"used_by_principal_id"`
+	CreatedAt            time.Time  `json:"created_at"`
 }
 
 // NewWorkloadEnrollmentTokenProps describes a WorkloadEnrollmentToken. A
@@ -97,6 +99,9 @@ func NewWorkloadEnrollmentToken(props NewWorkloadEnrollmentTokenProps, tokenID *
 		usedByPrincipalID:    usedBy,
 		createdAt:            createdAt,
 	}
+	if t.IsNew() {
+		t.RecordEvent(WorkloadEnrollmentTokenCreated{t.Snapshot()})
+	}
 	return t, nil
 }
 
@@ -144,5 +149,6 @@ func (t *WorkloadEnrollmentToken) Redeem(w *Workload) error {
 	workloadID := w.ID()
 	t.usedAt = &now
 	t.usedByPrincipalID = &workloadID
+	t.RecordEvent(WorkloadEnrollmentTokenRedeemed{t.Snapshot()})
 	return nil
 }

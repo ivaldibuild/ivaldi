@@ -24,18 +24,20 @@ type APIToken struct {
 	createdAt      time.Time
 }
 
-// APITokenSnapshot is an APIToken's state, for repositories and audit records.
+// APITokenSnapshot is an APIToken's state, for repositories, audit records,
+// and events. Its JSON form is part of the APIToken events' contract. Its
+// hash is left out of JSON, so it never reaches an event.
 type APITokenSnapshot struct {
-	ID             string
-	OrganizationID string
-	PrincipalID    string
-	Name           string
-	TokenPrefix    string
-	TokenHash      []byte
-	ExpiresAt      *time.Time
-	LastUsedAt     *time.Time
-	RevokedAt      *time.Time
-	CreatedAt      time.Time
+	ID             string     `json:"id"`
+	OrganizationID string     `json:"organization_id"`
+	PrincipalID    string     `json:"principal_id"`
+	Name           string     `json:"name"`
+	TokenPrefix    string     `json:"token_prefix"`
+	TokenHash      []byte     `json:"-"`
+	ExpiresAt      *time.Time `json:"expires_at"`
+	LastUsedAt     *time.Time `json:"last_used_at"`
+	RevokedAt      *time.Time `json:"revoked_at"`
+	CreatedAt      time.Time  `json:"created_at"`
 }
 
 // NewAPITokenProps describes an APIToken. A new one leaves LastUsedAt,
@@ -95,6 +97,9 @@ func NewAPIToken(props NewAPITokenProps, apiTokenID *string) (*APIToken, error) 
 		revokedAt:      clock.CopyTime(props.RevokedAt),
 		createdAt:      createdAt,
 	}
+	if t.IsNew() {
+		t.RecordEvent(APITokenCreated{t.Snapshot()})
+	}
 	return t, nil
 }
 
@@ -150,5 +155,6 @@ func (t *APIToken) Revoke() {
 	if !t.Revoked() {
 		now := clock.Now()
 		t.revokedAt = &now
+		t.RecordEvent(APITokenRevoked{t.Snapshot()})
 	}
 }

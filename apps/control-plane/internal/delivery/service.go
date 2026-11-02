@@ -7,10 +7,13 @@ import (
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/audit"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/outbox"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/team"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
+	"github.com/ivaldibuild/ivaldi/pkg/events"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
 	"github.com/ivaldibuild/ivaldi/pkg/transaction"
 )
@@ -36,6 +39,7 @@ type Service struct {
 	teams        team.Directory
 	audit        audit.Recorder
 	workspaces   Workspaces
+	outbox       outbox.Recorder
 }
 
 var (
@@ -61,6 +65,8 @@ type Config struct {
 	Teams      team.Directory
 	Audit      audit.Recorder
 	Workspaces Workspaces
+	// Outbox records the events a change raises in the same transaction.
+	Outbox outbox.Recorder
 }
 
 // NewService returns a Service, or an error naming a missing collaborator.
@@ -80,6 +86,7 @@ func NewService(c Config) (*Service, error) {
 		{"Teams", c.Teams != nil},
 		{"Audit", c.Audit != nil},
 		{"Workspaces", c.Workspaces != nil},
+		{"Outbox", c.Outbox != nil},
 	}
 	for _, r := range required {
 		if !r.ok {
@@ -98,6 +105,7 @@ func NewService(c Config) (*Service, error) {
 		teams:        c.Teams,
 		audit:        c.Audit,
 		workspaces:   c.Workspaces,
+		outbox:       c.Outbox,
 	}, nil
 }
 
@@ -117,9 +125,42 @@ func (s *Service) record(ctx context.Context, d authorization.Decision, e audit.
 	return nil
 }
 
+// aggregateObject is a delivery aggregate: it belongs to an Organization and
+// holds the events its methods recorded until they are saved.
+type aggregateObject interface {
+	OrganizationID() string
+	PullEvents() []aggregate.Event
+}
+
+// recordEvents wraps the events obj recorded and writes them to the outbox in
+// the caller's transaction, so they commit with the object they describe.
+// aggregateID is empty for an object that is keyed by something other than an
+// ID, such as a Placement.
+func (s *Service) recordEvents(ctx context.Context, aggregateType, aggregateID string, obj aggregateObject) error {
+	envelopes, err := events.Wrap(ctx, events.Source{
+		OrganizationID: obj.OrganizationID(),
+		AggregateType:  aggregateType,
+		AggregateID:    aggregateID,
+	}, obj.PullEvents()...)
+	if err != nil {
+		return fmt.Errorf("wrap %s events: %w", aggregateType, err)
+	}
+	if err := s.outbox.Record(ctx, envelopes...); err != nil {
+		return fmt.Errorf("record %s events: %w", aggregateType, err)
+	}
+	return nil
+}
+
 // change is one change to a stored object: load it, apply domain methods to
-// it, save it, and record an event with its state before and after.
-type change[T any] struct {
+// it, save it, record the events it raised, and record an audit event with
+// its state before and after.
+type change[T aggregateObject] struct {
+	// aggregateType names the domain type that raises the events, such as
+	// AggregateApplication.
+	aggregateType string
+	// aggregateID names the changed object for the envelope. Nil when the
+	// object has no ID of its own, such as a Placement.
+	aggregateID func(T) string
 	// load reads the object. It runs once to authorize, and again inside
 	// the transaction to apply the change to current state.
 	load func(ctx context.Context) (T, error)
@@ -141,7 +182,7 @@ var errUnchanged = errors.New("unchanged")
 
 // run authorizes before the transaction, so a slow policy decision holds no
 // locks, and applies the change to the object as it is inside the transaction.
-func run[T any](ctx context.Context, s *Service, actor identity.Actor, c change[T]) (T, error) {
+func run[T aggregateObject](ctx context.Context, s *Service, actor identity.Actor, c change[T]) (T, error) {
 	var zero T
 	current, err := c.load(ctx)
 	if err != nil {
@@ -166,6 +207,13 @@ func run[T any](ctx context.Context, s *Service, actor identity.Actor, c change[
 			return err
 		}
 		if err := c.save(ctx, current); err != nil {
+			return err
+		}
+		var aggregateID string
+		if c.aggregateID != nil {
+			aggregateID = c.aggregateID(current)
+		}
+		if err := s.recordEvents(ctx, c.aggregateType, aggregateID, current); err != nil {
 			return err
 		}
 		e := c.event(current)

@@ -15,7 +15,7 @@ func TestServiceCreateApplication(t *testing.T) {
 		l := f.lifecycle(t, "mainline")
 		before := f.audit.count()
 
-		app, ch, err := f.svc.CreateApplication(svcCtx, svcAlice, CreateApplicationInput{
+		app, ch, err := f.svc.CreateApplication(svcCtx, svcAlice, &CreateApplicationInput{
 			OrganizationID: svcOrg, ProjectID: f.project.ID(), DisplayName: "Checkout API", SourceID: "src_1", DefaultLifecycleID: l.ID(),
 		})
 
@@ -55,7 +55,7 @@ func TestServiceCreateApplication(t *testing.T) {
 	t.Run("with another active owner", func(t *testing.T) {
 		f := newSvcFixture(t)
 		l := f.lifecycle(t, "mainline")
-		app, _, err := f.svc.CreateApplication(svcCtx, svcAlice, CreateApplicationInput{OrganizationID: svcOrg, ProjectID: f.project.ID(), OwnerTeamID: svcOtherTeam, DisplayName: "API", DefaultLifecycleID: l.ID()})
+		app, _, err := f.svc.CreateApplication(svcCtx, svcAlice, &CreateApplicationInput{OrganizationID: svcOrg, ProjectID: f.project.ID(), OwnerTeamID: svcOtherTeam, DisplayName: "API", DefaultLifecycleID: l.ID()})
 		require.NoError(t, err)
 		assert.Equal(t, svcOtherTeam, app.OwnerTeamID())
 	})
@@ -110,7 +110,7 @@ func TestServiceCreateApplication(t *testing.T) {
 			in.DisplayName = "API"
 			state, events, resources := f.marks()
 
-			_, _, err := f.svc.CreateApplication(svcCtx, svcAlice, in)
+			_, _, err := f.svc.CreateApplication(svcCtx, svcAlice, &in)
 
 			require.ErrorIs(t, err, tt.wantErr)
 			f.requireUnchanged(t, state, events, resources)
@@ -123,7 +123,7 @@ func TestServiceCreateApplication(t *testing.T) {
 		state, events, resources := f.marks()
 		f.store.fail["CreateChannel"] = svcErrBoom
 
-		_, _, err := f.svc.CreateApplication(svcCtx, svcAlice, CreateApplicationInput{OrganizationID: svcOrg, ProjectID: f.project.ID(), DisplayName: "API", DefaultLifecycleID: l.ID()})
+		_, _, err := f.svc.CreateApplication(svcCtx, svcAlice, &CreateApplicationInput{OrganizationID: svcOrg, ProjectID: f.project.ID(), DisplayName: "API", DefaultLifecycleID: l.ID()})
 
 		require.ErrorIs(t, err, svcErrBoom)
 		f.requireUnchanged(t, state, events, resources)

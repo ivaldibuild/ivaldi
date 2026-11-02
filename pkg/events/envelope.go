@@ -2,10 +2,12 @@
 // the handlers that react to them.
 //
 // A service wraps the events a domain object recorded (see pkg/aggregate) in
-// Envelopes and saves them in the transaction that saves the object. A
-// consumer later reads them and hands each to a Router, which dispatches it to
-// the handlers subscribed to its type. Sagas are handlers: they invoke other
-// functionality, or forward events to a transport through a Publisher.
+// Envelopes and saves them in the transaction that saves the object. In the
+// control plane, the outbox package stores them and its Relay hands each to
+// the handlers subscribed to its type through a Router. Sagas are handlers:
+// they invoke other functionality, or forward events to a transport through a
+// Publisher, whose implementation in pkg/events/redisstream adds them to a
+// stream for handlers in other processes.
 //
 // Delivery is at least once and may be out of order, so every handler must be
 // idempotent.

@@ -28,47 +28,63 @@ type CreateApplicationInput struct {
 	DefaultLifecycleID string
 }
 
+func (in *CreateApplicationInput) Validate() error {
+	if err := validateDisplayName(in.DisplayName); err != nil {
+		return err
+	}
+
+	if _, err := slugOrDerived(in.Slug, in.DisplayName); err != nil {
+		return err
+	}
+
+	if len(in.WorkloadSelector) > 0 {
+		if err := validateSelector(in.WorkloadSelector); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // CreateApplication creates an Application in an active Project, with its
 // default Channel. The Application's Workspace is copied from the Project.
-func (s *Service) CreateApplication(ctx context.Context, actor identity.Actor, in CreateApplicationInput) (*Application, *Channel, error) {
+func (s *Service) CreateApplication(ctx context.Context, actor identity.Actor, in *CreateApplicationInput) (*Application, *Channel, error) {
 	if !id.Valid(Lifecycle{}.Prefix(), in.DefaultLifecycleID) {
 		return nil, nil, NewErrInvalidInput("an application needs the lifecycle its default channel follows")
 	}
-	// NewApplication needs the Project's Workspace, so it runs in the
-	// transaction; these checks refuse bad input before authorizing.
-	if err := validateDisplayName(in.DisplayName); err != nil {
+
+	if err := in.Validate(); err != nil {
 		return nil, nil, err
 	}
-	if _, err := slugOrDerived(in.Slug, in.DisplayName); err != nil {
-		return nil, nil, err
-	}
-	if len(in.WorkloadSelector) > 0 {
-		if err := validateSelector(in.WorkloadSelector); err != nil {
-			return nil, nil, err
-		}
-	}
+
 	d, err := s.authorize(ctx, authorization.Request{
 		Actor: actor, Permission: PermissionApplicationManage, OrganizationID: in.OrganizationID,
 		ResourceID: in.ProjectID, Action: ActionApplicationCreate, Proposal: in,
 	})
+
 	if err != nil {
 		return nil, nil, err
 	}
 
 	var app *Application
 	var ch *Channel
+
 	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		p, err := s.activeProject(ctx, in.OrganizationID, in.ProjectID)
 		if err != nil {
 			return err
 		}
+
 		owner := in.OwnerTeamID
+
 		if owner == "" {
 			owner = p.OwnerTeamID()
 		}
+
 		if err := s.checkTeam(ctx, in.OrganizationID, owner); err != nil {
 			return err
 		}
+
 		app, err = NewApplication(NewApplicationProps{
 			OrganizationID:   in.OrganizationID,
 			WorkspaceID:      p.WorkspaceID(),
@@ -79,13 +95,17 @@ func (s *Service) CreateApplication(ctx context.Context, actor identity.Actor, i
 			SourceID:         &in.SourceID,
 			WorkloadSelector: in.WorkloadSelector,
 		}, nil)
+
 		if err != nil {
 			return err
 		}
+
 		l, err := s.lifecycleFor(ctx, in.OrganizationID, app.WorkspaceID(), in.DefaultLifecycleID)
+
 		if err != nil {
 			return err
 		}
+
 		ch, err = NewChannel(NewChannelProps{
 			OrganizationID: in.OrganizationID,
 			ApplicationID:  app.ID(),
@@ -94,23 +114,38 @@ func (s *Service) CreateApplication(ctx context.Context, actor identity.Actor, i
 			DisplayName:    DefaultChannelName,
 			IsDefault:      true,
 		}, nil)
+
 		if err != nil {
 			return err
 		}
+
 		if err := s.applications.CreateApplication(ctx, app); err != nil {
 			return fmt.Errorf("create application: %w", err)
 		}
+
 		if err := s.applications.CreateChannel(ctx, ch); err != nil {
 			return fmt.Errorf("create default channel: %w", err)
 		}
+
+		if err := s.recordEvents(ctx, AggregateApplication, app.ID(), app); err != nil {
+			return err
+		}
+
+		if err := s.recordEvents(ctx, AggregateChannel, ch.ID(), ch); err != nil {
+			return err
+		}
+
 		if err := s.record(ctx, d, audit.Event{Type: EventApplicationCreated, OrganizationID: in.OrganizationID, ResourceID: app.ID(), Actor: actor, After: app.Snapshot()}); err != nil {
 			return err
 		}
+
 		return s.record(ctx, d, audit.Event{Type: EventChannelCreated, OrganizationID: in.OrganizationID, ResourceID: ch.ID(), Actor: actor, After: ch.Snapshot()})
 	})
+
 	if err != nil {
 		return nil, nil, err
 	}
+
 	return app, ch, nil
 }
 
@@ -205,6 +240,8 @@ func (s *Service) ListApplications(ctx context.Context, actor identity.Actor, qu
 
 func (s *Service) changeApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID, action, event string, proposal any, apply func(context.Context, *Application) error) (*Application, error) {
 	return run(ctx, s, actor, change[*Application]{
+		aggregateType: AggregateApplication,
+		aggregateID:   func(a *Application) string { return a.ID() },
 		load: func(ctx context.Context) (*Application, error) {
 			return s.applications.GetApplication(ctx, organizationID, applicationID)
 		},
@@ -341,6 +378,9 @@ func (s *Service) CreateArtifact(ctx context.Context, actor identity.Actor, in C
 		if err := s.applications.CreateArtifact(ctx, a); err != nil {
 			return fmt.Errorf("create artifact: %w", err)
 		}
+		if err := s.recordEvents(ctx, AggregateArtifact, a.ID(), a); err != nil {
+			return err
+		}
 		return s.record(ctx, d, audit.Event{Type: EventArtifactCreated, OrganizationID: in.OrganizationID, ResourceID: a.ID(), Actor: actor, After: a.Snapshot()})
 	})
 	if err != nil {
@@ -359,6 +399,8 @@ func (s *Service) ListArtifacts(ctx context.Context, actor identity.Actor, organ
 
 func (s *Service) changeArtifact(ctx context.Context, actor identity.Actor, organizationID, artifactID, action, event string, proposal any, apply func(context.Context, *Artifact) error) (*Artifact, error) {
 	return run(ctx, s, actor, change[*Artifact]{
+		aggregateType: AggregateArtifact,
+		aggregateID:   func(a *Artifact) string { return a.ID() },
 		load: func(ctx context.Context) (*Artifact, error) {
 			return s.applications.GetArtifact(ctx, organizationID, artifactID)
 		},
@@ -532,6 +574,9 @@ func (s *Service) CreatePlacement(ctx context.Context, actor identity.Actor, in 
 		if err := s.applications.CreatePlacement(ctx, p); err != nil {
 			return fmt.Errorf("create placement: %w", err)
 		}
+		if err := s.recordEvents(ctx, AggregatePlacement, "", p); err != nil {
+			return err
+		}
 		return s.record(ctx, d, audit.Event{Type: EventPlacementCreated, OrganizationID: in.OrganizationID, ResourceID: in.ApplicationID, Actor: actor, After: p.Snapshot()})
 	})
 	if err != nil {
@@ -571,6 +616,7 @@ func (s *Service) ConfigurePlacement(ctx context.Context, actor identity.Actor, 
 		}
 	}
 	return run(ctx, s, actor, change[*Placement]{
+		aggregateType: AggregatePlacement,
 		load: func(ctx context.Context) (*Placement, error) {
 			return s.applications.GetPlacement(ctx, organizationID, applicationID, targetID)
 		},

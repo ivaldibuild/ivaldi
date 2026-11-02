@@ -20,10 +20,14 @@ type fakeStore struct {
 	mu           sync.Mutex
 	pending      []Entry
 	published    []string
+	publishCalls int
 	failed       map[string]time.Time
 	deadLettered map[string]string
 	purged       []time.Time
 	claimErr     error
+	publishErr   error
+	// onClaim, if set, runs at the start of every claim.
+	onClaim func()
 }
 
 func newFakeStore(entries ...Entry) *fakeStore {
@@ -38,6 +42,9 @@ func newFakeStore(entries ...Entry) *fakeStore {
 func (s *fakeStore) Record(context.Context, ...events.Envelope) error { return nil }
 
 func (s *fakeStore) Claim(_ context.Context, _ time.Time, limit int, _ time.Duration) ([]Entry, error) {
+	if s.onClaim != nil {
+		s.onClaim()
+	}
 	if s.claimErr != nil {
 		return nil, s.claimErr
 	}
@@ -51,24 +58,33 @@ func (s *fakeStore) Claim(_ context.Context, _ time.Time, limit int, _ time.Dura
 	return out, nil
 }
 
-func (s *fakeStore) MarkPublished(_ context.Context, _ time.Time, ids []string) error {
+func (s *fakeStore) MarkPublished(_ context.Context, _ time.Time, entries []Entry) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.published = append(s.published, ids...)
+	if len(entries) == 0 {
+		return nil
+	}
+	s.publishCalls++
+	if s.publishErr != nil {
+		return s.publishErr
+	}
+	for _, e := range entries {
+		s.published = append(s.published, e.Envelope.ID)
+	}
 	return nil
 }
 
-func (s *fakeStore) MarkFailed(_ context.Context, _ time.Time, id string, retryAt time.Time, _ error) error {
+func (s *fakeStore) MarkFailed(_ context.Context, _ time.Time, e Entry, retryAt time.Time, _ error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.failed[id] = retryAt
+	s.failed[e.Envelope.ID] = retryAt
 	return nil
 }
 
-func (s *fakeStore) DeadLetter(_ context.Context, _ time.Time, id string, cause error) error {
+func (s *fakeStore) DeadLetter(_ context.Context, _ time.Time, e Entry, cause error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.deadLettered[id] = cause.Error()
+	s.deadLettered[e.Envelope.ID] = cause.Error()
 	return nil
 }
 
@@ -112,6 +128,21 @@ func TestDrainDispatchesInOrderAndMarksPublished(t *testing.T) {
 	assert.Equal(t, 2, n)
 	assert.Equal(t, []string{"evt_1", "evt_2"}, handled)
 	assert.Equal(t, []string{"evt_1", "evt_2"}, store.published)
+	assert.Equal(t, 1, store.publishCalls, "a batch is marked published at once")
+}
+
+func TestDrainReturnsALostLease(t *testing.T) {
+	clock.Fix(t, time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC))
+	store := newFakeStore(entry("evt_1", "test.v1.first", 0))
+	store.publishErr = ErrLeaseLost
+	relay := newTestRelay(t, store, events.HandlerFunc(func(context.Context, events.Envelope) error {
+		return nil
+	}), nil)
+
+	n, err := relay.Drain(context.Background())
+
+	assert.Equal(t, 1, n)
+	assert.ErrorIs(t, err, ErrLeaseLost)
 }
 
 func TestDrainSchedulesRetryAfterAFailure(t *testing.T) {
@@ -212,6 +243,14 @@ func TestNewRelayAppliesDefaults(t *testing.T) {
 	assert.Equal(t, DefaultRetention, relay.retention)
 }
 
+func TestNewRelayRaisesTheDefaultMaxBackoffToBackoff(t *testing.T) {
+	relay := newTestRelay(t, newFakeStore(), events.HandlerFunc(func(context.Context, events.Envelope) error {
+		return nil
+	}), func(c *RelayConfig) { c.Backoff = 10 * time.Minute })
+
+	assert.Equal(t, 10*time.Minute, relay.maxBackoff)
+}
+
 func TestNewRelayRejectsInvalidSettings(t *testing.T) {
 	tests := []struct {
 		name string
@@ -268,4 +307,18 @@ func TestRunReturnsWhenTheContextEnds(t *testing.T) {
 	cancel()
 
 	assert.ErrorIs(t, relay.Run(ctx), context.Canceled)
+}
+
+func TestRunPurgesWhenItStarts(t *testing.T) {
+	now := time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)
+	clock.Fix(t, now)
+	store := newFakeStore()
+	ctx, cancel := context.WithCancel(context.Background())
+	store.onClaim = cancel
+	relay := newTestRelay(t, store, events.HandlerFunc(func(context.Context, events.Envelope) error {
+		return nil
+	}), nil)
+
+	assert.ErrorIs(t, relay.Run(ctx), context.Canceled)
+	assert.Equal(t, []time.Time{now.Add(-DefaultRetention)}, store.purged)
 }

@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS outbox.events (
   type VARCHAR(255) NOT NULL,
   organization_id VARCHAR(30) NOT NULL,
   aggregate_type VARCHAR(255) NOT NULL,
-  aggregate_id VARCHAR(30) NOT NULL,
+  aggregate_id VARCHAR(255) NOT NULL,
   correlation_id VARCHAR(30) NOT NULL,
   causation_id VARCHAR(30) NULL,
   occurred_at TIMESTAMPTZ NOT NULL,
@@ -30,7 +30,7 @@ COMMENT ON COLUMN outbox.events.id IS 'Event ID (evt_ prefixed ULID); handlers u
 COMMENT ON COLUMN outbox.events.type IS 'Event name including its contract version, such as delivery.v1.application.created';
 COMMENT ON COLUMN outbox.events.organization_id IS 'Organization the raising object belongs to; no cross-capability foreign key';
 COMMENT ON COLUMN outbox.events.aggregate_type IS 'Domain type that raised the event, such as delivery.Application';
-COMMENT ON COLUMN outbox.events.aggregate_id IS 'ID of the domain object that raised the event';
+COMMENT ON COLUMN outbox.events.aggregate_id IS 'ID of the domain object that raised the event, or the key of one identified by others, such as a Placement';
 COMMENT ON COLUMN outbox.events.correlation_id IS 'ID of the event that started the chain of reactions';
 COMMENT ON COLUMN outbox.events.causation_id IS 'ID of the event whose handling raised this one, or NULL for an event that started a chain';
 COMMENT ON COLUMN outbox.events.occurred_at IS 'When the domain object raised the event';

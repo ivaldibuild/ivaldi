@@ -134,8 +134,8 @@ type aggregateObject interface {
 
 // recordEvents wraps the events obj recorded and writes them to the outbox in
 // the caller's transaction, so they commit with the object they describe.
-// aggregateID is empty for an object that is keyed by something other than an
-// ID, such as a Placement.
+// aggregateID is the object's ID, or its key when it has no ID of its own,
+// such as a Placement's.
 func (s *Service) recordEvents(ctx context.Context, aggregateType, aggregateID string, obj aggregateObject) error {
 	envelopes, err := events.Wrap(ctx, events.Source{
 		OrganizationID: obj.OrganizationID(),
@@ -158,8 +158,8 @@ type change[T aggregateObject] struct {
 	// aggregateType names the domain type that raises the events, such as
 	// AggregateApplication.
 	aggregateType string
-	// aggregateID names the changed object for the envelope. Nil when the
-	// object has no ID of its own, such as a Placement.
+	// aggregateID names the changed object for the envelope: its ID, or its
+	// key when it has no ID of its own, such as a Placement.
 	aggregateID func(T) string
 	// load reads the object. It runs once to authorize, and again inside
 	// the transaction to apply the change to current state.
@@ -209,11 +209,7 @@ func run[T aggregateObject](ctx context.Context, s *Service, actor identity.Acto
 		if err := c.save(ctx, current); err != nil {
 			return err
 		}
-		var aggregateID string
-		if c.aggregateID != nil {
-			aggregateID = c.aggregateID(current)
-		}
-		if err := s.recordEvents(ctx, c.aggregateType, aggregateID, current); err != nil {
+		if err := s.recordEvents(ctx, c.aggregateType, c.aggregateID(current), current); err != nil {
 			return err
 		}
 		e := c.event(current)

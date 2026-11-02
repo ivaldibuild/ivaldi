@@ -39,8 +39,8 @@
     },
     "aggregate_id": {
       "type": "string",
-      "description": "ID of the domain object that raised the event; empty for an event from outside the domain or one without an ID.",
-      "maxLength": 30
+      "description": "ID of the domain object that raised the event, or the key of one identified by other objects' IDs, such as a Placement's; empty for an event from outside the domain.",
+      "maxLength": 255
     },
     "occurred_at": {
       "type": "string",

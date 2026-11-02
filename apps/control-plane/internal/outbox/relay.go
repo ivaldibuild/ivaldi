@@ -11,26 +11,11 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/logging"
 )
 
-// Defaults for a Relay that leaves a setting unset.
-const (
-	DefaultBatch       = 100
-	DefaultInterval    = time.Second
-	DefaultLease       = 30 * time.Second
-	DefaultMaxAttempts = 10
-	DefaultBackoff     = time.Second
-	DefaultMaxBackoff  = 5 * time.Minute
-	DefaultRetention   = 7 * 24 * time.Hour
-
-	// purgeInterval is how often Run removes published entries when
-	// Retention is set.
-	purgeInterval = time.Hour
-)
-
 // RelayConfig holds a Relay's collaborators and tuning. Store and Handler are
 // required; every other field has a default.
 type RelayConfig struct {
 	Store Store
-	// Handler receives each claimed event. A Router dispatches it to the
+	// Handler receives each claimed event. A *Router dispatches it to the
 	// handlers in this process; events.Forward publishes it to another
 	// process.
 	Handler events.Handler
@@ -53,7 +38,8 @@ type RelayConfig struct {
 	// Backoff is the delay after the first failure; it doubles with every
 	// later one up to MaxBackoff. Default DefaultBackoff.
 	Backoff time.Duration
-	// MaxBackoff caps the retry delay. Default DefaultMaxBackoff.
+	// MaxBackoff caps the retry delay. Default DefaultMaxBackoff, or Backoff
+	// when that is larger.
 	MaxBackoff time.Duration
 	// Retention is how long published entries are kept before Run purges
 	// them. Default DefaultRetention.
@@ -116,7 +102,7 @@ func NewRelay(c RelayConfig) (*Relay, error) {
 		r.backoff = DefaultBackoff
 	}
 	if r.maxBackoff == 0 {
-		r.maxBackoff = DefaultMaxBackoff
+		r.maxBackoff = max(DefaultMaxBackoff, r.backoff)
 	}
 	if r.retention == 0 {
 		r.retention = DefaultRetention
@@ -142,58 +128,51 @@ func NewRelay(c RelayConfig) (*Relay, error) {
 	return r, nil
 }
 
-// Drain claims one batch and dispatches it in claimed order. A handler
-// failure is recorded for retry and returned, but does not stop the rest of
-// the batch. A nonzero-length error therefore means at least one event was
-// not delivered.
+// Drain claims one batch, dispatches it in claimed order, and then marks the
+// delivered entries published together. A handler failure is recorded for
+// retry and returned, but does not stop the rest of the batch. A non-nil
+// error therefore means at least one event was not delivered or not marked.
+// A delivered event that cannot be marked published is redelivered after its
+// lease expires, which is why handlers must be idempotent.
 func (r *Relay) Drain(ctx context.Context) (int, error) {
 	entries, err := r.store.Claim(ctx, clock.Now(), r.batch, r.lease)
 	if err != nil {
 		return 0, fmt.Errorf("claim outbox events: %w", err)
 	}
 	var errs []error
+	var delivered []Entry
 	for _, e := range entries {
-		if err := r.dispatch(ctx, e); err != nil {
-			errs = append(errs, err)
+		if err := r.handler.Handle(ctx, e.Envelope); err != nil {
+			errs = append(errs, r.fail(ctx, e, err))
+			continue
 		}
+		delivered = append(delivered, e)
+	}
+	if err := r.store.MarkPublished(ctx, clock.Now(), delivered); err != nil {
+		errs = append(errs, fmt.Errorf("mark %d event(s) published: %w", len(delivered), err))
 	}
 	return len(entries), errors.Join(errs...)
 }
 
-// dispatch hands one entry to the handler and records what happened. A
-// handler that succeeds but cannot be marked published is redelivered after
-// its lease expires, which is why handlers must be idempotent.
-func (r *Relay) dispatch(ctx context.Context, e Entry) error {
-	if err := r.handler.Handle(ctx, e.Envelope); err != nil {
-		if err := r.fail(ctx, e, err); err != nil {
-			return err
-		}
-		return fmt.Errorf("handle event %s (%s): %w", e.Envelope.ID, e.Envelope.Type, err)
-	}
-	if err := r.store.MarkPublished(ctx, clock.Now(), []string{e.Envelope.ID}); err != nil {
-		return fmt.Errorf("mark event %s published: %w", e.Envelope.ID, err)
-	}
-	return nil
-}
-
 // fail records a failed delivery, dead-lettering the event once it has had
-// maxAttempts failures.
+// maxAttempts failures. It returns the handler's error, or the error from
+// recording it.
 func (r *Relay) fail(ctx context.Context, e Entry, cause error) error {
 	now := clock.Now()
 	attempts := e.Attempts + 1
 	if attempts >= r.maxAttempts {
-		if err := r.store.DeadLetter(ctx, now, e.Envelope.ID, cause); err != nil {
+		if err := r.store.DeadLetter(ctx, now, e, cause); err != nil {
 			return fmt.Errorf("dead-letter event %s: %w", e.Envelope.ID, err)
 		}
 		r.logError("outbox relay: event dead-lettered", e, cause)
-		return nil
+	} else {
+		retryAt := now.Add(r.delay(attempts))
+		if err := r.store.MarkFailed(ctx, now, e, retryAt, cause); err != nil {
+			return fmt.Errorf("record failure of event %s: %w", e.Envelope.ID, err)
+		}
+		r.logError("outbox relay: event will be retried", e, cause)
 	}
-	retryAt := now.Add(r.delay(attempts))
-	if err := r.store.MarkFailed(ctx, now, e.Envelope.ID, retryAt, cause); err != nil {
-		return fmt.Errorf("record failure of event %s: %w", e.Envelope.ID, err)
-	}
-	r.logError("outbox relay: event will be retried", e, cause)
-	return nil
+	return fmt.Errorf("handle event %s (%s): %w", e.Envelope.ID, e.Envelope.Type, cause)
 }
 
 // delay returns the retry delay after the given number of failures.
@@ -224,10 +203,13 @@ func (r *Relay) logError(msg string, e Entry, err error) {
 }
 
 // Run drains the outbox until ctx is cancelled, catching up without waiting
-// while batches stay full and purging published entries hourly. It returns
-// the reason the context ended, normally context.Canceled.
+// while batches stay full and purging published entries when it starts and
+// hourly after. It returns the reason the context ended, normally
+// context.Canceled.
 func (r *Relay) Run(ctx context.Context) error {
-	lastPurge := clock.Now()
+	// The zero time purges on the first pass, so a relay that restarts more
+	// often than purgeInterval still purges.
+	var lastPurge time.Time
 	for {
 		n, err := r.Drain(ctx)
 		if err != nil {

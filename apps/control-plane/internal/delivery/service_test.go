@@ -204,7 +204,7 @@ func svcAuthzCases() []svcAuthzCase {
 
 		// Applications and what belongs to them are checked on the Project.
 		{"CreateApplication", PermissionApplicationManage, "application.create", onProject, func(w *svcWorld) error {
-			_, _, err := w.svc.CreateApplication(svcCtx, svcAlice, &CreateApplicationInput{OrganizationID: svcOrg, ProjectID: w.project.ID(), Slug: "worker", DisplayName: "Worker", DefaultLifecycleID: w.lifecycle.ID()})
+			_, _, err := w.svc.CreateApplication(svcCtx, svcAlice, CreateApplicationInput{OrganizationID: svcOrg, ProjectID: w.project.ID(), Slug: "worker", DisplayName: "Worker", DefaultLifecycleID: w.lifecycle.ID()})
 			return err
 		}},
 		{"GetApplication", PermissionApplicationRead, "application.read", onProject, func(w *svcWorld) error {
@@ -402,7 +402,7 @@ func TestServiceAuditEventsCarryTheDecision(t *testing.T) {
 	require.NoError(t, err)
 	_, err = w.svc.SetDefaultChannel(svcCtx, svcAlice, svcOrg, w.channel.ID())
 	require.NoError(t, err)
-	_, _, err = w.svc.CreateApplication(svcCtx, svcAlice, &CreateApplicationInput{OrganizationID: svcOrg, ProjectID: w.project.ID(), DisplayName: "Worker", DefaultLifecycleID: w.lifecycle.ID()})
+	_, _, err = w.svc.CreateApplication(svcCtx, svcAlice, CreateApplicationInput{OrganizationID: svcOrg, ProjectID: w.project.ID(), DisplayName: "Worker", DefaultLifecycleID: w.lifecycle.ID()})
 	require.NoError(t, err)
 	require.NoError(t, w.svc.RemovePlacement(svcCtx, svcAlice, svcOrg, w.app.ID(), w.target.ID()))
 
@@ -437,7 +437,7 @@ func TestServiceInvalidInputIsRefusedBeforeAuthorizing(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalid)
 	_, err = w.svc.CreateRegistry(svcCtx, svcAlice, CreateRegistryInput{OrganizationID: svcOrg, WorkspaceID: w.ws.ID(), DisplayName: "R", Kind: RegistryOCI, URL: "https://user:pass@ghcr.io"})
 	require.ErrorIs(t, err, ErrInvalid)
-	_, _, err = w.svc.CreateApplication(svcCtx, svcAlice, &CreateApplicationInput{OrganizationID: svcOrg, ProjectID: w.project.ID(), DisplayName: "A", DefaultLifecycleID: "not-a-lifecycle"})
+	_, _, err = w.svc.CreateApplication(svcCtx, svcAlice, CreateApplicationInput{OrganizationID: svcOrg, ProjectID: w.project.ID(), DisplayName: "A", DefaultLifecycleID: "not-a-lifecycle"})
 	require.ErrorIs(t, err, ErrInvalid)
 	_, err = w.svc.CreateArtifact(svcCtx, svcAlice, CreateArtifactInput{OrganizationID: svcOrg, ApplicationID: w.app.ID(), Name: "Bad Name", ArtifactKind: ArtifactContainerImage, ArtifactName: "x"})
 	require.ErrorIs(t, err, ErrInvalid)

@@ -1589,7 +1589,7 @@ func (f *svcFixture) registry(t *testing.T, slug string) *Registry {
 
 func (f *svcFixture) appIn(t *testing.T, p *workspace.Project, slug string, l *Lifecycle) (*Application, *Channel) {
 	t.Helper()
-	a, c, err := f.svc.CreateApplication(svcCtx, svcAlice, &CreateApplicationInput{
+	a, c, err := f.svc.CreateApplication(svcCtx, svcAlice, CreateApplicationInput{
 		OrganizationID: svcOrg, ProjectID: p.ID(), Slug: slug, DisplayName: slug, DefaultLifecycleID: l.ID(),
 	})
 	require.NoError(t, err)

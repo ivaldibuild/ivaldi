@@ -3,6 +3,7 @@ package postgres_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -127,7 +128,7 @@ func TestMarkFailedSchedulesARetry(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, claimed, 1)
 
-	require.NoError(t, repo.MarkFailed(context.Background(), now, claimed[0].Envelope.ID, now.Add(time.Minute), errors.New("boom")))
+	require.NoError(t, repo.MarkFailed(context.Background(), now, claimed[0], now.Add(time.Minute), errors.New("boom")))
 
 	waiting, err := repo.Claim(context.Background(), now.Add(30*time.Second), 1, time.Minute)
 	require.NoError(t, err)
@@ -147,7 +148,7 @@ func TestDeadLetterStopsRetries(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, claimed, 1)
 
-	require.NoError(t, repo.DeadLetter(context.Background(), now, claimed[0].Envelope.ID, errors.New("gave up")))
+	require.NoError(t, repo.DeadLetter(context.Background(), now, claimed[0], errors.New("gave up")))
 
 	entries, err := repo.Claim(context.Background(), now.Add(1000*time.Hour), 1, time.Minute)
 	require.NoError(t, err)
@@ -162,11 +163,58 @@ func TestMarkPublishedRemovesTheEventFromClaims(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, claimed, 1)
 
-	require.NoError(t, repo.MarkPublished(context.Background(), now, []string{claimed[0].Envelope.ID}))
+	require.NoError(t, repo.MarkPublished(context.Background(), now, claimed[:1]))
 
 	entries, err := repo.Claim(context.Background(), now.Add(1000*time.Hour), 1, time.Minute)
 	require.NoError(t, err)
 	assert.Empty(t, entries)
+}
+
+func TestClaimReturnsEntriesOldestFirst(t *testing.T) {
+	now := fixedClock(t)
+	repo := newRepository(t)
+	evs := make([]aggregate.Event, 300)
+	for i := range evs {
+		evs[i] = widgetArchived{WidgetID: fmt.Sprintf("wid_%d", i)}
+	}
+	recorded := wrap(t, evs...)
+	// Record newest first, so insertion order does not give the claim order.
+	for i := len(recorded) - 1; i >= 0; i-- {
+		recorded[i].OccurredAt = now.Add(time.Duration(i) * time.Millisecond)
+		require.NoError(t, repo.Record(context.Background(), recorded[i]))
+	}
+
+	entries, err := repo.Claim(context.Background(), now, len(recorded), time.Minute)
+	require.NoError(t, err)
+	require.Len(t, entries, len(recorded))
+	for i, e := range entries {
+		require.Equal(t, recorded[i].ID, e.Envelope.ID, "entry %d", i)
+	}
+}
+
+func TestMarksRequireTheClaimStillHoldsTheLease(t *testing.T) {
+	now := fixedClock(t)
+	repo := newRepository(t)
+	require.NoError(t, repo.Record(context.Background(), wrap(t, widgetArchived{WidgetID: "wid_1"})...))
+	stale, err := repo.Claim(context.Background(), now, 1, 10*time.Second)
+	require.NoError(t, err)
+	require.Len(t, stale, 1)
+	current, err := repo.Claim(context.Background(), now.Add(11*time.Second), 1, 10*time.Second)
+	require.NoError(t, err)
+	require.Len(t, current, 1)
+
+	ctx := context.Background()
+	assert.ErrorIs(t, repo.MarkFailed(ctx, now, stale[0], now, errors.New("boom")), outbox.ErrLeaseLost)
+	assert.ErrorIs(t, repo.DeadLetter(ctx, now, stale[0], errors.New("gave up")), outbox.ErrLeaseLost)
+	assert.ErrorIs(t, repo.MarkPublished(ctx, now, stale), outbox.ErrLeaseLost)
+
+	again, err := repo.Claim(ctx, now.Add(12*time.Second), 1, 10*time.Second)
+	require.NoError(t, err)
+	assert.Empty(t, again, "a stale mark does not release the current lease")
+
+	require.NoError(t, repo.DeadLetter(ctx, now, current[0], errors.New("gave up")))
+	assert.ErrorIs(t, repo.MarkPublished(ctx, now, stale), outbox.ErrLeaseLost,
+		"a stale relay cannot publish a dead-lettered event")
 }
 
 func TestPurgePublishedKeepsPendingAndDeadLettered(t *testing.T) {
@@ -180,8 +228,8 @@ func TestPurgePublishedKeepsPendingAndDeadLettered(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, claimed, 2)
 
-	require.NoError(t, repo.MarkPublished(context.Background(), now, []string{claimed[0].Envelope.ID}))
-	require.NoError(t, repo.DeadLetter(context.Background(), now, claimed[1].Envelope.ID, errors.New("gave up")))
+	require.NoError(t, repo.MarkPublished(context.Background(), now, claimed[:1]))
+	require.NoError(t, repo.DeadLetter(context.Background(), now, claimed[1], errors.New("gave up")))
 
 	purged, err := repo.PurgePublished(context.Background(), now.Add(time.Second))
 	require.NoError(t, err)

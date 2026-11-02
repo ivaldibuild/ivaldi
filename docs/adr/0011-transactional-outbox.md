@@ -56,11 +56,14 @@ their services gain writes; IAM has domain objects but no service yet.
 
 `outbox.Relay` claims a batch with `SELECT … FOR UPDATE SKIP LOCKED`, so
 replicas claim different entries, and leases them for a configurable time. It
-dispatches entries in claimed order, and marks each published only after its
-handler returns nil. A handler failure increments the attempt count and
-schedules a retry with exponential backoff; after the maximum number of
-attempts the entry is dead-lettered instead of retried. An entry whose lease
-expires is claimed again, which is why handling is at least once.
+dispatches entries oldest first, and after the batch marks published together
+the entries whose handlers returned nil. A handler failure increments the
+attempt count and schedules a retry with exponential backoff; after the
+maximum number of attempts the entry is dead-lettered instead of retried. An
+entry whose lease expires is claimed again, which is why handling is at least
+once. Every mark names the claim it comes from, and a mark from a claim that
+a later one replaced changes nothing, so a relay that outlived its lease
+cannot release, retry, or publish an entry another relay now holds.
 
 Events that are published but not consumed are still in the stream; events
 that are published and no longer needed are deleted by the relay after a
@@ -105,7 +108,8 @@ stream or the runner connection, not by reading this table.
   idempotent, as `pkg/events` already requires.
 - **A slow handler can outlive its lease** and run twice at once. The lease
   covers a whole claimed batch, not one event, because the relay dispatches
-  the batch in order. A handler or batch that needs longer than the lease must
+  the batch in order. The relay whose lease lapsed cannot overwrite the later
+  claim's outcome, but its handler has already run. A handler or batch that needs longer than the lease must
   be split, the lease raised, or the batch lowered.
 - **The table and the stream need retention policies.** Without the relay
   running, the table grows; without a consumer, the stream only holds entries

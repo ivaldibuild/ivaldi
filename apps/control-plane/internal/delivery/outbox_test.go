@@ -41,7 +41,7 @@ func TestServiceRecordsDomainEvents(t *testing.T) {
 		l := f.lifecycle(t, "mainline")
 		before := f.outbox.count()
 
-		app, ch, err := f.svc.CreateApplication(svcCtx, svcAlice, &CreateApplicationInput{
+		app, ch, err := f.svc.CreateApplication(svcCtx, svcAlice, CreateApplicationInput{
 			OrganizationID: svcOrg, ProjectID: f.project.ID(), DisplayName: "Checkout", DefaultLifecycleID: l.ID(),
 		})
 		require.NoError(t, err)
@@ -56,7 +56,7 @@ func TestServiceRecordsDomainEvents(t *testing.T) {
 		assert.Equal(t, ch.ID(), recorded[1].AggregateID)
 	})
 
-	t.Run("a placement has no ID of its own", func(t *testing.T) {
+	t.Run("a placement is identified by its application and target", func(t *testing.T) {
 		f := newSvcFixture(t)
 		l := f.lifecycle(t, "mainline")
 		app, _ := f.app(t, "checkout", l)
@@ -70,7 +70,25 @@ func TestServiceRecordsDomainEvents(t *testing.T) {
 		require.Len(t, recorded, 1)
 		assert.Equal(t, "delivery.v1.placement.created", recorded[0].Type)
 		assert.Equal(t, AggregatePlacement, recorded[0].AggregateType)
-		assert.Empty(t, recorded[0].AggregateID)
+		assert.Equal(t, app.ID()+":"+target.ID(), recorded[0].AggregateID)
+	})
+
+	t.Run("removing a placement records it", func(t *testing.T) {
+		f := newSvcFixture(t)
+		l := f.lifecycle(t, "mainline")
+		app, _ := f.app(t, "checkout", l)
+		env := f.env(t, "prod")
+		target := f.target(t, env, "cluster")
+		f.placement(t, app, target, nil)
+		before := f.outbox.count()
+
+		require.NoError(t, f.svc.RemovePlacement(svcCtx, svcAlice, svcOrg, app.ID(), target.ID()))
+
+		recorded := f.outbox.since(before)
+		require.Len(t, recorded, 1)
+		assert.Equal(t, "delivery.v1.placement.removed", recorded[0].Type)
+		assert.Equal(t, app.ID()+":"+target.ID(), recorded[0].AggregateID)
+		assert.Contains(t, string(recorded[0].Payload), `"target_id":"`+target.ID()+`"`)
 	})
 }
 

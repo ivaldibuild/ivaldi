@@ -236,7 +236,7 @@ type RegistryService interface {
 // and their placements on Targets.
 type ApplicationService interface {
 	// CreateApplication creates an Application with its default Channel.
-	CreateApplication(ctx context.Context, actor identity.Actor, in *CreateApplicationInput) (*Application, *Channel, error)
+	CreateApplication(ctx context.Context, actor identity.Actor, in CreateApplicationInput) (*Application, *Channel, error)
 	GetApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID string) (*Application, error)
 	ListApplications(ctx context.Context, actor identity.Actor, query ListApplicationsQuery) (*pagination.Result[*Application], error)
 	UpdateApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID string, props UpdateApplicationProps) (*Application, error)

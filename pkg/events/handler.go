@@ -80,3 +80,9 @@ func (r *Router) Dispatch(ctx context.Context, e Envelope) error {
 	}
 	return nil
 }
+
+// Handle makes a Router a Handler, so a relay can dispatch to it directly. It
+// is Dispatch.
+func (r *Router) Handle(ctx context.Context, e Envelope) error {
+	return r.Dispatch(ctx, e)
+}

@@ -56,6 +56,9 @@ func (s *Service) CreateRegistry(ctx context.Context, actor identity.Actor, in C
 		if err := s.registries.CreateRegistry(ctx, r); err != nil {
 			return fmt.Errorf("create registry: %w", err)
 		}
+		if err := s.recordEvents(ctx, AggregateRegistry, r.ID(), r); err != nil {
+			return err
+		}
 		return s.record(ctx, d, audit.Event{Type: EventRegistryCreated, OrganizationID: r.OrganizationID(), ResourceID: r.ID(), Actor: actor, After: r.Snapshot()})
 	})
 	if err != nil {
@@ -92,6 +95,8 @@ func (s *Service) ListRegistries(ctx context.Context, actor identity.Actor, quer
 
 func (s *Service) changeRegistry(ctx context.Context, actor identity.Actor, organizationID, registryID, action, event string, proposal any, apply func(context.Context, *Registry) error) (*Registry, error) {
 	return run(ctx, s, actor, change[*Registry]{
+		aggregateType: AggregateRegistry,
+		aggregateID:   func(r *Registry) string { return r.ID() },
 		load: func(ctx context.Context) (*Registry, error) {
 			return s.registries.GetRegistry(ctx, organizationID, registryID)
 		},

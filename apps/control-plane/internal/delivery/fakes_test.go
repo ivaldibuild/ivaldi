@@ -21,6 +21,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
+	"github.com/ivaldibuild/ivaldi/pkg/events"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
 	"github.com/ivaldibuild/ivaldi/pkg/pagination"
 	"github.com/ivaldibuild/ivaldi/pkg/release"
@@ -1323,6 +1324,56 @@ func (a *fakeAudit) last() audit.Event {
 	return a.events[len(a.events)-1]
 }
 
+// fakeOutbox records domain events; a fakeTx rolls them back.
+type fakeOutbox struct {
+	mu        sync.Mutex
+	envelopes []events.Envelope
+	err       error
+}
+
+func (o *fakeOutbox) checkpoint() func() {
+	o.mu.Lock()
+	n := len(o.envelopes)
+	o.mu.Unlock()
+	return func() {
+		o.mu.Lock()
+		defer o.mu.Unlock()
+		o.envelopes = o.envelopes[:n]
+	}
+}
+
+func (o *fakeOutbox) Record(_ context.Context, envelopes ...events.Envelope) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.err != nil {
+		return o.err
+	}
+	o.envelopes = append(o.envelopes, envelopes...)
+	return nil
+}
+
+func (o *fakeOutbox) count() int {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return len(o.envelopes)
+}
+
+func (o *fakeOutbox) since(n int) []events.Envelope {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return slices.Clone(o.envelopes[n:])
+}
+
+func (o *fakeOutbox) types() []string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	out := make([]string, len(o.envelopes))
+	for i, e := range o.envelopes {
+		out[i] = e.Type
+	}
+	return out
+}
+
 // fakeWorkspaces is the workspace capability's lookups, over stored data.
 type fakeWorkspaces struct {
 	mu         sync.Mutex
@@ -1397,6 +1448,7 @@ type svcFixture struct {
 	resources  *fakeResources
 	teams      fakeTeams
 	audit      *fakeAudit
+	outbox     *fakeOutbox
 	workspaces *fakeWorkspaces
 	ws         *workspace.Workspace
 	project    *workspace.Project
@@ -1410,10 +1462,11 @@ func newSvcFixture(t *testing.T) *svcFixture {
 		authz:      &fakeAuthz{},
 		resources:  &fakeResources{},
 		audit:      &fakeAudit{},
+		outbox:     &fakeOutbox{},
 		teams:      fakeTeams{svcOrg + "/" + svcTeam: true, svcOrg + "/" + svcOtherTeam: true, svcOrg + "/" + svcGoneTeam: false},
 		workspaces: newFakeWorkspaces(),
 	}
-	f.tx = &fakeTx{parts: []fakeParticipant{f.store, f.audit, f.resources}}
+	f.tx = &fakeTx{parts: []fakeParticipant{f.store, f.audit, f.outbox, f.resources}}
 	svc, err := NewService(f.config())
 	require.NoError(t, err)
 	f.svc = svc
@@ -1434,6 +1487,7 @@ func (f *svcFixture) config() Config {
 		Teams:        f.teams,
 		Audit:        f.audit,
 		Workspaces:   f.workspaces,
+		Outbox:       f.outbox,
 	}
 }
 

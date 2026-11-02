@@ -364,6 +364,8 @@ func TestPlacementEvents(t *testing.T) {
 			p.ClearApplyConfig()
 		}, func(p *Placement) aggregate.Event { return PlacementApplyConfigCleared{p.Snapshot()} }},
 		{"clear without an apply config", func(t *testing.T, p *Placement) { p.ClearApplyConfig() }, nil},
+		{"remove", func(t *testing.T, p *Placement) { p.Remove() },
+			func(p *Placement) aggregate.Event { return PlacementRemoved{p.Snapshot()} }},
 	})
 	checkEvents(t, func(t *testing.T) *Placement {
 		return domNewPlacement(t, func(props *NewPlacementProps) {

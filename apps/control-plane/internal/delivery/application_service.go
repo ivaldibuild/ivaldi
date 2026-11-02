@@ -103,6 +103,12 @@ func (s *Service) CreateApplication(ctx context.Context, actor identity.Actor, i
 		if err := s.applications.CreateChannel(ctx, ch); err != nil {
 			return fmt.Errorf("create default channel: %w", err)
 		}
+		if err := s.recordEvents(ctx, AggregateApplication, app.ID(), app); err != nil {
+			return err
+		}
+		if err := s.recordEvents(ctx, AggregateChannel, ch.ID(), ch); err != nil {
+			return err
+		}
 		if err := s.record(ctx, d, audit.Event{Type: EventApplicationCreated, OrganizationID: in.OrganizationID, ResourceID: app.ID(), Actor: actor, After: app.Snapshot()}); err != nil {
 			return err
 		}
@@ -205,6 +211,8 @@ func (s *Service) ListApplications(ctx context.Context, actor identity.Actor, qu
 
 func (s *Service) changeApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID, action, event string, proposal any, apply func(context.Context, *Application) error) (*Application, error) {
 	return run(ctx, s, actor, change[*Application]{
+		aggregateType: AggregateApplication,
+		aggregateID:   func(a *Application) string { return a.ID() },
 		load: func(ctx context.Context) (*Application, error) {
 			return s.applications.GetApplication(ctx, organizationID, applicationID)
 		},
@@ -341,6 +349,9 @@ func (s *Service) CreateArtifact(ctx context.Context, actor identity.Actor, in C
 		if err := s.applications.CreateArtifact(ctx, a); err != nil {
 			return fmt.Errorf("create artifact: %w", err)
 		}
+		if err := s.recordEvents(ctx, AggregateArtifact, a.ID(), a); err != nil {
+			return err
+		}
 		return s.record(ctx, d, audit.Event{Type: EventArtifactCreated, OrganizationID: in.OrganizationID, ResourceID: a.ID(), Actor: actor, After: a.Snapshot()})
 	})
 	if err != nil {
@@ -359,6 +370,8 @@ func (s *Service) ListArtifacts(ctx context.Context, actor identity.Actor, organ
 
 func (s *Service) changeArtifact(ctx context.Context, actor identity.Actor, organizationID, artifactID, action, event string, proposal any, apply func(context.Context, *Artifact) error) (*Artifact, error) {
 	return run(ctx, s, actor, change[*Artifact]{
+		aggregateType: AggregateArtifact,
+		aggregateID:   func(a *Artifact) string { return a.ID() },
 		load: func(ctx context.Context) (*Artifact, error) {
 			return s.applications.GetArtifact(ctx, organizationID, artifactID)
 		},
@@ -532,6 +545,9 @@ func (s *Service) CreatePlacement(ctx context.Context, actor identity.Actor, in 
 		if err := s.applications.CreatePlacement(ctx, p); err != nil {
 			return fmt.Errorf("create placement: %w", err)
 		}
+		if err := s.recordEvents(ctx, AggregatePlacement, p.Key(), p); err != nil {
+			return err
+		}
 		return s.record(ctx, d, audit.Event{Type: EventPlacementCreated, OrganizationID: in.OrganizationID, ResourceID: in.ApplicationID, Actor: actor, After: p.Snapshot()})
 	})
 	if err != nil {
@@ -571,6 +587,8 @@ func (s *Service) ConfigurePlacement(ctx context.Context, actor identity.Actor, 
 		}
 	}
 	return run(ctx, s, actor, change[*Placement]{
+		aggregateType: AggregatePlacement,
+		aggregateID:   (*Placement).Key,
 		load: func(ctx context.Context) (*Placement, error) {
 			return s.applications.GetPlacement(ctx, organizationID, applicationID, targetID)
 		},
@@ -613,8 +631,12 @@ func (s *Service) RemovePlacement(ctx context.Context, actor identity.Actor, org
 		if err != nil {
 			return err
 		}
+		p.Remove()
 		if err := s.applications.DeletePlacement(ctx, organizationID, applicationID, targetID); err != nil {
 			return fmt.Errorf("delete placement: %w", err)
+		}
+		if err := s.recordEvents(ctx, AggregatePlacement, p.Key(), p); err != nil {
+			return err
 		}
 		return s.record(ctx, d, audit.Event{Type: EventPlacementRemoved, OrganizationID: organizationID, ResourceID: applicationID, Actor: actor, Before: p.Snapshot()})
 	})

@@ -57,6 +57,9 @@ func (s *Service) CreateLifecycle(ctx context.Context, actor identity.Actor, in 
 		if err := s.lifecycles.CreateLifecycle(ctx, l); err != nil {
 			return fmt.Errorf("create lifecycle: %w", err)
 		}
+		if err := s.recordEvents(ctx, AggregateLifecycle, l.ID(), l); err != nil {
+			return err
+		}
 		return s.record(ctx, d, audit.Event{Type: EventLifecycleCreated, OrganizationID: l.OrganizationID(), ResourceID: l.ID(), Actor: actor, After: l.Snapshot()})
 	})
 	if err != nil {
@@ -122,6 +125,8 @@ func (s *Service) ListLifecycles(ctx context.Context, actor identity.Actor, quer
 
 func (s *Service) changeLifecycle(ctx context.Context, actor identity.Actor, organizationID, lifecycleID, action, event string, proposal any, apply func(context.Context, *Lifecycle) error) (*Lifecycle, error) {
 	return run(ctx, s, actor, change[*Lifecycle]{
+		aggregateType: AggregateLifecycle,
+		aggregateID:   func(l *Lifecycle) string { return l.ID() },
 		load: func(ctx context.Context) (*Lifecycle, error) {
 			return s.lifecycles.GetLifecycle(ctx, organizationID, lifecycleID)
 		},

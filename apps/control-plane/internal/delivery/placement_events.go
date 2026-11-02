@@ -22,8 +22,15 @@ type PlacementApplyConfigCleared struct {
 	Placement PlacementSnapshot `json:"placement"`
 }
 
+// PlacementRemoved is recorded when an Application is removed from a
+// Target. It carries the Placement as it was when removed.
+type PlacementRemoved struct {
+	Placement PlacementSnapshot `json:"placement"`
+}
+
 func (PlacementCreated) EventName() string        { return "delivery.v1.placement.created" }
 func (PlacementApplyConfigSet) EventName() string { return "delivery.v1.placement.apply_config_set" }
 func (PlacementApplyConfigCleared) EventName() string {
 	return "delivery.v1.placement.apply_config_cleared"
 }
+func (PlacementRemoved) EventName() string { return "delivery.v1.placement.removed" }

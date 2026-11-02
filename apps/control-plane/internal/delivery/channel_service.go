@@ -60,6 +60,9 @@ func (s *Service) CreateChannel(ctx context.Context, actor identity.Actor, in Cr
 		if err := s.applications.CreateChannel(ctx, c); err != nil {
 			return fmt.Errorf("create channel: %w", err)
 		}
+		if err := s.recordEvents(ctx, AggregateChannel, c.ID(), c); err != nil {
+			return err
+		}
 		return s.record(ctx, d, audit.Event{Type: EventChannelCreated, OrganizationID: in.OrganizationID, ResourceID: c.ID(), Actor: actor, After: c.Snapshot()})
 	})
 	if err != nil {
@@ -108,6 +111,8 @@ func (s *Service) ListChannels(ctx context.Context, actor identity.Actor, organi
 
 func (s *Service) changeChannel(ctx context.Context, actor identity.Actor, organizationID, channelID, action, event string, proposal any, apply func(context.Context, *Channel) error) (*Channel, error) {
 	return run(ctx, s, actor, change[*Channel]{
+		aggregateType: AggregateChannel,
+		aggregateID:   func(c *Channel) string { return c.ID() },
 		load: func(ctx context.Context) (*Channel, error) {
 			return s.applications.GetChannel(ctx, organizationID, channelID)
 		},
@@ -222,9 +227,15 @@ func (s *Service) SetDefaultChannel(ctx context.Context, actor identity.Actor, o
 			if err := s.applications.UpdateChannel(ctx, current); err != nil {
 				return fmt.Errorf("clear default channel: %w", err)
 			}
+			if err := s.recordEvents(ctx, AggregateChannel, current.ID(), current); err != nil {
+				return err
+			}
 		}
 		if err := s.applications.UpdateChannel(ctx, c); err != nil {
 			return fmt.Errorf("set default channel: %w", err)
+		}
+		if err := s.recordEvents(ctx, AggregateChannel, c.ID(), c); err != nil {
+			return err
 		}
 		return s.record(ctx, d, audit.Event{Type: EventChannelDefaultMoved, OrganizationID: organizationID, ResourceID: c.ID(), Actor: actor, Before: before, After: c.ID()})
 	})

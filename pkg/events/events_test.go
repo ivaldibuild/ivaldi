@@ -139,6 +139,18 @@ func TestRouterSendsEventsToTheirSubscribers(t *testing.T) {
 	assert.Equal(t, []string{"test.widget.renamed.v1", "test.widget.archived.v1"}, both.handled)
 }
 
+func TestRouterIsAHandler(t *testing.T) {
+	envelopes := wrap(t, context.Background(), widgetRenamed{})
+	var r events.Router
+	renames := &recorder{}
+	r.Subscribe(renames, "test.widget.renamed.v1")
+
+	var h events.Handler = &r
+	require.NoError(t, h.Handle(context.Background(), envelopes[0]))
+
+	assert.Equal(t, []string{"test.widget.renamed.v1"}, renames.handled)
+}
+
 func TestRouterIgnoresEventsWithoutSubscribers(t *testing.T) {
 	var r events.Router
 

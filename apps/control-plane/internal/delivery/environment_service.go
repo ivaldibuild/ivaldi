@@ -52,6 +52,9 @@ func (s *Service) CreateEnvironment(ctx context.Context, actor identity.Actor, i
 		if err := s.environments.CreateEnvironment(ctx, e); err != nil {
 			return fmt.Errorf("create environment: %w", err)
 		}
+		if err := s.recordEvents(ctx, AggregateEnvironment, e.ID(), e); err != nil {
+			return err
+		}
 		if err := s.resources.RegisterResource(ctx, iam.Resource{ID: e.ID(), OrganizationID: e.OrganizationID(), Type: iam.ResourceEnvironment, ParentID: e.WorkspaceID()}); err != nil {
 			return fmt.Errorf("register environment resource: %w", err)
 		}
@@ -107,6 +110,8 @@ func (s *Service) ListEnvironments(ctx context.Context, actor identity.Actor, qu
 // UpdateEnvironment changes an active Environment.
 func (s *Service) UpdateEnvironment(ctx context.Context, actor identity.Actor, organizationID, environmentID string, props UpdateEnvironmentProps) (*Environment, error) {
 	return run(ctx, s, actor, change[*Environment]{
+		aggregateType: AggregateEnvironment,
+		aggregateID:   func(e *Environment) string { return e.ID() },
 		load: func(ctx context.Context) (*Environment, error) {
 			return s.environments.GetEnvironment(ctx, organizationID, environmentID)
 		},
@@ -162,6 +167,9 @@ func (s *Service) ArchiveEnvironments(ctx context.Context, actor identity.Actor,
 			e.Archive()
 			if err := s.environments.UpdateEnvironment(ctx, e); err != nil {
 				return fmt.Errorf("archive environment %s: %w", id, err)
+			}
+			if err := s.recordEvents(ctx, AggregateEnvironment, e.ID(), e); err != nil {
+				return err
 			}
 			if err := s.resources.ArchiveResource(ctx, organizationID, id); err != nil {
 				return fmt.Errorf("archive environment resource %s: %w", id, err)
@@ -245,6 +253,9 @@ func (s *Service) RestoreEnvironments(ctx context.Context, actor identity.Actor,
 			if err := s.environments.UpdateEnvironment(ctx, e); err != nil {
 				return fmt.Errorf("restore environment %s: %w", id, err)
 			}
+			if err := s.recordEvents(ctx, AggregateEnvironment, e.ID(), e); err != nil {
+				return err
+			}
 			if err := s.resources.RestoreResource(ctx, organizationID, id); err != nil {
 				return fmt.Errorf("restore environment resource %s: %w", id, err)
 			}
@@ -318,6 +329,9 @@ func (s *Service) CreateTarget(ctx context.Context, actor identity.Actor, in Cre
 		if err := s.targets.CreateTarget(ctx, t); err != nil {
 			return fmt.Errorf("create target: %w", err)
 		}
+		if err := s.recordEvents(ctx, AggregateTarget, t.ID(), t); err != nil {
+			return err
+		}
 		return s.record(ctx, d, audit.Event{Type: EventTargetCreated, OrganizationID: t.OrganizationID(), ResourceID: t.ID(), Actor: actor, After: t.Snapshot()})
 	})
 	if err != nil {
@@ -354,6 +368,8 @@ func (s *Service) ListTargets(ctx context.Context, actor identity.Actor, query L
 
 func (s *Service) changeTarget(ctx context.Context, actor identity.Actor, organizationID, targetID, action, event string, proposal any, apply func(context.Context, *Target) error) (*Target, error) {
 	return run(ctx, s, actor, change[*Target]{
+		aggregateType: AggregateTarget,
+		aggregateID:   func(t *Target) string { return t.ID() },
 		load: func(ctx context.Context) (*Target, error) {
 			return s.targets.GetTarget(ctx, organizationID, targetID)
 		},

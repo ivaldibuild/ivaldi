@@ -29,6 +29,7 @@ func TestServiceNewServiceRequiresEveryCollaborator(t *testing.T) {
 		{"Teams", func(c *Config) { c.Teams = nil }},
 		{"Audit", func(c *Config) { c.Audit = nil }},
 		{"Workspaces", func(c *Config) { c.Workspaces = nil }},
+		{"Outbox", func(c *Config) { c.Outbox = nil }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

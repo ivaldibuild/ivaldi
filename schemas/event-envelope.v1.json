@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ivaldi.dev/schemas/event-envelope.v1.json",
+  "title": "Ivaldi event envelope v1",
+  "description": "One Redis stream entry carrying an Ivaldi event. Redis stream values are strings, so every field is a string; payload is JSON encoded as a string.",
+  "type": "object",
+  "required": [
+    "id",
+    "type",
+    "organization_id",
+    "aggregate_type",
+    "aggregate_id",
+    "occurred_at",
+    "correlation_id",
+    "causation_id",
+    "payload"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Event ID (evt_ prefixed ULID). Consumers use it to recognize an event they already handled.",
+      "pattern": "^evt_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "type": {
+      "type": "string",
+      "description": "Event name including its contract version, such as delivery.v1.application.created.",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "organization_id": {
+      "type": "string",
+      "description": "Organization the event belongs to; empty for an event that belongs to none.",
+      "maxLength": 30
+    },
+    "aggregate_type": {
+      "type": "string",
+      "description": "Domain type that raised the event, such as delivery.Application; empty for an event from outside the domain.",
+      "maxLength": 255
+    },
+    "aggregate_id": {
+      "type": "string",
+      "description": "ID of the domain object that raised the event, or the key of one identified by other objects' IDs, such as a Placement's; empty for an event from outside the domain.",
+      "maxLength": 255
+    },
+    "occurred_at": {
+      "type": "string",
+      "description": "When the event occurred, as RFC 3339 in UTC with nanosecond precision.",
+      "format": "date-time"
+    },
+    "correlation_id": {
+      "type": "string",
+      "description": "ID of the event that started the chain of reactions this event belongs to.",
+      "maxLength": 30
+    },
+    "causation_id": {
+      "type": "string",
+      "description": "ID of the event whose handling raised this event; empty for the first event of a chain.",
+      "maxLength": 30
+    },
+    "payload": {
+      "type": "string",
+      "description": "The event itself, JSON encoded. Its shape is the contract of the event type.",
+      "contentMediaType": "application/json"
+    }
+  },
+  "additionalProperties": false
+}

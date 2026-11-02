@@ -21,6 +21,19 @@ const (
 	maxValuesRefLength     = 512
 )
 
+// Aggregate types name the domain objects that raise events. An envelope
+// carries the type and ID of the object whose change raised it.
+const (
+	AggregateEnvironment = "delivery.Environment"
+	AggregateTarget      = "delivery.Target"
+	AggregateLifecycle   = "delivery.Lifecycle"
+	AggregateRegistry    = "delivery.Registry"
+	AggregateApplication = "delivery.Application"
+	AggregateArtifact    = "delivery.Artifact"
+	AggregateChannel     = "delivery.Channel"
+	AggregatePlacement   = "delivery.Placement"
+)
+
 // Permissions this capability asks the authorizer about. The full catalog,
 // and which roles include each one, belongs to IAM. Targets follow their
 // Environment's permissions; artifacts, Channels, and placements follow

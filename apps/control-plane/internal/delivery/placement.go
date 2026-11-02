@@ -163,6 +163,10 @@ func (p *Placement) ApplyConfig() *ApplyConfig {
 	return p.applyConfig.clone()
 }
 
+// Key identifies the Placement where one ID is expected, such as an event
+// envelope's aggregate ID: its Application and Target IDs joined by a colon.
+func (p *Placement) Key() string { return p.applicationID + ":" + p.targetID }
+
 func (p *Placement) Snapshot() PlacementSnapshot {
 	return PlacementSnapshot{
 		OrganizationID:      p.organizationID,
@@ -202,4 +206,9 @@ func (p *Placement) ClearApplyConfig() {
 		p.updatedAt = clock.Now()
 		p.RecordEvent(PlacementApplyConfigCleared{p.Snapshot()})
 	}
+}
+
+// Remove records that the Placement is removed. The caller deletes it.
+func (p *Placement) Remove() {
+	p.RecordEvent(PlacementRemoved{p.Snapshot()})
 }

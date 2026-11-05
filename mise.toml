@@ -2,3 +2,7 @@
 go = "1.27.1"
 # golang-migrate CLI, used by the Makefile's migration targets
 gomigrate = "4.20.1"
+node = "24"
+
+[hooks]
+postinstall = "corepack enable pnpm && corepack use pnpm@latest-12"

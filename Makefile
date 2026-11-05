@@ -32,7 +32,7 @@ PG_PASSWORD ?= brokandsindri
 LOCAL_DATABASE_URL ?= postgres://ivaldi_db_user:$(PG_PASSWORD)@127.0.0.1:5433/ivaldi?sslmode=disable
 
 .PHONY: help prepare build build-cli build-server migration_generate migrate_up migrate_down migrate_version check_capability check_database_url \
-	local local_up local_secrets local_database local_migrate local_serve local_down
+	local local_up local_secrets local_database local_migrate local_serve local_down local_reset
 
 help:
 	@echo "Build (into bin/, version $(VERSION))"
@@ -51,6 +51,8 @@ help:
 	@echo "  make local                                         Start PostgreSQL and Valkey, generate secrets, migrate"
 	@echo "  make local_serve                                   Run the control plane on http://localhost:8660"
 	@echo "  make local_down                                    Stop PostgreSQL and Valkey (data stays in volumes/)"
+	@echo "  make local_reset                                   Drop the local database and migrate a fresh one, so"
+	@echo "                                                     the next start bootstraps from $(LOCAL_CONFIG) again"
 
 prepare:
 	@echo "Preparing build environment..."
@@ -153,3 +155,9 @@ local_serve:
 
 local_down:
 	@docker compose down
+
+# Bootstrap applies only to an empty database, so changing the bootstrap
+# settings needs a fresh one.
+local_reset:
+	@docker compose exec -T postgres dropdb -U ivaldi_db_user --if-exists --force ivaldi
+	@$(MAKE) --no-print-directory local_database local_migrate

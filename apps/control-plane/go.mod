@@ -3,11 +3,13 @@ module github.com/ivaldibuild/ivaldi-control-plane
 go 1.27.0
 
 require (
-	github.com/go-jose/go-jose/v4 v4.1.4
+	github.com/coreos/go-oidc/v3 v3.20.0
 	github.com/danielgtaylor/huma/v2 v2.40.0
+	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/crypto v0.58.0
+	golang.org/x/oauth2 v0.37.0
 	gorm.io/gorm v1.31.2
 )
 

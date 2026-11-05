@@ -29,6 +29,8 @@ var (
 
 type fakeAuth struct {
 	memberships map[string][]iam.Membership
+	// external signs in subjects through identity providers.
+	external map[string]error
 }
 
 func (f *fakeAuth) AuthenticatePassword(_ context.Context, email, password string) (*iam.SignedIn, error) {
@@ -41,8 +43,11 @@ func (f *fakeAuth) AuthenticatePassword(_ context.Context, email, password strin
 	return nil, iam.ErrInvalidCredentials
 }
 
-func (f *fakeAuth) AuthenticateExternal(context.Context, string, string, iam.ExternalProfile) (*iam.SignedIn, error) {
-	return nil, errors.New("unused")
+func (f *fakeAuth) AuthenticateExternal(_ context.Context, organizationID, identityProviderID string, p iam.ExternalProfile) (*iam.SignedIn, error) {
+	if err := f.external[p.Subject]; err != nil {
+		return nil, err
+	}
+	return &iam.SignedIn{AccountID: "acc_" + p.Subject, Method: iam.SignInIdentityProvider, IdentityProviderID: identityProviderID, RestrictedTo: organizationID}, nil
 }
 
 func (f *fakeAuth) Memberships(_ context.Context, accountID string) ([]iam.Membership, error) {
@@ -98,7 +103,7 @@ type rig struct {
 	jar    map[string]*http.Cookie
 }
 
-func newRig(t *testing.T) *rig {
+func newRig(t *testing.T, extra ...Option) *rig {
 	t.Helper()
 	codec, err := session.NewCodec([][32]byte{{1}})
 	require.NoError(t, err)
@@ -106,15 +111,16 @@ func newRig(t *testing.T) *rig {
 	logger.On("Error", mock.Anything, mock.Anything).Maybe()
 	r := &rig{
 		mux:    http.NewServeMux(),
-		auth:   &fakeAuth{memberships: map[string][]iam.Membership{"acc_ada": {acme}}},
+		auth:   &fakeAuth{memberships: map[string][]iam.Membership{"acc_ada": {acme}}, external: map[string]error{}},
 		server: &fakeServer{},
 		codec:  codec,
 		jar:    map[string]*http.Cookie{},
 	}
-	h, err := New(
+	logger.On("Warn", mock.Anything, mock.Anything, mock.Anything).Maybe()
+	h, err := New(append([]Option{
 		WithSettings(Settings{Issuer: testIssuer, SessionTTL: 10 * time.Minute, BuiltinAccounts: true}),
 		WithLogger(logger), WithAuthentication(r.auth), WithAuthorizationServer(r.server), WithCodec(codec),
-	)
+	}, extra...)...)
 	require.NoError(t, err)
 	h.RegisterHandlers(r.mux)
 	return r

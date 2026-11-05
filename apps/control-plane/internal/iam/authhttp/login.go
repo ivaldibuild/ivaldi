@@ -26,10 +26,6 @@ func (h *handlers) renderLogin(w http.ResponseWriter, status int, d loginData) {
 	h.render(w, status, loginContent, "login", d)
 }
 
-// providerLinks lists the identity providers to sign in with. Identity
-// provider sign-in comes later; until then there are none.
-func (h *handlers) providerLinks(string) []ProviderLink { return nil }
-
 func (h *handlers) login(w http.ResponseWriter, r *http.Request) {
 	if !h.checkPost(w, r) {
 		return

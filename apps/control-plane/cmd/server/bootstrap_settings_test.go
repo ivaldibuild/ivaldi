@@ -71,3 +71,29 @@ func TestBootstrapSettingsCloud(t *testing.T) {
 	assert.Empty(t, s.Providers)
 	assert.Empty(t, s.Organization)
 }
+
+func TestInstallationProviders(t *testing.T) {
+	cfg := &config.Config{
+		DeploymentMode: string(config.DeploymentModeSelfHosted),
+		Auth: config.Auth{Providers: config.Providers{
+			GitHub: config.GitHubProvider{ClientID: "gh", ClientSecret: "s", URL: "https://github.com", AllowedOrganizations: []string{"acme"}},
+			OIDC:   config.OIDCProvider{ClientID: "o", ClientSecret: "s", IssuerURL: "https://sso.acme.com", DisplayName: "Okta"},
+		}},
+	}
+	install := &bootstrap.Installation{OrganizationID: "org_1", Providers: map[iam.IdentityProtocol]string{
+		iam.ProtocolGitHub: "idp_gh", iam.ProtocolOIDC: "idp_o", iam.ProtocolBuiltin: "idp_b",
+	}}
+
+	providers, err := installationProviders(cfg, install)
+
+	require.NoError(t, err)
+	require.Len(t, providers, 2)
+	assert.Equal(t, "github", providers[0].Kind)
+	assert.Equal(t, "idp_gh", providers[0].IdentityProviderID)
+	assert.Equal(t, "org_1", providers[0].OrganizationID)
+	assert.Equal(t, "Okta", providers[1].Connector.DisplayName())
+
+	none, err := installationProviders(&config.Config{DeploymentMode: string(config.DeploymentModeCloud)}, install)
+	require.NoError(t, err)
+	assert.Empty(t, none, "the cloud signs in with platform providers instead")
+}

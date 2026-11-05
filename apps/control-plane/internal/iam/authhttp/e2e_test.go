@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/api"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/config"
@@ -26,6 +27,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/authhttp"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/authhttp/session"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/connector/connectortest"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/migrations"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/oauthserver"
 	iampg "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/postgres"
@@ -67,9 +69,24 @@ func (whoami) RegisterRoutes(a huma.API) {
 		})
 }
 
+// controlPlane is a running control plane over a throwaway database.
+type controlPlane struct {
+	*httptest.Server
+	db       *gorm.DB
+	org      *iam.Organization
+	user     *iam.User
+	provider *connectortest.Fake
+}
+
 // startControlPlane wires the real sign-in, authorization server, pages, and
-// API, as serve does, over a throwaway database.
+// API, as serve does, with GitHub sign-in through a fake connector.
 func startControlPlane(t *testing.T) (*httptest.Server, *iam.User) {
+	t.Helper()
+	cp := startFullControlPlane(t)
+	return cp.Server, cp.user
+}
+
+func startFullControlPlane(t *testing.T) *controlPlane {
 	t.Helper()
 	ctx := context.Background()
 	db := databasetest.New(t, migrations.FS)
@@ -88,6 +105,14 @@ func startControlPlane(t *testing.T) (*httptest.Server, *iam.User) {
 	require.NoError(t, iampg.NewOAuthClientRepository(db).Write(ctx, mustDo(iam.NewOAuthClient(iam.NewOAuthClientProps{
 		ClientID: "ivaldictl", Registration: iam.RegistrationFirstParty, Name: "Ivaldi CLI", RedirectURIs: []string{"http://127.0.0.1/callback"},
 	}, nil))))
+	require.NoError(t, iampg.NewResourceRegistrar(db).RegisterResource(ctx, org.Resource()))
+	github := mustDo(iam.NewIdentityProvider(iam.NewIdentityProviderProps{
+		OrganizationID: org.ID(), Protocol: iam.ProtocolGitHub, Name: "GitHub",
+		Config:                 iam.IdentityProviderConfig{ClientID: "Iv1.abc", AllowedOrganizations: []string{"acme"}},
+		ManagedByConfiguration: true, JITProvisioning: true,
+	}, nil))
+	require.NoError(t, iampg.NewIdentityProviderRepository(db).Write(ctx, github))
+	fakeGitHub := &connectortest.Fake{Kind: iam.ProtocolGitHub, Name: "GitHub"}
 
 	logger := logging.NewMockLogger()
 	for _, level := range []string{"Info", "Warn", "Error"} {
@@ -108,6 +133,7 @@ func startControlPlane(t *testing.T) (*httptest.Server, *iam.User) {
 		signin.WithTransactor(tx),
 		signin.WithOutboxRecorder(nopOutbox{}),
 		signin.WithBuiltinAccounts(true),
+		signin.WithBootstrapAdminEmail("admin@acme.com"),
 	))
 	keys := mustDo(token.NewEphemeralKeyRing())
 	server := mustDo(oauthserver.New(
@@ -126,6 +152,7 @@ func startControlPlane(t *testing.T) (*httptest.Server, *iam.User) {
 	pages := mustDo(authhttp.New(
 		authhttp.WithSettings(authhttp.Settings{Issuer: issuer, SessionTTL: 10 * time.Minute, BuiltinAccounts: true}),
 		authhttp.WithLogger(logger), authhttp.WithAuthentication(auth), authhttp.WithAuthorizationServer(server), authhttp.WithCodec(codec),
+		authhttp.WithProviders(authhttp.Provider{Kind: "github", Connector: fakeGitHub, OrganizationID: org.ID(), IdentityProviderID: github.ID()}),
 	))
 	v := mustDo(identity.NewVerifier(identity.VerifierConfig{Issuer: issuer, Audience: issuer, Keys: identity.NewStaticKeySource(keys.PublicKeys()...)}))
 
@@ -135,7 +162,7 @@ func startControlPlane(t *testing.T) (*httptest.Server, *iam.User) {
 	srv.Config.Handler = apiServer.Handler()
 	srv.Start()
 	t.Cleanup(srv.Close)
-	return srv, user
+	return &controlPlane{Server: srv, db: db, org: org, user: user, provider: fakeGitHub}
 }
 
 func mustDo[T any](v T, err error) T {
@@ -246,4 +273,49 @@ func whoAmI(t *testing.T, base, accessToken string) whoamiOutput {
 	var out whoamiOutput
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&out.Body))
 	return out
+}
+
+func TestSignInWithAProviderThroughToAnAPICall(t *testing.T) {
+	cp := startFullControlPlane(t)
+	cp.provider.Profile = iam.ExternalProfile{Subject: "583231", Email: "admin@acme.com", EmailVerified: true, DisplayName: "Admin", Organizations: []string{"acme"}}
+	jar, err := cookiejar.New(nil)
+	require.NoError(t, err)
+	browser := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	sum := sha256.Sum256([]byte(verifier))
+	authorize := cp.URL + "/oauth/authorize?" + url.Values{
+		"response_type": {"code"}, "client_id": {"ivaldictl"}, "redirect_uri": {cliRedirect}, "state": {"s2"},
+		"code_challenge": {base64.RawURLEncoding.EncodeToString(sum[:])}, "code_challenge_method": {"S256"},
+	}.Encode()
+
+	// Not signed in: to the login page, then "Continue with GitHub".
+	resp, err := browser.Get(authorize)
+	require.NoError(t, err)
+	returnTo := mustDo(url.Parse(resp.Header.Get("Location"))).Query().Get("return_to")
+	resp, err = browser.Get(cp.URL + "/auth/oauth/github/start?" + url.Values{"return_to": {returnTo}}.Encode())
+	require.NoError(t, err)
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	state := mustDo(url.Parse(resp.Header.Get("Location"))).Query().Get("state")
+
+	// GitHub sends the browser back; the administrator is provisioned and claims ownership.
+	resp, err = browser.Get(cp.URL + "/auth/oauth/github/callback?" + url.Values{"code": {"gh-code"}, "state": {state}}.Encode())
+	require.NoError(t, err)
+	require.Equal(t, http.StatusSeeOther, resp.StatusCode)
+	resp, err = browser.Get(cp.URL + resp.Header.Get("Location"))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	code := mustDo(url.Parse(resp.Header.Get("Location"))).Query().Get("code")
+	require.NotEmpty(t, code)
+
+	tokens := exchange(t, cp.URL, url.Values{
+		"grant_type": {"authorization_code"}, "client_id": {"ivaldictl"}, "code": {code},
+		"redirect_uri": {cliRedirect}, "code_verifier": {verifier},
+	}, http.StatusOK)
+	who := whoAmI(t, cp.URL, tokens["access_token"].(string))
+	assert.Equal(t, cp.org.ID(), who.Body.OrganizationID)
+	assert.NotEqual(t, cp.user.ID(), who.Body.PrincipalID, "a new member, not the password user")
+
+	var owners int64
+	ownerRole, _ := iam.BuiltInRoleID(iam.RoleOwner)
+	require.NoError(t, cp.db.Raw("SELECT count(*) FROM iam.grants WHERE role_id = ? AND principal_id = ?", ownerRole, who.Body.PrincipalID).Scan(&owners).Error)
+	assert.EqualValues(t, 1, owners, "the bootstrap administrator owns the organization")
 }

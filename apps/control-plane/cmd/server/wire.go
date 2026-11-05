@@ -224,6 +224,11 @@ func (a *app) wireSignIn(cfg *config.Config, logger logging.Logger, passwords ha
 		return err
 	}
 
+	providers, err := installationProviders(cfg, a.install)
+	if err != nil {
+		return err
+	}
+
 	cookieKeys, err := a.keys.DeriveKeys(session.KeyPurpose)
 	if err != nil {
 		return err
@@ -242,6 +247,7 @@ func (a *app) wireSignIn(cfg *config.Config, logger logging.Logger, passwords ha
 		authhttp.WithAuthentication(a.auth),
 		authhttp.WithAuthorizationServer(a.oauth),
 		authhttp.WithCodec(codec),
+		authhttp.WithProviders(providers...),
 	)
 	if err != nil {
 		return err

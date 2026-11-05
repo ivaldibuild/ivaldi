@@ -79,6 +79,14 @@ func (r *organizationRepository) Count(ctx context.Context) (int64, error) {
 	return n, translate(err)
 }
 
+func (r *organizationRepository) Oldest(ctx context.Context) (*iam.Organization, error) {
+	var entity organizationEntity
+	if err := r.conn(ctx).Order("created_at, id").Take(&entity).Error; err != nil {
+		return nil, translate(err)
+	}
+	return r.mapper.ToDomain(&entity)
+}
+
 func (r *organizationRepository) GetForUpdate(ctx context.Context, organizationID string) (*iam.Organization, error) {
 	var entity organizationEntity
 	err := r.conn(ctx).Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate}).

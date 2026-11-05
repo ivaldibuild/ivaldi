@@ -57,6 +57,9 @@ func (f *fakeOrgs) GetByIdentifiers(context.Context, []string) ([]*iam.Organizat
 	return nil, nil
 }
 func (f *fakeOrgs) Count(context.Context) (int64, error) { return 0, nil }
+func (f *fakeOrgs) Oldest(context.Context) (*iam.Organization, error) {
+	return nil, iam.ErrNotFound
+}
 func (f *fakeOrgs) GetForUpdate(context.Context, string) (*iam.Organization, error) {
 	return nil, iam.ErrNotFound
 }

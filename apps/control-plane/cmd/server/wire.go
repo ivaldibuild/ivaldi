@@ -12,6 +12,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/hasher"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/authhttp"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/bootstrap"
 	iamhttp "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/httpapi"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/onboarding"
 	iampg "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/postgres"
@@ -33,6 +34,7 @@ type app struct {
 	outbox     outbox.Store
 	iam        iamRepositories
 	onboarding iam.Onboarding
+	install    *bootstrap.Installation
 	keys       token.KeyRing
 	verifier   identity.Verifier
 	routes     []api.Routes
@@ -50,6 +52,8 @@ type iamRepositories struct {
 	users     iam.UserRepository
 	grants    iam.GrantRepository
 	resources iam.ResourceRegistrar
+	providers iam.IdentityProviderRepository
+	clients   iam.OAuthClientRepository
 }
 
 // wire opens the database and builds the capabilities. The caller closes the
@@ -77,6 +81,8 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 			users:     iampg.NewUserRepository(db),
 			grants:    iampg.NewGrantRepository(db),
 			resources: iampg.NewResourceRegistrar(db),
+			providers: iampg.NewIdentityProviderRepository(db),
+			clients:   iampg.NewOAuthClientRepository(db),
 		},
 	}
 
@@ -113,6 +119,33 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 	)
 	if err != nil {
 		return nil, nil, err
+	}
+
+	settings, err := bootstrapSettings(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	boot, err := bootstrap.New(
+		bootstrap.WithSettings(settings),
+		bootstrap.WithLogger(logger),
+		bootstrap.WithOnboarding(a.onboarding),
+		bootstrap.WithOrganizationRepo(a.iam.orgs),
+		bootstrap.WithIdentityProviderRepo(a.iam.providers),
+		bootstrap.WithAccountRepo(a.iam.accounts),
+		bootstrap.WithPasswordCredentialRepo(a.iam.passwords),
+		bootstrap.WithUserRepo(a.iam.users),
+		bootstrap.WithGrantRepo(a.iam.grants),
+		bootstrap.WithOAuthClientRepo(a.iam.clients),
+		bootstrap.WithPasswordHasher(passwords),
+		bootstrap.WithTransactor(a.tx),
+		bootstrap.WithLocker(database.NewLocker(db)),
+		bootstrap.WithOutboxRecorder(a.outbox),
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	if a.install, err = boot.Bootstrap(ctx); err != nil {
+		return nil, nil, fmt.Errorf("bootstrap: %w", err)
 	}
 
 	// Anyone may call onboarding, so it is only offered where anyone may

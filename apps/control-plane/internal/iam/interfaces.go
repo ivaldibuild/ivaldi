@@ -39,6 +39,9 @@ type OrganizationRepository interface {
 	GetByIdentifiers(ctx context.Context, identifiers []string) ([]*Organization, error)
 	// Count returns how many Organizations exist, whatever their status.
 	Count(ctx context.Context) (int64, error)
+	// Oldest returns the first Organization created, such as a self-hosted
+	// installation's only one.
+	Oldest(ctx context.Context) (*Organization, error)
 	// GetForUpdate reads the Organization and locks its row until the
 	// transaction ends, so checks made on it, such as whether it has an
 	// owner yet, hold until the change commits.

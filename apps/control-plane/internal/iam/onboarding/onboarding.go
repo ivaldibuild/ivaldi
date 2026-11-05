@@ -271,19 +271,10 @@ func (s *onboardingService) writeOrganization(ctx context.Context, org *iam.Orga
 	return nil
 }
 
-// makeOwner grants the User the owner role on its Organization. There is
-// no one else to grant it, so the owner is recorded as its own granter. The
-// User must be written first.
+// makeOwner grants the User the owner role on its Organization. The User
+// must be written first.
 func (s *onboardingService) makeOwner(ctx context.Context, org *iam.Organization, user *iam.User) (*iam.Grant, error) {
-	roleID, _ := iam.BuiltInRoleID(iam.RoleOwner)
-	principalID := user.ID()
-	grant, err := iam.NewGrant(iam.NewGrantProps{
-		OrganizationID:       org.ID(),
-		PrincipalID:          &principalID,
-		RoleID:               roleID,
-		ResourceID:           org.ID(),
-		GrantedByPrincipalID: principalID,
-	}, nil)
+	grant, err := iam.NewOwnerGrant(org.ID(), user.ID())
 	if err != nil {
 		return nil, err
 	}

@@ -56,6 +56,10 @@ func TestReadMethodsOfExistingRepositories(t *testing.T) {
 		require.NoError(t, err)
 		assert.EqualValues(t, 2, n)
 
+		oldest, err := f.orgs.Oldest(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, acme.ID(), oldest.ID())
+
 		got, err := f.orgs.GetForUpdate(ctx, acme.ID())
 		require.NoError(t, err)
 		assert.Equal(t, acme.Snapshot(), got.Snapshot())

@@ -86,11 +86,11 @@ func (c *Config) validateAuth(v *validator) {
 		if len(p.GitHub.AllowedOrganizations) == 0 && len(p.GitHub.AllowedEmails) == 0 {
 			v.addf("auth.providers.github needs allowed_organizations or allowed_emails, because GitHub admits any account")
 		}
-		v.absoluteURL("auth.providers.github.url", p.GitHub.URL)
+		v.httpsURL("auth.providers.github.url", p.GitHub.URL)
 		v.secret("auth.providers.github client secret", p.GitHub.Secret)
 	}
 	if p.OIDC.Enabled() {
-		v.absoluteURL("auth.providers.oidc.issuer_url", p.OIDC.IssuerURL)
+		v.httpsURL("auth.providers.oidc.issuer_url", p.OIDC.IssuerURL)
 		v.secret("auth.providers.oidc client secret", p.OIDC.Secret)
 	}
 	if a.Platform.Google.Enabled() {
@@ -165,10 +165,12 @@ func (v *validator) externalURL(raw string) {
 	}
 }
 
-func (v *validator) absoluteURL(field, raw string) {
+// httpsURL checks an identity provider's address. Tokens and secrets travel
+// to it, so it must use https.
+func (v *validator) httpsURL(field, raw string) {
 	u, err := url.Parse(raw)
-	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
-		v.addf("%s %q must be an absolute http or https URL", field, raw)
+	if err != nil || u.Host == "" || u.Scheme != "https" {
+		v.addf("%s %q must be an absolute https URL", field, raw)
 	}
 }
 

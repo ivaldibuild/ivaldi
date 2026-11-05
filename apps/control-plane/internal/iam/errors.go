@@ -31,6 +31,21 @@ var (
 	ErrManagedByConfiguration = errors.New("managed by configuration")
 	// ErrBuiltInRole means the action is not allowed on a built-in role.
 	ErrBuiltInRole = errors.New("not allowed on a built-in role")
+	// ErrInvalidCredentials means a sign-in's email or password is wrong. It
+	// never says which, so it does not reveal which accounts exist.
+	ErrInvalidCredentials = errors.New("invalid email or password")
+	// ErrNotAdmitted means an identity provider's allow-lists do not admit
+	// the person who signed in.
+	ErrNotAdmitted = errors.New("not admitted by the identity provider")
+	// ErrNoMembership means the person signed in but belongs to no
+	// Organization they can use, and none provisions them.
+	ErrNoMembership = errors.New("no membership in the organization")
+	// ErrSignUpRequired means a platform sign-in matched no Account, so the
+	// person must sign up first.
+	ErrSignUpRequired = errors.New("sign-up required")
+	// ErrAccountExists means an Account already has the email, and it cannot
+	// be linked to the new sign-in without proof the person owns it.
+	ErrAccountExists = errors.New("an account with this email already exists")
 )
 
 // ErrInvalidInput describes why input failed validation. It matches ErrInvalid.

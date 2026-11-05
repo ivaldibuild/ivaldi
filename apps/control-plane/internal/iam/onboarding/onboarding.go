@@ -24,6 +24,7 @@ type onboardingService struct {
 	userRepo               iam.UserRepository
 	tx                     transaction.Transactor
 	outbox                 outbox.Recorder
+	passwords              hasher.PasswordHasher
 }
 
 func WithLogger(logger logging.Logger) OnboardingServiceOption {
@@ -72,6 +73,13 @@ func WithOutboxRecorder(o outbox.Recorder) OnboardingServiceOption {
 	}
 }
 
+// WithPasswordHasher hashes the owner's password.
+func WithPasswordHasher(h hasher.PasswordHasher) OnboardingServiceOption {
+	return func(s *onboardingService) {
+		s.passwords = h
+	}
+}
+
 // NewOnboardingService returns the Onboarding service, or an error naming a
 // missing dependency.
 func NewOnboardingService(opts ...OnboardingServiceOption) (iam.Onboarding, error) {
@@ -91,6 +99,7 @@ func NewOnboardingService(opts ...OnboardingServiceOption) (iam.Onboarding, erro
 		{"UserRepo", s.userRepo != nil},
 		{"Transactor", s.tx != nil},
 		{"Outbox", s.outbox != nil},
+		{"PasswordHasher", s.passwords != nil},
 	}
 	for _, r := range required {
 		if !r.ok {
@@ -146,7 +155,7 @@ func (s *onboardingService) OnboardOrganization(ctx context.Context, input *iam.
 		return err
 	}
 
-	passwordHash, err := hasher.Argon2Hash(input.OwnerPassword, 16)
+	passwordHash, err := s.passwords.Hash(input.OwnerPassword)
 	if err != nil {
 		s.logger.Error("failed to hash password", logging.F("error", err))
 		return err

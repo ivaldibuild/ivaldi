@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/hasher/hashertest"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam"
 	"github.com/ivaldibuild/ivaldi/pkg/events"
 	"github.com/ivaldibuild/ivaldi/pkg/logging"
@@ -115,6 +116,7 @@ type fixture struct {
 	users     *fakeUsers
 	tx        *fakeTx
 	outbox    *fakeOutbox
+	hasher    *hashertest.Fake
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -127,6 +129,7 @@ func newFixture(t *testing.T) *fixture {
 		users:     &fakeUsers{},
 		tx:        &fakeTx{},
 		outbox:    &fakeOutbox{},
+		hasher:    hashertest.NewFake(),
 	}
 	svc, err := NewOnboardingService(f.options()...)
 	require.NoError(t, err)
@@ -143,6 +146,7 @@ func (f *fixture) options() []OnboardingServiceOption {
 		WithUserRepo(f.users),
 		WithTransactor(f.tx),
 		WithOutboxRecorder(f.outbox),
+		WithPasswordHasher(f.hasher),
 	}
 }
 
@@ -169,6 +173,7 @@ func TestNewOnboardingServiceRequiresEveryDependency(t *testing.T) {
 		{"UserRepo", WithUserRepo(nil)},
 		{"Transactor", WithTransactor(nil)},
 		{"Outbox", WithOutboxRecorder(nil)},
+		{"PasswordHasher", WithPasswordHasher(nil)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -200,8 +205,9 @@ func TestOnboardOrganization(t *testing.T) {
 
 	cred := f.passwords.writes[0].obj.(*iam.PasswordCredential)
 	assert.Equal(t, account.ID(), cred.AccountID())
-	assert.True(t, strings.HasPrefix(cred.PasswordHash(), "$argon2id$"))
-	assert.NotContains(t, cred.PasswordHash(), "correct-horse")
+	ok, err := f.hasher.Verify("correct-horse", cred.PasswordHash())
+	require.NoError(t, err)
+	assert.True(t, ok, "the stored hash is of the owner's password")
 
 	user := f.users.writes[0].obj.(*iam.User)
 	assert.Equal(t, org.ID(), user.OrganizationID())

@@ -91,6 +91,9 @@ func TestValidateRefuses(t *testing.T) {
 		{"OIDC without an issuer", func(_ *testing.T, c *Config) {
 			c.Auth.Providers.OIDC = OIDCProvider{ClientID: "o", ClientSecret: "s"}
 		}, "issuer_url"},
+		{"OIDC issuer over plain http", func(_ *testing.T, c *Config) {
+			c.Auth.Providers.OIDC = OIDCProvider{ClientID: "o", ClientSecret: "s", IssuerURL: "http://localhost:8080/realms/acme"}
+		}, "must be an absolute https URL"},
 		{"platform providers when self-hosted", func(_ *testing.T, c *Config) {
 			c.Auth.Platform.GitHub = PlatformGitHubProvider{ClientID: "gh", ClientSecret: "s"}
 		}, "auth.platform providers are only used in cloud mode"},

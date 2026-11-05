@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/hasher/hashertest"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/migrations"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/postgres"
 	"github.com/ivaldibuild/ivaldi/pkg/database"
@@ -34,6 +35,7 @@ func newPostgresOnboarding(t *testing.T, outbox *fakeOutbox) (*onboardingService
 		WithUserRepo(postgres.NewUserRepository(db)),
 		WithTransactor(database.NewTransactor(db)),
 		WithOutboxRecorder(outbox),
+		WithPasswordHasher(hashertest.NewFake()),
 	)
 	require.NoError(t, err)
 	return svc.(*onboardingService), db

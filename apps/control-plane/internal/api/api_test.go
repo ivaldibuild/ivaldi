@@ -240,3 +240,33 @@ func TestServerRunStopsWhenTheContextIsDone(t *testing.T) {
 		t.Fatal("Run did not return after the context was cancelled")
 	}
 }
+
+func TestServerAllowsConfiguredOrigins(t *testing.T) {
+	cfg := testConfig()
+	cfg.AllowedOrigins = []string{"https://app.example.com"}
+	s, err := New(cfg, "test", logging.NewMockLogger(), WithRoutes(fakeRoutes{}))
+	require.NoError(t, err)
+	call := func(method, origin string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, "/v1/ping", nil)
+		req.Header.Set("Origin", origin)
+		if method == http.MethodOptions {
+			req.Header.Set("Access-Control-Request-Method", "POST")
+		}
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		return rec
+	}
+
+	preflight := call(http.MethodOptions, "https://app.example.com")
+	assert.Equal(t, http.StatusNoContent, preflight.Code)
+	assert.Equal(t, "https://app.example.com", preflight.Header().Get("Access-Control-Allow-Origin"))
+	assert.Contains(t, preflight.Header().Get("Access-Control-Allow-Headers"), "Content-Type")
+	assert.Empty(t, preflight.Header().Get("Access-Control-Allow-Credentials"), "no cookies cross origins")
+
+	get := call(http.MethodGet, "https://app.example.com")
+	assert.Equal(t, http.StatusOK, get.Code)
+	assert.Equal(t, "https://app.example.com", get.Header().Get("Access-Control-Allow-Origin"))
+
+	other := call(http.MethodGet, "https://evil.example.com")
+	assert.Empty(t, other.Header().Get("Access-Control-Allow-Origin"))
+}

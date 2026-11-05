@@ -1,50 +1,46 @@
 package authhttp
 
 import (
-	"crypto/rand"
-	"crypto/subtle"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
-	"github.com/ivaldibuild/ivaldi-control-plane/internal/api"
+	"github.com/danielgtaylor/huma/v2"
+
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/authhttp/session"
 	"github.com/ivaldibuild/ivaldi/pkg/logging"
 )
 
-// Paths of the sign-in pages.
+// Cookies the authorization server sets on its own origin, before the
+// __Host- prefix they carry over https.
 const (
-	LoginPath         = "/auth/login"
-	OrganizationsPath = "/auth/organizations"
-	LogoutPath        = "/auth/logout"
-)
-
-// Cookie names, before the __Host- prefix they carry over https.
-const (
+	// signInCookie remembers who signed in, so a later authorization
+	// request skips the frontend's sign-in.
 	signInCookie = "ivaldi-signin"
-	csrfCookie   = "ivaldi-csrf"
+	// loginCookie binds a login challenge to the browser that started it,
+	// so only that browser can finish it.
+	loginCookie = "ivaldi-login"
+	// oauthCookie holds a sign-in in progress at an identity provider.
+	oauthCookie = "ivaldi-oauth"
 )
 
-// csrfTTL outlives a sign-in session, so a login page left open for a while
-// still submits.
-const csrfTTL = time.Hour
-
-// maxFormBytes bounds a form post.
+// maxFormBytes bounds a form post to the token and revocation endpoints.
 const maxFormBytes = 16 << 10
 
-// Settings configure the handlers.
+// Settings configure the authorization server's HTTP side.
 type Settings struct {
-	// Issuer is the control plane's external URL; cookies are Secure, and
-	// form posts must come from its origin.
+	// Issuer is the control plane's external URL; cookies are Secure when it
+	// uses https.
 	Issuer string
+	// LoginURL is the frontend's sign-in page.
+	LoginURL string
 	// SessionTTL is how long a browser stays signed in to the authorization
-	// server.
+	// server, and how long a login challenge lasts.
 	SessionTTL time.Duration
-	// BuiltinAccounts shows the email and password form.
+	// BuiltinAccounts tells the frontend to offer email and password.
 	BuiltinAccounts bool
 }
 
@@ -61,6 +57,18 @@ func WithAuthorizationServer(s iam.AuthorizationServer) Option {
 }
 func WithCodec(c session.Codec) Option { return func(h *handlers) { h.codec = c } }
 
+// WithOnboarding lets people sign up for the managed cloud with a platform
+// provider. Without it, a platform sign-in with no Account is refused.
+func WithOnboarding(o iam.Onboarding) Option { return func(h *handlers) { h.onboarding = o } }
+
+// Server is the authorization server's HTTP side: plain handlers for the
+// browser's redirects and OAuth's form posts, and JSON operations under /v1
+// for the frontend's sign-in screens.
+type Server interface {
+	RegisterHandlers(mux *http.ServeMux)
+	RegisterRoutes(api huma.API)
+}
+
 type handlers struct {
 	settings   Settings
 	logger     logging.Logger
@@ -69,13 +77,12 @@ type handlers struct {
 	codec      session.Codec
 	onboarding iam.Onboarding
 	providers  []Provider
-	origin     string
 	secure     bool
 }
 
-// New returns the authorization server's handlers: its metadata, the OAuth
-// endpoints, and the sign-in pages.
-func New(opts ...Option) (api.Handlers, error) {
+// New returns the authorization server's HTTP side. It serves no pages: the
+// frontend at Settings.LoginURL renders sign-in.
+func New(opts ...Option) (Server, error) {
 	h := &handlers{}
 	for _, o := range opts {
 		o(h)
@@ -86,30 +93,29 @@ func New(opts ...Option) (api.Handlers, error) {
 	case h.settings.SessionTTL <= 0:
 		return nil, errors.New("authhttp: session TTL must be positive")
 	}
-	u, err := url.Parse(h.settings.Issuer)
-	if err != nil || u.Host == "" {
+	issuer, err := url.Parse(h.settings.Issuer)
+	if err != nil || issuer.Host == "" {
 		return nil, fmt.Errorf("authhttp: issuer %q is not an absolute URL", h.settings.Issuer)
 	}
-	h.origin = u.Scheme + "://" + u.Host
-	h.secure = u.Scheme == "https"
+	if login, err := url.Parse(h.settings.LoginURL); err != nil || login.Host == "" {
+		return nil, fmt.Errorf("authhttp: login URL %q is not an absolute URL", h.settings.LoginURL)
+	}
+	h.secure = issuer.Scheme == "https"
 	return h, nil
 }
 
 func (h *handlers) RegisterHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+iam.AuthorizationServerMetadataPath, h.metadata)
 	mux.HandleFunc("GET "+iam.OAuthAuthorizePath, h.authorize)
+	mux.HandleFunc("GET "+ContinuePath, h.continueAuthorization)
 	mux.HandleFunc("POST "+iam.OAuthTokenPath, h.token)
 	mux.HandleFunc("POST "+iam.OAuthRevokePath, h.revoke)
-	mux.HandleFunc("GET "+LoginPath, h.loginPage)
-	mux.HandleFunc("POST "+LoginPath, h.login)
-	mux.HandleFunc("GET "+OrganizationsPath, h.organizationsPage)
-	mux.HandleFunc("POST "+OrganizationsPath, h.chooseOrganization)
-	mux.HandleFunc("POST "+LogoutPath, h.logout)
-	h.registerProviderHandlers(mux)
-	h.registerSignUpHandlers(mux)
+	mux.HandleFunc("GET "+LogoutPath, h.logout)
+	mux.HandleFunc("GET "+providerStartPattern, h.startProvider)
+	mux.HandleFunc("GET "+providerCallbackPattern, h.providerCallback)
 }
 
-// signIn is what the sign-in cookie holds.
+// signIn is what the sign-in cookie holds: who signed in, and how.
 type signIn struct {
 	AccountID          string           `json:"acc"`
 	Method             iam.SignInMethod `json:"m"`
@@ -119,6 +125,10 @@ type signIn struct {
 
 func (s signIn) allows(organizationID string) bool {
 	return s.RestrictedTo == "" || s.RestrictedTo == organizationID
+}
+
+func signInOf(s *iam.SignedIn) signIn {
+	return signIn{AccountID: s.AccountID, Method: s.Method, IdentityProviderID: s.IdentityProviderID, RestrictedTo: s.RestrictedTo}
 }
 
 func (h *handlers) cookieName(name string) string {
@@ -138,14 +148,24 @@ func (h *handlers) setCookie(w http.ResponseWriter, name, value string, ttl time
 		MaxAge:   int(ttl / time.Second),
 		Secure:   h.secure,
 		HttpOnly: true,
-		// Lax keeps the cookie on the top-level navigation a client starts
-		// to /oauth/authorize, and off cross-site posts.
+		// Lax keeps the cookies on top-level navigations back from the
+		// frontend and from identity providers, and off cross-site posts.
 		SameSite: http.SameSiteLaxMode,
 	})
 }
 
 func (h *handlers) clearCookie(w http.ResponseWriter, name string) {
 	http.SetCookie(w, &http.Cookie{Name: h.cookieName(name), Path: "/", MaxAge: -1, Secure: h.secure, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+}
+
+// sealCookie seals v into the named cookie.
+func (h *handlers) sealCookie(w http.ResponseWriter, name string, v any, ttl time.Duration) error {
+	value, err := h.codec.Encode(name, v, ttl)
+	if err != nil {
+		return err
+	}
+	h.setCookie(w, name, value, ttl)
+	return nil
 }
 
 func (h *handlers) readCookie(r *http.Request, name string, v any) bool {
@@ -162,72 +182,30 @@ func (h *handlers) currentSignIn(r *http.Request) (signIn, bool) {
 	return s, ok && s.AccountID != ""
 }
 
-func (h *handlers) startSignIn(w http.ResponseWriter, s signIn) error {
-	value, err := h.codec.Encode(signInCookie, s, h.settings.SessionTTL)
-	if err != nil {
-		return err
-	}
-	h.setCookie(w, signInCookie, value, h.settings.SessionTTL)
-	return nil
-}
-
-// csrfToken returns the browser's CSRF token, setting one if it has none.
-// Forms echo it, and posts must match the cookie: a page elsewhere can make
-// the browser post, but cannot read the cookie to fill in the token.
-func (h *handlers) csrfToken(w http.ResponseWriter, r *http.Request) (string, error) {
-	var token string
-	if h.readCookie(r, csrfCookie, &token) && token != "" {
-		return token, nil
-	}
-	token = rand.Text()
-	value, err := h.codec.Encode(csrfCookie, token, csrfTTL)
-	if err != nil {
-		return "", err
-	}
-	h.setCookie(w, csrfCookie, value, csrfTTL)
-	return token, nil
-}
-
-// checkPost parses a form post and checks it came from the sign-in pages:
-// from this origin, with the browser's CSRF token.
-func (h *handlers) checkPost(w http.ResponseWriter, r *http.Request) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, maxFormBytes)
-	if err := r.ParseForm(); err != nil {
-		h.renderError(w, http.StatusBadRequest, "The form could not be read.")
-		return false
-	}
-	if o := r.Header.Get("Origin"); o != "" && o != h.origin {
-		h.renderError(w, http.StatusForbidden, "This form was posted from another site.")
-		return false
-	}
-	var want string
-	got := r.PostForm.Get("csrf")
-	if !h.readCookie(r, csrfCookie, &want) || got == "" || subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
-		h.renderError(w, http.StatusForbidden, "This form has expired. Go back, reload the page, and try again.")
-		return false
-	}
-	return true
-}
-
-// returnTo returns a sign-in page's destination if it is the authorization
-// endpoint on this server, so the pages cannot be used to redirect anywhere
-// else.
-func returnTo(raw string) (string, bool) {
-	if raw == "" || strings.HasPrefix(raw, "//") || strings.HasPrefix(raw, `/\`) {
-		return "", false
-	}
-	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "" || u.Host != "" || u.Path != iam.OAuthAuthorizePath {
-		return "", false
-	}
-	return u.RequestURI(), true
-}
-
-// pageHeaders keep the pages out of frames, caches, and other origins.
-func pageHeaders(w http.ResponseWriter) {
-	w.Header().Set("X-Frame-Options", "DENY")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'")
+// redirect sends the browser to location. Unlike http.Redirect, it writes no
+// HTML body: the control plane serves no pages.
+func redirect(w http.ResponseWriter, location string) {
+	w.Header().Set("Location", location)
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Referrer-Policy", "no-referrer")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusFound)
+}
+
+// toFrontend redirects the browser to the frontend's sign-in page with q.
+func (h *handlers) toFrontend(w http.ResponseWriter, r *http.Request, q url.Values) {
+	redirect(w, iam.AppendQuery(h.settings.LoginURL, q))
+}
+
+// failToFrontend sends the browser to the frontend with an error code it
+// can explain, keeping the challenge so the person can try again.
+func (h *handlers) failToFrontend(w http.ResponseWriter, r *http.Request, challenge, code string) {
+	q := url.Values{"error": {code}}
+	if challenge != "" {
+		q.Set("login_challenge", challenge)
+	}
+	h.toFrontend(w, r, q)
+}
+
+func (h *handlers) serverError(w http.ResponseWriter, r *http.Request, challenge string, err error) {
+	h.logger.Error("sign-in failed", logging.F("error", err))
+	h.failToFrontend(w, r, challenge, errorServer)
 }

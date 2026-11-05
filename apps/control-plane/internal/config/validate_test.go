@@ -17,6 +17,7 @@ func validConfig(t *testing.T) *Config {
 	var c Config
 	require.NoError(t, env.Parse(&c, env.Options{Source: lookup(nil)}))
 	c.Auth.SigningKeyFiles = []string{"/keys/current.pem"}
+	c.Auth.LoginURL = "http://localhost:3000/login"
 	return &c
 }
 
@@ -69,6 +70,8 @@ func TestValidateRefuses(t *testing.T) {
 		{"external URL with a path", func(_ *testing.T, c *Config) { c.ExternalURL = "https://example.com/ivaldi" }, "no path"},
 		{"plain http to a public host", func(_ *testing.T, c *Config) { c.ExternalURL = "http://ivaldi.example.com" }, "must use https"},
 		{"no signing key", func(_ *testing.T, c *Config) { c.Auth.SigningKeyFiles = nil }, "signing_key_files"},
+		{"no login page", func(_ *testing.T, c *Config) { c.Auth.LoginURL = "" }, "auth.login_url is required"},
+		{"login page over plain http", func(_ *testing.T, c *Config) { c.Auth.LoginURL = "http://app.example.com/login" }, "auth.login_url"},
 		{"zero token lifetime", func(_ *testing.T, c *Config) { c.Auth.AccessTokenTTL = 0 }, "auth.access_token_ttl must be positive"},
 		{"web redirect over plain http", func(_ *testing.T, c *Config) {
 			c.Auth.WebClient.RedirectURIs = []string{"http://app.example.com/cb"}

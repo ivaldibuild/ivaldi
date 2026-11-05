@@ -63,6 +63,11 @@ func (c *Config) validateAuth(v *validator) {
 			v.addf("%s must be positive", name)
 		}
 	}
+	if a.LoginURL == "" {
+		v.addf("auth.login_url is required: the frontend page the authorization server sends people to sign in")
+	} else {
+		v.redirectURI("auth.login_url", a.LoginURL)
+	}
 	for _, uri := range a.WebClient.RedirectURIs {
 		v.redirectURI("auth.web_client.redirect_uris", uri)
 	}

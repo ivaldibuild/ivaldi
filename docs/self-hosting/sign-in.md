@@ -104,6 +104,17 @@ IVALDI_BOOTSTRAP_ADMIN_PASSWORD_FILE=/run/secrets/admin-password
 
 The file is used once. Ivaldi never replaces a password with it: it does nothing once the admin's account exists or the Organization has an owner, so you can remove it after the first start.
 
+## The sign-in page
+
+The control plane serves no sign-in pages; the Ivaldi web app does. Tell the control plane where its sign-in page is:
+
+```sh
+IVALDI_AUTH_LOGIN_URL=https://app.example.com/login
+IVALDI_ALLOWED_ORIGINS=https://app.example.com
+```
+
+`IVALDI_ALLOWED_ORIGINS` lets the web app call the control plane's API from the browser. See [the sign-in flow](../design/sign-in-flow.md) for how the page and the control plane work together.
+
 ## Applications that sign in
 
 Ivaldi registers its own OAuth clients on every start. `ivaldictl` signs in through a browser and a loopback redirect, and needs no configuration. To let the web app sign people in, register its callback addresses:
@@ -120,7 +131,9 @@ The same settings, except the secrets, can go in the configuration file:
 
 ```yaml
 external_url: https://ivaldi.example.com
+allowed_origins: [https://app.example.com]
 auth:
+  login_url: https://app.example.com/login
   signing_key_files: [/run/secrets/signing.pem]
   builtin_accounts: true
   web_client:

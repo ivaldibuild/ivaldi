@@ -1,6 +1,7 @@
 package authhttp
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -15,9 +16,10 @@ func (h *handlers) metadata(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, h.oauth.Metadata())
 }
 
-// authorize is the authorization endpoint. It sends the person to sign in
-// when they have not, lets them choose an Organization when they belong to
-// several, and then sends a code back to the client.
+// authorize is the authorization endpoint. A browser already signed in to
+// the authorization server gets its code straight away when the
+// Organization is clear; otherwise the frontend signs the person in, with
+// a login challenge carrying the request.
 func (h *handlers) authorize(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	q := r.URL.Query()
@@ -32,111 +34,117 @@ func (h *handlers) authorize(w http.ResponseWriter, r *http.Request) {
 		Scope:               q.Get("scope"),
 	})
 	if err != nil {
-		h.authorizeError(w, r, err)
+		var oe *iam.OAuthError
+		switch {
+		case errors.As(err, &oe) && oe.RedirectURI != "":
+			redirect(w, oe.Location(h.settings.Issuer))
+		case errors.As(err, &oe):
+			// The client or its redirect URI cannot be trusted, so the
+			// error goes to the frontend, never to the client.
+			h.toFrontend(w, r, url.Values{"error": {oe.Code}, "error_description": {oe.Description}})
+		default:
+			h.serverError(w, r, "", err)
+		}
 		return
 	}
-	fail := func(code, description string) {
+	toClient := func(code, description string) {
 		e := &iam.OAuthError{Code: code, Description: description, RedirectURI: v.RedirectURI, State: v.State}
-		http.Redirect(w, r, e.Location(h.settings.Issuer), http.StatusFound)
+		redirect(w, e.Location(h.settings.Issuer))
 	}
 
 	prompt := q.Get("prompt")
+	hint := q.Get("organization")
 	current, signedIn := h.currentSignIn(r)
-	if prompt == "login" {
-		signedIn = false
-	}
-	if !signedIn {
-		if prompt == "none" {
-			fail(iam.OAuthLoginRequired, "the person is not signed in")
+	if signedIn && prompt != "login" {
+		memberships, err := h.memberships(ctx, current)
+		if err != nil {
+			h.serverError(w, r, "", err)
 			return
 		}
-		// Coming back from the login page must not ask for a login again.
-		q.Del("prompt")
-		back := iam.OAuthAuthorizePath + "?" + q.Encode()
-		http.Redirect(w, r, LoginPath+"?"+url.Values{"return_to": {back}}.Encode(), http.StatusFound)
-		return
-	}
-
-	memberships, err := h.memberships(r, current)
-	if err != nil {
-		h.serverError(w, err)
-		return
-	}
-	chosen, ok := choose(memberships, q.Get("organization"))
-	switch {
-	case len(memberships) == 0:
-		fail(iam.OAuthAccessDenied, "the account belongs to no organization it can use")
-		return
-	case !ok:
-		if prompt == "none" {
-			fail("interaction_required", "an organization must be chosen")
+		if chosen, ok := choose(memberships, hint); ok {
+			h.issue(w, r, v, current, chosen.OrganizationID)
 			return
 		}
-		back := iam.OAuthAuthorizePath + "?" + q.Encode()
-		http.Redirect(w, r, OrganizationsPath+"?"+url.Values{"return_to": {back}}.Encode(), http.StatusFound)
-		return
-	}
-
-	// The membership is checked again now: it may have ended since sign-in.
-	m, err := h.auth.Membership(ctx, current.AccountID, chosen.OrganizationID)
-	if errors.Is(err, iam.ErrNoMembership) {
-		fail(iam.OAuthAccessDenied, "the membership is no longer active")
-		return
-	}
-	if err != nil {
-		h.serverError(w, err)
-		return
-	}
-	location, err := h.oauth.IssueCode(ctx, v, *m)
-	if err != nil {
-		h.serverError(w, err)
-		return
-	}
-	http.Redirect(w, r, location, http.StatusFound)
-}
-
-// memberships returns the memberships the sign-in may use.
-func (h *handlers) memberships(r *http.Request, s signIn) ([]iam.Membership, error) {
-	all, err := h.auth.Memberships(r.Context(), s.AccountID)
-	if err != nil {
-		return nil, err
-	}
-	var usable []iam.Membership
-	for _, m := range all {
-		if s.allows(m.OrganizationID) {
-			usable = append(usable, m)
+		if len(memberships) == 0 {
+			toClient(iam.OAuthAccessDenied, "the account belongs to no organization it can use")
+			return
 		}
-	}
-	return usable, nil
-}
-
-// choose picks the membership a hint names, by ID or slug, or the only one.
-func choose(memberships []iam.Membership, hint string) (iam.Membership, bool) {
-	if hint != "" {
-		for _, m := range memberships {
-			if m.OrganizationID == hint || m.OrganizationSlug == hint {
-				return m, true
-			}
+		if prompt == "none" {
+			toClient("interaction_required", "an organization must be chosen")
+			return
 		}
-		return iam.Membership{}, false
+		// Signed in, but the person must choose: the frontend asks.
+		challenge, ch, err := h.newChallenge(w, v, hint)
+		if err != nil {
+			h.serverError(w, r, "", err)
+			return
+		}
+		session, err := h.codec.Encode(sessionName, loginSession{Nonce: ch.Nonce, SignIn: current}, loginFlowTTL)
+		if err != nil {
+			h.serverError(w, r, "", err)
+			return
+		}
+		h.toFrontend(w, r, url.Values{"login_challenge": {challenge}, "login_session": {session}})
+		return
 	}
-	if len(memberships) == 1 {
-		return memberships[0], true
+	if prompt == "none" {
+		toClient(iam.OAuthLoginRequired, "the person is not signed in")
+		return
 	}
-	return iam.Membership{}, false
+	challenge, _, err := h.newChallenge(w, v, hint)
+	if err != nil {
+		h.serverError(w, r, "", err)
+		return
+	}
+	h.toFrontend(w, r, url.Values{"login_challenge": {challenge}})
 }
 
-func (h *handlers) authorizeError(w http.ResponseWriter, r *http.Request, err error) {
-	var oe *iam.OAuthError
-	if !errors.As(err, &oe) {
-		h.serverError(w, err)
+// continueAuthorization redeems a login verifier: only the browser that
+// started the challenge can, because it holds the challenge's nonce in its
+// login cookie. It remembers the sign-in and sends the code to the client.
+func (h *handlers) continueAuthorization(w http.ResponseWriter, r *http.Request) {
+	var v loginVerifier
+	var nonce string
+	if h.codec.Decode(verifierName, r.URL.Query().Get("login_verifier"), &v) != nil ||
+		!h.readCookie(r, loginCookie, &nonce) ||
+		subtle.ConstantTimeCompare([]byte(nonce), []byte(v.Nonce)) != 1 {
+		h.failToFrontend(w, r, "", errorExpired)
 		return
 	}
-	if oe.RedirectURI != "" {
-		http.Redirect(w, r, oe.Location(h.settings.Issuer), http.StatusFound)
+	h.clearCookie(w, loginCookie)
+	h.issue(w, r, &v.Auth, v.SignIn, v.OrganizationID)
+}
+
+// issue checks the membership once more, remembers the sign-in, and sends
+// the browser back to the client with a code.
+func (h *handlers) issue(w http.ResponseWriter, r *http.Request, v *iam.ValidatedAuthorization, s signIn, organizationID string) {
+	m, err := h.auth.Membership(r.Context(), s.AccountID, organizationID)
+	if errors.Is(err, iam.ErrNoMembership) || (err == nil && !s.allows(m.OrganizationID)) {
+		e := &iam.OAuthError{Code: iam.OAuthAccessDenied, Description: "the membership is not active", RedirectURI: v.RedirectURI, State: v.State}
+		redirect(w, e.Location(h.settings.Issuer))
 		return
 	}
-	h.renderError(w, http.StatusBadRequest, "The application that sent you here made an invalid request: "+oe.Description+".")
+	if err != nil {
+		h.serverError(w, r, "", err)
+		return
+	}
+	if err := h.sealCookie(w, signInCookie, s, h.settings.SessionTTL); err != nil {
+		h.serverError(w, r, "", err)
+		return
+	}
+	location, err := h.oauth.IssueCode(r.Context(), v, *m)
+	if err != nil {
+		h.serverError(w, r, "", err)
+		return
+	}
+	redirect(w, location)
+}
+
+// logout ends the browser's sign-in at the authorization server and returns
+// to the frontend. Clients revoke their own refresh tokens.
+func (h *handlers) logout(w http.ResponseWriter, r *http.Request) {
+	h.clearCookie(w, signInCookie)
+	h.toFrontend(w, r, url.Values{"logged_out": {"true"}})
 }
 
 // token is the token endpoint (RFC 6749 section 3.2).
@@ -206,9 +214,4 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
-}
-
-func (h *handlers) serverError(w http.ResponseWriter, err error) {
-	h.logger.Error("sign-in failed", logging.F("error", err))
-	h.renderError(w, http.StatusInternalServerError, "Something went wrong on our side. Try again in a moment.")
 }

@@ -143,6 +143,11 @@ type Auth struct {
 	// BuiltinAccounts turns on Ivaldi's own username and password accounts,
 	// for small self-hosted installations without an identity provider.
 	BuiltinAccounts bool `yaml:"builtin_accounts" env:"IVALDI_AUTH_BUILTIN_ACCOUNTS" envDefault:"false"`
+	// LoginURL is the frontend's sign-in page. The authorization server
+	// sends people there with a login_challenge, and the frontend signs them
+	// in through the control plane's /v1/auth endpoints; the control plane
+	// serves no sign-in pages of its own.
+	LoginURL string `yaml:"login_url" env:"IVALDI_AUTH_LOGIN_URL"`
 	// WebClient is Ivaldi's web app, which signs people in as a first-party
 	// OAuth client.
 	WebClient WebClient `yaml:"web_client"`

@@ -175,7 +175,7 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 	return a, close, nil
 }
 
-// wireSignIn builds sign-in, the authorization server, and their pages.
+// wireSignIn builds sign-in, the authorization server, and its HTTP side.
 func (a *app) wireSignIn(cfg *config.Config, logger logging.Logger, passwords hasher.PasswordHasher) error {
 	adminEmail := ""
 	if cfg.Mode() == config.DeploymentModeSelfHosted {
@@ -250,9 +250,10 @@ func (a *app) wireSignIn(cfg *config.Config, logger logging.Logger, passwords ha
 	if err != nil {
 		return err
 	}
-	pages, err := authhttp.New(append([]authhttp.Option{
+	authServer, err := authhttp.New(append([]authhttp.Option{
 		authhttp.WithSettings(authhttp.Settings{
 			Issuer:          cfg.IssuerURL(),
+			LoginURL:        cfg.Auth.LoginURL,
 			SessionTTL:      cfg.Auth.SignInSessionTTL,
 			BuiltinAccounts: cfg.Auth.BuiltinAccounts,
 		}),
@@ -265,7 +266,8 @@ func (a *app) wireSignIn(cfg *config.Config, logger logging.Logger, passwords ha
 	if err != nil {
 		return err
 	}
-	a.handlers = append(a.handlers, pages)
+	a.handlers = append(a.handlers, authServer)
+	a.routes = append(a.routes, authServer)
 	return nil
 }
 

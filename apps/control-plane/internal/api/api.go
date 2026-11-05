@@ -124,7 +124,7 @@ func New(cfg *config.Config, version string, logger logging.Logger, opts ...Opti
 	return &Server{
 		http: &http.Server{
 			Addr:              net.JoinHostPort(cfg.Host, strconv.Itoa(*cfg.Port)),
-			Handler:           recoverPanics(logger, mux),
+			Handler:           recoverPanics(logger, cors(cfg.AllowedOrigins, mux)),
 			ReadHeaderTimeout: 10 * time.Second,
 		},
 		logger:  logger,
@@ -232,6 +232,35 @@ func protectedResourceMetadata(resource string) http.HandlerFunc {
 		w.Header().Set("Cache-Control", "max-age=3600")
 		_, _ = w.Write(body)
 	}
+}
+
+// cors lets the listed browser origins, such as the web app's, call the API.
+// Requests carry tokens in headers or bodies, never cookies, so credentials
+// are not allowed.
+func cors(origins []string, next http.Handler) http.Handler {
+	allowed := make(map[string]bool, len(origins))
+	for _, o := range origins {
+		allowed[strings.TrimRight(o, "/")] = true
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin == "" || !allowed[origin] {
+			next.ServeHTTP(w, r)
+			return
+		}
+		h := w.Header()
+		h.Add("Vary", "Origin")
+		h.Set("Access-Control-Allow-Origin", origin)
+		if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
+			h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE")
+			h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+			h.Set("Access-Control-Max-Age", "600")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		h.Set("Access-Control-Expose-Headers", "WWW-Authenticate")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // recoverPanics turns a panic in a handler into a 500 and logs it, rather than

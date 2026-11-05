@@ -23,7 +23,7 @@ func Execute() error {
 
 func init() {
 	rootCmd.AddCommand(
-		server.NewServeCommand(),
+		server.NewServeCommand(VERSION),
 		gateway.NewGatewayCommand(),
 		indexer.NewIndexerCommand(),
 		worker.NewWorkerCommand(),

@@ -319,6 +319,10 @@ func TestMembership(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, adaUser.ID(), m.PrincipalID)
 
+	all, err := svc.Memberships(f.ctx, ada.ID())
+	require.NoError(t, err)
+	assert.Equal(t, []string{adaUser.ID()}, []string{all[0].PrincipalID})
+
 	_, err = svc.Membership(f.ctx, ada.ID(), "org_other")
 	assert.ErrorIs(t, err, iam.ErrNoMembership)
 
@@ -326,6 +330,9 @@ func TestMembership(t *testing.T) {
 	require.NoError(t, iampg.NewAccountRepository(f.db).Write(f.ctx, ada))
 	_, err = svc.Membership(f.ctx, ada.ID(), f.org.ID())
 	assert.ErrorIs(t, err, iam.ErrNoMembership, "a deactivated account loses every membership")
+	all, err = svc.Memberships(f.ctx, ada.ID())
+	require.NoError(t, err)
+	assert.Empty(t, all)
 }
 
 func TestNewRequiresEveryDependency(t *testing.T) {

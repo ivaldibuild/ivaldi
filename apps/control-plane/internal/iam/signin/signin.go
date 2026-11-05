@@ -317,6 +317,17 @@ func (s *service) isAdmin(idp *iam.IdentityProvider, profile iam.ExternalProfile
 		strings.EqualFold(profile.Email, s.adminEmail)
 }
 
+func (s *service) Memberships(ctx context.Context, accountID string) ([]iam.Membership, error) {
+	account, err := s.accounts.Get(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	if !account.Active() {
+		return nil, nil
+	}
+	return s.activeMemberships(ctx, accountID, "")
+}
+
 func (s *service) Membership(ctx context.Context, accountID, organizationID string) (*iam.Membership, error) {
 	account, err := s.accounts.Get(ctx, accountID)
 	if err != nil {

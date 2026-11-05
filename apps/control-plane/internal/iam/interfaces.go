@@ -37,6 +37,9 @@ type Authentication interface {
 	// Account and User as the provider allows. The sign-in is restricted to
 	// that Organization.
 	AuthenticateExternal(ctx context.Context, organizationID, identityProviderID string, profile ExternalProfile) (*SignedIn, error)
+	// Memberships returns the Account's active memberships, oldest first,
+	// for choosing an Organization.
+	Memberships(ctx context.Context, accountID string) ([]Membership, error)
 	// Membership returns the Account's membership in the Organization if
 	// it may act there now, or ErrNoMembership. Callers check it again
 	// before issuing anything, since a membership can end after sign-in.

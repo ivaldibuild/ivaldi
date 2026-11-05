@@ -12,10 +12,13 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/hasher"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/authhttp"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/authhttp/session"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/bootstrap"
 	iamhttp "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/httpapi"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/oauthserver"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/onboarding"
 	iampg "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/postgres"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/signin"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/token"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/outbox"
 	outboxpg "github.com/ivaldibuild/ivaldi-control-plane/internal/outbox/postgres"
@@ -34,6 +37,8 @@ type app struct {
 	outbox     outbox.Store
 	iam        iamRepositories
 	onboarding iam.Onboarding
+	auth       iam.Authentication
+	oauth      iam.AuthorizationServer
 	install    *bootstrap.Installation
 	keys       token.KeyRing
 	verifier   identity.Verifier
@@ -54,6 +59,9 @@ type iamRepositories struct {
 	resources iam.ResourceRegistrar
 	providers iam.IdentityProviderRepository
 	clients   iam.OAuthClientRepository
+	externals iam.ExternalIdentityRepository
+	codes     iam.OAuthAuthorizationCodeRepository
+	refreshes iam.OAuthRefreshTokenRepository
 }
 
 // wire opens the database and builds the capabilities. The caller closes the
@@ -83,6 +91,9 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 			resources: iampg.NewResourceRegistrar(db),
 			providers: iampg.NewIdentityProviderRepository(db),
 			clients:   iampg.NewOAuthClientRepository(db),
+			externals: iampg.NewExternalIdentityRepository(db),
+			codes:     iampg.NewOAuthAuthorizationCodeRepository(db),
+			refreshes: iampg.NewOAuthRefreshTokenRepository(db),
 		},
 	}
 
@@ -148,6 +159,10 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 		return nil, nil, fmt.Errorf("bootstrap: %w", err)
 	}
 
+	if err := a.wireSignIn(cfg, logger, passwords); err != nil {
+		return nil, nil, err
+	}
+
 	// Anyone may call onboarding, so it is only offered where anyone may
 	// create an Organization: the managed cloud, with built-in accounts. A
 	// self-hosted installation's Organization comes from its configuration.
@@ -155,6 +170,84 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 		a.routes = append(a.routes, iamhttp.NewOnboardingController(a.onboarding))
 	}
 	return a, close, nil
+}
+
+// wireSignIn builds sign-in, the authorization server, and their pages.
+func (a *app) wireSignIn(cfg *config.Config, logger logging.Logger, passwords hasher.PasswordHasher) error {
+	adminEmail := ""
+	if cfg.Mode() == config.DeploymentModeSelfHosted {
+		adminEmail = cfg.Bootstrap.AdminEmail
+	}
+	var err error
+	a.auth, err = signin.New(
+		signin.WithLogger(logger),
+		signin.WithOrganizationRepo(a.iam.orgs),
+		signin.WithAccountRepo(a.iam.accounts),
+		signin.WithPasswordCredentialRepo(a.iam.passwords),
+		signin.WithUserRepo(a.iam.users),
+		signin.WithIdentityProviderRepo(a.iam.providers),
+		signin.WithExternalIdentityRepo(a.iam.externals),
+		signin.WithGrantRepo(a.iam.grants),
+		signin.WithPasswordHasher(passwords),
+		signin.WithTransactor(a.tx),
+		signin.WithOutboxRecorder(a.outbox),
+		signin.WithBuiltinAccounts(cfg.Auth.BuiltinAccounts),
+		signin.WithBootstrapAdminEmail(adminEmail),
+	)
+	if err != nil {
+		return err
+	}
+
+	issuer, err := token.NewIssuer(a.keys, cfg.IssuerURL(), cfg.Auth.AccessTokenTTL)
+	if err != nil {
+		return err
+	}
+	a.oauth, err = oauthserver.New(
+		oauthserver.WithSettings(oauthserver.Settings{
+			Issuer:     cfg.IssuerURL(),
+			Resources:  []string{cfg.IssuerURL()},
+			CodeTTL:    cfg.Auth.AuthorizationCodeTTL,
+			RefreshTTL: cfg.Auth.RefreshTokenTTL,
+			AccessTTL:  cfg.Auth.AccessTokenTTL,
+		}),
+		oauthserver.WithLogger(logger),
+		oauthserver.WithIssuer(issuer),
+		oauthserver.WithAuthentication(a.auth),
+		oauthserver.WithOAuthClientRepo(a.iam.clients),
+		oauthserver.WithAuthorizationCodeRepo(a.iam.codes),
+		oauthserver.WithRefreshTokenRepo(a.iam.refreshes),
+		oauthserver.WithUserRepo(a.iam.users),
+		oauthserver.WithTransactor(a.tx),
+		oauthserver.WithOutboxRecorder(a.outbox),
+	)
+	if err != nil {
+		return err
+	}
+
+	cookieKeys, err := a.keys.DeriveKeys(session.KeyPurpose)
+	if err != nil {
+		return err
+	}
+	codec, err := session.NewCodec(cookieKeys)
+	if err != nil {
+		return err
+	}
+	pages, err := authhttp.New(
+		authhttp.WithSettings(authhttp.Settings{
+			Issuer:          cfg.IssuerURL(),
+			SessionTTL:      cfg.Auth.SignInSessionTTL,
+			BuiltinAccounts: cfg.Auth.BuiltinAccounts,
+		}),
+		authhttp.WithLogger(logger),
+		authhttp.WithAuthentication(a.auth),
+		authhttp.WithAuthorizationServer(a.oauth),
+		authhttp.WithCodec(codec),
+	)
+	if err != nil {
+		return err
+	}
+	a.handlers = append(a.handlers, pages)
+	return nil
 }
 
 // loadKeys reads the signing keys, or generates one when the configuration

@@ -60,6 +60,7 @@ type iamRepositories struct {
 	providers iam.IdentityProviderRepository
 	clients   iam.OAuthClientRepository
 	externals iam.ExternalIdentityRepository
+	platform  iam.AccountIdentityRepository
 	codes     iam.OAuthAuthorizationCodeRepository
 	refreshes iam.OAuthRefreshTokenRepository
 }
@@ -92,6 +93,7 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 			providers: iampg.NewIdentityProviderRepository(db),
 			clients:   iampg.NewOAuthClientRepository(db),
 			externals: iampg.NewExternalIdentityRepository(db),
+			platform:  iampg.NewAccountIdentityRepository(db),
 			codes:     iampg.NewOAuthAuthorizationCodeRepository(db),
 			refreshes: iampg.NewOAuthRefreshTokenRepository(db),
 		},
@@ -127,6 +129,7 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 		onboarding.WithPasswordHasher(passwords),
 		onboarding.WithResourceRegistrar(a.iam.resources),
 		onboarding.WithGrantRepo(a.iam.grants),
+		onboarding.WithAccountIdentityRepo(a.iam.platform),
 	)
 	if err != nil {
 		return nil, nil, err
@@ -187,6 +190,7 @@ func (a *app) wireSignIn(cfg *config.Config, logger logging.Logger, passwords ha
 		signin.WithUserRepo(a.iam.users),
 		signin.WithIdentityProviderRepo(a.iam.providers),
 		signin.WithExternalIdentityRepo(a.iam.externals),
+		signin.WithAccountIdentityRepo(a.iam.platform),
 		signin.WithGrantRepo(a.iam.grants),
 		signin.WithPasswordHasher(passwords),
 		signin.WithTransactor(a.tx),
@@ -228,6 +232,15 @@ func (a *app) wireSignIn(cfg *config.Config, logger logging.Logger, passwords ha
 	if err != nil {
 		return err
 	}
+	platform, err := platformProviders(cfg)
+	if err != nil {
+		return err
+	}
+	providers = append(providers, platform...)
+	var signUp []authhttp.Option
+	if cfg.Mode() == config.DeploymentModeCloud {
+		signUp = append(signUp, authhttp.WithOnboarding(a.onboarding))
+	}
 
 	cookieKeys, err := a.keys.DeriveKeys(session.KeyPurpose)
 	if err != nil {
@@ -237,7 +250,7 @@ func (a *app) wireSignIn(cfg *config.Config, logger logging.Logger, passwords ha
 	if err != nil {
 		return err
 	}
-	pages, err := authhttp.New(
+	pages, err := authhttp.New(append([]authhttp.Option{
 		authhttp.WithSettings(authhttp.Settings{
 			Issuer:          cfg.IssuerURL(),
 			SessionTTL:      cfg.Auth.SignInSessionTTL,
@@ -248,7 +261,7 @@ func (a *app) wireSignIn(cfg *config.Config, logger logging.Logger, passwords ha
 		authhttp.WithAuthorizationServer(a.oauth),
 		authhttp.WithCodec(codec),
 		authhttp.WithProviders(providers...),
-	)
+	}, signUp...)...)
 	if err != nil {
 		return err
 	}

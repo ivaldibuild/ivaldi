@@ -23,6 +23,11 @@ type Onboarding interface {
 	// Organization, with no owner yet: the configured administrator claims
 	// it on first sign-in.
 	ProvisionInstallation(ctx context.Context, input ProvisionInstallationInput) (*Organization, error)
+	// OnboardWithPlatformIdentity signs a new person up for the managed
+	// cloud with a platform provider's verified identity: their Account,
+	// its link to the provider, and a new Organization they own. It returns
+	// the Account's ID.
+	OnboardWithPlatformIdentity(ctx context.Context, input OnboardWithPlatformIdentityInput) (string, error)
 }
 
 // Authentication signs people in. It decides who someone is and which
@@ -32,6 +37,12 @@ type Authentication interface {
 	// AuthenticatePassword checks a built-in account's email and password.
 	// A wrong email and a wrong password are the same ErrInvalidCredentials.
 	AuthenticatePassword(ctx context.Context, email, password string) (*SignedIn, error)
+	// AuthenticatePlatform signs a person in to the managed cloud with a
+	// platform provider. A subject it has not seen links to an Account only
+	// when both the Account's and the provider's emails are verified;
+	// otherwise the person must sign up (ErrSignUpRequired) or sign in
+	// another way first (ErrAccountExists).
+	AuthenticatePlatform(ctx context.Context, provider PlatformProvider, profile ExternalProfile) (*SignedIn, error)
 	// AuthenticateExternal signs a person in through one of an
 	// Organization's identity providers, linking or provisioning their
 	// Account and User as the provider allows. The sign-in is restricted to

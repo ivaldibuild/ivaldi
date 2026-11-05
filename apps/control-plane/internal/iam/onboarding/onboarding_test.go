@@ -145,6 +145,19 @@ func (f *fakeGrants) Write(ctx context.Context, g *iam.Grant) error {
 	return f.err
 }
 
+type fakePlatform struct {
+	writes []write
+	err    error
+}
+
+func (f *fakePlatform) GetBySubject(context.Context, iam.PlatformProvider, string) (*iam.AccountIdentity, error) {
+	return nil, iam.ErrNotFound
+}
+func (f *fakePlatform) Write(ctx context.Context, a *iam.AccountIdentity) error {
+	f.writes = append(f.writes, write{a, inTx(ctx)})
+	return f.err
+}
+
 type fakeOutbox struct {
 	envelopes []events.Envelope
 	inTx      bool
@@ -169,6 +182,7 @@ type fixture struct {
 	hasher    *hashertest.Fake
 	resources *fakeRegistrar
 	grants    *fakeGrants
+	platform  *fakePlatform
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -184,6 +198,7 @@ func newFixture(t *testing.T) *fixture {
 		hasher:    hashertest.NewFake(),
 		resources: &fakeRegistrar{},
 		grants:    &fakeGrants{},
+		platform:  &fakePlatform{},
 	}
 	svc, err := NewOnboardingService(f.options()...)
 	require.NoError(t, err)
@@ -203,6 +218,7 @@ func (f *fixture) options() []OnboardingServiceOption {
 		WithPasswordHasher(f.hasher),
 		WithResourceRegistrar(f.resources),
 		WithGrantRepo(f.grants),
+		WithAccountIdentityRepo(f.platform),
 	}
 }
 
@@ -232,6 +248,7 @@ func TestNewOnboardingServiceRequiresEveryDependency(t *testing.T) {
 		{"PasswordHasher", WithPasswordHasher(nil)},
 		{"ResourceRegistrar", WithResourceRegistrar(nil)},
 		{"GrantRepo", WithGrantRepo(nil)},
+		{"AccountIdentityRepo", WithAccountIdentityRepo(nil)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -429,4 +446,68 @@ func TestOnboardOrganizationReturnsAndLogsFailedWrites(t *testing.T) {
 			f.logger.AssertExpectations(t)
 		})
 	}
+}
+
+func platformSignUp() iam.OnboardWithPlatformIdentityInput {
+	return iam.OnboardWithPlatformIdentityInput{
+		Provider:         iam.PlatformGitHub,
+		Profile:          iam.ExternalProfile{Subject: "583231", Email: "grace@example.com", EmailVerified: true, DisplayName: "Grace Hopper"},
+		OrganizationName: "Compilers Inc",
+	}
+}
+
+func TestOnboardWithPlatformIdentity(t *testing.T) {
+	f := newFixture(t)
+
+	accountID, err := f.svc.OnboardWithPlatformIdentity(context.Background(), platformSignUp())
+
+	require.NoError(t, err)
+	account := f.accounts.writes[0].obj.(*iam.Account)
+	assert.Equal(t, accountID, account.ID())
+	assert.True(t, account.EmailVerified(), "the provider vouched for the email")
+	assert.Equal(t, "Grace Hopper", account.DisplayName())
+	link := f.platform.writes[0].obj.(*iam.AccountIdentity)
+	assert.Equal(t, "583231", link.Subject())
+	assert.Equal(t, accountID, link.AccountID())
+	org := f.orgs.writes[0].obj.(*iam.Organization)
+	assert.Equal(t, "compilers-inc", org.Slug())
+	assert.Equal(t, "Compilers Inc", org.DisplayName(), "the display name defaults to the name")
+	assert.Empty(t, f.passwords.writes, "no password")
+	require.Len(t, f.grants.writes, 1)
+	for name, w := range map[string][]write{"org": f.orgs.writes, "account": f.accounts.writes, "link": f.platform.writes, "user": f.users.writes, "grant": f.grants.writes} {
+		assert.True(t, w[0].inTx, name)
+	}
+	assert.Equal(t, 1, f.tx.calls)
+}
+
+func TestOnboardWithPlatformIdentityRefuses(t *testing.T) {
+	t.Run("an unverified email", func(t *testing.T) {
+		f := newFixture(t)
+		in := platformSignUp()
+		in.Profile.EmailVerified = false
+		_, err := f.svc.OnboardWithPlatformIdentity(context.Background(), in)
+		assert.ErrorIs(t, err, iam.ErrInvalid)
+		assert.Zero(t, f.tx.calls)
+	})
+	t.Run("an email that has an account", func(t *testing.T) {
+		f := newFixture(t)
+		f.accounts.emails["grace@example.com"] = true
+		_, err := f.svc.OnboardWithPlatformIdentity(context.Background(), platformSignUp())
+		_, ok := errors.AsType[*ErrAccountConflict](err)
+		assert.True(t, ok)
+	})
+	t.Run("a taken slug", func(t *testing.T) {
+		f := newFixture(t)
+		f.orgs.slugs["compilers-inc"] = true
+		_, err := f.svc.OnboardWithPlatformIdentity(context.Background(), platformSignUp())
+		_, ok := errors.AsType[*ErrOrganizationConflict](err)
+		assert.True(t, ok)
+	})
+	t.Run("a subject linked in a race", func(t *testing.T) {
+		f := newFixture(t)
+		f.platform.err = fmt.Errorf("%w: duplicate", iam.ErrAlreadyExists)
+		_, err := f.svc.OnboardWithPlatformIdentity(context.Background(), platformSignUp())
+		_, ok := errors.AsType[*ErrAccountConflict](err)
+		assert.True(t, ok)
+	})
 }

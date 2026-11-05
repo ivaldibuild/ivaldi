@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/hasher"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam"
@@ -27,6 +28,7 @@ type onboardingService struct {
 	passwords              hasher.PasswordHasher
 	resources              iam.ResourceRegistrar
 	grants                 iam.GrantRepository
+	platform               iam.AccountIdentityRepository
 }
 
 func WithLogger(logger logging.Logger) OnboardingServiceOption {
@@ -97,6 +99,13 @@ func WithGrantRepo(repo iam.GrantRepository) OnboardingServiceOption {
 	}
 }
 
+// WithAccountIdentityRepo links a platform sign-up's Account to its provider.
+func WithAccountIdentityRepo(repo iam.AccountIdentityRepository) OnboardingServiceOption {
+	return func(s *onboardingService) {
+		s.platform = repo
+	}
+}
+
 // NewOnboardingService returns the Onboarding service, or an error naming a
 // missing dependency.
 func NewOnboardingService(opts ...OnboardingServiceOption) (iam.Onboarding, error) {
@@ -119,6 +128,7 @@ func NewOnboardingService(opts ...OnboardingServiceOption) (iam.Onboarding, erro
 		{"PasswordHasher", s.passwords != nil},
 		{"ResourceRegistrar", s.resources != nil},
 		{"GrantRepo", s.grants != nil},
+		{"AccountIdentityRepo", s.platform != nil},
 	}
 	for _, r := range required {
 		if !r.ok {
@@ -229,6 +239,96 @@ func (s *onboardingService) OnboardOrganization(ctx context.Context, input *iam.
 		return err
 	}
 	return nil
+}
+
+// OnboardWithPlatformIdentity creates a verified Account linked to the
+// platform provider's subject, a new Organization, the Account's User in it,
+// and the User's owner grant, all or nothing.
+func (s *onboardingService) OnboardWithPlatformIdentity(ctx context.Context, input iam.OnboardWithPlatformIdentityInput) (string, error) {
+	p := input.Profile
+	if p.Subject == "" || p.Email == "" || !p.EmailVerified {
+		return "", iam.NewErrInvalidInput("signing up needs a verified email from the provider")
+	}
+	displayName := input.OrganizationDisplayName
+	if displayName == "" {
+		displayName = input.OrganizationName
+	}
+	orgProps := iam.NewOrganizationProps{Name: input.OrganizationName, DisplayName: displayName}
+	if input.OrganizationSlug != nil {
+		orgProps.Slug = *input.OrganizationSlug
+	}
+	org, err := iam.NewOrganization(orgProps, nil)
+	if err != nil {
+		return "", err
+	}
+	personName := strings.TrimSpace(p.DisplayName)
+	if personName == "" {
+		personName, _, _ = strings.Cut(p.Email, "@")
+	}
+	account, err := iam.NewAccount(iam.NewAccountProps{Email: p.Email, DisplayName: personName}, nil)
+	if err != nil {
+		return "", err
+	}
+	// The provider vouched for the email.
+	account.VerifyEmail()
+	link, err := iam.NewAccountIdentity(iam.NewAccountIdentityProps{AccountID: account.ID(), Provider: input.Provider, Subject: p.Subject}, nil)
+	if err != nil {
+		return "", err
+	}
+	user, err := iam.NewUser(iam.NewUserProps{
+		PrincipalProps: iam.PrincipalProps{OrganizationID: org.ID(), DisplayName: personName},
+		AccountID:      account.ID(),
+	}, nil)
+	if err != nil {
+		return "", err
+	}
+	if err := s.assertAccountExistence(ctx, p.Email); err != nil {
+		return "", err
+	}
+	if err := s.assertOrganizationExistence(ctx, org.Name(), org.Slug()); err != nil {
+		return "", err
+	}
+
+	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := s.writeOrganization(ctx, org); err != nil {
+			return err
+		}
+		if err := s.accountRepo.Write(ctx, account); err != nil {
+			if errors.Is(err, iam.ErrAlreadyExists) {
+				return NewErrAccountConflict("account with this email already exists")
+			}
+			return fmt.Errorf("write account: %w", err)
+		}
+		if err := s.platform.Write(ctx, link); err != nil {
+			if errors.Is(err, iam.ErrAlreadyExists) {
+				return NewErrAccountConflict("this sign-in is already linked to an account")
+			}
+			return fmt.Errorf("write account identity: %w", err)
+		}
+		if err := s.userRepo.Write(ctx, user); err != nil {
+			return fmt.Errorf("write user: %w", err)
+		}
+		grant, err := s.makeOwner(ctx, org, user)
+		if err != nil {
+			return err
+		}
+		return s.recordAll(ctx, org.ID(), []eventSource{
+			{iam.AggregateOrganization, org.ID(), org},
+			{iam.AggregateAccount, account.ID(), account},
+			{iam.AggregateAccountIdentity, link.ID(), link},
+			{iam.AggregateUser, user.ID(), user},
+			{iam.AggregateGrant, grant.ID(), grant},
+		})
+	})
+	if err != nil {
+		_, orgConflict := errors.AsType[*ErrOrganizationConflict](err)
+		_, accountConflict := errors.AsType[*ErrAccountConflict](err)
+		if !orgConflict && !accountConflict {
+			s.logger.Error("failed to sign up with a platform identity", logging.F("error", err))
+		}
+		return "", err
+	}
+	return account.ID(), nil
 }
 
 // ProvisionInstallation creates a self-hosted installation's Organization

@@ -38,6 +38,7 @@ func newPostgresOnboarding(t *testing.T, outbox *fakeOutbox) (*onboardingService
 		WithPasswordHasher(hashertest.NewFake()),
 		WithResourceRegistrar(postgres.NewResourceRegistrar(db)),
 		WithGrantRepo(postgres.NewGrantRepository(db)),
+		WithAccountIdentityRepo(postgres.NewAccountIdentityRepository(db)),
 	)
 	require.NoError(t, err)
 	return svc.(*onboardingService), db

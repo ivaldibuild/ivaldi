@@ -21,13 +21,17 @@ const providerFlowTTL = 10 * time.Minute
 const oauthCookie = "ivaldi-oauth"
 
 // Provider is an identity provider people can sign in with: a connector and
-// the Organization identity provider it signs in to.
+// either the Organization identity provider it signs in to, or, in the
+// managed cloud, the platform provider it is.
 type Provider struct {
 	// Kind names it in its URLs, such as /auth/oauth/github/start.
 	Kind               string
 	Connector          connector.Connector
 	OrganizationID     string
 	IdentityProviderID string
+	// Platform, when set, makes it a platform provider: it signs in an
+	// Account rather than a User, and can sign people up.
+	Platform iam.PlatformProvider
 }
 
 // WithProviders adds the identity providers shown on the login page.
@@ -131,6 +135,10 @@ func (h *handlers) providerCallback(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.logger.Warn("provider sign-in failed", logging.F("provider", p.Kind), logging.F("error", err))
 		h.renderError(w, http.StatusBadGateway, p.Connector.DisplayName()+" could not confirm who you are. Start again.")
+		return
+	}
+	if p.Platform != "" {
+		h.platformSignIn(w, r, p, profile, flow.ReturnTo)
 		return
 	}
 	signedIn, err := h.auth.AuthenticateExternal(r.Context(), p.OrganizationID, p.IdentityProviderID, profile)

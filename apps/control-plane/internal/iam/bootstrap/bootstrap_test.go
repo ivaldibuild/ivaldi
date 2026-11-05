@@ -81,6 +81,7 @@ func (e *env) bootstrapper(t *testing.T, s Settings) Bootstrapper {
 		onboarding.WithPasswordHasher(e.hasher),
 		onboarding.WithResourceRegistrar(resources),
 		onboarding.WithGrantRepo(grants),
+		onboarding.WithAccountIdentityRepo(iampg.NewAccountIdentityRepository(e.db)),
 	)
 	require.NoError(t, err)
 	b, err := New(

@@ -97,6 +97,7 @@ func newFixture(t *testing.T) *fixture {
 		signin.WithUserRepo(iampg.NewUserRepository(db)),
 		signin.WithIdentityProviderRepo(iampg.NewIdentityProviderRepository(db)),
 		signin.WithExternalIdentityRepo(iampg.NewExternalIdentityRepository(db)),
+		signin.WithAccountIdentityRepo(iampg.NewAccountIdentityRepository(db)),
 		signin.WithGrantRepo(iampg.NewGrantRepository(db)),
 		signin.WithPasswordHasher(hashertest.NewFake()),
 		signin.WithTransactor(tx),

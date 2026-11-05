@@ -42,3 +42,13 @@ type ProvisionInstallationInput struct {
 	Name        string
 	DisplayName string
 }
+
+// OnboardWithPlatformIdentityInput describes a sign-up with a platform
+// provider: who the provider says signed in, and the Organization they create.
+type OnboardWithPlatformIdentityInput struct {
+	Provider                PlatformProvider
+	Profile                 ExternalProfile
+	OrganizationName        string
+	OrganizationDisplayName string
+	OrganizationSlug        *string
+}

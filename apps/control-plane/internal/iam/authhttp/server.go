@@ -62,14 +62,15 @@ func WithAuthorizationServer(s iam.AuthorizationServer) Option {
 func WithCodec(c session.Codec) Option { return func(h *handlers) { h.codec = c } }
 
 type handlers struct {
-	settings  Settings
-	logger    logging.Logger
-	auth      iam.Authentication
-	oauth     iam.AuthorizationServer
-	codec     session.Codec
-	providers []Provider
-	origin    string
-	secure    bool
+	settings   Settings
+	logger     logging.Logger
+	auth       iam.Authentication
+	oauth      iam.AuthorizationServer
+	codec      session.Codec
+	onboarding iam.Onboarding
+	providers  []Provider
+	origin     string
+	secure     bool
 }
 
 // New returns the authorization server's handlers: its metadata, the OAuth
@@ -105,6 +106,7 @@ func (h *handlers) RegisterHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+OrganizationsPath, h.chooseOrganization)
 	mux.HandleFunc("POST "+LogoutPath, h.logout)
 	h.registerProviderHandlers(mux)
+	h.registerSignUpHandlers(mux)
 }
 
 // signIn is what the sign-in cookie holds.

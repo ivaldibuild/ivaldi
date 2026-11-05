@@ -68,3 +68,36 @@ func installationProviders(cfg *config.Config, install *bootstrap.Installation) 
 	}
 	return out, nil
 }
+
+// platformProviders builds a connector for each platform provider the
+// managed cloud configures, for signing in to and signing up for it.
+func platformProviders(cfg *config.Config) ([]authhttp.Provider, error) {
+	if cfg.Mode() != config.DeploymentModeCloud {
+		return nil, nil
+	}
+	p := cfg.Auth.Platform
+	var out []authhttp.Provider
+	if p.Google.Enabled() {
+		secret, err := p.Google.Secret()
+		if err != nil {
+			return nil, err
+		}
+		c, err := connector.NewGoogle(connector.GoogleConfig{ClientID: p.Google.ClientID, ClientSecret: secret.Reveal()})
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, authhttp.Provider{Kind: string(iam.PlatformGoogle), Connector: c, Platform: iam.PlatformGoogle})
+	}
+	if p.GitHub.Enabled() {
+		secret, err := p.GitHub.Secret()
+		if err != nil {
+			return nil, err
+		}
+		c, err := connector.NewGitHub(connector.GitHubConfig{ClientID: p.GitHub.ClientID, ClientSecret: secret.Reveal()})
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, authhttp.Provider{Kind: string(iam.PlatformGitHub), Connector: c, Platform: iam.PlatformGitHub})
+	}
+	return out, nil
+}

@@ -23,6 +23,7 @@ func (h *handlers) renderLogin(w http.ResponseWriter, status int, d loginData) {
 	d.LoginPath = LoginPath
 	d.Builtin = h.settings.BuiltinAccounts
 	d.Providers = h.providerLinks(d.ReturnTo)
+	d.SignUp = h.canSignUp()
 	h.render(w, status, loginContent, "login", d)
 }
 

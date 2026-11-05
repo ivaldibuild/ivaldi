@@ -36,7 +36,10 @@ func WithIdentityProviderRepo(r iam.IdentityProviderRepository) Option {
 func WithExternalIdentityRepo(r iam.ExternalIdentityRepository) Option {
 	return func(s *service) { s.externals = r }
 }
-func WithGrantRepo(r iam.GrantRepository) Option        { return func(s *service) { s.grants = r } }
+func WithGrantRepo(r iam.GrantRepository) Option { return func(s *service) { s.grants = r } }
+func WithAccountIdentityRepo(r iam.AccountIdentityRepository) Option {
+	return func(s *service) { s.platform = r }
+}
 func WithPasswordHasher(h hasher.PasswordHasher) Option { return func(s *service) { s.hasher = h } }
 func WithTransactor(tx transaction.Transactor) Option   { return func(s *service) { s.tx = tx } }
 func WithOutboxRecorder(o outbox.Recorder) Option       { return func(s *service) { s.outbox = o } }
@@ -59,6 +62,7 @@ type service struct {
 	users      iam.UserRepository
 	providers  iam.IdentityProviderRepository
 	externals  iam.ExternalIdentityRepository
+	platform   iam.AccountIdentityRepository
 	grants     iam.GrantRepository
 	hasher     hasher.PasswordHasher
 	tx         transaction.Transactor
@@ -85,6 +89,7 @@ func New(opts ...Option) (iam.Authentication, error) {
 		{"UserRepo", s.users != nil},
 		{"IdentityProviderRepo", s.providers != nil},
 		{"ExternalIdentityRepo", s.externals != nil},
+		{"AccountIdentityRepo", s.platform != nil},
 		{"GrantRepo", s.grants != nil},
 		{"PasswordHasher", s.hasher != nil},
 		{"Transactor", s.tx != nil},
@@ -133,6 +138,66 @@ func (s *service) AuthenticatePassword(ctx context.Context, email, password stri
 		return nil, err
 	}
 	return &iam.SignedIn{AccountID: account.ID(), Method: iam.SignInPassword, Memberships: memberships}, nil
+}
+
+func (s *service) AuthenticatePlatform(ctx context.Context, provider iam.PlatformProvider, profile iam.ExternalProfile) (*iam.SignedIn, error) {
+	if profile.Subject == "" {
+		return nil, fmt.Errorf("%w: the provider gave no subject", iam.ErrNotAdmitted)
+	}
+	var account *iam.Account
+	err := s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		link, err := s.platform.GetBySubject(ctx, provider, profile.Subject)
+		switch {
+		case err == nil:
+			if account, err = s.accounts.Get(ctx, link.AccountID()); err != nil {
+				return err
+			}
+			if !account.Active() {
+				return fmt.Errorf("%w: account %s is %s", iam.ErrStatus, account.ID(), account.Status())
+			}
+			link.RecordLogin()
+			return s.platform.Write(ctx, link)
+		case !errors.Is(err, iam.ErrNotFound):
+			return err
+		}
+
+		if profile.Email == "" || !profile.EmailVerified {
+			return fmt.Errorf("%w: %s gave no verified email", iam.ErrNotAdmitted, provider)
+		}
+		account, err = s.accounts.GetByEmail(ctx, profile.Email)
+		if errors.Is(err, iam.ErrNotFound) {
+			return iam.ErrSignUpRequired
+		}
+		if err != nil {
+			return err
+		}
+		// Someone may have signed up with this email without proving they
+		// own it; linking would hand them the real owner's sign-in.
+		if !account.EmailVerified() {
+			return fmt.Errorf("%w: sign in with your password to link %s", iam.ErrAccountExists, provider)
+		}
+		if !account.Active() {
+			return fmt.Errorf("%w: account %s is %s", iam.ErrStatus, account.ID(), account.Status())
+		}
+		link, err = iam.NewAccountIdentity(iam.NewAccountIdentityProps{AccountID: account.ID(), Provider: provider, Subject: profile.Subject}, nil)
+		if err != nil {
+			return err
+		}
+		link.RecordLogin()
+		if err := s.platform.Write(ctx, link); err != nil {
+			return err
+		}
+		// The link belongs to the Account, not to any Organization.
+		return s.record(ctx, "", []source{{iam.AggregateAccountIdentity, link.ID(), link}})
+	})
+	if err != nil {
+		return nil, err
+	}
+	memberships, err := s.activeMemberships(ctx, account.ID(), "")
+	if err != nil {
+		return nil, err
+	}
+	return &iam.SignedIn{AccountID: account.ID(), Method: iam.SignInPlatform, Memberships: memberships}, nil
 }
 
 func (s *service) AuthenticateExternal(ctx context.Context, organizationID, identityProviderID string, profile iam.ExternalProfile) (*iam.SignedIn, error) {

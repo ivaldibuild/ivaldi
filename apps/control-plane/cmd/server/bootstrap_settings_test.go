@@ -97,3 +97,25 @@ func TestInstallationProviders(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, none, "the cloud signs in with platform providers instead")
 }
+
+func TestPlatformProviders(t *testing.T) {
+	cloud := &config.Config{
+		DeploymentMode: string(config.DeploymentModeCloud),
+		Auth: config.Auth{Platform: config.PlatformProviders{
+			Google: config.PlatformGoogleProvider{ClientID: "g", ClientSecret: "s"},
+			GitHub: config.PlatformGitHubProvider{ClientID: "gh", ClientSecret: "s"},
+		}},
+	}
+
+	providers, err := platformProviders(cloud)
+
+	require.NoError(t, err)
+	require.Len(t, providers, 2)
+	assert.Equal(t, iam.PlatformGoogle, providers[0].Platform)
+	assert.Equal(t, "github", providers[1].Kind)
+	assert.Empty(t, providers[1].OrganizationID, "a platform provider signs in an Account, not into one Organization")
+
+	selfHosted, err := platformProviders(&config.Config{DeploymentMode: string(config.DeploymentModeSelfHosted)})
+	require.NoError(t, err)
+	assert.Empty(t, selfHosted)
+}

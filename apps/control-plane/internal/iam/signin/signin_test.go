@@ -75,6 +75,7 @@ func (f *fixture) service(t *testing.T, builtin bool) iam.Authentication {
 		WithUserRepo(iampg.NewUserRepository(f.db)),
 		WithIdentityProviderRepo(iampg.NewIdentityProviderRepository(f.db)),
 		WithExternalIdentityRepo(iampg.NewExternalIdentityRepository(f.db)),
+		WithAccountIdentityRepo(iampg.NewAccountIdentityRepository(f.db)),
 		WithGrantRepo(iampg.NewGrantRepository(f.db)),
 		WithPasswordHasher(f.hasher),
 		WithTransactor(database.NewTransactor(f.db)),
@@ -338,4 +339,48 @@ func TestMembership(t *testing.T) {
 func TestNewRequiresEveryDependency(t *testing.T) {
 	_, err := New()
 	assert.ErrorContains(t, err, "is required")
+}
+
+func TestAuthenticatePlatform(t *testing.T) {
+	f := newFixture(t)
+	svc := f.service(t, false)
+	profile := func(subject, email string, verified bool) iam.ExternalProfile {
+		return iam.ExternalProfile{Subject: subject, Email: email, EmailVerified: verified}
+	}
+
+	t.Run("an unknown person must sign up", func(t *testing.T) {
+		_, err := svc.AuthenticatePlatform(f.ctx, iam.PlatformGitHub, profile("1", "new@example.com", true))
+		assert.ErrorIs(t, err, iam.ErrSignUpRequired)
+	})
+
+	t.Run("an Account with a verified email is linked", func(t *testing.T) {
+		ada, adaUser := f.member(t, "ada@example.com", "pw")
+		ada.VerifyEmail()
+		require.NoError(t, iampg.NewAccountRepository(f.db).Write(f.ctx, ada))
+
+		got, err := svc.AuthenticatePlatform(f.ctx, iam.PlatformGitHub, profile("2", "ADA@example.com", true))
+		require.NoError(t, err)
+		assert.Equal(t, ada.ID(), got.AccountID)
+		assert.Equal(t, iam.SignInPlatform, got.Method)
+		assert.Empty(t, got.RestrictedTo, "a platform sign-in may choose any of its Organizations")
+		require.Len(t, got.Memberships, 1)
+		assert.Equal(t, adaUser.ID(), got.Memberships[0].PrincipalID)
+		assert.Equal(t, 1, f.count(t, "SELECT count(*) FROM iam.account_identities WHERE subject = '2'"))
+
+		again, err := svc.AuthenticatePlatform(f.ctx, iam.PlatformGitHub, profile("2", "changed@example.com", false))
+		require.NoError(t, err)
+		assert.Equal(t, ada.ID(), again.AccountID, "the subject is enough once linked")
+	})
+
+	t.Run("an Account whose email was never verified is not taken over", func(t *testing.T) {
+		f.member(t, "squatted@example.com", "pw")
+		_, err := svc.AuthenticatePlatform(f.ctx, iam.PlatformGoogle, profile("3", "squatted@example.com", true))
+		assert.ErrorIs(t, err, iam.ErrAccountExists)
+		assert.Zero(t, f.count(t, "SELECT count(*) FROM iam.account_identities WHERE subject = '3'"))
+	})
+
+	t.Run("no verified email from the provider", func(t *testing.T) {
+		_, err := svc.AuthenticatePlatform(f.ctx, iam.PlatformGoogle, profile("4", "ada@example.com", false))
+		assert.ErrorIs(t, err, iam.ErrNotAdmitted)
+	})
 }

@@ -50,6 +50,13 @@ func (f *fakeAuth) AuthenticateExternal(_ context.Context, organizationID, ident
 	return &iam.SignedIn{AccountID: "acc_" + p.Subject, Method: iam.SignInIdentityProvider, IdentityProviderID: identityProviderID, RestrictedTo: organizationID}, nil
 }
 
+func (f *fakeAuth) AuthenticatePlatform(_ context.Context, _ iam.PlatformProvider, p iam.ExternalProfile) (*iam.SignedIn, error) {
+	if err := f.external[p.Subject]; err != nil {
+		return nil, err
+	}
+	return &iam.SignedIn{AccountID: "acc_" + p.Subject, Method: iam.SignInPlatform}, nil
+}
+
 func (f *fakeAuth) Memberships(_ context.Context, accountID string) ([]iam.Membership, error) {
 	return f.memberships[accountID], nil
 }

@@ -53,6 +53,7 @@ var loginContent = template.Must(template.Must(pages.Clone()).Parse(`{{define "c
 {{end}}
 {{if and .Builtin .Providers}}<p class="or">or</p>{{end}}
 {{range .Providers}}<a class="button" href="{{.StartURL}}">Continue with {{.Name}}</a>{{end}}
+{{if .SignUp}}<p class="or">New to Ivaldi? Continuing with one of these creates your account.</p>{{end}}
 {{if and (not .Builtin) (not .Providers)}}<p>No way to sign in is configured.</p>{{end}}
 {{end}}`))
 
@@ -68,10 +69,15 @@ var organizationsContent = template.Must(template.Must(pages.Clone()).Parse(`{{d
 {{end}}
 {{end}}`))
 
-var messageContent = template.Must(template.Must(pages.Clone()).Parse(`{{define "content"}}
+var messageContent = mustClone(`{{define "content"}}
 <h1>{{.Title}}</h1>
 <p>{{.Message}}</p>
-{{end}}`))
+{{end}}`)
+
+// mustClone gives the layout a page's content.
+func mustClone(content string) *template.Template {
+	return template.Must(template.Must(pages.Clone()).Parse(content))
+}
 
 // ProviderLink is a sign-in button for an identity provider.
 type ProviderLink struct {
@@ -81,7 +87,7 @@ type ProviderLink struct {
 
 type loginData struct {
 	Title, Error, CSRF, ReturnTo, Email, LoginPath string
-	Builtin                                        bool
+	Builtin, SignUp                                bool
 	Providers                                      []ProviderLink
 }
 

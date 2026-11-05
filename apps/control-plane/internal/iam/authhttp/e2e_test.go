@@ -30,6 +30,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/connector/connectortest"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/migrations"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/oauthserver"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/onboarding"
 	iampg "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/signin"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/token"
@@ -128,6 +129,7 @@ func startFullControlPlane(t *testing.T) *controlPlane {
 		signin.WithUserRepo(iampg.NewUserRepository(db)),
 		signin.WithIdentityProviderRepo(iampg.NewIdentityProviderRepository(db)),
 		signin.WithExternalIdentityRepo(iampg.NewExternalIdentityRepository(db)),
+		signin.WithAccountIdentityRepo(iampg.NewAccountIdentityRepository(db)),
 		signin.WithGrantRepo(iampg.NewGrantRepository(db)),
 		signin.WithPasswordHasher(hasher),
 		signin.WithTransactor(tx),
@@ -318,4 +320,150 @@ func TestSignInWithAProviderThroughToAnAPICall(t *testing.T) {
 	ownerRole, _ := iam.BuiltInRoleID(iam.RoleOwner)
 	require.NoError(t, cp.db.Raw("SELECT count(*) FROM iam.grants WHERE role_id = ? AND principal_id = ?", ownerRole, who.Body.PrincipalID).Scan(&owners).Error)
 	assert.EqualValues(t, 1, owners, "the bootstrap administrator owns the organization")
+}
+
+// startCloudControlPlane is the managed cloud: no Organization yet, and
+// sign-up with GitHub as a platform provider.
+func startCloudControlPlane(t *testing.T) (*httptest.Server, *gorm.DB, *connectortest.Fake) {
+	t.Helper()
+	ctx := context.Background()
+	db := databasetest.New(t, migrations.FS)
+	srv := httptest.NewUnstartedServer(nil)
+	issuer := "http://" + srv.Listener.Addr().String()
+	require.NoError(t, iampg.NewOAuthClientRepository(db).Write(ctx, mustDo(iam.NewOAuthClient(iam.NewOAuthClientProps{
+		ClientID: "ivaldictl", Registration: iam.RegistrationFirstParty, Name: "Ivaldi CLI", RedirectURIs: []string{"http://127.0.0.1/callback"},
+	}, nil))))
+
+	logger := logging.NewMockLogger()
+	for _, level := range []string{"Info", "Warn", "Error"} {
+		logger.On(level, mock.Anything, mock.Anything).Maybe()
+		logger.On(level, mock.Anything, mock.Anything, mock.Anything).Maybe()
+	}
+	tx := database.NewTransactor(db)
+	hasher := hashertest.NewFake()
+	auth := mustDo(signin.New(
+		signin.WithLogger(logger),
+		signin.WithOrganizationRepo(iampg.NewOrganizationRepository(db)),
+		signin.WithAccountRepo(iampg.NewAccountRepository(db)),
+		signin.WithPasswordCredentialRepo(iampg.NewPasswordCredentialRepository(db)),
+		signin.WithUserRepo(iampg.NewUserRepository(db)),
+		signin.WithIdentityProviderRepo(iampg.NewIdentityProviderRepository(db)),
+		signin.WithExternalIdentityRepo(iampg.NewExternalIdentityRepository(db)),
+		signin.WithAccountIdentityRepo(iampg.NewAccountIdentityRepository(db)),
+		signin.WithGrantRepo(iampg.NewGrantRepository(db)),
+		signin.WithPasswordHasher(hasher),
+		signin.WithTransactor(tx),
+		signin.WithOutboxRecorder(nopOutbox{}),
+	))
+	ob := mustDo(onboarding.NewOnboardingService(
+		onboarding.WithLogger(logger),
+		onboarding.WithOrganizationRepo(iampg.NewOrganizationRepository(db)),
+		onboarding.WithAccountRepo(iampg.NewAccountRepository(db)),
+		onboarding.WithPasswordCredentialRepo(iampg.NewPasswordCredentialRepository(db)),
+		onboarding.WithUserRepo(iampg.NewUserRepository(db)),
+		onboarding.WithTransactor(tx),
+		onboarding.WithOutboxRecorder(nopOutbox{}),
+		onboarding.WithPasswordHasher(hasher),
+		onboarding.WithResourceRegistrar(iampg.NewResourceRegistrar(db)),
+		onboarding.WithGrantRepo(iampg.NewGrantRepository(db)),
+		onboarding.WithAccountIdentityRepo(iampg.NewAccountIdentityRepository(db)),
+	))
+	keys := mustDo(token.NewEphemeralKeyRing())
+	server := mustDo(oauthserver.New(
+		oauthserver.WithSettings(oauthserver.Settings{Issuer: issuer, Resources: []string{issuer}, CodeTTL: time.Minute, RefreshTTL: time.Hour, AccessTTL: 15 * time.Minute}),
+		oauthserver.WithLogger(logger),
+		oauthserver.WithIssuer(mustDo(token.NewIssuer(keys, issuer, 15*time.Minute))),
+		oauthserver.WithAuthentication(auth),
+		oauthserver.WithOAuthClientRepo(iampg.NewOAuthClientRepository(db)),
+		oauthserver.WithAuthorizationCodeRepo(iampg.NewOAuthAuthorizationCodeRepository(db)),
+		oauthserver.WithRefreshTokenRepo(iampg.NewOAuthRefreshTokenRepository(db)),
+		oauthserver.WithUserRepo(iampg.NewUserRepository(db)),
+		oauthserver.WithTransactor(tx),
+		oauthserver.WithOutboxRecorder(nopOutbox{}),
+	))
+	github := &connectortest.Fake{Kind: iam.ProtocolGitHub, Name: "GitHub"}
+	pages := mustDo(authhttp.New(
+		authhttp.WithSettings(authhttp.Settings{Issuer: issuer, SessionTTL: 10 * time.Minute}),
+		authhttp.WithLogger(logger), authhttp.WithAuthentication(auth), authhttp.WithAuthorizationServer(server),
+		authhttp.WithCodec(mustDo(session.NewCodec(mustDo(keys.DeriveKeys(session.KeyPurpose))))),
+		authhttp.WithOnboarding(ob),
+		authhttp.WithProviders(authhttp.Provider{Kind: "github", Connector: github, Platform: iam.PlatformGitHub}),
+	))
+	v := mustDo(identity.NewVerifier(identity.VerifierConfig{Issuer: issuer, Audience: issuer, Keys: identity.NewStaticKeySource(keys.PublicKeys()...)}))
+	port := 0
+	apiServer := mustDo(api.New(&config.Config{Port: &port, ExternalURL: issuer}, "test", logger,
+		api.WithRoutes(whoami{}), api.WithHandlers(pages), api.WithVerifier(v)))
+	srv.Config.Handler = apiServer.Handler()
+	srv.Start()
+	t.Cleanup(srv.Close)
+	return srv, db, github
+}
+
+func TestSignUpWithGitHubThroughToAnAPICall(t *testing.T) {
+	srv, db, github := startCloudControlPlane(t)
+	github.Profile = iam.ExternalProfile{Subject: "583231", Email: "grace@example.com", EmailVerified: true, DisplayName: "Grace Hopper"}
+	jar, err := cookiejar.New(nil)
+	require.NoError(t, err)
+	browser := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	sum := sha256.Sum256([]byte(verifier))
+	authorize := srv.URL + "/oauth/authorize?" + url.Values{
+		"response_type": {"code"}, "client_id": {"ivaldictl"}, "redirect_uri": {cliRedirect}, "state": {"s3"},
+		"code_challenge": {base64.RawURLEncoding.EncodeToString(sum[:])}, "code_challenge_method": {"S256"},
+	}.Encode()
+
+	signInWithGitHub := func() *http.Response {
+		resp, err := browser.Get(authorize)
+		require.NoError(t, err)
+		returnTo := mustDo(url.Parse(resp.Header.Get("Location"))).Query().Get("return_to")
+		resp, err = browser.Get(srv.URL + "/auth/oauth/github/start?" + url.Values{"return_to": {returnTo}}.Encode())
+		require.NoError(t, err)
+		state := mustDo(url.Parse(resp.Header.Get("Location"))).Query().Get("state")
+		resp, err = browser.Get(srv.URL + "/auth/oauth/github/callback?" + url.Values{"code": {"c"}, "state": {state}}.Encode())
+		require.NoError(t, err)
+		require.Equal(t, http.StatusSeeOther, resp.StatusCode)
+		return resp
+	}
+
+	// A new person is asked for their Organization.
+	resp := signInWithGitHub()
+	require.Equal(t, authhttp.SignUpPath, resp.Header.Get("Location"))
+	resp, err = browser.Get(srv.URL + authhttp.SignUpPath)
+	require.NoError(t, err)
+	page, _ := io.ReadAll(resp.Body)
+	csrf := csrfField.FindStringSubmatch(string(page))[1]
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+authhttp.SignUpPath, strings.NewReader(url.Values{"csrf": {csrf}, "name": {"Compilers Inc"}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", srv.URL)
+	resp, err = browser.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusSeeOther, resp.StatusCode)
+
+	// Back to the authorization request, now with an Organization to act in.
+	resp, err = browser.Get(srv.URL + resp.Header.Get("Location"))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	code := mustDo(url.Parse(resp.Header.Get("Location"))).Query().Get("code")
+	tokens := exchange(t, srv.URL, url.Values{
+		"grant_type": {"authorization_code"}, "client_id": {"ivaldictl"}, "code": {code},
+		"redirect_uri": {cliRedirect}, "code_verifier": {verifier},
+	}, http.StatusOK)
+	who := whoAmI(t, srv.URL, tokens["access_token"].(string))
+
+	var org iam.OrganizationSnapshot
+	require.NoError(t, db.Raw("SELECT id, slug FROM iam.organizations").Scan(&org).Error)
+	assert.Equal(t, "compilers-inc", org.Slug)
+	assert.Equal(t, org.ID, who.Body.OrganizationID)
+	var owners int64
+	ownerRole, _ := iam.BuiltInRoleID(iam.RoleOwner)
+	require.NoError(t, db.Raw("SELECT count(*) FROM iam.grants WHERE role_id = ? AND principal_id = ?", ownerRole, who.Body.PrincipalID).Scan(&owners).Error)
+	assert.EqualValues(t, 1, owners, "the founder owns the new organization")
+
+	// Signing in again later finds the same account, without signing up.
+	jar2, _ := cookiejar.New(nil)
+	browser.Jar = jar2
+	resp = signInWithGitHub()
+	assert.True(t, strings.HasPrefix(resp.Header.Get("Location"), "/oauth/authorize?"))
+	var accounts int64
+	require.NoError(t, db.Raw("SELECT count(*) FROM iam.accounts").Scan(&accounts).Error)
+	assert.EqualValues(t, 1, accounts)
 }

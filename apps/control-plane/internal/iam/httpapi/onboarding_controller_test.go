@@ -30,6 +30,10 @@ func (f *fakeOnboarding) OnboardOrganization(_ context.Context, in *iam.OnboardO
 	return f.err
 }
 
+func (f *fakeOnboarding) OnboardWithPlatformIdentity(context.Context, iam.OnboardWithPlatformIdentityInput) (string, error) {
+	return "", errors.New("not used by the controller")
+}
+
 func (f *fakeOnboarding) ProvisionInstallation(context.Context, iam.ProvisionInstallationInput) (*iam.Organization, error) {
 	return nil, errors.New("not used by the controller")
 }

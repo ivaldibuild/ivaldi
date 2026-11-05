@@ -69,6 +69,21 @@ func TestRecordAndClaim(t *testing.T) {
 	assert.Equal(t, want[1].ID, entries[1].Envelope.ID, "claim keeps recorded order")
 }
 
+func TestRecordPlatformEvent(t *testing.T) {
+	now := fixedClock(t)
+	repo := newRepository(t)
+	platform := events.Source{AggregateType: "test.Account", AggregateID: "acc_01ARZ3NDEKTSV4RRFFQ69G5FAV"}
+	want, err := events.Wrap(context.Background(), platform, widgetArchived{WidgetID: "wid_1"})
+	require.NoError(t, err)
+
+	require.NoError(t, repo.Record(context.Background(), want...))
+
+	entries, err := repo.Claim(context.Background(), now, 10, time.Minute)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Empty(t, entries[0].Envelope.OrganizationID, "an event that belongs to no Organization round-trips")
+}
+
 func TestRecordIsIdempotent(t *testing.T) {
 	now := fixedClock(t)
 	repo := newRepository(t)

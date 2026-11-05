@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: postgres:17.5-alpine3.22
+    container_name: ivaldi_postgres
+    ports:
+      - "127.0.0.1:5433:5432"
+    environment:
+      - POSTGRES_USER=ivaldi_db_user
+      - POSTGRES_PASSWORD=${PG_PASSWORD:-brokandsindri}
+      - POSTGRES_DB=ivaldi
+      - PGUSER=ivaldi_db_user
+    volumes:
+      - ./volumes/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ivaldi_db_user"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+  cache:
+    image: valkey/valkey:8.1-alpine3.22
+    container_name: ivaldi_valkey
+    ports:
+      - "127.0.0.1:6379:6379"
+    command: ["valkey-server", "/etc/valkey/valkey.conf"]
+    volumes:
+      - ./volumes/valkey:/data
+      - ./conf/valkey.conf:/etc/valkey/valkey.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli --no-auth-warning -a \"$$(sed -n 's/^requirepass //p' /etc/valkey/valkey.conf)\" ping | grep -q PONG"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+  

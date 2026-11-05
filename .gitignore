@@ -27,3 +27,10 @@ profile.cov
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# local config, and the secrets `make local` generates
+*.local.yml
+.local/
+
+# Docker volumes
+volumes/

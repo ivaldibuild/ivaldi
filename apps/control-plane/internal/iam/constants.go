@@ -18,3 +18,19 @@ const (
 	minCodeChallengeChars = 43
 	maxCodeChallengeChars = 128
 )
+
+// Aggregate types name the domain objects that raise events. An envelope
+// carries the type and ID of the object whose change raised it.
+const (
+	AggregateOrganization       = "iam.Organization"
+	AggregateAccount            = "iam.Account"
+	AggregatePasswordCredential = "iam.PasswordCredential"
+	AggregateUser               = "iam.User"
+	AggregateIdentityProvider   = "iam.IdentityProvider"
+	AggregateExternalIdentity   = "iam.ExternalIdentity"
+	AggregateAccountIdentity    = "iam.AccountIdentity"
+	AggregateGrant              = "iam.Grant"
+	AggregateOAuthClient        = "iam.OAuthClient"
+	AggregateAuthorizationCode  = "iam.OAuthAuthorizationCode"
+	AggregateRefreshToken       = "iam.OAuthRefreshToken"
+)

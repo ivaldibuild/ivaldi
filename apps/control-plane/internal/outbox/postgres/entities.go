@@ -7,7 +7,7 @@ import "time"
 type eventEntity struct {
 	ID             string     `gorm:"column:id;primaryKey"`
 	Type           string     `gorm:"column:type"`
-	OrganizationID string     `gorm:"column:organization_id"`
+	OrganizationID *string    `gorm:"column:organization_id"`
 	AggregateType  string     `gorm:"column:aggregate_type"`
 	AggregateID    string     `gorm:"column:aggregate_id"`
 	CorrelationID  string     `gorm:"column:correlation_id"`

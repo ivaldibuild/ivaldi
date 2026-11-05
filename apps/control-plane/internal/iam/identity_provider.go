@@ -45,9 +45,10 @@ type IdentityProviderConfig struct {
 	// BaseURL is a GitHub Enterprise Server address, for github only.
 	BaseURL string `json:"base_url"`
 	// AllowedDomains, AllowedOrganizations, and AllowedEmails say who may
-	// sign in through google or github, which anyone can otherwise use; at
-	// least one is required. Domains are Google Workspace domains, for google
-	// only; organizations are GitHub organizations, for github only.
+	// sign in. google and github, which anyone can otherwise use, need at
+	// least one; for oidc they are optional. Domains are Google Workspace
+	// domains for google, and the domain of a verified email for oidc;
+	// organizations are GitHub organizations, for github only.
 	AllowedDomains       []string `json:"allowed_domains"`
 	AllowedOrganizations []string `json:"allowed_organizations"`
 	AllowedEmails        []string `json:"allowed_emails"`
@@ -194,6 +195,7 @@ func validateProviderConfig(protocol IdentityProtocol, c IdentityProviderConfig)
 	switch protocol {
 	case ProtocolOIDC:
 		required = []string{"issuer", "client ID"}
+		allowed = []string{"allowed domains", "allowed emails"}
 	case ProtocolSAML:
 		required = []string{"metadata URL"}
 	case ProtocolBuiltin:

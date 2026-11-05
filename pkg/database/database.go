@@ -70,6 +70,36 @@ func (t *Transactor) WithinTx(ctx context.Context, fn func(ctx context.Context) 
 	})
 }
 
+// ErrNoTransaction means Locker.Lock was called outside a transaction, where
+// its lock would end as soon as it was taken.
+var ErrNoTransaction = errors.New("database: lock needs a transaction")
+
+// Locker takes PostgreSQL advisory locks that end with the transaction. It
+// implements transaction.Locker.
+type Locker struct {
+	db *gorm.DB
+}
+
+var _ transaction.Locker = (*Locker)(nil)
+
+// NewLocker returns a Locker for db.
+func NewLocker(db *gorm.DB) *Locker {
+	return &Locker{db: db}
+}
+
+// Lock waits for the advisory lock named key and holds it until the
+// transaction in ctx commits or rolls back.
+func (l *Locker) Lock(ctx context.Context, key string) error {
+	tx, ok := ctx.Value(txKey{}).(*gorm.DB)
+	if !ok {
+		return ErrNoTransaction
+	}
+	if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", key).Error; err != nil {
+		return fmt.Errorf("lock %q: %w", key, err)
+	}
+	return nil
+}
+
 // Conn returns the transaction carried by ctx, or db bound to ctx if there is none.
 func Conn(ctx context.Context, db *gorm.DB) *gorm.DB {
 	if tx, ok := ctx.Value(txKey{}).(*gorm.DB); ok {

@@ -97,6 +97,11 @@ func TestNewIdentityProviderAcceptsEveryProtocol(t *testing.T) {
 		config   IdentityProviderConfig
 	}{
 		{ProtocolOIDC, idpOIDCConfig()},
+		{ProtocolOIDC, func() IdentityProviderConfig {
+			c := idpOIDCConfig()
+			c.AllowedDomains, c.AllowedEmails = []string{"example.com"}, []string{"ada@example.org"}
+			return c
+		}()},
 		{ProtocolSAML, IdentityProviderConfig{MetadataURL: "https://idp.example.com/metadata"}},
 		{ProtocolBuiltin, IdentityProviderConfig{}},
 		{ProtocolGoogle, IdentityProviderConfig{ClientID: "g", AllowedDomains: []string{"example.com"}}},
@@ -144,7 +149,7 @@ func TestNewIdentityProviderIsRefused(t *testing.T) {
 		{"oidc http issuer", ProtocolOIDC, func(p *NewIdentityProviderProps) { p.Config.Issuer = "http://login.example.com" }, nil},
 		{"oidc issuer with credentials", ProtocolOIDC, func(p *NewIdentityProviderProps) { p.Config.Issuer = "https://u:p@login.example.com" }, nil},
 		{"oidc with metadata URL", ProtocolOIDC, func(p *NewIdentityProviderProps) { p.Config.MetadataURL = "https://x.example.com" }, nil},
-		{"oidc with allowed emails", ProtocolOIDC, func(p *NewIdentityProviderProps) { p.Config.AllowedEmails = []string{"ada@example.com"} }, nil},
+		{"oidc with allowed organizations", ProtocolOIDC, func(p *NewIdentityProviderProps) { p.Config.AllowedOrganizations = []string{"acme"} }, nil},
 
 		{"saml without metadata URL", ProtocolSAML, func(p *NewIdentityProviderProps) { p.Config = IdentityProviderConfig{} }, nil},
 		{"saml with client ID", ProtocolSAML, func(p *NewIdentityProviderProps) {

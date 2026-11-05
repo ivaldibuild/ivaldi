@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/token"
 )
 
@@ -18,7 +19,7 @@ func TestJWKS(t *testing.T) {
 	NewWellKnown(keys).RegisterHandlers(mux)
 
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, JWKSPath, nil))
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, iam.JWKSPath, nil))
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "application/jwk-set+json", rec.Header().Get("Content-Type"))

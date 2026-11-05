@@ -8,24 +8,22 @@ import (
 	"net/http"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/api"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/token"
 )
-
-// JWKSPath serves the public keys that verify access tokens.
-const JWKSPath = "/.well-known/jwks.json"
 
 type wellKnown struct {
 	jwks []byte
 }
 
-// NewWellKnown serves the key set at JWKSPath, so resource servers outside
+// NewWellKnown serves the key set at iam.JWKSPath, so resource servers outside
 // the control plane can verify tokens offline.
 func NewWellKnown(keys token.KeyRing) api.Handlers {
 	return &wellKnown{jwks: keys.JWKS()}
 }
 
 func (h *wellKnown) RegisterHandlers(mux *http.ServeMux) {
-	mux.HandleFunc("GET "+JWKSPath, func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET "+iam.JWKSPath, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/jwk-set+json")
 		// Verifiers may cache the keys briefly; a rotated-in key is published
 		// before it signs, so a short cache never misses one.

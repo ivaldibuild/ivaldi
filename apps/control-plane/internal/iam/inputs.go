@@ -33,3 +33,12 @@ func (i *OnboardOrganizationInput) Validate() error {
 
 	return nil
 }
+
+// ProvisionInstallationInput describes a self-hosted installation's
+// Organization, from the control plane's bootstrap configuration.
+type ProvisionInstallationInput struct {
+	// Slug is derived from DisplayName when empty.
+	Slug        string
+	Name        string
+	DisplayName string
+}

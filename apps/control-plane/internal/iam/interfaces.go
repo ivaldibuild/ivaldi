@@ -15,8 +15,14 @@ type ResourceRegistrar interface {
 	RestoreResource(ctx context.Context, organizationID, resourceID string) error
 }
 
+// Onboarding creates Organizations. Each gets its place in the resource
+// hierarchy and, once someone holds it, an owner.
 type Onboarding interface {
 	OnboardOrganization(ctx context.Context, input *OnboardOrganizationInput) error
+	// ProvisionInstallation creates a self-hosted installation's
+	// Organization, with no owner yet: the configured administrator claims
+	// it on first sign-in.
+	ProvisionInstallation(ctx context.Context, input ProvisionInstallationInput) (*Organization, error)
 }
 
 type Authentication interface{}

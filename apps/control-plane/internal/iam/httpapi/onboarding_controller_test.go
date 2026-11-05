@@ -30,6 +30,10 @@ func (f *fakeOnboarding) OnboardOrganization(_ context.Context, in *iam.OnboardO
 	return f.err
 }
 
+func (f *fakeOnboarding) ProvisionInstallation(context.Context, iam.ProvisionInstallationInput) (*iam.Organization, error) {
+	return nil, errors.New("not used by the controller")
+}
+
 const onboardingBody = `{
 	"display_name": "Ada Lovelace",
 	"email": "ada@example.com",

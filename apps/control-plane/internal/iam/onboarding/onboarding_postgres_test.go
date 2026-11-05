@@ -18,7 +18,7 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/logging"
 )
 
-var onboardingTables = []string{"organizations", "accounts", "password_credentials", "principals", "users"}
+var onboardingTables = []string{"organizations", "resources", "accounts", "password_credentials", "principals", "users", "grants"}
 
 // newPostgresOnboarding wires the service to the PostgreSQL repositories. It
 // skips the test without PostgreSQL.
@@ -36,6 +36,8 @@ func newPostgresOnboarding(t *testing.T, outbox *fakeOutbox) (*onboardingService
 		WithTransactor(database.NewTransactor(db)),
 		WithOutboxRecorder(outbox),
 		WithPasswordHasher(hashertest.NewFake()),
+		WithResourceRegistrar(postgres.NewResourceRegistrar(db)),
+		WithGrantRepo(postgres.NewGrantRepository(db)),
 	)
 	require.NoError(t, err)
 	return svc.(*onboardingService), db

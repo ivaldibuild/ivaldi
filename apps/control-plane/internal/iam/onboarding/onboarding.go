@@ -25,6 +25,8 @@ type onboardingService struct {
 	tx                     transaction.Transactor
 	outbox                 outbox.Recorder
 	passwords              hasher.PasswordHasher
+	resources              iam.ResourceRegistrar
+	grants                 iam.GrantRepository
 }
 
 func WithLogger(logger logging.Logger) OnboardingServiceOption {
@@ -80,6 +82,21 @@ func WithPasswordHasher(h hasher.PasswordHasher) OnboardingServiceOption {
 	}
 }
 
+// WithResourceRegistrar registers each new Organization in IAM's resource
+// hierarchy.
+func WithResourceRegistrar(r iam.ResourceRegistrar) OnboardingServiceOption {
+	return func(s *onboardingService) {
+		s.resources = r
+	}
+}
+
+// WithGrantRepo saves the owner's grant on a new Organization.
+func WithGrantRepo(repo iam.GrantRepository) OnboardingServiceOption {
+	return func(s *onboardingService) {
+		s.grants = repo
+	}
+}
+
 // NewOnboardingService returns the Onboarding service, or an error naming a
 // missing dependency.
 func NewOnboardingService(opts ...OnboardingServiceOption) (iam.Onboarding, error) {
@@ -100,6 +117,8 @@ func NewOnboardingService(opts ...OnboardingServiceOption) (iam.Onboarding, erro
 		{"Transactor", s.tx != nil},
 		{"Outbox", s.outbox != nil},
 		{"PasswordHasher", s.passwords != nil},
+		{"ResourceRegistrar", s.resources != nil},
+		{"GrantRepo", s.grants != nil},
 	}
 	for _, r := range required {
 		if !r.ok {
@@ -110,8 +129,8 @@ func NewOnboardingService(opts ...OnboardingServiceOption) (iam.Onboarding, erro
 }
 
 // OnboardOrganization creates an Organization with its owner: an Account, the
-// Account's password, and the Account's User in the Organization. It creates
-// all of them and their events, or nothing.
+// Account's password, the Account's User in the Organization, and the User's
+// owner grant. It creates all of them and their events, or nothing.
 func (s *onboardingService) OnboardOrganization(ctx context.Context, input *iam.OnboardOrganizationInput) error {
 	if err := input.Validate(); err != nil {
 		return err
@@ -171,11 +190,8 @@ func (s *onboardingService) OnboardOrganization(ctx context.Context, input *iam.
 	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		// The checks above can race another onboarding; the unique indexes
 		// on slugs and emails settle it.
-		if err := s.organizationRepo.Write(ctx, org); err != nil {
-			if errors.Is(err, iam.ErrAlreadyExists) {
-				return NewErrOrganizationConflict("organization with this slug already exists")
-			}
-			return fmt.Errorf("write organization: %w", err)
+		if err := s.writeOrganization(ctx, org); err != nil {
+			return err
 		}
 		if err := s.accountRepo.Write(ctx, account); err != nil {
 			if errors.Is(err, iam.ErrAlreadyExists) {
@@ -189,25 +205,20 @@ func (s *onboardingService) OnboardOrganization(ctx context.Context, input *iam.
 		if err := s.userRepo.Write(ctx, user); err != nil {
 			return fmt.Errorf("write user: %w", err)
 		}
+		grant, err := s.makeOwner(ctx, org, user)
+		if err != nil {
+			return err
+		}
 
 		// Accounts and their passwords belong to no Organization; their
 		// events here are the Organization's onboarding.
-		sources := []struct {
-			aggregateType string
-			aggregateID   string
-			obj           interface{ PullEvents() []aggregate.Event }
-		}{
+		return s.recordAll(ctx, org.ID(), []eventSource{
 			{iam.AggregateOrganization, org.ID(), org},
 			{iam.AggregateAccount, account.ID(), account},
 			{iam.AggregatePasswordCredential, account.ID(), passwordCredential},
 			{iam.AggregateUser, user.ID(), user},
-		}
-		for _, src := range sources {
-			if err := s.recordEvents(ctx, org.ID(), src.aggregateType, src.aggregateID, src.obj.PullEvents()); err != nil {
-				return err
-			}
-		}
-		return nil
+			{iam.AggregateGrant, grant.ID(), grant},
+		})
 	})
 	if err != nil {
 		_, orgConflict := errors.AsType[*ErrOrganizationConflict](err)
@@ -216,6 +227,84 @@ func (s *onboardingService) OnboardOrganization(ctx context.Context, input *iam.
 			s.logger.Error("failed to onboard organization", logging.F("error", err))
 		}
 		return err
+	}
+	return nil
+}
+
+// ProvisionInstallation creates a self-hosted installation's Organization
+// with no owner: its administrator claims it on first sign-in. It joins the
+// caller's transaction, if any.
+func (s *onboardingService) ProvisionInstallation(ctx context.Context, input iam.ProvisionInstallationInput) (*iam.Organization, error) {
+	org, err := iam.NewOrganization(iam.NewOrganizationProps{
+		Slug:        input.Slug,
+		Name:        input.Name,
+		DisplayName: input.DisplayName,
+	}, nil)
+	if err != nil {
+		return nil, err
+	}
+	err = s.tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := s.writeOrganization(ctx, org); err != nil {
+			return err
+		}
+		return s.recordAll(ctx, org.ID(), []eventSource{{iam.AggregateOrganization, org.ID(), org}})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return org, nil
+}
+
+// writeOrganization saves a new Organization and registers it in IAM's
+// resource hierarchy. Every Organization is created through it, so what an
+// Organization needs from the start is added here.
+func (s *onboardingService) writeOrganization(ctx context.Context, org *iam.Organization) error {
+	if err := s.organizationRepo.Write(ctx, org); err != nil {
+		if errors.Is(err, iam.ErrAlreadyExists) {
+			return NewErrOrganizationConflict("organization with this slug already exists")
+		}
+		return fmt.Errorf("write organization: %w", err)
+	}
+	if err := s.resources.RegisterResource(ctx, org.Resource()); err != nil {
+		return fmt.Errorf("register organization resource: %w", err)
+	}
+	return nil
+}
+
+// makeOwner grants the User the owner role on its Organization. There is
+// no one else to grant it, so the owner is recorded as its own granter. The
+// User must be written first.
+func (s *onboardingService) makeOwner(ctx context.Context, org *iam.Organization, user *iam.User) (*iam.Grant, error) {
+	roleID, _ := iam.BuiltInRoleID(iam.RoleOwner)
+	principalID := user.ID()
+	grant, err := iam.NewGrant(iam.NewGrantProps{
+		OrganizationID:       org.ID(),
+		PrincipalID:          &principalID,
+		RoleID:               roleID,
+		ResourceID:           org.ID(),
+		GrantedByPrincipalID: principalID,
+	}, nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.grants.Write(ctx, grant); err != nil {
+		return nil, fmt.Errorf("write owner grant: %w", err)
+	}
+	return grant, nil
+}
+
+// eventSource is an object whose recorded events go to the outbox.
+type eventSource struct {
+	aggregateType string
+	aggregateID   string
+	obj           interface{ PullEvents() []aggregate.Event }
+}
+
+func (s *onboardingService) recordAll(ctx context.Context, organizationID string, sources []eventSource) error {
+	for _, src := range sources {
+		if err := s.recordEvents(ctx, organizationID, src.aggregateType, src.aggregateID, src.obj.PullEvents()); err != nil {
+			return err
+		}
 	}
 	return nil
 }

@@ -117,6 +117,31 @@ func (f *fakeUsers) Write(ctx context.Context, u *iam.User) error {
 	return f.err
 }
 
+type fakeRegistrar struct {
+	writes []write
+	err    error
+}
+
+func (f *fakeRegistrar) RegisterResource(ctx context.Context, r iam.Resource) error {
+	f.writes = append(f.writes, write{r, inTx(ctx)})
+	return f.err
+}
+func (f *fakeRegistrar) ArchiveResource(context.Context, string, string) error { return nil }
+func (f *fakeRegistrar) RestoreResource(context.Context, string, string) error { return nil }
+
+type fakeGrants struct {
+	writes []write
+	err    error
+}
+
+func (f *fakeGrants) ExistsForRole(context.Context, string, string, string) (bool, error) {
+	return len(f.writes) > 0, nil
+}
+func (f *fakeGrants) Write(ctx context.Context, g *iam.Grant) error {
+	f.writes = append(f.writes, write{g, inTx(ctx)})
+	return f.err
+}
+
 type fakeOutbox struct {
 	envelopes []events.Envelope
 	inTx      bool
@@ -139,6 +164,8 @@ type fixture struct {
 	tx        *fakeTx
 	outbox    *fakeOutbox
 	hasher    *hashertest.Fake
+	resources *fakeRegistrar
+	grants    *fakeGrants
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -152,6 +179,8 @@ func newFixture(t *testing.T) *fixture {
 		tx:        &fakeTx{},
 		outbox:    &fakeOutbox{},
 		hasher:    hashertest.NewFake(),
+		resources: &fakeRegistrar{},
+		grants:    &fakeGrants{},
 	}
 	svc, err := NewOnboardingService(f.options()...)
 	require.NoError(t, err)
@@ -169,6 +198,8 @@ func (f *fixture) options() []OnboardingServiceOption {
 		WithTransactor(f.tx),
 		WithOutboxRecorder(f.outbox),
 		WithPasswordHasher(f.hasher),
+		WithResourceRegistrar(f.resources),
+		WithGrantRepo(f.grants),
 	}
 }
 
@@ -196,6 +227,8 @@ func TestNewOnboardingServiceRequiresEveryDependency(t *testing.T) {
 		{"Transactor", WithTransactor(nil)},
 		{"Outbox", WithOutboxRecorder(nil)},
 		{"PasswordHasher", WithPasswordHasher(nil)},
+		{"ResourceRegistrar", WithResourceRegistrar(nil)},
+		{"GrantRepo", WithGrantRepo(nil)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -236,6 +269,19 @@ func TestOnboardOrganization(t *testing.T) {
 	assert.Equal(t, account.ID(), user.AccountID())
 	assert.Equal(t, "Ada Lovelace", user.DisplayName())
 
+	require.Len(t, f.resources.writes, 1)
+	assert.True(t, f.resources.writes[0].inTx)
+	assert.Equal(t, org.Resource(), f.resources.writes[0].obj, "the Organization is the root of its resource hierarchy")
+
+	require.Len(t, f.grants.writes, 1)
+	assert.True(t, f.grants.writes[0].inTx)
+	grant := f.grants.writes[0].obj.(*iam.Grant)
+	ownerRole, _ := iam.BuiltInRoleID(iam.RoleOwner)
+	assert.Equal(t, ownerRole, grant.RoleID())
+	assert.Equal(t, org.ID(), grant.ResourceID())
+	assert.Equal(t, user.ID(), *grant.PrincipalID(), "the founder owns the Organization")
+	assert.Equal(t, user.ID(), grant.GrantedByPrincipalID())
+
 	assert.True(t, f.outbox.inTx, "events are recorded in the transaction")
 	var got []string
 	for _, e := range f.outbox.envelopes {
@@ -247,7 +293,26 @@ func TestOnboardOrganization(t *testing.T) {
 		"iam.Account iam.v1.account.created",
 		"iam.PasswordCredential iam.v1.password_credential.created",
 		"iam.User iam.v1.user.created",
+		"iam.Grant iam.v1.grant.created",
 	}, got)
+}
+
+func TestProvisionInstallation(t *testing.T) {
+	f := newFixture(t)
+
+	org, err := f.svc.ProvisionInstallation(context.Background(), iam.ProvisionInstallationInput{Name: "Acme Corporation", DisplayName: "Acme"})
+
+	require.NoError(t, err)
+	assert.Equal(t, "acme", org.Slug())
+	assert.Equal(t, "Acme Corporation", org.Name())
+	require.Len(t, f.orgs.writes, 1)
+	assert.True(t, f.orgs.writes[0].inTx)
+	require.Len(t, f.resources.writes, 1)
+	assert.Equal(t, org.Resource(), f.resources.writes[0].obj)
+	assert.Empty(t, f.grants.writes, "the administrator claims the Organization at first sign-in")
+	assert.Empty(t, f.accounts.writes)
+	require.Len(t, f.outbox.envelopes, 1)
+	assert.Equal(t, "iam.v1.organization.created", f.outbox.envelopes[0].Type)
 }
 
 func TestOnboardOrganizationUsesTheGivenSlug(t *testing.T) {

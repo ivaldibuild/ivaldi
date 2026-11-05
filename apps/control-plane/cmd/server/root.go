@@ -18,6 +18,9 @@ func NewServeCommand(version string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "serve",
 		Short: "Start the Ivaldi Control Plane server",
+		// Errors here come from configuration or startup, not from how the
+		// command was called, so the usage text would only hide them.
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			path, err := cmd.Flags().GetString("config")
 			if err != nil {
@@ -26,6 +29,9 @@ func NewServeCommand(version string) *cobra.Command {
 			var cfg config.Config
 			if err := env.Load(&cfg, env.Options{YAMLPath: path}); err != nil {
 				return fmt.Errorf("load config: %w", err)
+			}
+			if err := cfg.Validate(); err != nil {
+				return err
 			}
 
 			logger, err := getLogger(cfg.Logging)
@@ -37,9 +43,13 @@ func NewServeCommand(version string) *cobra.Command {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 
-			// Each capability's httpapi controllers are built here from its
-			// services and passed to the API.
-			srv, err := api.New(&cfg, version, logger)
+			a, closeDB, err := wire(ctx, &cfg, logger)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = closeDB() }()
+
+			srv, err := api.New(&cfg, version, logger, a.routes...)
 			if err != nil {
 				return err
 			}

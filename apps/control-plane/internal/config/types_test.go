@@ -34,6 +34,8 @@ func TestDefaults(t *testing.T) {
 	assert.Equal(t, 15*time.Minute, c.Auth.AccessTokenTTL)
 	assert.Equal(t, 15*time.Minute, c.Auth.SessionCredentialTTL)
 	assert.False(t, c.Auth.BuiltinAccounts, "built-in accounts are opt-in")
+	assert.False(t, c.Auth.EphemeralSigningKey)
+	assert.Equal(t, 10*time.Minute, c.Auth.SignInSessionTTL)
 	assert.Equal(t, EncryptionLocal, c.Encryption.Provider)
 	assert.Equal(t, "localhost:6379", c.Redis.Address)
 	assert.Equal(t, 5*time.Second, c.Redis.DialTimeout)

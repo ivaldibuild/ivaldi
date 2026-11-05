@@ -12,6 +12,11 @@ import (
 // Mode returns the deployment mode.
 func (c *Config) Mode() DeploymentMode { return DeploymentMode(c.DeploymentMode) }
 
+// IssuerURL is ExternalURL without a trailing slash. It is the OAuth issuer,
+// the API's resource identifier, and its access tokens' audience, which must
+// all be the same string.
+func (c *Config) IssuerURL() string { return strings.TrimRight(c.ExternalURL, "/") }
+
 // ValidationError lists every problem with a configuration, so an operator
 // can fix them all at once.
 type ValidationError struct {

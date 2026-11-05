@@ -45,7 +45,7 @@ const onboardingBody = `{
 func postOnboarding(t *testing.T, svc iam.Onboarding, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	port := 0
-	s, err := api.New(&config.Config{Port: &port}, "test", logging.NewMockLogger(), NewOnboardingController(svc))
+	s, err := api.New(&config.Config{Port: &port}, "test", logging.NewMockLogger(), api.WithRoutes(NewOnboardingController(svc)))
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodPost, api.BasePath+"/onboarding", strings.NewReader(body))

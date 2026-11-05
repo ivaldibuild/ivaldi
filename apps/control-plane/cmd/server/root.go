@@ -49,7 +49,11 @@ func NewServeCommand(version string) *cobra.Command {
 			}
 			defer func() { _ = closeDB() }()
 
-			srv, err := api.New(&cfg, version, logger, a.routes...)
+			srv, err := api.New(&cfg, version, logger,
+				api.WithRoutes(a.routes...),
+				api.WithHandlers(a.handlers...),
+				api.WithVerifier(a.verifier),
+			)
 			if err != nil {
 				return err
 			}

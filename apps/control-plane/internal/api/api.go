@@ -7,28 +7,71 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"runtime/debug"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/config"
+	"github.com/ivaldibuild/ivaldi/pkg/identity"
 	"github.com/ivaldibuild/ivaldi/pkg/logging"
 )
 
 // BasePath prefixes every capability's operations.
 const BasePath = "/v1"
 
+// BearerAuth is the security scheme an operation names to require an access
+// token: Security: []map[string][]string{{api.BearerAuth: {}}}.
+const BearerAuth = "bearer"
+
+// protectedResourcePath serves the API's protected resource metadata (RFC
+// 9728), which tells clients where to get a token.
+const protectedResourcePath = "/.well-known/oauth-protected-resource"
+
 // Routes registers a capability's operations on the API. Paths are relative
 // to BasePath.
 type Routes interface {
 	RegisterRoutes(api huma.API)
+}
+
+// Handlers registers plain HTTP handlers outside BasePath, for endpoints
+// whose formats an OpenAPI operation cannot describe, such as OAuth's form
+// posts and redirects.
+type Handlers interface {
+	RegisterHandlers(mux *http.ServeMux)
+}
+
+// Option configures New.
+type Option func(*options)
+
+type options struct {
+	routes   []Routes
+	handlers []Handlers
+	verifier identity.Verifier
+}
+
+// WithRoutes adds capabilities' operations.
+func WithRoutes(r ...Routes) Option {
+	return func(o *options) { o.routes = append(o.routes, r...) }
+}
+
+// WithHandlers adds plain HTTP handlers.
+func WithHandlers(h ...Handlers) Option {
+	return func(o *options) { o.handlers = append(o.handlers, h...) }
+}
+
+// WithVerifier verifies the access tokens of operations that require one.
+// Without it, such operations are refused.
+func WithVerifier(v identity.Verifier) Option {
+	return func(o *options) { o.verifier = v }
 }
 
 // Server is the control plane's HTTP API.
@@ -39,9 +82,13 @@ type Server struct {
 	timeout time.Duration
 }
 
-// New builds the API from cfg and the capabilities' routes. version is the
-// binary's, published in the OpenAPI document.
-func New(cfg *config.Config, version string, logger logging.Logger, routes ...Routes) (*Server, error) {
+// New builds the API from cfg and the options. version is the binary's,
+// published in the OpenAPI document.
+func New(cfg *config.Config, version string, logger logging.Logger, opts ...Option) (*Server, error) {
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
 	if cfg.Port == nil {
 		return nil, errors.New("api: port is required")
 	}
@@ -54,11 +101,23 @@ func New(cfg *config.Config, version string, logger logging.Logger, routes ...Ro
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	hapi := humago.New(mux, huma.DefaultConfig("Ivaldi Control Plane API", version))
-	hapi.UseMiddleware(refuseSecured(hapi))
+	resource := cfg.IssuerURL()
+	if o.verifier != nil {
+		mux.HandleFunc("GET "+protectedResourcePath, protectedResourceMetadata(resource))
+	}
+	for _, h := range o.handlers {
+		h.RegisterHandlers(mux)
+	}
+
+	hcfg := huma.DefaultConfig("Ivaldi Control Plane API", version)
+	hcfg.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
+		BearerAuth: {Type: "http", Scheme: "bearer", BearerFormat: "JWT"},
+	}
+	hapi := humago.New(mux, hcfg)
+	hapi.UseMiddleware(authenticate(hapi, o.verifier, logger, resource+protectedResourcePath))
 	v1 := huma.NewGroup(hapi, BasePath)
 
-	for _, r := range routes {
+	for _, r := range o.routes {
 		r.RegisterRoutes(v1)
 	}
 
@@ -109,16 +168,69 @@ func (s *Server) Run(ctx context.Context) error {
 	return nil
 }
 
-// refuseSecured fails closed until callers can be authenticated: an operation
-// that declares Security is refused rather than served to anyone. Replace it
-// with middleware that resolves the caller into an identity.Actor (ADR 0003).
-func refuseSecured(api huma.API) func(huma.Context, func(huma.Context)) {
+// authenticate verifies the bearer token of an operation that declares
+// Security, and puts the caller it names in the request's context. It fails
+// closed: without a verifier, such operations are refused. Operations that
+// declare no Security are served to anyone.
+func authenticate(api huma.API, v identity.Verifier, logger logging.Logger, metadataURL string) func(huma.Context, func(huma.Context)) {
+	challenge := fmt.Sprintf(`Bearer resource_metadata=%q`, metadataURL)
+	refuse := func(ctx huma.Context, header, msg string) {
+		ctx.SetHeader("WWW-Authenticate", header)
+		_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, msg)
+	}
 	return func(ctx huma.Context, next func(huma.Context)) {
-		if len(ctx.Operation().Security) > 0 {
+		if len(ctx.Operation().Security) == 0 {
+			next(ctx)
+			return
+		}
+		if v == nil {
 			_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "authentication is not available")
 			return
 		}
-		next(ctx)
+		token, ok := bearerToken(ctx.Header("Authorization"))
+		if !ok {
+			refuse(ctx, challenge, "an access token is required")
+			return
+		}
+		claims, err := v.Verify(ctx.Context(), token)
+		switch {
+		case errors.Is(err, identity.ErrTokenExpired):
+			refuse(ctx, challenge+`, error="invalid_token", error_description="the access token expired"`, "the access token expired")
+			return
+		case errors.Is(err, identity.ErrInvalidToken):
+			refuse(ctx, challenge+`, error="invalid_token"`, "the access token is not valid")
+			return
+		case err != nil:
+			logger.Error("verify access token", logging.F("error", err))
+			_ = huma.WriteErr(api, ctx, http.StatusInternalServerError, "could not verify the access token")
+			return
+		}
+		next(huma.WithContext(ctx, identity.WithCaller(ctx.Context(), identity.CallerOf(claims))))
+	}
+}
+
+// bearerToken returns the token from an Authorization header (RFC 6750).
+func bearerToken(header string) (string, bool) {
+	scheme, token, ok := strings.Cut(header, " ")
+	if !ok || !strings.EqualFold(scheme, "Bearer") {
+		return "", false
+	}
+	token = strings.TrimSpace(token)
+	return token, token != ""
+}
+
+// protectedResourceMetadata describes the API as an OAuth protected resource
+// (RFC 9728): its own control plane is its authorization server.
+func protectedResourceMetadata(resource string) http.HandlerFunc {
+	body, _ := json.Marshal(map[string]any{
+		"resource":                 resource,
+		"authorization_servers":    []string{resource},
+		"bearer_methods_supported": []string{"header"},
+	})
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "max-age=3600")
+		_, _ = w.Write(body)
 	}
 }
 

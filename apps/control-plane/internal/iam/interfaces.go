@@ -25,7 +25,23 @@ type Onboarding interface {
 	ProvisionInstallation(ctx context.Context, input ProvisionInstallationInput) (*Organization, error)
 }
 
-type Authentication interface{}
+// Authentication signs people in. It decides who someone is and which
+// Organizations they may act in; the authorization server then issues
+// tokens for the one they choose.
+type Authentication interface {
+	// AuthenticatePassword checks a built-in account's email and password.
+	// A wrong email and a wrong password are the same ErrInvalidCredentials.
+	AuthenticatePassword(ctx context.Context, email, password string) (*SignedIn, error)
+	// AuthenticateExternal signs a person in through one of an
+	// Organization's identity providers, linking or provisioning their
+	// Account and User as the provider allows. The sign-in is restricted to
+	// that Organization.
+	AuthenticateExternal(ctx context.Context, organizationID, identityProviderID string, profile ExternalProfile) (*SignedIn, error)
+	// Membership returns the Account's membership in the Organization if
+	// it may act there now, or ErrNoMembership. Callers check it again
+	// before issuing anything, since a membership can end after sign-in.
+	Membership(ctx context.Context, accountID, organizationID string) (*Membership, error)
+}
 
 // Repositories persist and retrieve; they decide nothing. Write inserts an
 // object, or updates it when its key is stored. A unique violation is

@@ -30,7 +30,7 @@ type CreateApplicationInput struct {
 
 // CreateApplication creates an Application in an active Project, with its
 // default Channel. The Application's Workspace is copied from the Project.
-func (s *Service) CreateApplication(ctx context.Context, actor identity.Actor, in CreateApplicationInput) (*Application, *Channel, error) {
+func (s *service) CreateApplication(ctx context.Context, actor identity.Actor, in CreateApplicationInput) (*Application, *Channel, error) {
 	if !id.Valid(Lifecycle{}.Prefix(), in.DefaultLifecycleID) {
 		return nil, nil, NewErrInvalidInput("an application needs the lifecycle its default channel follows")
 	}
@@ -122,7 +122,7 @@ func (s *Service) CreateApplication(ctx context.Context, actor identity.Actor, i
 
 // lifecycleFor returns an active Lifecycle in the Workspace, locked so it
 // cannot be archived while a Channel starts following it.
-func (s *Service) lifecycleFor(ctx context.Context, organizationID, workspaceID, lifecycleID string) (*Lifecycle, error) {
+func (s *service) lifecycleFor(ctx context.Context, organizationID, workspaceID, lifecycleID string) (*Lifecycle, error) {
 	l, err := s.lifecycles.GetLifecycleForUpdate(ctx, organizationID, lifecycleID)
 	if err != nil {
 		return nil, err
@@ -137,7 +137,7 @@ func (s *Service) lifecycleFor(ctx context.Context, organizationID, workspaceID,
 }
 
 // registryFor returns an active Registry in the Workspace.
-func (s *Service) registryFor(ctx context.Context, organizationID, workspaceID, registryID string) (*Registry, error) {
+func (s *service) registryFor(ctx context.Context, organizationID, workspaceID, registryID string) (*Registry, error) {
 	r, err := s.registries.GetRegistry(ctx, organizationID, registryID)
 	if err != nil {
 		return nil, err
@@ -152,7 +152,7 @@ func (s *Service) registryFor(ctx context.Context, organizationID, workspaceID, 
 }
 
 // activeApplication returns an active Application.
-func (s *Service) activeApplication(ctx context.Context, organizationID, applicationID string) (*Application, error) {
+func (s *service) activeApplication(ctx context.Context, organizationID, applicationID string) (*Application, error) {
 	a, err := s.applications.GetApplication(ctx, organizationID, applicationID)
 	if err != nil {
 		return nil, err
@@ -164,7 +164,7 @@ func (s *Service) activeApplication(ctx context.Context, organizationID, applica
 }
 
 // authorizeApplication checks a permission on the Application's Project.
-func (s *Service) authorizeApplication(ctx context.Context, actor identity.Actor, permission, action string, organizationID, applicationID string, proposal any) (authorization.Decision, error) {
+func (s *service) authorizeApplication(ctx context.Context, actor identity.Actor, permission, action string, organizationID, applicationID string, proposal any) (authorization.Decision, error) {
 	a, err := s.applications.GetApplication(ctx, organizationID, applicationID)
 	if err != nil {
 		return authorization.Decision{}, err
@@ -176,7 +176,7 @@ func (s *Service) authorizeApplication(ctx context.Context, actor identity.Actor
 }
 
 // GetApplication returns an Application if the actor may read its Project's Applications.
-func (s *Service) GetApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID string) (*Application, error) {
+func (s *service) GetApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID string) (*Application, error) {
 	a, err := s.applications.GetApplication(ctx, organizationID, applicationID)
 	if err != nil {
 		return nil, err
@@ -192,7 +192,7 @@ func (s *Service) GetApplication(ctx context.Context, actor identity.Actor, orga
 
 // ListApplications lists a Project's Applications, or a Workspace's when no
 // Project is given, authorized on whichever is given.
-func (s *Service) ListApplications(ctx context.Context, actor identity.Actor, query ListApplicationsQuery) (*pagination.Result[*Application], error) {
+func (s *service) ListApplications(ctx context.Context, actor identity.Actor, query ListApplicationsQuery) (*pagination.Result[*Application], error) {
 	resource := query.ProjectID
 	if resource == "" {
 		resource = query.WorkspaceID
@@ -209,7 +209,7 @@ func (s *Service) ListApplications(ctx context.Context, actor identity.Actor, qu
 	return s.applications.ListApplications(ctx, query)
 }
 
-func (s *Service) changeApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID, action, event string, proposal any, apply func(context.Context, *Application) error) (*Application, error) {
+func (s *service) changeApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID, action, event string, proposal any, apply func(context.Context, *Application) error) (*Application, error) {
 	return run(ctx, s, actor, change[*Application]{
 		aggregateType: AggregateApplication,
 		aggregateID:   func(a *Application) string { return a.ID() },
@@ -235,14 +235,14 @@ func (s *Service) changeApplication(ctx context.Context, actor identity.Actor, o
 }
 
 // UpdateApplication changes an active Application's slug, name, or workload selector.
-func (s *Service) UpdateApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID string, props UpdateApplicationProps) (*Application, error) {
+func (s *service) UpdateApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID string, props UpdateApplicationProps) (*Application, error) {
 	return s.changeApplication(ctx, actor, organizationID, applicationID, ActionApplicationUpdate, EventApplicationUpdated, props,
 		func(_ context.Context, a *Application) error { return a.Update(props) })
 }
 
 // LinkApplicationSource records the Source the Application is built from,
 // or removes it when sourceID is empty.
-func (s *Service) LinkApplicationSource(ctx context.Context, actor identity.Actor, organizationID, applicationID, sourceID string) (*Application, error) {
+func (s *service) LinkApplicationSource(ctx context.Context, actor identity.Actor, organizationID, applicationID, sourceID string) (*Application, error) {
 	return s.changeApplication(ctx, actor, organizationID, applicationID, ActionApplicationLinkSource, EventApplicationUpdated, sourceID,
 		func(_ context.Context, a *Application) error {
 			if sourceID == "" {
@@ -253,7 +253,7 @@ func (s *Service) LinkApplicationSource(ctx context.Context, actor identity.Acto
 }
 
 // TransferApplication hands an Application to another active Team.
-func (s *Service) TransferApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID, ownerTeamID string) (*Application, error) {
+func (s *service) TransferApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID, ownerTeamID string) (*Application, error) {
 	return s.changeApplication(ctx, actor, organizationID, applicationID, ActionApplicationTransfer, EventApplicationOwnerChanged, ownerTeamID,
 		func(ctx context.Context, a *Application) error {
 			if err := s.checkTeam(ctx, organizationID, ownerTeamID); err != nil {
@@ -266,7 +266,7 @@ func (s *Service) TransferApplication(ctx context.Context, actor identity.Actor,
 // ArchiveApplication archives an Application. Its Channels, artifacts, and
 // placements stay as they are, so restoring it brings them back; until then
 // they cannot be changed.
-func (s *Service) ArchiveApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID string) (*Application, error) {
+func (s *service) ArchiveApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID string) (*Application, error) {
 	return s.changeApplication(ctx, actor, organizationID, applicationID, ActionApplicationArchive, EventApplicationArchived, nil,
 		func(_ context.Context, a *Application) error {
 			if a.Archived() {
@@ -279,7 +279,7 @@ func (s *Service) ArchiveApplication(ctx context.Context, actor identity.Actor, 
 
 // RestoreApplication restores an archived Application in an active Project
 // whose active Channels' Lifecycles are all active.
-func (s *Service) RestoreApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID string) (*Application, error) {
+func (s *service) RestoreApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID string) (*Application, error) {
 	return s.changeApplication(ctx, actor, organizationID, applicationID, ActionApplicationRestore, EventApplicationRestored, nil,
 		func(ctx context.Context, a *Application) error {
 			if !a.Archived() {
@@ -317,7 +317,7 @@ type CreateArtifactInput struct {
 }
 
 // CreateArtifact declares an artifact for an active Application.
-func (s *Service) CreateArtifact(ctx context.Context, actor identity.Actor, in CreateArtifactInput) (*Artifact, error) {
+func (s *service) CreateArtifact(ctx context.Context, actor identity.Actor, in CreateArtifactInput) (*Artifact, error) {
 	a, err := NewArtifact(NewArtifactProps{
 		OrganizationID: in.OrganizationID,
 		ApplicationID:  in.ApplicationID,
@@ -361,14 +361,14 @@ func (s *Service) CreateArtifact(ctx context.Context, actor identity.Actor, in C
 }
 
 // ListArtifacts lists an Application's artifacts.
-func (s *Service) ListArtifacts(ctx context.Context, actor identity.Actor, organizationID, applicationID string, includeArchived bool) ([]*Artifact, error) {
+func (s *service) ListArtifacts(ctx context.Context, actor identity.Actor, organizationID, applicationID string, includeArchived bool) ([]*Artifact, error) {
 	if _, err := s.authorizeApplication(ctx, actor, PermissionApplicationRead, ActionArtifactList, organizationID, applicationID, nil); err != nil {
 		return nil, err
 	}
 	return s.applications.ListArtifacts(ctx, organizationID, applicationID, includeArchived)
 }
 
-func (s *Service) changeArtifact(ctx context.Context, actor identity.Actor, organizationID, artifactID, action, event string, proposal any, apply func(context.Context, *Artifact) error) (*Artifact, error) {
+func (s *service) changeArtifact(ctx context.Context, actor identity.Actor, organizationID, artifactID, action, event string, proposal any, apply func(context.Context, *Artifact) error) (*Artifact, error) {
 	return run(ctx, s, actor, change[*Artifact]{
 		aggregateType: AggregateArtifact,
 		aggregateID:   func(a *Artifact) string { return a.ID() },
@@ -395,7 +395,7 @@ func (s *Service) changeArtifact(ctx context.Context, actor identity.Actor, orga
 
 // UpdateArtifact changes an active artifact. Renaming one that a placement
 // applies Releases from is refused, because the placement refers to it by name.
-func (s *Service) UpdateArtifact(ctx context.Context, actor identity.Actor, organizationID, artifactID string, props UpdateArtifactProps) (*Artifact, error) {
+func (s *service) UpdateArtifact(ctx context.Context, actor identity.Actor, organizationID, artifactID string, props UpdateArtifactProps) (*Artifact, error) {
 	return s.changeArtifact(ctx, actor, organizationID, artifactID, ActionArtifactUpdate, EventArtifactUpdated, props,
 		func(ctx context.Context, a *Artifact) error {
 			if props.Name != nil && *props.Name != a.Name() {
@@ -409,7 +409,7 @@ func (s *Service) UpdateArtifact(ctx context.Context, actor identity.Actor, orga
 
 // SetArtifactRegistry records the Registry an artifact is looked up in, or
 // removes it when registryID is empty.
-func (s *Service) SetArtifactRegistry(ctx context.Context, actor identity.Actor, organizationID, artifactID, registryID string) (*Artifact, error) {
+func (s *service) SetArtifactRegistry(ctx context.Context, actor identity.Actor, organizationID, artifactID, registryID string) (*Artifact, error) {
 	return s.changeArtifact(ctx, actor, organizationID, artifactID, ActionArtifactSetRegistry, EventArtifactUpdated, registryID,
 		func(ctx context.Context, a *Artifact) error {
 			if registryID == "" {
@@ -427,14 +427,14 @@ func (s *Service) SetArtifactRegistry(ctx context.Context, actor identity.Actor,
 }
 
 // DeclareArtifact confirms an artifact the runtime agent observed.
-func (s *Service) DeclareArtifact(ctx context.Context, actor identity.Actor, organizationID, artifactID string) (*Artifact, error) {
+func (s *service) DeclareArtifact(ctx context.Context, actor identity.Actor, organizationID, artifactID string) (*Artifact, error) {
 	return s.changeArtifact(ctx, actor, organizationID, artifactID, ActionArtifactDeclare, EventArtifactUpdated, nil,
 		func(_ context.Context, a *Artifact) error { return a.Declare() })
 }
 
 // ArchiveArtifact archives an artifact that no active Channel's rules are
 // scoped to and no placement applies Releases from.
-func (s *Service) ArchiveArtifact(ctx context.Context, actor identity.Actor, organizationID, artifactID string) (*Artifact, error) {
+func (s *service) ArchiveArtifact(ctx context.Context, actor identity.Actor, organizationID, artifactID string) (*Artifact, error) {
 	return s.changeArtifact(ctx, actor, organizationID, artifactID, ActionArtifactArchive, EventArtifactArchived, nil,
 		func(ctx context.Context, a *Artifact) error {
 			if a.Archived() {
@@ -460,7 +460,7 @@ func (s *Service) ArchiveArtifact(ctx context.Context, actor identity.Actor, org
 }
 
 // checkNotDefinition refuses when a placement applies Releases from the artifact.
-func (s *Service) checkNotDefinition(ctx context.Context, a *Artifact) error {
+func (s *service) checkNotDefinition(ctx context.Context, a *Artifact) error {
 	placements, err := s.applications.ListPlacements(ctx, a.OrganizationID(), a.ApplicationID())
 	if err != nil {
 		return fmt.Errorf("list placements: %w", err)
@@ -474,7 +474,7 @@ func (s *Service) checkNotDefinition(ctx context.Context, a *Artifact) error {
 }
 
 // RestoreArtifact restores an archived artifact of an active Application.
-func (s *Service) RestoreArtifact(ctx context.Context, actor identity.Actor, organizationID, artifactID string) (*Artifact, error) {
+func (s *service) RestoreArtifact(ctx context.Context, actor identity.Actor, organizationID, artifactID string) (*Artifact, error) {
 	return s.changeArtifact(ctx, actor, organizationID, artifactID, ActionArtifactRestore, EventArtifactRestored, nil,
 		func(ctx context.Context, a *Artifact) error {
 			if !a.Archived() {
@@ -499,7 +499,7 @@ type CreatePlacementInput struct {
 }
 
 // CreatePlacement places an active Application on an active Target in its Workspace.
-func (s *Service) CreatePlacement(ctx context.Context, actor identity.Actor, in CreatePlacementInput) (*Placement, error) {
+func (s *service) CreatePlacement(ctx context.Context, actor identity.Actor, in CreatePlacementInput) (*Placement, error) {
 	p, err := NewPlacement(NewPlacementProps{
 		OrganizationID: in.OrganizationID,
 		ApplicationID:  in.ApplicationID,
@@ -557,7 +557,7 @@ func (s *Service) CreatePlacement(ctx context.Context, actor identity.Actor, in 
 }
 
 // checkDefinitionArtifact checks that the Application has an active artifact with the name.
-func (s *Service) checkDefinitionArtifact(ctx context.Context, organizationID, applicationID, name string) error {
+func (s *service) checkDefinitionArtifact(ctx context.Context, organizationID, applicationID, name string) error {
 	artifacts, err := s.applications.ListArtifacts(ctx, organizationID, applicationID, false)
 	if err != nil {
 		return fmt.Errorf("list artifacts: %w", err)
@@ -571,7 +571,7 @@ func (s *Service) checkDefinitionArtifact(ctx context.Context, organizationID, a
 }
 
 // ListPlacements lists the Targets an Application is placed on.
-func (s *Service) ListPlacements(ctx context.Context, actor identity.Actor, organizationID, applicationID string) ([]*Placement, error) {
+func (s *service) ListPlacements(ctx context.Context, actor identity.Actor, organizationID, applicationID string) ([]*Placement, error) {
 	if _, err := s.authorizeApplication(ctx, actor, PermissionApplicationRead, ActionPlacementList, organizationID, applicationID, nil); err != nil {
 		return nil, err
 	}
@@ -580,7 +580,7 @@ func (s *Service) ListPlacements(ctx context.Context, actor identity.Actor, orga
 
 // ConfigurePlacement sets how Releases are applied to the Target, or removes
 // it when config is nil so Deployments there are tracked only.
-func (s *Service) ConfigurePlacement(ctx context.Context, actor identity.Actor, organizationID, applicationID, targetID string, config *ApplyConfig) (*Placement, error) {
+func (s *service) ConfigurePlacement(ctx context.Context, actor identity.Actor, organizationID, applicationID, targetID string, config *ApplyConfig) (*Placement, error) {
 	if config != nil {
 		if err := config.validate(); err != nil {
 			return nil, err
@@ -621,7 +621,7 @@ func (s *Service) ConfigurePlacement(ctx context.Context, actor identity.Actor, 
 
 // RemovePlacement removes an Application from a Target. It is refused once
 // Deployments refer to the placement, because their history needs it.
-func (s *Service) RemovePlacement(ctx context.Context, actor identity.Actor, organizationID, applicationID, targetID string) error {
+func (s *service) RemovePlacement(ctx context.Context, actor identity.Actor, organizationID, applicationID, targetID string) error {
 	d, err := s.authorizeApplication(ctx, actor, PermissionApplicationManage, ActionPlacementRemove, organizationID, applicationID, targetID)
 	if err != nil {
 		return err

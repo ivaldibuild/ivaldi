@@ -23,7 +23,7 @@ type CreateLifecycleInput struct {
 
 // CreateLifecycle creates a Lifecycle in an active Workspace. Its phases may
 // name only that Workspace's active Environments.
-func (s *Service) CreateLifecycle(ctx context.Context, actor identity.Actor, in CreateLifecycleInput) (*Lifecycle, error) {
+func (s *service) CreateLifecycle(ctx context.Context, actor identity.Actor, in CreateLifecycleInput) (*Lifecycle, error) {
 	phases := make([]NewLifecyclePhaseProps, len(in.Phases))
 	for i, p := range in.Phases {
 		phases[i] = NewLifecyclePhaseProps{Name: p.Name, Optional: p.Optional, MinEnvironments: p.MinEnvironments, EnvironmentIDs: p.EnvironmentIDs}
@@ -70,7 +70,7 @@ func (s *Service) CreateLifecycle(ctx context.Context, actor identity.Actor, in 
 
 // checkLifecycleEnvironments checks that every Environment in the
 // Lifecycle's phases exists, is active, and is in the Lifecycle's Workspace.
-func (s *Service) checkLifecycleEnvironments(ctx context.Context, l *Lifecycle) error {
+func (s *service) checkLifecycleEnvironments(ctx context.Context, l *Lifecycle) error {
 	ids := l.EnvironmentIDs()
 	if len(ids) == 0 {
 		return nil
@@ -98,7 +98,7 @@ func (s *Service) checkLifecycleEnvironments(ctx context.Context, l *Lifecycle) 
 }
 
 // GetLifecycle returns a Lifecycle if the actor may read its Workspace's Lifecycles.
-func (s *Service) GetLifecycle(ctx context.Context, actor identity.Actor, organizationID, lifecycleID string) (*Lifecycle, error) {
+func (s *service) GetLifecycle(ctx context.Context, actor identity.Actor, organizationID, lifecycleID string) (*Lifecycle, error) {
 	l, err := s.lifecycles.GetLifecycle(ctx, organizationID, lifecycleID)
 	if err != nil {
 		return nil, err
@@ -113,7 +113,7 @@ func (s *Service) GetLifecycle(ctx context.Context, actor identity.Actor, organi
 }
 
 // ListLifecycles lists a Workspace's Lifecycles.
-func (s *Service) ListLifecycles(ctx context.Context, actor identity.Actor, query ListLifecyclesQuery) (*pagination.Result[*Lifecycle], error) {
+func (s *service) ListLifecycles(ctx context.Context, actor identity.Actor, query ListLifecyclesQuery) (*pagination.Result[*Lifecycle], error) {
 	if _, err := s.authorize(ctx, authorization.Request{
 		Actor: actor, Permission: PermissionLifecycleRead, OrganizationID: query.OrganizationID,
 		ResourceID: query.WorkspaceID, Action: ActionLifecycleList,
@@ -123,7 +123,7 @@ func (s *Service) ListLifecycles(ctx context.Context, actor identity.Actor, quer
 	return s.lifecycles.ListLifecycles(ctx, query)
 }
 
-func (s *Service) changeLifecycle(ctx context.Context, actor identity.Actor, organizationID, lifecycleID, action, event string, proposal any, apply func(context.Context, *Lifecycle) error) (*Lifecycle, error) {
+func (s *service) changeLifecycle(ctx context.Context, actor identity.Actor, organizationID, lifecycleID, action, event string, proposal any, apply func(context.Context, *Lifecycle) error) (*Lifecycle, error) {
 	return run(ctx, s, actor, change[*Lifecycle]{
 		aggregateType: AggregateLifecycle,
 		aggregateID:   func(l *Lifecycle) string { return l.ID() },
@@ -151,7 +151,7 @@ func (s *Service) changeLifecycle(ctx context.Context, actor identity.Actor, org
 
 // changePhases applies a change to a Lifecycle's phases and checks the
 // Environments they name.
-func (s *Service) changePhases(ctx context.Context, actor identity.Actor, organizationID, lifecycleID, action string, proposal any, apply func(*Lifecycle) error) (*Lifecycle, error) {
+func (s *service) changePhases(ctx context.Context, actor identity.Actor, organizationID, lifecycleID, action string, proposal any, apply func(*Lifecycle) error) (*Lifecycle, error) {
 	return s.changeLifecycle(ctx, actor, organizationID, lifecycleID, action, EventLifecycleUpdated, proposal,
 		func(ctx context.Context, l *Lifecycle) error {
 			if err := apply(l); err != nil {
@@ -162,31 +162,31 @@ func (s *Service) changePhases(ctx context.Context, actor identity.Actor, organi
 }
 
 // UpdateLifecycle changes an active Lifecycle's slug, name, or description.
-func (s *Service) UpdateLifecycle(ctx context.Context, actor identity.Actor, organizationID, lifecycleID string, props UpdateLifecycleProps) (*Lifecycle, error) {
+func (s *service) UpdateLifecycle(ctx context.Context, actor identity.Actor, organizationID, lifecycleID string, props UpdateLifecycleProps) (*Lifecycle, error) {
 	return s.changeLifecycle(ctx, actor, organizationID, lifecycleID, ActionLifecycleUpdate, EventLifecycleUpdated, props,
 		func(_ context.Context, l *Lifecycle) error { return l.Update(props) })
 }
 
 // AddLifecyclePhase appends a phase to an active Lifecycle.
-func (s *Service) AddLifecyclePhase(ctx context.Context, actor identity.Actor, organizationID, lifecycleID string, props LifecyclePhaseProps) (*Lifecycle, error) {
+func (s *service) AddLifecyclePhase(ctx context.Context, actor identity.Actor, organizationID, lifecycleID string, props LifecyclePhaseProps) (*Lifecycle, error) {
 	return s.changePhases(ctx, actor, organizationID, lifecycleID, ActionLifecycleAddPhase, props,
 		func(l *Lifecycle) error { _, err := l.AddPhase(props); return err })
 }
 
 // UpdateLifecyclePhase replaces a phase's content.
-func (s *Service) UpdateLifecyclePhase(ctx context.Context, actor identity.Actor, organizationID, lifecycleID, phaseID string, props LifecyclePhaseProps) (*Lifecycle, error) {
+func (s *service) UpdateLifecyclePhase(ctx context.Context, actor identity.Actor, organizationID, lifecycleID, phaseID string, props LifecyclePhaseProps) (*Lifecycle, error) {
 	return s.changePhases(ctx, actor, organizationID, lifecycleID, ActionLifecycleUpdatePhase, props,
 		func(l *Lifecycle) error { return l.UpdatePhase(phaseID, props) })
 }
 
 // MoveLifecyclePhase moves a phase to another position.
-func (s *Service) MoveLifecyclePhase(ctx context.Context, actor identity.Actor, organizationID, lifecycleID, phaseID string, position int) (*Lifecycle, error) {
+func (s *service) MoveLifecyclePhase(ctx context.Context, actor identity.Actor, organizationID, lifecycleID, phaseID string, position int) (*Lifecycle, error) {
 	return s.changePhases(ctx, actor, organizationID, lifecycleID, ActionLifecycleMovePhase, position,
 		func(l *Lifecycle) error { return l.MovePhase(phaseID, position) })
 }
 
 // RemoveLifecyclePhase removes a phase.
-func (s *Service) RemoveLifecyclePhase(ctx context.Context, actor identity.Actor, organizationID, lifecycleID, phaseID string) (*Lifecycle, error) {
+func (s *service) RemoveLifecyclePhase(ctx context.Context, actor identity.Actor, organizationID, lifecycleID, phaseID string) (*Lifecycle, error) {
 	return s.changePhases(ctx, actor, organizationID, lifecycleID, ActionLifecycleRemovePhase, phaseID,
 		func(l *Lifecycle) error { return l.RemovePhase(phaseID) })
 }
@@ -194,7 +194,7 @@ func (s *Service) RemoveLifecyclePhase(ctx context.Context, actor identity.Actor
 // ArchiveLifecycle archives a Lifecycle no active Channel of an active
 // Application follows. An archived Application's Channels do not hold it;
 // restoring that Application needs the Lifecycle restored first.
-func (s *Service) ArchiveLifecycle(ctx context.Context, actor identity.Actor, organizationID, lifecycleID string) (*Lifecycle, error) {
+func (s *service) ArchiveLifecycle(ctx context.Context, actor identity.Actor, organizationID, lifecycleID string) (*Lifecycle, error) {
 	return s.changeLifecycle(ctx, actor, organizationID, lifecycleID, ActionLifecycleArchive, EventLifecycleArchived, nil,
 		func(ctx context.Context, l *Lifecycle) error {
 			if l.Archived() {
@@ -214,7 +214,7 @@ func (s *Service) ArchiveLifecycle(ctx context.Context, actor identity.Actor, or
 
 // RestoreLifecycle restores an archived Lifecycle in an active Workspace
 // whose Environments are all still active.
-func (s *Service) RestoreLifecycle(ctx context.Context, actor identity.Actor, organizationID, lifecycleID string) (*Lifecycle, error) {
+func (s *service) RestoreLifecycle(ctx context.Context, actor identity.Actor, organizationID, lifecycleID string) (*Lifecycle, error) {
 	return s.changeLifecycle(ctx, actor, organizationID, lifecycleID, ActionLifecycleRestore, EventLifecycleRestored, nil,
 		func(ctx context.Context, l *Lifecycle) error {
 			if !l.Archived() {

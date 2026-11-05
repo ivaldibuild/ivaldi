@@ -12,38 +12,41 @@ import (
 
 func TestServiceNewServiceRequiresEveryCollaborator(t *testing.T) {
 	f := newSvcFixture(t)
-	full := f.config()
 
 	tests := []struct {
 		name  string
-		unset func(*Config)
+		unset ServiceOption
 	}{
-		{"Environments", func(c *Config) { c.Environments = nil }},
-		{"Lifecycles", func(c *Config) { c.Lifecycles = nil }},
-		{"Targets", func(c *Config) { c.Targets = nil }},
-		{"Registries", func(c *Config) { c.Registries = nil }},
-		{"Applications", func(c *Config) { c.Applications = nil }},
-		{"Transactor", func(c *Config) { c.Transactor = nil }},
-		{"Authorizer", func(c *Config) { c.Authorizer = nil }},
-		{"Resources", func(c *Config) { c.Resources = nil }},
-		{"Teams", func(c *Config) { c.Teams = nil }},
-		{"Audit", func(c *Config) { c.Audit = nil }},
-		{"Workspaces", func(c *Config) { c.Workspaces = nil }},
-		{"Outbox", func(c *Config) { c.Outbox = nil }},
+		{"Environments", WithEnvironments(nil)},
+		{"Lifecycles", WithLifecycles(nil)},
+		{"Targets", WithTargets(nil)},
+		{"Registries", WithRegistries(nil)},
+		{"Applications", WithApplications(nil)},
+		{"Transactor", WithTransactor(nil)},
+		{"Authorizer", WithAuthorizer(nil)},
+		{"Resources", WithResourceRegistrar(nil)},
+		{"Teams", WithTeamDirectory(nil)},
+		{"Audit", WithAuditRecorder(nil)},
+		{"Workspaces", WithWorkspaces(nil)},
+		{"Outbox", WithOutboxRecorder(nil)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := full
-			tt.unset(&c)
-			svc, err := NewService(c)
+			svc, err := NewService(append(f.options(), tt.unset)...)
 			require.Error(t, err)
 			assert.Nil(t, svc)
 			assert.Contains(t, err.Error(), tt.name+" is required")
 		})
 	}
 
+	t.Run("none given", func(t *testing.T) {
+		svc, err := NewService()
+		require.Error(t, err)
+		assert.Nil(t, svc)
+	})
+
 	t.Run("all given", func(t *testing.T) {
-		svc, err := NewService(full)
+		svc, err := NewService(f.options()...)
 		require.NoError(t, err)
 		assert.NotNil(t, svc)
 	})

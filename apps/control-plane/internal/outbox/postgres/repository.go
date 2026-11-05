@@ -185,15 +185,20 @@ func toEntity(e events.Envelope, recordedAt time.Time) eventEntity {
 		payload = json.RawMessage(`null`)
 	}
 	row := eventEntity{
-		ID:             e.ID,
-		Type:           e.Type,
-		OrganizationID: e.OrganizationID,
-		AggregateType:  e.AggregateType,
-		AggregateID:    e.AggregateID,
-		CorrelationID:  e.CorrelationID,
-		OccurredAt:     e.OccurredAt,
-		Payload:        payload,
-		RecordedAt:     recordedAt,
+		ID:            e.ID,
+		Type:          e.Type,
+		AggregateType: e.AggregateType,
+		AggregateID:   e.AggregateID,
+		CorrelationID: e.CorrelationID,
+		OccurredAt:    e.OccurredAt,
+		Payload:       payload,
+		RecordedAt:    recordedAt,
+	}
+	// A platform-scoped event, such as one an Account raised, belongs to no
+	// Organization.
+	if e.OrganizationID != "" {
+		org := e.OrganizationID
+		row.OrganizationID = &org
 	}
 	if e.CausationID != "" {
 		causation := e.CausationID
@@ -204,14 +209,16 @@ func toEntity(e events.Envelope, recordedAt time.Time) eventEntity {
 
 func (row eventEntity) toEntry() outbox.Entry {
 	e := events.Envelope{
-		ID:             row.ID,
-		Type:           row.Type,
-		OrganizationID: row.OrganizationID,
-		AggregateType:  row.AggregateType,
-		AggregateID:    row.AggregateID,
-		OccurredAt:     row.OccurredAt.UTC(),
-		CorrelationID:  row.CorrelationID,
-		Payload:        json.RawMessage(row.Payload),
+		ID:            row.ID,
+		Type:          row.Type,
+		AggregateType: row.AggregateType,
+		AggregateID:   row.AggregateID,
+		OccurredAt:    row.OccurredAt.UTC(),
+		CorrelationID: row.CorrelationID,
+		Payload:       json.RawMessage(row.Payload),
+	}
+	if row.OrganizationID != nil {
+		e.OrganizationID = *row.OrganizationID
 	}
 	if row.CausationID != nil {
 		e.CausationID = *row.CausationID

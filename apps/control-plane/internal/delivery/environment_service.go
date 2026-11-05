@@ -25,7 +25,7 @@ type CreateEnvironmentInput struct {
 
 // CreateEnvironment creates an Environment in an active Workspace and
 // registers its IAM resource under the Workspace.
-func (s *Service) CreateEnvironment(ctx context.Context, actor identity.Actor, in CreateEnvironmentInput) (*Environment, error) {
+func (s *service) CreateEnvironment(ctx context.Context, actor identity.Actor, in CreateEnvironmentInput) (*Environment, error) {
 	e, err := NewEnvironment(NewEnvironmentProps{
 		OrganizationID:   in.OrganizationID,
 		WorkspaceID:      in.WorkspaceID,
@@ -67,7 +67,7 @@ func (s *Service) CreateEnvironment(ctx context.Context, actor identity.Actor, i
 }
 
 // GetEnvironment returns an Environment the actor may read.
-func (s *Service) GetEnvironment(ctx context.Context, actor identity.Actor, organizationID, environmentID string) (*Environment, error) {
+func (s *service) GetEnvironment(ctx context.Context, actor identity.Actor, organizationID, environmentID string) (*Environment, error) {
 	if _, err := s.authorize(ctx, authorization.Request{
 		Actor: actor, Permission: PermissionEnvironmentRead, OrganizationID: organizationID,
 		ResourceID: environmentID, Action: ActionEnvironmentRead,
@@ -80,7 +80,7 @@ func (s *Service) GetEnvironment(ctx context.Context, actor identity.Actor, orga
 // GetEnvironmentBySlug returns the active Environment with the slug in a
 // Workspace, if the actor may read it. It is authorized on the Environment
 // it finds, so it can tell an Organization member that a slug exists.
-func (s *Service) GetEnvironmentBySlug(ctx context.Context, actor identity.Actor, organizationID, workspaceID, slug string) (*Environment, error) {
+func (s *service) GetEnvironmentBySlug(ctx context.Context, actor identity.Actor, organizationID, workspaceID, slug string) (*Environment, error) {
 	e, err := s.environments.GetEnvironmentBySlug(ctx, organizationID, workspaceID, slug)
 	if err != nil {
 		return nil, err
@@ -97,7 +97,7 @@ func (s *Service) GetEnvironmentBySlug(ctx context.Context, actor identity.Actor
 // ListEnvironments lists a Workspace's Environments. It needs read access on
 // the Workspace; listing only the Environments each caller can see waits for
 // IAM's resource listing.
-func (s *Service) ListEnvironments(ctx context.Context, actor identity.Actor, query ListEnvironmentsQuery) (*pagination.Result[*Environment], error) {
+func (s *service) ListEnvironments(ctx context.Context, actor identity.Actor, query ListEnvironmentsQuery) (*pagination.Result[*Environment], error) {
 	if _, err := s.authorize(ctx, authorization.Request{
 		Actor: actor, Permission: PermissionEnvironmentRead, OrganizationID: query.OrganizationID,
 		ResourceID: query.WorkspaceID, Action: ActionEnvironmentList,
@@ -108,7 +108,7 @@ func (s *Service) ListEnvironments(ctx context.Context, actor identity.Actor, qu
 }
 
 // UpdateEnvironment changes an active Environment.
-func (s *Service) UpdateEnvironment(ctx context.Context, actor identity.Actor, organizationID, environmentID string, props UpdateEnvironmentProps) (*Environment, error) {
+func (s *service) UpdateEnvironment(ctx context.Context, actor identity.Actor, organizationID, environmentID string, props UpdateEnvironmentProps) (*Environment, error) {
 	return run(ctx, s, actor, change[*Environment]{
 		aggregateType: AggregateEnvironment,
 		aggregateID:   func(e *Environment) string { return e.ID() },
@@ -133,7 +133,7 @@ func (s *Service) UpdateEnvironment(ctx context.Context, actor identity.Actor, o
 // ArchiveEnvironments archives Environments that have no active Targets and
 // are in no active Lifecycle, all together or none of them. Archived ones
 // are left as they are.
-func (s *Service) ArchiveEnvironments(ctx context.Context, actor identity.Actor, organizationID string, environmentIDs []string) ([]*Environment, error) {
+func (s *service) ArchiveEnvironments(ctx context.Context, actor identity.Actor, organizationID string, environmentIDs []string) ([]*Environment, error) {
 	ids := uniqueIDs(environmentIDs)
 	decisions := make(map[string]authorization.Decision, len(ids))
 	for _, id := range ids {
@@ -186,7 +186,7 @@ func (s *Service) ArchiveEnvironments(ctx context.Context, actor identity.Actor,
 	return out, nil
 }
 
-func (s *Service) checkEnvironmentUnused(ctx context.Context, e *Environment) error {
+func (s *service) checkEnvironmentUnused(ctx context.Context, e *Environment) error {
 	n, err := s.targets.CountActiveTargets(ctx, e.OrganizationID(), e.ID())
 	if err != nil {
 		return fmt.Errorf("count targets: %w", err)
@@ -207,7 +207,7 @@ func (s *Service) checkEnvironmentUnused(ctx context.Context, e *Environment) er
 // RestoreEnvironments restores archived Environments in active Workspaces,
 // all together or none of them. Each is authorized on its Workspace, because
 // grants on an archived Environment do not apply.
-func (s *Service) RestoreEnvironments(ctx context.Context, actor identity.Actor, organizationID string, environmentIDs []string) ([]*Environment, error) {
+func (s *service) RestoreEnvironments(ctx context.Context, actor identity.Actor, organizationID string, environmentIDs []string) ([]*Environment, error) {
 	ids := uniqueIDs(environmentIDs)
 	found, err := s.environments.GetEnvironments(ctx, organizationID, ids)
 	if err != nil {
@@ -296,7 +296,7 @@ type CreateTargetInput struct {
 }
 
 // CreateTarget adds a Target to an active Environment.
-func (s *Service) CreateTarget(ctx context.Context, actor identity.Actor, in CreateTargetInput) (*Target, error) {
+func (s *service) CreateTarget(ctx context.Context, actor identity.Actor, in CreateTargetInput) (*Target, error) {
 	t, err := NewTarget(NewTargetProps{
 		OrganizationID:   in.OrganizationID,
 		EnvironmentID:    in.EnvironmentID,
@@ -341,7 +341,7 @@ func (s *Service) CreateTarget(ctx context.Context, actor identity.Actor, in Cre
 }
 
 // GetTarget returns a Target if the actor may read its Environment.
-func (s *Service) GetTarget(ctx context.Context, actor identity.Actor, organizationID, targetID string) (*Target, error) {
+func (s *service) GetTarget(ctx context.Context, actor identity.Actor, organizationID, targetID string) (*Target, error) {
 	t, err := s.targets.GetTarget(ctx, organizationID, targetID)
 	if err != nil {
 		return nil, err
@@ -356,7 +356,7 @@ func (s *Service) GetTarget(ctx context.Context, actor identity.Actor, organizat
 }
 
 // ListTargets lists an Environment's Targets.
-func (s *Service) ListTargets(ctx context.Context, actor identity.Actor, query ListTargetsQuery) (*pagination.Result[*Target], error) {
+func (s *service) ListTargets(ctx context.Context, actor identity.Actor, query ListTargetsQuery) (*pagination.Result[*Target], error) {
 	if _, err := s.authorize(ctx, authorization.Request{
 		Actor: actor, Permission: PermissionEnvironmentRead, OrganizationID: query.OrganizationID,
 		ResourceID: query.EnvironmentID, Action: ActionTargetList,
@@ -366,7 +366,7 @@ func (s *Service) ListTargets(ctx context.Context, actor identity.Actor, query L
 	return s.targets.ListTargets(ctx, query)
 }
 
-func (s *Service) changeTarget(ctx context.Context, actor identity.Actor, organizationID, targetID, action, event string, proposal any, apply func(context.Context, *Target) error) (*Target, error) {
+func (s *service) changeTarget(ctx context.Context, actor identity.Actor, organizationID, targetID, action, event string, proposal any, apply func(context.Context, *Target) error) (*Target, error) {
 	return run(ctx, s, actor, change[*Target]{
 		aggregateType: AggregateTarget,
 		aggregateID:   func(t *Target) string { return t.ID() },
@@ -389,14 +389,14 @@ func (s *Service) changeTarget(ctx context.Context, actor identity.Actor, organi
 }
 
 // UpdateTarget changes an active Target.
-func (s *Service) UpdateTarget(ctx context.Context, actor identity.Actor, organizationID, targetID string, props UpdateTargetProps) (*Target, error) {
+func (s *service) UpdateTarget(ctx context.Context, actor identity.Actor, organizationID, targetID string, props UpdateTargetProps) (*Target, error) {
 	return s.changeTarget(ctx, actor, organizationID, targetID, ActionTargetUpdate, EventTargetUpdated, props,
 		func(_ context.Context, t *Target) error { return t.Update(props) })
 }
 
 // AssignTargetAgent makes principalID the Target's runtime agent, or
 // unassigns the agent when principalID is empty.
-func (s *Service) AssignTargetAgent(ctx context.Context, actor identity.Actor, organizationID, targetID, principalID string) (*Target, error) {
+func (s *service) AssignTargetAgent(ctx context.Context, actor identity.Actor, organizationID, targetID, principalID string) (*Target, error) {
 	return s.changeTarget(ctx, actor, organizationID, targetID, ActionTargetAssignAgent, EventTargetAgentAssigned, principalID,
 		func(_ context.Context, t *Target) error {
 			if principalID == "" {
@@ -412,7 +412,7 @@ func (s *Service) AssignTargetAgent(ctx context.Context, actor identity.Actor, o
 // RecordTargetReport notes that the Target's agent is in contact. The actor
 // must be the assigned agent, which is the only authorization it needs. It
 // records no audit event: reports are frequent, and change no configuration.
-func (s *Service) RecordTargetReport(ctx context.Context, actor identity.Actor, organizationID, targetID string) error {
+func (s *service) RecordTargetReport(ctx context.Context, actor identity.Actor, organizationID, targetID string) error {
 	return s.tx.WithinTx(ctx, func(ctx context.Context) error {
 		t, err := s.targets.GetTarget(ctx, organizationID, targetID)
 		if err != nil {
@@ -426,7 +426,7 @@ func (s *Service) RecordTargetReport(ctx context.Context, actor identity.Actor, 
 }
 
 // ArchiveTarget archives a Target. Archiving an archived one does nothing.
-func (s *Service) ArchiveTarget(ctx context.Context, actor identity.Actor, organizationID, targetID string) (*Target, error) {
+func (s *service) ArchiveTarget(ctx context.Context, actor identity.Actor, organizationID, targetID string) (*Target, error) {
 	return s.changeTarget(ctx, actor, organizationID, targetID, ActionTargetArchive, EventTargetArchived, nil,
 		func(_ context.Context, t *Target) error {
 			if t.Archived() {
@@ -438,7 +438,7 @@ func (s *Service) ArchiveTarget(ctx context.Context, actor identity.Actor, organ
 }
 
 // RestoreTarget restores an archived Target in an active Environment.
-func (s *Service) RestoreTarget(ctx context.Context, actor identity.Actor, organizationID, targetID string) (*Target, error) {
+func (s *service) RestoreTarget(ctx context.Context, actor identity.Actor, organizationID, targetID string) (*Target, error) {
 	return s.changeTarget(ctx, actor, organizationID, targetID, ActionTargetRestore, EventTargetRestored, nil,
 		func(ctx context.Context, t *Target) error {
 			if !t.Archived() {

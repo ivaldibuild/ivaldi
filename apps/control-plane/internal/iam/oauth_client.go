@@ -22,6 +22,10 @@ const (
 	// RegistrationMetadataDocument clients are identified by the https URL
 	// of a client metadata document, which is also their client ID.
 	RegistrationMetadataDocument ClientRegistration = "metadata_document"
+	// RegistrationFirstParty clients are Ivaldi's own, such as the web app
+	// and ivaldictl. The control plane registers them at start, under fixed
+	// client IDs.
+	RegistrationFirstParty ClientRegistration = "first_party"
 )
 
 // OAuthClient is an MCP or API client of the control plane's authorization
@@ -57,6 +61,7 @@ type OAuthClientSnapshot struct {
 type NewOAuthClientProps struct {
 	// ClientID is the public client_id. It defaults to the client's own ID
 	// for a dynamic client, and to MetadataURL for a metadata document client.
+	// A first-party client must name its own, such as "ivaldictl".
 	ClientID     string
 	Registration ClientRegistration
 	Name         string
@@ -99,8 +104,15 @@ func NewOAuthClient(props NewOAuthClientProps, clientID *string) (*OAuthClient, 
 		if props.ClientID != *metadataURL {
 			return nil, NewErrInvalidInput("a metadata document client's ID must be its metadata URL")
 		}
+	case RegistrationFirstParty:
+		if metadataURL != nil {
+			return nil, NewErrInvalidInput("a first-party client has no metadata URL")
+		}
+		if props.ClientID == "" {
+			return nil, NewErrInvalidInput("a first-party client needs its client ID")
+		}
 	default:
-		return nil, NewErrInvalidInput(fmt.Sprintf("client registration %q must be dynamic or metadata_document", props.Registration))
+		return nil, NewErrInvalidInput(fmt.Sprintf("client registration %q must be dynamic, metadata_document, or first_party", props.Registration))
 	}
 	if len(props.ClientID) > maxClientIDLength {
 		return nil, NewErrInvalidInput(fmt.Sprintf("client ID must be at most %d bytes", maxClientIDLength))
@@ -172,6 +184,10 @@ func (c *OAuthClient) RedirectURIs() []string           { return copyStrings(c.r
 func (c *OAuthClient) MetadataURL() *string             { return copyString(c.metadataURL) }
 func (c *OAuthClient) CreatedAt() time.Time             { return c.createdAt }
 func (c *OAuthClient) LastUsedAt() *time.Time           { return clock.CopyTime(c.lastUsedAt) }
+
+// FirstParty reports whether the client is one of Ivaldi's own, which needs
+// no consent to act for the person signing in.
+func (c *OAuthClient) FirstParty() bool { return c.registration == RegistrationFirstParty }
 
 // AllowsRedirect reports whether uri is one of the client's redirect URIs.
 // For a loopback http URI, any port matches, because native apps pick one

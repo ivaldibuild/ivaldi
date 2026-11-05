@@ -24,7 +24,7 @@ type CreateChannelInput struct {
 }
 
 // CreateChannel adds a Channel to an active Application.
-func (s *Service) CreateChannel(ctx context.Context, actor identity.Actor, in CreateChannelInput) (*Channel, error) {
+func (s *service) CreateChannel(ctx context.Context, actor identity.Actor, in CreateChannelInput) (*Channel, error) {
 	rules := make([]NewChannelRuleProps, len(in.Rules))
 	for i, r := range in.Rules {
 		rules[i] = NewChannelRuleProps{Kind: r.Kind, ArtifactID: r.ArtifactID, Config: r.Config}
@@ -73,7 +73,7 @@ func (s *Service) CreateChannel(ctx context.Context, actor identity.Actor, in Cr
 
 // checkRuleArtifacts checks that every artifact the Channel's rules are
 // scoped to is an active artifact of its Application.
-func (s *Service) checkRuleArtifacts(ctx context.Context, c *Channel) error {
+func (s *service) checkRuleArtifacts(ctx context.Context, c *Channel) error {
 	for _, artifactID := range c.ArtifactIDs() {
 		a, err := s.applications.GetArtifact(ctx, c.OrganizationID(), artifactID)
 		if errors.Is(err, ErrNotFound) || (err == nil && a.ApplicationID() != c.ApplicationID()) {
@@ -90,7 +90,7 @@ func (s *Service) checkRuleArtifacts(ctx context.Context, c *Channel) error {
 }
 
 // GetChannel returns a Channel if the actor may read its Application.
-func (s *Service) GetChannel(ctx context.Context, actor identity.Actor, organizationID, channelID string) (*Channel, error) {
+func (s *service) GetChannel(ctx context.Context, actor identity.Actor, organizationID, channelID string) (*Channel, error) {
 	c, err := s.applications.GetChannel(ctx, organizationID, channelID)
 	if err != nil {
 		return nil, err
@@ -102,14 +102,14 @@ func (s *Service) GetChannel(ctx context.Context, actor identity.Actor, organiza
 }
 
 // ListChannels lists an Application's Channels.
-func (s *Service) ListChannels(ctx context.Context, actor identity.Actor, organizationID, applicationID string, includeArchived bool) ([]*Channel, error) {
+func (s *service) ListChannels(ctx context.Context, actor identity.Actor, organizationID, applicationID string, includeArchived bool) ([]*Channel, error) {
 	if _, err := s.authorizeApplication(ctx, actor, PermissionApplicationRead, ActionChannelList, organizationID, applicationID, nil); err != nil {
 		return nil, err
 	}
 	return s.applications.ListChannels(ctx, organizationID, applicationID, includeArchived)
 }
 
-func (s *Service) changeChannel(ctx context.Context, actor identity.Actor, organizationID, channelID, action, event string, proposal any, apply func(context.Context, *Channel) error) (*Channel, error) {
+func (s *service) changeChannel(ctx context.Context, actor identity.Actor, organizationID, channelID, action, event string, proposal any, apply func(context.Context, *Channel) error) (*Channel, error) {
 	return run(ctx, s, actor, change[*Channel]{
 		aggregateType: AggregateChannel,
 		aggregateID:   func(c *Channel) string { return c.ID() },
@@ -135,14 +135,14 @@ func (s *Service) changeChannel(ctx context.Context, actor identity.Actor, organ
 }
 
 // UpdateChannel changes an active Channel's slug, name, or description.
-func (s *Service) UpdateChannel(ctx context.Context, actor identity.Actor, organizationID, channelID string, props UpdateChannelProps) (*Channel, error) {
+func (s *service) UpdateChannel(ctx context.Context, actor identity.Actor, organizationID, channelID string, props UpdateChannelProps) (*Channel, error) {
 	return s.changeChannel(ctx, actor, organizationID, channelID, ActionChannelUpdate, EventChannelUpdated, props,
 		func(_ context.Context, c *Channel) error { return c.Update(props) })
 }
 
 // SetChannelLifecycle makes a Channel follow another active Lifecycle in
 // its Application's Workspace.
-func (s *Service) SetChannelLifecycle(ctx context.Context, actor identity.Actor, organizationID, channelID, lifecycleID string) (*Channel, error) {
+func (s *service) SetChannelLifecycle(ctx context.Context, actor identity.Actor, organizationID, channelID, lifecycleID string) (*Channel, error) {
 	return s.changeChannel(ctx, actor, organizationID, channelID, ActionChannelSetLifecycle, EventChannelUpdated, lifecycleID,
 		func(ctx context.Context, c *Channel) error {
 			app, err := s.applications.GetApplication(ctx, organizationID, c.ApplicationID())
@@ -157,7 +157,7 @@ func (s *Service) SetChannelLifecycle(ctx context.Context, actor identity.Actor,
 }
 
 // AddChannelRule adds a rule to a Channel.
-func (s *Service) AddChannelRule(ctx context.Context, actor identity.Actor, organizationID, channelID string, props ChannelRuleProps) (*Channel, error) {
+func (s *service) AddChannelRule(ctx context.Context, actor identity.Actor, organizationID, channelID string, props ChannelRuleProps) (*Channel, error) {
 	return s.changeChannel(ctx, actor, organizationID, channelID, ActionChannelAddRule, EventChannelUpdated, props,
 		func(ctx context.Context, c *Channel) error {
 			if _, err := c.AddRule(props); err != nil {
@@ -168,7 +168,7 @@ func (s *Service) AddChannelRule(ctx context.Context, actor identity.Actor, orga
 }
 
 // UpdateChannelRule replaces one of a Channel's rules.
-func (s *Service) UpdateChannelRule(ctx context.Context, actor identity.Actor, organizationID, channelID, ruleID string, props ChannelRuleProps) (*Channel, error) {
+func (s *service) UpdateChannelRule(ctx context.Context, actor identity.Actor, organizationID, channelID, ruleID string, props ChannelRuleProps) (*Channel, error) {
 	return s.changeChannel(ctx, actor, organizationID, channelID, ActionChannelUpdateRule, EventChannelUpdated, props,
 		func(ctx context.Context, c *Channel) error {
 			if err := c.UpdateRule(ruleID, props); err != nil {
@@ -179,14 +179,14 @@ func (s *Service) UpdateChannelRule(ctx context.Context, actor identity.Actor, o
 }
 
 // RemoveChannelRule removes one of a Channel's rules.
-func (s *Service) RemoveChannelRule(ctx context.Context, actor identity.Actor, organizationID, channelID, ruleID string) (*Channel, error) {
+func (s *service) RemoveChannelRule(ctx context.Context, actor identity.Actor, organizationID, channelID, ruleID string) (*Channel, error) {
 	return s.changeChannel(ctx, actor, organizationID, channelID, ActionChannelRemoveRule, EventChannelUpdated, ruleID,
 		func(_ context.Context, c *Channel) error { return c.RemoveRule(ruleID) })
 }
 
 // SetDefaultChannel makes an active Channel its active Application's
 // default, in place of the current one.
-func (s *Service) SetDefaultChannel(ctx context.Context, actor identity.Actor, organizationID, channelID string) (*Channel, error) {
+func (s *service) SetDefaultChannel(ctx context.Context, actor identity.Actor, organizationID, channelID string) (*Channel, error) {
 	c, err := s.applications.GetChannel(ctx, organizationID, channelID)
 	if err != nil {
 		return nil, err
@@ -247,7 +247,7 @@ func (s *Service) SetDefaultChannel(ctx context.Context, actor identity.Actor, o
 
 // ArchiveChannel archives a Channel that is not its Application's default.
 // Its Releases keep referring to it.
-func (s *Service) ArchiveChannel(ctx context.Context, actor identity.Actor, organizationID, channelID string) (*Channel, error) {
+func (s *service) ArchiveChannel(ctx context.Context, actor identity.Actor, organizationID, channelID string) (*Channel, error) {
 	return s.changeChannel(ctx, actor, organizationID, channelID, ActionChannelArchive, EventChannelArchived, nil,
 		func(_ context.Context, c *Channel) error {
 			if c.Archived() {
@@ -259,7 +259,7 @@ func (s *Service) ArchiveChannel(ctx context.Context, actor identity.Actor, orga
 
 // RestoreChannel restores an archived Channel of an active Application whose
 // Lifecycle, and the artifacts its rules are scoped to, are still active.
-func (s *Service) RestoreChannel(ctx context.Context, actor identity.Actor, organizationID, channelID string) (*Channel, error) {
+func (s *service) RestoreChannel(ctx context.Context, actor identity.Actor, organizationID, channelID string) (*Channel, error) {
 	return s.changeChannel(ctx, actor, organizationID, channelID, ActionChannelRestore, EventChannelRestored, nil,
 		func(ctx context.Context, c *Channel) error {
 			if !c.Archived() {

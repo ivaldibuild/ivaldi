@@ -121,6 +121,11 @@ type Auth struct {
 	// moving a new one to the front and dropping the old one once the
 	// tokens it signed have expired.
 	SigningKeyFiles []string `yaml:"signing_key_files" env:"IVALDI_AUTH_SIGNING_KEY_FILES"`
+	// EphemeralSigningKey signs tokens with a key generated at start, when no
+	// SigningKeyFiles are set. Its tokens stop working when the process
+	// restarts, and other replicas cannot verify them, so it is only for
+	// local development.
+	EphemeralSigningKey bool `yaml:"ephemeral_signing_key" env:"IVALDI_AUTH_EPHEMERAL_SIGNING_KEY" envDefault:"false"`
 	// AccessTokenTTL bounds how long a revoked grant keeps working, because
 	// tokens are verified offline.
 	AccessTokenTTL  time.Duration `yaml:"access_token_ttl" env:"IVALDI_AUTH_ACCESS_TOKEN_TTL" envDefault:"15m"`
@@ -131,11 +136,33 @@ type Auth struct {
 	// AuthorizationCodeTTL is how long an OAuth authorization code may wait
 	// to be exchanged.
 	AuthorizationCodeTTL time.Duration `yaml:"authorization_code_ttl" env:"IVALDI_AUTH_AUTHORIZATION_CODE_TTL" envDefault:"1m"`
+	// SignInSessionTTL is how long a browser stays signed in to the
+	// authorization server, between signing in and being sent back to the
+	// client that asked. Clients keep people signed in with refresh tokens.
+	SignInSessionTTL time.Duration `yaml:"sign_in_session_ttl" env:"IVALDI_AUTH_SIGN_IN_SESSION_TTL" envDefault:"10m"`
 	// BuiltinAccounts turns on Ivaldi's own username and password accounts,
 	// for small self-hosted installations without an identity provider.
 	BuiltinAccounts bool `yaml:"builtin_accounts" env:"IVALDI_AUTH_BUILTIN_ACCOUNTS" envDefault:"false"`
+	// LoginURL is the frontend's sign-in page. The authorization server
+	// sends people there with a login_challenge, and the frontend signs them
+	// in through the control plane's /v1/auth endpoints; the control plane
+	// serves no sign-in pages of its own.
+	LoginURL string `yaml:"login_url" env:"IVALDI_AUTH_LOGIN_URL"`
+	// WebClient is Ivaldi's web app, which signs people in as a first-party
+	// OAuth client.
+	WebClient WebClient `yaml:"web_client"`
 	// Providers are the self-hosted installation's sign-in providers.
 	Providers Providers `yaml:"providers"`
+	// Platform are the managed cloud's sign-up and sign-in providers.
+	Platform PlatformProviders `yaml:"platform"`
+}
+
+// WebClient configures the web app as a first-party OAuth client. Leaving
+// RedirectURIs empty leaves the web app unregistered.
+type WebClient struct {
+	// RedirectURIs are where the authorization server may send the browser
+	// back to the web app, such as https://app.example.com/auth/callback.
+	RedirectURIs []string `yaml:"redirect_uris" env:"IVALDI_AUTH_WEB_CLIENT_REDIRECT_URIS"`
 }
 
 // Bootstrap creates the first Organization and its first administrator when
@@ -148,6 +175,10 @@ type Bootstrap struct {
 	// AdminEmail is the user made the Organization's first administrator
 	// when they first sign in, through any enabled provider.
 	AdminEmail string `yaml:"admin_email" env:"IVALDI_BOOTSTRAP_ADMIN_EMAIL"`
+	// AdminPasswordFile holds a password for AdminEmail, so the administrator
+	// can sign in with a built-in account before any provider is set up. It
+	// needs BuiltinAccounts, and is used once: it never replaces a password.
+	AdminPasswordFile string `yaml:"admin_password_file" env:"IVALDI_BOOTSTRAP_ADMIN_PASSWORD_FILE"`
 }
 
 // IdentityProviderKind is how people sign in to an Organization.
@@ -197,6 +228,9 @@ type GoogleProvider struct {
 	AllowedDomains []string `yaml:"allowed_domains" env:"IVALDI_AUTH_GOOGLE_ALLOWED_DOMAINS"`
 	// AllowedEmails admits these verified email addresses, including Gmail ones.
 	AllowedEmails []string `yaml:"allowed_emails" env:"IVALDI_AUTH_GOOGLE_ALLOWED_EMAILS"`
+	// JITProvisioning makes anyone the provider admits a member on their
+	// first sign-in. With it off, only the bootstrap administrator can join.
+	JITProvisioning *bool `yaml:"jit_provisioning" env:"IVALDI_AUTH_GOOGLE_JIT_PROVISIONING" envDefault:"true"`
 }
 
 // GitHubProvider signs people in with GitHub, through a GitHub OAuth app or
@@ -215,6 +249,9 @@ type GitHubProvider struct {
 	AllowedOrganizations []string `yaml:"allowed_organizations" env:"IVALDI_AUTH_GITHUB_ALLOWED_ORGANIZATIONS"`
 	// AllowedEmails admits these email addresses, when GitHub marks them verified.
 	AllowedEmails []string `yaml:"allowed_emails" env:"IVALDI_AUTH_GITHUB_ALLOWED_EMAILS"`
+	// JITProvisioning makes anyone the provider admits a member on their
+	// first sign-in. With it off, only the bootstrap administrator can join.
+	JITProvisioning *bool `yaml:"jit_provisioning" env:"IVALDI_AUTH_GITHUB_JIT_PROVISIONING" envDefault:"true"`
 }
 
 // OIDCProvider signs people in with any OpenID Connect provider. Its
@@ -231,12 +268,49 @@ type OIDCProvider struct {
 	Scopes         []string `yaml:"scopes" env:"IVALDI_AUTH_OIDC_SCOPES" envDefault:"email,profile"`
 	AllowedDomains []string `yaml:"allowed_domains" env:"IVALDI_AUTH_OIDC_ALLOWED_DOMAINS"`
 	AllowedEmails  []string `yaml:"allowed_emails" env:"IVALDI_AUTH_OIDC_ALLOWED_EMAILS"`
+	// JITProvisioning makes anyone the provider admits a member on their
+	// first sign-in. With it off, only the bootstrap administrator can join.
+	JITProvisioning *bool `yaml:"jit_provisioning" env:"IVALDI_AUTH_OIDC_JIT_PROVISIONING" envDefault:"true"`
+}
+
+// PlatformProviders let people sign up for and sign in to the managed cloud
+// with an existing account, before they belong to any Organization. They are
+// the platform's own OAuth apps, not an Organization's identity providers,
+// and are only used in DeploymentModeCloud. The redirect URI to register is
+// ExternalURL + "/auth/oauth/<kind>/callback", as for Providers.
+type PlatformProviders struct {
+	Google PlatformGoogleProvider `yaml:"google"`
+	GitHub PlatformGitHubProvider `yaml:"github"`
+}
+
+// PlatformGoogleProvider is the managed cloud's Google sign-in.
+type PlatformGoogleProvider struct {
+	ClientID         string `yaml:"client_id" env:"IVALDI_AUTH_PLATFORM_GOOGLE_CLIENT_ID"`
+	ClientSecret     Secret `yaml:"-" env:"IVALDI_AUTH_PLATFORM_GOOGLE_CLIENT_SECRET"`
+	ClientSecretFile string `yaml:"client_secret_file" env:"IVALDI_AUTH_PLATFORM_GOOGLE_CLIENT_SECRET_FILE"`
+}
+
+// PlatformGitHubProvider is the managed cloud's GitHub sign-in.
+type PlatformGitHubProvider struct {
+	ClientID         string `yaml:"client_id" env:"IVALDI_AUTH_PLATFORM_GITHUB_CLIENT_ID"`
+	ClientSecret     Secret `yaml:"-" env:"IVALDI_AUTH_PLATFORM_GITHUB_CLIENT_SECRET"`
+	ClientSecretFile string `yaml:"client_secret_file" env:"IVALDI_AUTH_PLATFORM_GITHUB_CLIENT_SECRET_FILE"`
 }
 
 // Enabled reports whether the provider has a client ID.
-func (p GoogleProvider) Enabled() bool { return p.ClientID != "" }
-func (p GitHubProvider) Enabled() bool { return p.ClientID != "" }
-func (p OIDCProvider) Enabled() bool   { return p.ClientID != "" }
+func (p GoogleProvider) Enabled() bool         { return p.ClientID != "" }
+func (p GitHubProvider) Enabled() bool         { return p.ClientID != "" }
+func (p OIDCProvider) Enabled() bool           { return p.ClientID != "" }
+func (p PlatformGoogleProvider) Enabled() bool { return p.ClientID != "" }
+func (p PlatformGitHubProvider) Enabled() bool { return p.ClientID != "" }
+
+// JIT reports whether the provider provisions members on first sign-in,
+// which it does unless JITProvisioning is set to false.
+func (p GoogleProvider) JIT() bool { return jit(p.JITProvisioning) }
+func (p GitHubProvider) JIT() bool { return jit(p.JITProvisioning) }
+func (p OIDCProvider) JIT() bool   { return jit(p.JITProvisioning) }
+
+func jit(v *bool) bool { return v == nil || *v }
 
 // Secret returns the client secret from its variable or its file.
 func (p GoogleProvider) Secret() (Secret, error) {
@@ -249,6 +323,14 @@ func (p GitHubProvider) Secret() (Secret, error) {
 
 func (p OIDCProvider) Secret() (Secret, error) {
 	return resolveSecret("oidc client secret", p.ClientSecret, p.ClientSecretFile)
+}
+
+func (p PlatformGoogleProvider) Secret() (Secret, error) {
+	return resolveSecret("platform google client secret", p.ClientSecret, p.ClientSecretFile)
+}
+
+func (p PlatformGitHubProvider) Secret() (Secret, error) {
+	return resolveSecret("platform github client secret", p.ClientSecret, p.ClientSecretFile)
 }
 
 // EncryptionProvider is the key-management service that protects tenant

@@ -54,6 +54,20 @@ type NewGrantProps struct {
 	CreatedAt *time.Time
 }
 
+// NewOwnerGrant returns a new Grant of the owner role on the Organization to
+// the principal. It is for an Organization's first owner, who has no one to
+// grant it, so the owner is recorded as its own granter.
+func NewOwnerGrant(organizationID, principalID string) (*Grant, error) {
+	roleID, _ := BuiltInRoleID(RoleOwner)
+	return NewGrant(NewGrantProps{
+		OrganizationID:       organizationID,
+		PrincipalID:          &principalID,
+		RoleID:               roleID,
+		ResourceID:           organizationID,
+		GrantedByPrincipalID: principalID,
+	}, nil)
+}
+
 // NewGrant returns a Grant, with a new ID unless grantID gives a stored one.
 func NewGrant(props NewGrantProps, grantID *string) (*Grant, error) {
 	if err := validateID("organization ID", Organization{}.Prefix(), props.OrganizationID); err != nil {

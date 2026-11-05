@@ -1441,7 +1441,7 @@ var (
 // svcFixture is a Service wired to fakes, with one active Workspace and a
 // Project in it.
 type svcFixture struct {
-	svc        *Service
+	svc        Service
 	store      *fakeStore
 	tx         *fakeTx
 	authz      *fakeAuthz
@@ -1467,27 +1467,27 @@ func newSvcFixture(t *testing.T) *svcFixture {
 		workspaces: newFakeWorkspaces(),
 	}
 	f.tx = &fakeTx{parts: []fakeParticipant{f.store, f.audit, f.outbox, f.resources}}
-	svc, err := NewService(f.config())
+	svc, err := NewService(f.options()...)
 	require.NoError(t, err)
 	f.svc = svc
 	f.ws, f.project = f.addWorkspace(t, "platform", "checkout")
 	return f
 }
 
-func (f *svcFixture) config() Config {
-	return Config{
-		Environments: f.store,
-		Lifecycles:   f.store,
-		Targets:      f.store,
-		Registries:   f.store,
-		Applications: f.store,
-		Transactor:   f.tx,
-		Authorizer:   f.authz,
-		Resources:    f.resources,
-		Teams:        f.teams,
-		Audit:        f.audit,
-		Workspaces:   f.workspaces,
-		Outbox:       f.outbox,
+func (f *svcFixture) options() []ServiceOption {
+	return []ServiceOption{
+		WithEnvironments(f.store),
+		WithLifecycles(f.store),
+		WithTargets(f.store),
+		WithRegistries(f.store),
+		WithApplications(f.store),
+		WithTransactor(f.tx),
+		WithAuthorizer(f.authz),
+		WithResourceRegistrar(f.resources),
+		WithTeamDirectory(f.teams),
+		WithAuditRecorder(f.audit),
+		WithWorkspaces(f.workspaces),
+		WithOutboxRecorder(f.outbox),
 	}
 }
 

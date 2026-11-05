@@ -56,6 +56,37 @@ func TestNewOAuthClientDynamicKeepsGivenClientID(t *testing.T) {
 	assert.Equal(t, "custom-client", c.ClientID())
 }
 
+func TestNewOAuthClientFirstParty(t *testing.T) {
+	c, err := NewOAuthClient(NewOAuthClientProps{
+		ClientID:     "ivaldictl",
+		Registration: RegistrationFirstParty,
+		Name:         "Ivaldi CLI",
+		RedirectURIs: []string{"http://127.0.0.1/callback"},
+	}, nil)
+
+	require.NoError(t, err)
+	assert.Equal(t, "ivaldictl", c.ClientID())
+	assert.True(t, c.FirstParty())
+	assert.True(t, c.AllowsRedirect("http://127.0.0.1:53123/callback"), "a loopback redirect may use any port")
+}
+
+func TestNewOAuthClientFirstPartyIsRefused(t *testing.T) {
+	t.Run("without a client ID", func(t *testing.T) {
+		_, err := NewOAuthClient(NewOAuthClientProps{Registration: RegistrationFirstParty, Name: "CLI", RedirectURIs: []string{"http://127.0.0.1/cb"}}, nil)
+		assert.ErrorIs(t, err, ErrInvalid)
+	})
+	t.Run("with a metadata URL", func(t *testing.T) {
+		_, err := NewOAuthClient(NewOAuthClientProps{ClientID: "x", Registration: RegistrationFirstParty, Name: "CLI", RedirectURIs: []string{"http://127.0.0.1/cb"}, MetadataURL: new(clientMetadataURL)}, nil)
+		assert.ErrorIs(t, err, ErrInvalid)
+	})
+}
+
+func TestOAuthClientFirstParty(t *testing.T) {
+	dynamic, err := NewOAuthClient(clientDynamicProps(), nil)
+	require.NoError(t, err)
+	assert.False(t, dynamic.FirstParty())
+}
+
 func TestNewOAuthClientMetadataDocument(t *testing.T) {
 	c, err := NewOAuthClient(clientMetadataProps(), nil)
 

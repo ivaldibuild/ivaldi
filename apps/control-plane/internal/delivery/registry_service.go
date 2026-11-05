@@ -26,7 +26,7 @@ type CreateRegistryInput struct {
 }
 
 // CreateRegistry creates a Registry in an active Workspace.
-func (s *Service) CreateRegistry(ctx context.Context, actor identity.Actor, in CreateRegistryInput) (*Registry, error) {
+func (s *service) CreateRegistry(ctx context.Context, actor identity.Actor, in CreateRegistryInput) (*Registry, error) {
 	r, err := NewRegistry(NewRegistryProps{
 		OrganizationID: in.OrganizationID,
 		WorkspaceID:    in.WorkspaceID,
@@ -68,7 +68,7 @@ func (s *Service) CreateRegistry(ctx context.Context, actor identity.Actor, in C
 }
 
 // GetRegistry returns a Registry if the actor may read its Workspace's Registries.
-func (s *Service) GetRegistry(ctx context.Context, actor identity.Actor, organizationID, registryID string) (*Registry, error) {
+func (s *service) GetRegistry(ctx context.Context, actor identity.Actor, organizationID, registryID string) (*Registry, error) {
 	r, err := s.registries.GetRegistry(ctx, organizationID, registryID)
 	if err != nil {
 		return nil, err
@@ -83,7 +83,7 @@ func (s *Service) GetRegistry(ctx context.Context, actor identity.Actor, organiz
 }
 
 // ListRegistries lists a Workspace's Registries.
-func (s *Service) ListRegistries(ctx context.Context, actor identity.Actor, query ListRegistriesQuery) (*pagination.Result[*Registry], error) {
+func (s *service) ListRegistries(ctx context.Context, actor identity.Actor, query ListRegistriesQuery) (*pagination.Result[*Registry], error) {
 	if _, err := s.authorize(ctx, authorization.Request{
 		Actor: actor, Permission: PermissionRegistryRead, OrganizationID: query.OrganizationID,
 		ResourceID: query.WorkspaceID, Action: ActionRegistryList,
@@ -93,7 +93,7 @@ func (s *Service) ListRegistries(ctx context.Context, actor identity.Actor, quer
 	return s.registries.ListRegistries(ctx, query)
 }
 
-func (s *Service) changeRegistry(ctx context.Context, actor identity.Actor, organizationID, registryID, action, event string, proposal any, apply func(context.Context, *Registry) error) (*Registry, error) {
+func (s *service) changeRegistry(ctx context.Context, actor identity.Actor, organizationID, registryID, action, event string, proposal any, apply func(context.Context, *Registry) error) (*Registry, error) {
 	return run(ctx, s, actor, change[*Registry]{
 		aggregateType: AggregateRegistry,
 		aggregateID:   func(r *Registry) string { return r.ID() },
@@ -116,14 +116,14 @@ func (s *Service) changeRegistry(ctx context.Context, actor identity.Actor, orga
 }
 
 // UpdateRegistry changes an active Registry's slug, name, or URL.
-func (s *Service) UpdateRegistry(ctx context.Context, actor identity.Actor, organizationID, registryID string, props UpdateRegistryProps) (*Registry, error) {
+func (s *service) UpdateRegistry(ctx context.Context, actor identity.Actor, organizationID, registryID string, props UpdateRegistryProps) (*Registry, error) {
 	return s.changeRegistry(ctx, actor, organizationID, registryID, ActionRegistryUpdate, EventRegistryUpdated, props,
 		func(_ context.Context, r *Registry) error { return r.Update(props) })
 }
 
 // SetRegistryCredential points the Registry at a credential, or makes it
 // anonymous when credentialRef is empty.
-func (s *Service) SetRegistryCredential(ctx context.Context, actor identity.Actor, organizationID, registryID, credentialRef string) (*Registry, error) {
+func (s *service) SetRegistryCredential(ctx context.Context, actor identity.Actor, organizationID, registryID, credentialRef string) (*Registry, error) {
 	return s.changeRegistry(ctx, actor, organizationID, registryID, ActionRegistrySetCredential, EventRegistryUpdated, credentialRef,
 		func(_ context.Context, r *Registry) error {
 			if credentialRef == "" {
@@ -134,7 +134,7 @@ func (s *Service) SetRegistryCredential(ctx context.Context, actor identity.Acto
 }
 
 // SetRegistryLookup changes where lookups against the Registry run.
-func (s *Service) SetRegistryLookup(ctx context.Context, actor identity.Actor, organizationID, registryID string, from LookupFrom, pool string) (*Registry, error) {
+func (s *service) SetRegistryLookup(ctx context.Context, actor identity.Actor, organizationID, registryID string, from LookupFrom, pool string) (*Registry, error) {
 	proposal := struct {
 		LookupFrom LookupFrom
 		LookupPool string
@@ -145,7 +145,7 @@ func (s *Service) SetRegistryLookup(ctx context.Context, actor identity.Actor, o
 
 // ArchiveRegistry archives a Registry. Artifacts that use it keep the
 // reference, so their Builds can still be looked up once it is restored.
-func (s *Service) ArchiveRegistry(ctx context.Context, actor identity.Actor, organizationID, registryID string) (*Registry, error) {
+func (s *service) ArchiveRegistry(ctx context.Context, actor identity.Actor, organizationID, registryID string) (*Registry, error) {
 	return s.changeRegistry(ctx, actor, organizationID, registryID, ActionRegistryArchive, EventRegistryArchived, nil,
 		func(_ context.Context, r *Registry) error {
 			if r.Archived() {
@@ -157,7 +157,7 @@ func (s *Service) ArchiveRegistry(ctx context.Context, actor identity.Actor, org
 }
 
 // RestoreRegistry restores an archived Registry in an active Workspace.
-func (s *Service) RestoreRegistry(ctx context.Context, actor identity.Actor, organizationID, registryID string) (*Registry, error) {
+func (s *service) RestoreRegistry(ctx context.Context, actor identity.Actor, organizationID, registryID string) (*Registry, error) {
 	return s.changeRegistry(ctx, actor, organizationID, registryID, ActionRegistryRestore, EventRegistryRestored, nil,
 		func(ctx context.Context, r *Registry) error {
 			if !r.Archived() {

@@ -278,3 +278,20 @@ type ApplicationService interface {
 	ConfigurePlacement(ctx context.Context, actor identity.Actor, organizationID, applicationID, targetID string, config *ApplyConfig) (*Placement, error)
 	RemovePlacement(ctx context.Context, actor identity.Actor, organizationID, applicationID, targetID string) error
 }
+
+// Service orchestrates the delivery capability: it authorizes, checks rules
+// that span several records or capabilities, calls domain methods to change
+// state, and persists the result with its audit record. It never sets a
+// domain object's state itself.
+//
+// Environments are IAM resources, so their permissions are checked on the
+// Environment, or on its Workspace before it exists or while it is archived.
+// Targets follow their Environment. Lifecycles and Registries are checked on
+// their Workspace, and Applications and what belongs to them on their Project.
+type Service interface {
+	EnvironmentService
+	LifecycleService
+	RegistryService
+	ApplicationService
+	workspace.Dependent
+}

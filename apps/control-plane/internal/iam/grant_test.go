@@ -185,3 +185,15 @@ func TestGrantSnapshot(t *testing.T) {
 		CreatedAt:            t0,
 	}, g.Snapshot())
 }
+
+func TestNewOwnerGrant(t *testing.T) {
+	g, err := NewOwnerGrant(testOrg, testPrincipal)
+
+	require.NoError(t, err)
+	owner, _ := BuiltInRoleID(RoleOwner)
+	assert.Equal(t, owner, g.RoleID())
+	assert.Equal(t, testOrg, g.ResourceID(), "owner is granted on the Organization itself")
+	assert.Equal(t, testPrincipal, *g.PrincipalID())
+	assert.Equal(t, testPrincipal, g.GrantedByPrincipalID(), "the first owner grants itself")
+	assert.Nil(t, g.ExpiresAt())
+}

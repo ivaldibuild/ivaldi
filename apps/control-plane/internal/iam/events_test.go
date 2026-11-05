@@ -67,6 +67,8 @@ func workloadNew(t *testing.T) *Workload {
 
 func xidNew(t *testing.T) *ExternalIdentity { return mustBuild(NewExternalIdentity(xidProps(), nil)) }
 
+func aidNew(t *testing.T) *AccountIdentity { return mustBuild(NewAccountIdentity(aidProps(), nil)) }
+
 func groupMemberNew(t *testing.T) *GroupMember { return mustBuild(NewGroupMember(groupMemberProps())) }
 
 func clientNew(t *testing.T) *OAuthClient {
@@ -149,6 +151,14 @@ func TestNewRecordsCreatedOnlyForNewObjects(t *testing.T) {
 			},
 			func(t *testing.T) []aggregate.Event {
 				return mustBuild(NewExternalIdentity(xidProps(), new(id.New("xid")))).PullEvents()
+			}},
+		{"account identity",
+			func(t *testing.T) ([]aggregate.Event, aggregate.Event) {
+				a := aidNew(t)
+				return a.PullEvents(), AccountIdentityCreated{a.Snapshot()}
+			},
+			func(t *testing.T) []aggregate.Event {
+				return mustBuild(NewAccountIdentity(aidProps(), new(id.New("aid")))).PullEvents()
 			}},
 		{"grant",
 			func(t *testing.T) ([]aggregate.Event, aggregate.Event) {
@@ -399,6 +409,9 @@ func TestContactRecordsNoEvent(t *testing.T) {
 	checkEvents(t, xidNew, []eventCase[*ExternalIdentity]{
 		{"external identity signed in", func(t *testing.T, e *ExternalIdentity) { e.RecordLogin() }, nil},
 	})
+	checkEvents(t, aidNew, []eventCase[*AccountIdentity]{
+		{"account identity signed in", func(t *testing.T, a *AccountIdentity) { a.RecordLogin() }, nil},
+	})
 	checkEvents(t, clientNew, []eventCase[*OAuthClient]{{"oauth client used", func(t *testing.T, c *OAuthClient) { c.RecordUse() }, nil}})
 }
 
@@ -633,6 +646,7 @@ func TestSnapshotJSONKeys(t *testing.T) {
 		{WorkloadSnapshot{}, append(slices.Clone(principal), "component", "pool", "enrolled_at", "last_seen_at")},
 		{APITokenSnapshot{}, []string{"id", "organization_id", "principal_id", "name", "token_prefix", "expires_at", "last_used_at", "revoked_at", "created_at"}},
 		{ExternalIdentitySnapshot{}, []string{"id", "organization_id", "principal_id", "identity_provider_id", "subject", "last_login_at", "created_at"}},
+		{AccountIdentitySnapshot{}, []string{"id", "account_id", "provider", "subject", "last_login_at", "created_at"}},
 		{GrantSnapshot{}, []string{"id", "organization_id", "principal_id", "group_id", "role_id", "resource_id", "granted_by_principal_id", "expires_at", "created_at"}},
 		{GroupSnapshot{}, []string{"id", "organization_id", "name", "source", "external_id", "created_at", "updated_at"}},
 		{GroupMemberSnapshot{}, []string{"organization_id", "group_id", "principal_id", "created_at"}},

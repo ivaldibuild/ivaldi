@@ -18,16 +18,10 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/transaction"
 )
 
-// Service orchestrates the delivery capability: it authorizes, checks rules
-// that span several records or capabilities, calls domain methods to change
-// state, and persists the result with its audit record. It never sets a
-// domain object's state itself.
-//
-// Environments are IAM resources, so their permissions are checked on the
-// Environment, or on its Workspace before it exists or while it is archived.
-// Targets follow their Environment. Lifecycles and Registries are checked on
-// their Workspace, and Applications and what belongs to them on their Project.
-type Service struct {
+// ServiceOption supplies one of the Service's collaborators. All are required.
+type ServiceOption func(*service)
+
+type service struct {
 	environments EnvironmentRepository
 	lifecycles   LifecycleRepository
 	targets      TargetRepository
@@ -42,80 +36,136 @@ type Service struct {
 	outbox       outbox.Recorder
 }
 
-var (
-	_ EnvironmentService  = (*Service)(nil)
-	_ LifecycleService    = (*Service)(nil)
-	_ RegistryService     = (*Service)(nil)
-	_ ApplicationService  = (*Service)(nil)
-	_ workspace.Dependent = (*Service)(nil)
-)
+var _ Service = (*service)(nil)
 
-// Config holds the Service's collaborators. All are required.
-type Config struct {
-	Environments EnvironmentRepository
-	Lifecycles   LifecycleRepository
-	Targets      TargetRepository
-	Registries   RegistryRepository
-	Applications ApplicationRepository
-	// Transactor makes a change, its IAM resource, and its audit record commit
-	// together, so Resources and Audit must write through the context it passes.
-	Transactor transaction.Transactor
-	Authorizer authorization.Authorizer
-	Resources  iam.ResourceRegistrar
-	Teams      team.Directory
-	Audit      audit.Recorder
-	Workspaces Workspaces
-	// Outbox records the events a change raises in the same transaction.
-	Outbox outbox.Recorder
+// WithEnvironments sets the EnvironmentRepository for the service.
+func WithEnvironments(r EnvironmentRepository) ServiceOption {
+	return func(s *service) {
+		s.environments = r
+	}
 }
 
-// NewService returns a Service, or an error naming a missing collaborator.
-func NewService(c Config) (*Service, error) {
+// WithLifecycles sets the LifecycleRepository for the service.
+func WithLifecycles(r LifecycleRepository) ServiceOption {
+	return func(s *service) {
+		s.lifecycles = r
+	}
+}
+
+// WithTargets sets the TargetRepository for the service.
+func WithTargets(r TargetRepository) ServiceOption {
+	return func(s *service) {
+		s.targets = r
+	}
+}
+
+// WithRegistries sets the RegistryRepository for the service.
+func WithRegistries(r RegistryRepository) ServiceOption {
+	return func(s *service) {
+		s.registries = r
+	}
+}
+
+// WithApplications sets the ApplicationRepository for the service.
+func WithApplications(r ApplicationRepository) ServiceOption {
+	return func(s *service) {
+		s.applications = r
+	}
+}
+
+// WithTransactor sets the Transactor for the service. It makes a change, its
+// IAM resource, its audit record, and its events commit together, so the
+// ResourceRegistrar, Audit Recorder, and Outbox Recorder must write through
+// the context it passes.
+func WithTransactor(tx transaction.Transactor) ServiceOption {
+	return func(s *service) {
+		s.tx = tx
+	}
+}
+
+// WithAuthorizer sets the Authorizer for the service.
+func WithAuthorizer(authz authorization.Authorizer) ServiceOption {
+	return func(s *service) {
+		s.authz = authz
+	}
+}
+
+// WithResourceRegistrar sets the ResourceRegistrar for the service.
+func WithResourceRegistrar(r iam.ResourceRegistrar) ServiceOption {
+	return func(s *service) {
+		s.resources = r
+	}
+}
+
+// WithTeamDirectory sets the Team Directory for the service.
+func WithTeamDirectory(t team.Directory) ServiceOption {
+	return func(s *service) {
+		s.teams = t
+	}
+}
+
+// WithAuditRecorder sets the Audit Recorder for the service.
+func WithAuditRecorder(a audit.Recorder) ServiceOption {
+	return func(s *service) {
+		s.audit = a
+	}
+}
+
+// WithWorkspaces sets the Workspaces for the service.
+func WithWorkspaces(w Workspaces) ServiceOption {
+	return func(s *service) {
+		s.workspaces = w
+	}
+}
+
+// WithOutboxRecorder sets the Outbox Recorder for the service.
+func WithOutboxRecorder(o outbox.Recorder) ServiceOption {
+	return func(s *service) {
+		s.outbox = o
+	}
+}
+
+// NewService returns a Service, or an error naming a missing dependency.
+func NewService(opts ...ServiceOption) (Service, error) {
+	c := &service{}
+	for _, o := range opts {
+		o(c)
+	}
+
 	required := []struct {
 		name string
 		ok   bool
 	}{
-		{"Environments", c.Environments != nil},
-		{"Lifecycles", c.Lifecycles != nil},
-		{"Targets", c.Targets != nil},
-		{"Registries", c.Registries != nil},
-		{"Applications", c.Applications != nil},
-		{"Transactor", c.Transactor != nil},
-		{"Authorizer", c.Authorizer != nil},
-		{"Resources", c.Resources != nil},
-		{"Teams", c.Teams != nil},
-		{"Audit", c.Audit != nil},
-		{"Workspaces", c.Workspaces != nil},
-		{"Outbox", c.Outbox != nil},
+		{"Environments", c.environments != nil},
+		{"Lifecycles", c.lifecycles != nil},
+		{"Targets", c.targets != nil},
+		{"Registries", c.registries != nil},
+		{"Applications", c.applications != nil},
+		{"Transactor", c.tx != nil},
+		{"Authorizer", c.authz != nil},
+		{"Resources", c.resources != nil},
+		{"Teams", c.teams != nil},
+		{"Audit", c.audit != nil},
+		{"Workspaces", c.workspaces != nil},
+		{"Outbox", c.outbox != nil},
 	}
+
 	for _, r := range required {
 		if !r.ok {
 			return nil, fmt.Errorf("delivery service: %s is required", r.name)
 		}
 	}
-	return &Service{
-		environments: c.Environments,
-		lifecycles:   c.Lifecycles,
-		targets:      c.Targets,
-		registries:   c.Registries,
-		applications: c.Applications,
-		tx:           c.Transactor,
-		authz:        c.Authorizer,
-		resources:    c.Resources,
-		teams:        c.Teams,
-		audit:        c.Audit,
-		workspaces:   c.Workspaces,
-		outbox:       c.Outbox,
-	}, nil
+
+	return c, nil
 }
 
 // authorize asks the single authorizer and turns anything but an allow into an error.
-func (s *Service) authorize(ctx context.Context, req authorization.Request) (authorization.Decision, error) {
+func (s *service) authorize(ctx context.Context, req authorization.Request) (authorization.Decision, error) {
 	return authorization.Require(ctx, s.authz, req)
 }
 
 // record writes an audit event, stamped with the decision that allowed it.
-func (s *Service) record(ctx context.Context, d authorization.Decision, e audit.Event) error {
+func (s *service) record(ctx context.Context, d authorization.Decision, e audit.Event) error {
 	e.DecisionID = d.ID
 	e.ApprovedByPrincipalID = d.ApprovedByPrincipalID
 	e.OccurredAt = clock.Now()
@@ -136,7 +186,7 @@ type aggregateObject interface {
 // the caller's transaction, so they commit with the object they describe.
 // aggregateID is the object's ID, or its key when it has no ID of its own,
 // such as a Placement's.
-func (s *Service) recordEvents(ctx context.Context, aggregateType, aggregateID string, obj aggregateObject) error {
+func (s *service) recordEvents(ctx context.Context, aggregateType, aggregateID string, obj aggregateObject) error {
 	envelopes, err := events.Wrap(ctx, events.Source{
 		OrganizationID: obj.OrganizationID(),
 		AggregateType:  aggregateType,
@@ -182,7 +232,7 @@ var errUnchanged = errors.New("unchanged")
 
 // run authorizes before the transaction, so a slow policy decision holds no
 // locks, and applies the change to the object as it is inside the transaction.
-func run[T aggregateObject](ctx context.Context, s *Service, actor identity.Actor, c change[T]) (T, error) {
+func run[T aggregateObject](ctx context.Context, s *service, actor identity.Actor, c change[T]) (T, error) {
 	var zero T
 	current, err := c.load(ctx)
 	if err != nil {
@@ -227,7 +277,7 @@ func run[T aggregateObject](ctx context.Context, s *Service, actor identity.Acto
 	return current, nil
 }
 
-func (s *Service) checkTeam(ctx context.Context, organizationID, teamID string) error {
+func (s *service) checkTeam(ctx context.Context, organizationID, teamID string) error {
 	if teamID == "" {
 		return NewErrInvalidInput("an application needs an owning team")
 	}
@@ -242,7 +292,7 @@ func (s *Service) checkTeam(ctx context.Context, organizationID, teamID string) 
 }
 
 // activeWorkspace checks that a Workspace exists and is active.
-func (s *Service) activeWorkspace(ctx context.Context, organizationID, workspaceID string) error {
+func (s *service) activeWorkspace(ctx context.Context, organizationID, workspaceID string) error {
 	w, err := s.workspaces.LookupWorkspace(ctx, organizationID, workspaceID)
 	if errors.Is(err, workspace.ErrNotFound) {
 		return fmt.Errorf("%w: workspace %s", ErrNotFound, workspaceID)
@@ -257,7 +307,7 @@ func (s *Service) activeWorkspace(ctx context.Context, organizationID, workspace
 }
 
 // activeProject returns a Project if it exists and is active.
-func (s *Service) activeProject(ctx context.Context, organizationID, projectID string) (*workspace.Project, error) {
+func (s *service) activeProject(ctx context.Context, organizationID, projectID string) (*workspace.Project, error) {
 	p, err := s.workspaces.LookupProject(ctx, organizationID, projectID)
 	if errors.Is(err, workspace.ErrNotFound) {
 		return nil, fmt.Errorf("%w: project %s", ErrNotFound, projectID)
@@ -274,7 +324,7 @@ func (s *Service) activeProject(ctx context.Context, organizationID, projectID s
 // ActiveDependents implements workspace.Dependent: a Workspace cannot be
 // archived while it has active Environments, Lifecycles, or Registries, nor
 // a Project while it has active Applications.
-func (s *Service) ActiveDependents(ctx context.Context, target workspace.ArchiveTarget) ([]workspace.Dependency, error) {
+func (s *service) ActiveDependents(ctx context.Context, target workspace.ArchiveTarget) ([]workspace.Dependency, error) {
 	if target.ProjectID != "" {
 		n, err := s.applications.CountActiveApplications(ctx, target.OrganizationID, target.ProjectID)
 		if err != nil {

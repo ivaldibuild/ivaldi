@@ -17,6 +17,7 @@ func init() {
 	id.MustRegister(principalPrefix, "iam.Principal")
 	id.MustRegister(IdentityProvider{}.Prefix(), "iam.IdentityProvider")
 	id.MustRegister(ExternalIdentity{}.Prefix(), "iam.ExternalIdentity")
+	id.MustRegister(AccountIdentity{}.Prefix(), "iam.AccountIdentity")
 	id.MustRegister(APIToken{}.Prefix(), "iam.APIToken")
 	id.MustRegister(WorkloadEnrollmentToken{}.Prefix(), "iam.WorkloadEnrollmentToken")
 	id.MustRegister(WorkloadCredential{}.Prefix(), "iam.WorkloadCredential")

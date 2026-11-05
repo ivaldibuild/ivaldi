@@ -1,6 +1,6 @@
 # Sign-in for self-hosted installations
 
-A self-hosted Ivaldi signs people in with Google, GitHub, or any OpenID Connect provider. You can turn on any of them at once. For each one, you register an OAuth app with the provider and give Ivaldi its client ID and secret.
+A self-hosted Ivaldi signs people in with Google, GitHub, or any OpenID Connect provider, and optionally with its own email and password accounts. You can turn on any of them at once. For each provider, you register an OAuth app with the provider and give Ivaldi its client ID and secret.
 
 Ivaldi applies these settings every time the control plane starts. To rotate a secret or change who may sign in, change the configuration and restart. Providers set this way cannot be changed through the API, and removing one turns it off without removing anyone's account.
 
@@ -12,7 +12,18 @@ Set `IVALDI_EXTERNAL_URL` to the address people use to reach Ivaldi, such as `ht
 <external URL>/auth/oauth/<provider>/callback
 ```
 
-where `<provider>` is `google`, `github`, or `oidc`. Register exactly that URL with the provider.
+where `<provider>` is `google`, `github`, or `oidc`. Register exactly that URL with the provider. The external URL must use https, unless it is a loopback address for local development, and must not have a path.
+
+## Signing keys
+
+Ivaldi signs the access tokens it issues with keys you provide, and refuses to start without one. Generate a P-256 key and point Ivaldi at it:
+
+```sh
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out signing.pem
+IVALDI_AUTH_SIGNING_KEY_FILES=/run/secrets/signing.pem
+```
+
+Ed25519 and RSA keys of at least 2048 bits work too. The first file signs and every file verifies, so to rotate a key, list the new one first, restart, and remove the old one once its tokens have expired (`IVALDI_AUTH_ACCESS_TOKEN_TTL`, 15 minutes by default). Every replica must have the same files. For local development only, `IVALDI_AUTH_EPHEMERAL_SIGNING_KEY=true` generates a key at start instead; its tokens stop working when the process restarts. See [ADR 0012](../adr/0012-token-issuer-and-signing-keys.md).
 
 Client secrets are never read from the YAML file. Set them in an environment variable, or point the `_FILE` variable at a file that holds the secret, such as a mounted Kubernetes secret. Setting both is an error.
 
@@ -27,6 +38,8 @@ Anyone with a Google or GitHub account can authenticate with those providers, so
 | OIDC | Optional `ALLOWED_DOMAINS` and `ALLOWED_EMAILS`, because your own provider usually decides who has an account. |
 
 Lists are comma-separated in environment variables.
+
+By default, anyone a provider admits becomes a member on their first sign-in. Set `IVALDI_AUTH_<PROVIDER>_JIT_PROVISIONING=false` (for example `IVALDI_AUTH_GITHUB_JIT_PROVISIONING=false`) to stop that; then only the administrator can join through that provider. A first sign-in needs an email the provider has verified. If an account with that email already exists, for example a built-in account, the sign-in is linked to it rather than creating a second one.
 
 ## Google
 
@@ -67,9 +80,39 @@ IVALDI_AUTH_OIDC_DISPLAY_NAME=Acme SSO
 
 `IVALDI_AUTH_OIDC_SCOPES` adds scopes to `openid`; it defaults to `email,profile`.
 
+## Email and password accounts
+
+For a small installation without an identity provider, turn on Ivaldi's own accounts:
+
+```sh
+IVALDI_AUTH_BUILTIN_ACCOUNTS=true
+```
+
+People with an account can then sign in with their email and password. There is no self-service sign-up, password reset, or email verification yet, so accounts come from the bootstrap below or from a provider sign-in.
+
 ## The first administrator
 
-When the database is empty, Ivaldi creates the Organization named by `IVALDI_BOOTSTRAP_ORGANIZATION_SLUG` and `IVALDI_BOOTSTRAP_ORGANIZATION_NAME`. The first person to sign in as `IVALDI_BOOTSTRAP_ADMIN_EMAIL`, through any enabled provider, becomes its administrator. That address must also pass the provider's limits.
+When the database is empty, Ivaldi creates the Organization named by `IVALDI_BOOTSTRAP_ORGANIZATION_NAME`, with the address `IVALDI_BOOTSTRAP_ORGANIZATION_SLUG` (derived from the name when unset). A self-hosted installation has exactly one Organization; Ivaldi refuses to start with an empty database and no bootstrap settings.
+
+The first person to sign in as `IVALDI_BOOTSTRAP_ADMIN_EMAIL` through any enabled provider becomes the Organization's owner. The provider must have verified that email, and the address must pass the provider's limits, but just-in-time provisioning need not be on. This happens once: as soon as the Organization has an owner, the admin email gives no special rights.
+
+With built-in accounts on, you can instead create the administrator's account when Ivaldi first starts:
+
+```sh
+IVALDI_BOOTSTRAP_ADMIN_PASSWORD_FILE=/run/secrets/admin-password
+```
+
+The file is used once. Ivaldi never replaces a password with it: it does nothing once the admin's account exists or the Organization has an owner, so you can remove it after the first start.
+
+## Applications that sign in
+
+Ivaldi registers its own OAuth clients on every start. `ivaldictl` signs in through a browser and a loopback redirect, and needs no configuration. To let the web app sign people in, register its callback addresses:
+
+```sh
+IVALDI_AUTH_WEB_CLIENT_REDIRECT_URIS=https://app.example.com/auth/callback
+```
+
+Clients follow the OAuth 2.1 authorization code flow with PKCE, starting at `<external URL>/oauth/authorize`. The server's metadata is at `<external URL>/.well-known/oauth-authorization-server`.
 
 ## In a YAML file
 
@@ -78,6 +121,10 @@ The same settings, except the secrets, can go in the configuration file:
 ```yaml
 external_url: https://ivaldi.example.com
 auth:
+  signing_key_files: [/run/secrets/signing.pem]
+  builtin_accounts: true
+  web_client:
+    redirect_uris: [https://app.example.com/auth/callback]
   providers:
     google:
       client_id: 1234567890-abc.apps.googleusercontent.com
@@ -87,10 +134,12 @@ auth:
       client_id: Iv1.0123456789abcdef
       client_secret_file: /run/secrets/github-client-secret
       allowed_organizations: [example-org]
+      jit_provisioning: false
 bootstrap:
   organization_slug: example
   organization_name: Example
   admin_email: admin@example.com
+  admin_password_file: /run/secrets/admin-password
 ```
 
 Environment variables override the file.

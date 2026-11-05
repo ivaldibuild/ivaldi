@@ -22,3 +22,11 @@ import "context"
 type Transactor interface {
 	WithinTx(ctx context.Context, fn func(ctx context.Context) error) error
 }
+
+// Locker takes a lock that lasts until the transaction in ctx ends, so work
+// that must not run twice at once, such as bootstrapping an installation
+// from several replicas, runs one at a time. It must be called inside
+// Transactor.WithinTx.
+type Locker interface {
+	Lock(ctx context.Context, key string) error
+}

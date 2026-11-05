@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/assert"
@@ -91,5 +92,60 @@ func TestWithinTx(t *testing.T) {
 		assert.True(t, ok)
 		assert.Equal(t, "items_pkey", c)
 		assert.False(t, errors.Is(err, gorm.ErrRecordNotFound))
+	})
+}
+
+func TestLocker(t *testing.T) {
+	ctx := context.Background()
+	db := databasetest.New(t)
+	tx := database.NewTransactor(db)
+	locker := database.NewLocker(db)
+
+	t.Run("refuses to lock outside a transaction", func(t *testing.T) {
+		assert.ErrorIs(t, locker.Lock(ctx, "bootstrap"), database.ErrNoTransaction)
+	})
+
+	t.Run("a second holder waits until the first commits", func(t *testing.T) {
+		locked := make(chan struct{})
+		release := make(chan struct{})
+		first := make(chan error, 1)
+		go func() {
+			first <- tx.WithinTx(ctx, func(ctx context.Context) error {
+				if err := locker.Lock(ctx, "bootstrap"); err != nil {
+					return err
+				}
+				close(locked)
+				<-release
+				return nil
+			})
+		}()
+		<-locked
+
+		second := make(chan time.Time, 1)
+		go func() {
+			_ = tx.WithinTx(ctx, func(ctx context.Context) error {
+				err := locker.Lock(ctx, "bootstrap")
+				second <- time.Now()
+				return err
+			})
+		}()
+
+		select {
+		case <-second:
+			t.Fatal("the second transaction took the lock while the first held it")
+		case <-time.After(200 * time.Millisecond):
+		}
+		released := time.Now()
+		close(release)
+		require.NoError(t, <-first)
+		assert.False(t, (<-second).Before(released), "the lock was taken only after the first transaction ended")
+	})
+
+	t.Run("different keys do not block each other", func(t *testing.T) {
+		err := tx.WithinTx(ctx, func(ctx context.Context) error {
+			require.NoError(t, locker.Lock(ctx, "a"))
+			return tx.WithinTx(context.Background(), func(ctx context.Context) error { return locker.Lock(ctx, "b") })
+		})
+		assert.NoError(t, err)
 	})
 }

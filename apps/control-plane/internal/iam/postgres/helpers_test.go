@@ -42,6 +42,14 @@ type fixture struct {
 	accounts  iam.AccountRepository
 	passwords iam.PasswordCredentialRepository
 	users     iam.UserRepository
+	providers iam.IdentityProviderRepository
+	externals iam.ExternalIdentityRepository
+	platform  iam.AccountIdentityRepository
+	grants    iam.GrantRepository
+	resources iam.ResourceRegistrar
+	clients   iam.OAuthClientRepository
+	codes     iam.OAuthAuthorizationCodeRepository
+	refreshes iam.OAuthRefreshTokenRepository
 }
 
 // newFixture gives the test a fresh database with the iam schema, and fixes
@@ -57,6 +65,14 @@ func newFixture(t *testing.T) *fixture {
 		accounts:  NewAccountRepository(db),
 		passwords: NewPasswordCredentialRepository(db),
 		users:     NewUserRepository(db),
+		providers: NewIdentityProviderRepository(db),
+		externals: NewExternalIdentityRepository(db),
+		platform:  NewAccountIdentityRepository(db),
+		grants:    NewGrantRepository(db),
+		resources: NewResourceRegistrar(db),
+		clients:   NewOAuthClientRepository(db),
+		codes:     NewOAuthAuthorizationCodeRepository(db),
+		refreshes: NewOAuthRefreshTokenRepository(db),
 	}
 }
 

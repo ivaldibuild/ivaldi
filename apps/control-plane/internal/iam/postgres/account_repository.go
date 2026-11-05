@@ -32,6 +32,22 @@ func (r *accountRepository) ExistsByEmail(ctx context.Context, email string) (bo
 	return exists, translate(err)
 }
 
+func (r *accountRepository) Get(ctx context.Context, accountID string) (*iam.Account, error) {
+	return r.get(r.conn(ctx).Where("id = ?", accountID))
+}
+
+func (r *accountRepository) GetByEmail(ctx context.Context, email string) (*iam.Account, error) {
+	return r.get(r.conn(ctx).Where("lower(email) = lower(?)", email))
+}
+
+func (r *accountRepository) get(q *gorm.DB) (*iam.Account, error) {
+	var entity accountEntity
+	if err := q.Take(&entity).Error; err != nil {
+		return nil, translate(err)
+	}
+	return r.mapper.ToDomain(&entity)
+}
+
 // Write inserts the Account, or updates it when its ID is stored. An email
 // another Account holds, in any case, fails with ErrAlreadyExists.
 func (r *accountRepository) Write(ctx context.Context, account *iam.Account) error {

@@ -56,6 +56,10 @@ func (f *fakeOrgs) GetByIdentifier(context.Context, string) (*iam.Organization, 
 func (f *fakeOrgs) GetByIdentifiers(context.Context, []string) ([]*iam.Organization, error) {
 	return nil, nil
 }
+func (f *fakeOrgs) Count(context.Context) (int64, error) { return 0, nil }
+func (f *fakeOrgs) GetForUpdate(context.Context, string) (*iam.Organization, error) {
+	return nil, iam.ErrNotFound
+}
 func (f *fakeOrgs) Write(ctx context.Context, o *iam.Organization) error {
 	f.writes = append(f.writes, write{o, inTx(ctx)})
 	return f.err
@@ -70,6 +74,12 @@ type fakeAccounts struct {
 func (f *fakeAccounts) ExistsByEmail(_ context.Context, email string) (bool, error) {
 	return f.emails[strings.ToLower(email)], nil
 }
+func (f *fakeAccounts) Get(context.Context, string) (*iam.Account, error) {
+	return nil, iam.ErrNotFound
+}
+func (f *fakeAccounts) GetByEmail(context.Context, string) (*iam.Account, error) {
+	return nil, iam.ErrNotFound
+}
 func (f *fakeAccounts) Write(ctx context.Context, a *iam.Account) error {
 	f.writes = append(f.writes, write{a, inTx(ctx)})
 	return f.err
@@ -80,6 +90,9 @@ type fakePasswords struct {
 	err    error
 }
 
+func (f *fakePasswords) Get(context.Context, string) (*iam.PasswordCredential, error) {
+	return nil, iam.ErrNotFound
+}
 func (f *fakePasswords) Write(ctx context.Context, c *iam.PasswordCredential) error {
 	f.writes = append(f.writes, write{c, inTx(ctx)})
 	return f.err
@@ -90,6 +103,15 @@ type fakeUsers struct {
 	err    error
 }
 
+func (f *fakeUsers) Get(context.Context, string, string) (*iam.User, error) {
+	return nil, iam.ErrNotFound
+}
+func (f *fakeUsers) GetByAccount(context.Context, string, string) (*iam.User, error) {
+	return nil, iam.ErrNotFound
+}
+func (f *fakeUsers) ListMemberships(context.Context, string) ([]iam.Membership, error) {
+	return nil, nil
+}
 func (f *fakeUsers) Write(ctx context.Context, u *iam.User) error {
 	f.writes = append(f.writes, write{u, inTx(ctx)})
 	return f.err

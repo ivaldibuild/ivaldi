@@ -73,6 +73,22 @@ func (r *organizationRepository) GetByIdentifiers(ctx context.Context, identifie
 	return orgs, nil
 }
 
+func (r *organizationRepository) Count(ctx context.Context) (int64, error) {
+	var n int64
+	err := r.conn(ctx).Model(&organizationEntity{}).Count(&n).Error
+	return n, translate(err)
+}
+
+func (r *organizationRepository) GetForUpdate(ctx context.Context, organizationID string) (*iam.Organization, error) {
+	var entity organizationEntity
+	err := r.conn(ctx).Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate}).
+		Where("id = ?", organizationID).Take(&entity).Error
+	if err != nil {
+		return nil, translate(err)
+	}
+	return r.mapper.ToDomain(&entity)
+}
+
 // Write inserts the Organization, or updates it when its ID is stored. A
 // slug another Organization holds fails with ErrAlreadyExists.
 func (r *organizationRepository) Write(ctx context.Context, org *iam.Organization) error {

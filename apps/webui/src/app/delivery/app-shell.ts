@@ -3,6 +3,7 @@ import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { NgIcon, provideIcons } from '@ng-icons/core';
 import {
   lucideBox,
+  lucideFolder,
   lucideGitBranch,
   lucideLayers,
   lucideLogOut,
@@ -26,7 +27,14 @@ import { WorkspaceContext } from './workspace-context';
     UserBadge,
   ],
   providers: [
-    provideIcons({ lucideBox, lucideGitBranch, lucideLayers, lucideLogOut, lucideSettings }),
+    provideIcons({
+      lucideBox,
+      lucideFolder,
+      lucideGitBranch,
+      lucideLayers,
+      lucideLogOut,
+      lucideSettings,
+    }),
   ],
   templateUrl: './app-shell.html',
 })
@@ -36,6 +44,7 @@ export class AppShell {
 
   protected readonly delivery = [
     { path: '/applications', label: 'Applications', icon: 'lucideBox' },
+    { path: '/projects', label: 'Projects', icon: 'lucideFolder' },
     { path: '/environments', label: 'Environments', icon: 'lucideLayers' },
     { path: '/lifecycles', label: 'Lifecycles', icon: 'lucideGitBranch' },
   ];

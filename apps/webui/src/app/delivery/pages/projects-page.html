@@ -1,0 +1,177 @@
+<div class="flex flex-col gap-8">
+  <app-page-header
+    heading="Projects"
+    [trail]="(context.current()?.display_name ?? 'Workspace') + ' / Projects'"
+  >
+    <ng-container pageActions>
+      <a hlmBtn size="lg" routerLink="/projects/new">
+        <ng-icon name="lucidePlus" aria-hidden="true" /> New project
+      </a>
+    </ng-container>
+  </app-page-header>
+
+  <p class="text-foreground max-w-205 text-base leading-relaxed">
+    A Project groups the Applications a Team is responsible for. New Applications in it are owned by
+    its Team unless you choose another.
+  </p>
+
+  <div class="flex flex-wrap items-end gap-4" role="search" aria-label="Filter Projects">
+    <form class="flex items-end gap-2" (submit)="search($event)">
+      <div class="flex flex-col gap-1.5">
+        <label for="project-search" class="text-muted-foreground text-xs">Name or slug</label>
+        <input
+          hlmInput
+          id="project-search"
+          type="search"
+          class="h-9 w-64"
+          [value]="searchDraft()"
+          (input)="searchDraft.set($any($event.target).value)"
+        />
+      </div>
+      <button hlmBtn variant="outline" type="submit" class="h-9">
+        <ng-icon name="lucideSearch" aria-hidden="true" /> Search
+      </button>
+    </form>
+
+    <div class="flex flex-col gap-1.5">
+      <label for="project-team" class="text-muted-foreground text-xs">Owning Team</label>
+      <select
+        id="project-team"
+        class="border-input bg-background text-foreground h-9 border px-2 text-sm"
+        [value]="filter().ownerTeamId"
+        (change)="filterByTeam($event)"
+      >
+        <option value="">Any Team</option>
+        @for (team of teams(); track team.id) {
+          <option [value]="team.id">{{ team.display_name }}</option>
+        }
+      </select>
+    </div>
+
+    <label class="flex h-9 items-center gap-2 text-sm">
+      <input type="checkbox" [checked]="filter().includeArchived" (change)="showArchived($event)" />
+      Show archived
+    </label>
+
+    @if (filtered()) {
+      <button hlmBtn variant="ghost" type="button" class="h-9" (click)="clearFilters()">
+        Clear filters
+      </button>
+    }
+  </div>
+
+  @if (failure(); as message) {
+    <div hlmAlert variant="destructive" role="alert">
+      <h2 hlmAlertTitle>Projects didn't load</h2>
+      <p hlmAlertDescription>{{ message }}</p>
+    </div>
+  } @else if (firstPage.isLoading() && !firstPage.hasValue()) {
+    <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+      <hlm-spinner aria-hidden="true" /> Loading Projects…
+    </p>
+  } @else if (projects().length === 0 && filtered()) {
+    <section class="border-border flex flex-col items-start gap-3 border p-8">
+      <h2 class="text-heading text-lg font-semibold">No Projects match</h2>
+      <p class="text-muted-foreground text-sm">Try another search, or clear the filters.</p>
+      <button hlmBtn variant="outline" type="button" (click)="clearFilters()">Clear filters</button>
+    </section>
+  } @else if (projects().length === 0) {
+    <section class="border-border flex flex-col items-start gap-3 border p-8">
+      <h2 class="text-heading text-lg font-semibold">No Projects yet</h2>
+      <p class="text-muted-foreground text-sm">
+        Create a Project for each product or service a Team is responsible for, then add its
+        Applications to it.
+      </p>
+      <a hlmBtn routerLink="/projects/new">Create the first one</a>
+    </section>
+  } @else {
+    <div class="border-border overflow-x-auto border">
+      <table class="w-full min-w-180 border-collapse text-sm">
+        <caption class="sr-only">
+          Projects in
+          {{
+            context.current()?.display_name
+          }}
+        </caption>
+        <thead>
+          <tr class="text-left">
+            <th
+              scope="col"
+              class="border-border text-muted-foreground border-b px-4 py-3 font-semibold"
+            >
+              Project
+            </th>
+            <th
+              scope="col"
+              class="border-border text-muted-foreground border-b px-4 py-3 font-semibold"
+            >
+              Owning Team
+            </th>
+            <th
+              scope="col"
+              class="border-border text-muted-foreground border-b px-4 py-3 font-semibold"
+            >
+              Description
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (project of projects(); track project.id) {
+            <tr>
+              <th
+                scope="row"
+                class="border-border border-b px-4 py-4 text-left align-top font-normal"
+              >
+                <div class="flex flex-wrap items-center gap-2">
+                  <a
+                    [routerLink]="['/projects', project.id]"
+                    class="text-heading text-[15px] font-semibold no-underline hover:underline"
+                  >
+                    {{ project.display_name }}
+                  </a>
+                  @if (project.archived_at) {
+                    <span hlmBadge variant="outline">Archived</span>
+                  }
+                </div>
+                <code class="text-muted-foreground text-[13px]">{{ project.slug }}</code>
+              </th>
+              <td class="border-border text-foreground border-b px-4 py-4 align-top">
+                {{ teamName(project.owner_team_id) || '—' }}
+              </td>
+              <td class="border-border text-muted-foreground border-b px-4 py-4 align-top">
+                {{ project.description || '—' }}
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-4">
+      <p class="text-muted-foreground text-sm" role="status">
+        Showing {{ projects().length }} of {{ total() }}
+      </p>
+      @if (hasMore()) {
+        <button
+          hlmBtn
+          variant="outline"
+          type="button"
+          [disabled]="moreStatus.saving()"
+          (click)="showMore()"
+        >
+          @if (moreStatus.saving()) {
+            <hlm-spinner aria-hidden="true" /> Loading…
+          } @else {
+            Show more
+          }
+        </button>
+      }
+    </div>
+    @if (moreStatus.error(); as message) {
+      <div hlmAlert variant="destructive" role="alert">
+        <h2 hlmAlertTitle>More Projects didn't load</h2>
+        <p hlmAlertDescription>{{ message }}</p>
+      </div>
+    }
+  }
+</div>

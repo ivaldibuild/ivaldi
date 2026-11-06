@@ -21,8 +21,12 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
+	"github.com/ivaldibuild/ivaldi/pkg/pagination"
 	"github.com/ivaldibuild/ivaldi/pkg/transaction"
 )
+
+// maxSearchLength caps a list's search, which matches names and slugs.
+const maxSearchLength = 255
 
 type ProjectServiceOption func(*options)
 
@@ -164,8 +168,11 @@ func (s *service) GetProject(ctx context.Context, _ identity.Actor, organization
 	return s.repo.GetProject(ctx, organizationID, projectID)
 }
 
-func (s *service) ListProjects(ctx context.Context, _ identity.Actor, organizationID, workspaceID string, includeArchived bool) ([]*workspace.Project, error) {
-	return s.repo.ListProjects(ctx, organizationID, workspaceID, includeArchived)
+func (s *service) ListProjects(ctx context.Context, _ identity.Actor, q workspace.ListProjectsQuery) (*pagination.Result[*workspace.Project], error) {
+	if len(q.Search) > maxSearchLength {
+		return nil, fmt.Errorf("%w: the search must be at most %d characters", workspace.ErrInvalid, maxSearchLength)
+	}
+	return s.repo.ListProjects(ctx, q)
 }
 
 // change runs one change to a Project through change.Run. resource, if

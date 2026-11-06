@@ -25,6 +25,7 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/database"
 	"github.com/ivaldibuild/ivaldi/pkg/database/databasetest"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
+	"github.com/ivaldibuild/ivaldi/pkg/pagination"
 )
 
 const (
@@ -62,7 +63,7 @@ func (allow) Authorize(context.Context, authorization.Request) (authorization.De
 type teams struct{}
 
 func (teams) IsActiveTeam(_ context.Context, _, teamID string) (bool, error) {
-	return teamID == team, nil
+	return teamID == team || teamID == "tem_other", nil
 }
 
 // stack is the workspace capability wired to PostgreSQL, as the control
@@ -186,4 +187,55 @@ func TestTheProvisionerJoinsTheCallersTransaction(t *testing.T) {
 	require.ErrorIs(t, err, workspace.ErrNotFound, "the default workspace rolls back with the organization")
 	assert.Empty(t, s.column(t, `SELECT type FROM outbox.events`))
 	assert.Empty(t, s.column(t, `SELECT type FROM audit.records`))
+}
+
+func TestListProjectsAgainstPostgreSQL(t *testing.T) {
+	ctx := context.Background()
+	s := newStack(t)
+	require.NoError(t, s.provisioner.ProvisionOrganization(ctx, org))
+	ws, err := s.repo.GetDefaultWorkspace(ctx, org)
+	require.NoError(t, err)
+	create := func(slug, name, owner string) *workspace.Project {
+		t.Helper()
+		p, err := s.projects.CreateProject(ctx, alice, workspace.CreateProjectInput{OrganizationID: org, WorkspaceID: ws.ID(), OwnerTeamID: owner, Slug: slug, DisplayName: name})
+		require.NoError(t, err)
+		return p
+	}
+	checkout := create("checkout", "Checkout", team)
+	billing := create("billing", "Billing 100%", team)
+	search := create("search", "Search", "tem_other")
+	_, err = s.projects.ArchiveProject(ctx, alice, org, search.ID())
+	require.NoError(t, err)
+
+	list := func(q workspace.ListProjectsQuery) []string {
+		t.Helper()
+		q.OrganizationID, q.WorkspaceID = org, ws.ID()
+		page, err := s.projects.ListProjects(ctx, alice, q)
+		require.NoError(t, err)
+		ids := make([]string, len(page.Items))
+		for i, p := range page.Items {
+			ids[i] = p.ID()
+		}
+		return ids
+	}
+
+	assert.Equal(t, []string{checkout.ID(), billing.ID()}, list(workspace.ListProjectsQuery{}), "by creation, without archived ones")
+	assert.Equal(t, []string{billing.ID(), checkout.ID(), search.ID()},
+		list(workspace.ListProjectsQuery{IncludeArchived: true, Page: pagination.Query{SortBy: "display_name"}}))
+	assert.Equal(t, []string{checkout.ID()}, list(workspace.ListProjectsQuery{Search: "CHECK"}), "names and slugs, ignoring case")
+	assert.Equal(t, []string{billing.ID()}, list(workspace.ListProjectsQuery{Search: "100%"}), "a % matches itself")
+	assert.Empty(t, list(workspace.ListProjectsQuery{Search: "_"}))
+	assert.Equal(t, []string{search.ID()}, list(workspace.ListProjectsQuery{OwnerTeamID: "tem_other", IncludeArchived: true}))
+
+	first, err := s.projects.ListProjects(ctx, alice, workspace.ListProjectsQuery{OrganizationID: org, WorkspaceID: ws.ID(), Page: pagination.Query{Limit: 1, SortBy: "slug"}})
+	require.NoError(t, err)
+	require.True(t, first.HasNext)
+	assert.Equal(t, 2, first.TotalCount)
+	assert.Equal(t, billing.ID(), first.Items[0].ID())
+	second, err := s.projects.ListProjects(ctx, alice, workspace.ListProjectsQuery{OrganizationID: org, WorkspaceID: ws.ID(), Page: pagination.Query{Limit: 1, SortBy: "slug", NextCursor: first.NextCursor}})
+	require.NoError(t, err)
+	assert.Equal(t, checkout.ID(), second.Items[0].ID())
+
+	_, err = s.projects.ListProjects(ctx, alice, workspace.ListProjectsQuery{OrganizationID: org, WorkspaceID: ws.ID(), Page: pagination.Query{SortBy: "owner"}})
+	assert.ErrorIs(t, err, workspace.ErrInvalid)
 }

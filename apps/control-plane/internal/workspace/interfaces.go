@@ -12,6 +12,7 @@ import (
 	"fmt"
 
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
+	"github.com/ivaldibuild/ivaldi/pkg/pagination"
 )
 
 // Repository persists and retrieves Workspaces, Projects, and settings, and
@@ -35,7 +36,9 @@ type Repository interface {
 
 	CreateProject(ctx context.Context, p *Project) error
 	GetProject(ctx context.Context, organizationID, projectID string) (*Project, error)
-	ListProjects(ctx context.Context, organizationID, workspaceID string, includeArchived bool) ([]*Project, error)
+	// ListProjects pages a Workspace's Projects. An invalid sort or cursor
+	// fails with ErrInvalid.
+	ListProjects(ctx context.Context, query ListProjectsQuery) (*pagination.Result[*Project], error)
 	// UpdateProject writes the Project's slug, display name, description,
 	// owning Team, archived time, and updated time. It never changes WorkspaceID.
 	UpdateProject(ctx context.Context, p *Project) error
@@ -157,7 +160,7 @@ type ProjectService interface {
 	GetProject(ctx context.Context, actor identity.Actor, organizationID, projectID string) (*Project, error)
 	// ListProjects needs read access on the Workspace; listing only the
 	// Projects each caller can see waits for IAM's resource listing.
-	ListProjects(ctx context.Context, actor identity.Actor, organizationID, workspaceID string, includeArchived bool) ([]*Project, error)
+	ListProjects(ctx context.Context, actor identity.Actor, query ListProjectsQuery) (*pagination.Result[*Project], error)
 	// UpdateProject renames or redescribes an active Project.
 	UpdateProject(ctx context.Context, actor identity.Actor, organizationID, projectID string, props UpdateProjectProps) (*Project, error)
 	// TransferProject hands an active Project to another active Team. The
@@ -169,6 +172,21 @@ type ProjectService interface {
 	// RestoreProject restores an archived Project in an active Workspace, if
 	// its slug is still free. Restoring an active one does nothing.
 	RestoreProject(ctx context.Context, actor identity.Actor, organizationID, projectID string) (*Project, error)
+}
+
+// ListProjectsQuery lists a Workspace's Projects.
+type ListProjectsQuery struct {
+	OrganizationID string
+	WorkspaceID    string
+	// Search keeps the Projects whose display name or slug contains it,
+	// ignoring case.
+	Search string
+	// OwnerTeamID keeps the Projects that Team owns.
+	OwnerTeamID     string
+	IncludeArchived bool
+	// Page sorts by "created_at" (the default), "slug", or "display_name",
+	// with the ID breaking ties.
+	Page pagination.Query
 }
 
 // CreateProjectInput describes a new Project.

@@ -25,6 +25,8 @@ Signed in, the web app opens on the delivery screens, for the Workspace chosen i
 
 - **Applications** (`/applications`): each Application by Environment, listing the Targets it's placed on, and a form to create one, with its Project if needed.
 - **An Application** (`/applications/:id`): its Channels and the Lifecycles they follow, its artifacts, and its placements, with forms to declare an artifact and place it on a Target.
+- **Projects** (`/projects`): the Workspace's Projects by name, with search, an owning Team filter, and archived ones on request; and a form to create one (`/projects/new`).
+- **A Project** (`/projects/:id`): its Applications, the Lifecycle new ones follow by default (set on the Project or inherited from the Workspace), and forms to rename it, hand it to another Team, and archive or restore it. Its New application button opens `/applications/new?project=<id>` with the Project chosen.
 - **Environments** and **Lifecycles**: what the Workspace has, read-only. The first-run setup creates them.
 
 The control plane doesn't serve Builds, Releases or Deployments yet, so these screens show configuration, not which version runs where.

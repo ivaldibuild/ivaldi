@@ -77,6 +77,22 @@ export const routes: Routes = [
           import('./delivery/pages/application-page').then((m) => m.ApplicationPage),
       },
       {
+        path: 'projects',
+        title: 'Projects · Ivaldi',
+        loadComponent: () => import('./delivery/pages/projects-page').then((m) => m.ProjectsPage),
+      },
+      {
+        path: 'projects/new',
+        title: 'New project · Ivaldi',
+        loadComponent: () =>
+          import('./delivery/pages/new-project-page').then((m) => m.NewProjectPage),
+      },
+      {
+        path: 'projects/:id',
+        title: 'Project · Ivaldi',
+        loadComponent: () => import('./delivery/pages/project-page').then((m) => m.ProjectPage),
+      },
+      {
         path: 'environments',
         title: 'Environments · Ivaldi',
         loadComponent: () =>

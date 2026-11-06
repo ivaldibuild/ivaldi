@@ -12,6 +12,10 @@ interface Envelope<T> {
 /** A page of a cursor-paged list. */
 export interface Page<T> {
   items: T[];
+  total_count: number;
+  has_next: boolean;
+  /** Asks for the page after this one; null on the last page. */
+  next_cursor: string | null;
 }
 
 /** A refusal from the control plane, carrying its `application/problem+json` detail. */
@@ -46,7 +50,8 @@ export class ApiClient {
 
 async function unwrap<T>(request: Observable<Envelope<T>>): Promise<T> {
   try {
-    return await firstValueFrom(request.pipe(map((envelope) => envelope.data)));
+    // A 204, such as a removal's, has no body and so no envelope.
+    return await firstValueFrom(request.pipe(map((envelope) => envelope?.data as T)));
   } catch (error) {
     throw toApiError(error);
   }

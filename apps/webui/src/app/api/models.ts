@@ -13,6 +13,32 @@ export interface Project {
   owner_team_id: string;
   slug: string;
   display_name: string;
+  description: string;
+  created_at: string;
+  /** When it was archived, or null while it's active. */
+  archived_at: string | null;
+}
+
+/** Where a setting's value is stored. */
+export type SettingLevel = 'organization' | 'workspace' | 'project';
+
+/** A setting's value as stored at one level. */
+export interface Setting {
+  key: string;
+  value: unknown;
+  /** Increases with every change; a change or removal sends the version it read. */
+  version: number;
+}
+
+/** A setting's effective value at a level, and where it comes from. */
+export interface ResolvedSetting {
+  key: string;
+  value: unknown;
+  /** The level the value is stored at; absent for the default or no value. */
+  level?: SettingLevel;
+  from_default: boolean;
+  /** Whether a lock at a higher level fixed the value. */
+  locked: boolean;
 }
 
 export type TeamRole = 'lead' | 'member';

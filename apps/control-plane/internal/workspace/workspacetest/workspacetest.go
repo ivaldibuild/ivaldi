@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/audit"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam"
@@ -22,6 +23,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/events"
+	"github.com/ivaldibuild/ivaldi/pkg/pagination"
 )
 
 // ResourceCall is a call to the IAM resource registrar: "register",
@@ -220,14 +222,25 @@ func (s *Store) GetProject(_ context.Context, organizationID, projectID string) 
 	return RebuildProject(d), nil
 }
 
-func (s *Store) ListProjects(_ context.Context, organizationID, workspaceID string, includeArchived bool) ([]*workspace.Project, error) {
+// ListProjects filters as the PostgreSQL repository does and returns every
+// match on one page, sorted by slug; it does not page.
+func (s *Store) ListProjects(_ context.Context, q workspace.ListProjectsQuery) (*pagination.Result[*workspace.Project], error) {
 	var out []*workspace.Project
+	search := strings.ToLower(q.Search)
 	for _, d := range s.Projects {
-		if d.OrganizationID == organizationID && d.WorkspaceID == workspaceID && (includeArchived || d.ArchivedAt == nil) {
-			out = append(out, RebuildProject(d))
+		if d.OrganizationID != q.OrganizationID || d.WorkspaceID != q.WorkspaceID || (!q.IncludeArchived && d.ArchivedAt != nil) {
+			continue
 		}
+		if q.OwnerTeamID != "" && d.OwnerTeamID != q.OwnerTeamID {
+			continue
+		}
+		if search != "" && !strings.Contains(strings.ToLower(d.DisplayName), search) && !strings.Contains(d.Slug, search) {
+			continue
+		}
+		out = append(out, RebuildProject(d))
 	}
-	return out, nil
+	slices.SortFunc(out, func(a, b *workspace.Project) int { return strings.Compare(a.Slug(), b.Slug()) })
+	return &pagination.Result[*workspace.Project]{Items: out, TotalCount: len(out)}, nil
 }
 
 func (s *Store) UpdateProject(_ context.Context, p *workspace.Project) error {

@@ -6,12 +6,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
 	"github.com/ivaldibuild/ivaldi/pkg/database"
+	"github.com/ivaldibuild/ivaldi/pkg/pagination"
 )
 
 // Repository is the PostgreSQL workspace.Repository. It uses the transaction
@@ -156,24 +159,48 @@ func (r *Repository) GetProject(ctx context.Context, organizationID, projectID s
 	return rec.toDomain()
 }
 
-func (r *Repository) ListProjects(ctx context.Context, organizationID, workspaceID string, includeArchived bool) ([]*workspace.Project, error) {
-	q := r.conn(ctx).Where("organization_id = ? AND workspace_id = ?", organizationID, workspaceID)
-	if !includeArchived {
-		q = q.Where("archived_at IS NULL")
+// projectKeyset sorts Projects by "created_at" (the default), "slug", or
+// "display_name", with the ID breaking ties.
+var projectKeyset = database.Keyset[projectEntity]{
+	Keys: map[string]database.SortKey[projectEntity]{
+		"created_at":   database.TimeKey("created_at", func(e *projectEntity) time.Time { return e.CreatedAt }),
+		"slug":         database.StringKey("slug", func(e *projectEntity) string { return e.Slug }),
+		"display_name": database.StringKey("display_name", func(e *projectEntity) string { return e.DisplayName }),
+	},
+	Default: "created_at",
+	ID:      func(e *projectEntity) string { return e.ID },
+}
+
+func (r *Repository) ListProjects(ctx context.Context, q workspace.ListProjectsQuery) (*pagination.Result[*workspace.Project], error) {
+	base := func() *gorm.DB {
+		db := r.conn(ctx).Model(&projectEntity{}).
+			Where("organization_id = ? AND workspace_id = ?", q.OrganizationID, q.WorkspaceID)
+		if !q.IncludeArchived {
+			db = db.Where("archived_at IS NULL")
+		}
+		if q.OwnerTeamID != "" {
+			db = db.Where("owner_team_id = ?", q.OwnerTeamID)
+		}
+		if q.Search != "" {
+			pattern := "%" + escapeLike(q.Search) + "%"
+			db = db.Where(`(display_name ILIKE ? ESCAPE '\' OR slug ILIKE ? ESCAPE '\')`, pattern, pattern)
+		}
+		return db
 	}
-	var recs []projectEntity
-	if err := q.Order("slug, id").Find(&recs).Error; err != nil {
+	page, err := database.Paginate(base, q.Page, projectKeyset)
+	if errors.Is(err, pagination.ErrInvalidQuery) {
+		return nil, fmt.Errorf("%w: %w", workspace.ErrInvalid, err)
+	}
+	if err != nil {
 		return nil, translate(err)
 	}
-	out := make([]*workspace.Project, len(recs))
-	for i := range recs {
-		d, err := recs[i].toDomain()
-		if err != nil {
-			return nil, err
-		}
-		out[i] = d
-	}
-	return out, nil
+	return database.ToResult(page, func(e *projectEntity) (*workspace.Project, error) { return e.toDomain() })
+}
+
+// escapeLike makes s match itself in a LIKE pattern that uses '\' as its
+// escape character.
+func escapeLike(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }
 
 func (r *Repository) UpdateProject(ctx context.Context, p *workspace.Project) error {

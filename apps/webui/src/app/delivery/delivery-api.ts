@@ -23,13 +23,14 @@ export class DeliveryApi {
     return this.api.get('/workspaces');
   }
 
+  /** The Workspace's active Projects by name, up to the 100 a page holds, for labels and pickers. */
   projects(workspaceId: string): Promise<Project[]> {
-    return this.api.get(`/workspaces/${workspaceId}/projects`);
+    return this.api.list(`/workspaces/${workspaceId}/projects?limit=100&sort_by=display_name`);
   }
 
   createProject(
     workspaceId: string,
-    project: { display_name: string; slug: string; owner_team_id: string },
+    project: { display_name: string; slug: string; owner_team_id: string; description?: string },
   ): Promise<Project> {
     return this.api.send('POST', `/workspaces/${workspaceId}/projects`, project);
   }

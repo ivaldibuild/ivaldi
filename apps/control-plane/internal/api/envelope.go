@@ -12,7 +12,7 @@ const (
 type Response[T any] struct {
 	Status  RequestStatus `json:"status" doc:"Request status"`
 	Message string        `json:"message,omitempty" doc:"Human-readable message"`
-	Data    T             `json:"data,omitempty" doc:"Response payload"`
+	Data    T             `json:"data" doc:"Response payload, always present: an empty list is [], not omitted"`
 }
 
 func SuccessResponse[T any](message *string, data T) Response[T] {

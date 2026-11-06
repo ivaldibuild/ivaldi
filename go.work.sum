@@ -24,6 +24,7 @@ github.com/gofiber/fiber/v3 v3.6.1/go.mod h1:+nxjBal3gw0EPf3gqK5EmtxaxTL01+zbSTa
 github.com/gofiber/schema v1.9.0/go.mod h1:M0dV/AiPKfzHazzSkCPqragxubCvz8pP2GjJmFBsG+w=
 github.com/gofiber/utils/v2 v2.6.2/go.mod h1:8ey6lqPABeSEhqoxsh/5dMyUOMHB/rkPagXlKWvL67o=
 github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
+github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
 github.com/gorilla/mux v1.8.1/go.mod h1:AKf9I4AEqPTmMytcMc0KkNouC66V3BtZ4qD5fmWSiMQ=
 github.com/json-iterator/go v1.1.12/go.mod h1:e30LSqwooZae/UwlEbR2852Gd8hjQvJoHmT4TnhNGBo=

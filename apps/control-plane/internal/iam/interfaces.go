@@ -35,6 +35,70 @@ type GrantService interface {
 	RemoveGrant(ctx context.Context, actor identity.Actor, organizationID, grantID string) error
 }
 
+// ServiceAccountRepository stores ServiceAccounts: a principal row and a
+// service_accounts row each.
+type ServiceAccountRepository interface {
+	// Write inserts the ServiceAccount, or updates its principal when its
+	// ID is stored.
+	Write(ctx context.Context, s *ServiceAccount) error
+	Get(ctx context.Context, organizationID, principalID string) (*ServiceAccount, error)
+	// List returns the Organization's ServiceAccounts by name, the active
+	// ones only unless includeInactive.
+	List(ctx context.Context, organizationID string, includeInactive bool) ([]*ServiceAccount, error)
+}
+
+// APITokenRepository stores API tokens, of which only a hash is kept.
+type APITokenRepository interface {
+	// Write inserts the token, or updates its last use and revocation when
+	// its ID is stored.
+	Write(ctx context.Context, t *APIToken) error
+	Get(ctx context.Context, organizationID, tokenID string) (*APIToken, error)
+	// GetByHash finds a token by the hash of its secret, in any
+	// Organization: authenticating a request is how the Organization is
+	// learned. It returns ErrNotFound for none.
+	GetByHash(ctx context.Context, hash []byte) (*APIToken, error)
+	// ListByPrincipal returns the principal's tokens, newest first.
+	ListByPrincipal(ctx context.Context, organizationID, principalID string) ([]*APIToken, error)
+}
+
+// ServiceAccountService manages service accounts, the non-human principals
+// CI and other integrations act as, and their API tokens. Roles are granted
+// to service accounts like to anyone, through the GrantService. Admins and
+// owners manage them; every member may list them.
+type ServiceAccountService interface {
+	CreateServiceAccount(ctx context.Context, actor identity.Actor, in CreateServiceAccountInput) (*ServiceAccount, error)
+	ListServiceAccounts(ctx context.Context, actor identity.Actor, organizationID string, includeInactive bool) ([]*ServiceAccount, error)
+	GetServiceAccount(ctx context.Context, actor identity.Actor, organizationID, serviceAccountID string) (*ServiceAccount, error)
+	// SuspendServiceAccount stops every one of its tokens from working
+	// until it is reactivated.
+	SuspendServiceAccount(ctx context.Context, actor identity.Actor, organizationID, serviceAccountID string) (*ServiceAccount, error)
+	ReactivateServiceAccount(ctx context.Context, actor identity.Actor, organizationID, serviceAccountID string) (*ServiceAccount, error)
+
+	// CreateAPIToken issues a token for an active service account. Its
+	// secret is returned once and never stored.
+	CreateAPIToken(ctx context.Context, actor identity.Actor, in CreateAPITokenInput) (*APIToken, string, error)
+	ListAPITokens(ctx context.Context, actor identity.Actor, organizationID, serviceAccountID string) ([]*APIToken, error)
+	// RevokeAPIToken ends a token for good. Revoking a revoked one does nothing.
+	RevokeAPIToken(ctx context.Context, actor identity.Actor, organizationID, tokenID string) (*APIToken, error)
+}
+
+// CreateServiceAccountInput describes a new service account.
+type CreateServiceAccountInput struct {
+	OrganizationID string
+	DisplayName    string
+	Description    string
+}
+
+// CreateAPITokenInput describes a new API token for a service account.
+type CreateAPITokenInput struct {
+	OrganizationID   string
+	ServiceAccountID string
+	// Name tells the token apart, such as "github-actions".
+	Name string
+	// ExpiresAt is nil for a token that does not expire.
+	ExpiresAt *time.Time
+}
+
 // PeopleService lists an Organization's people: its users. Agents are
 // listed through their Teams, and service accounts and workloads are left
 // out. Any member may list them.

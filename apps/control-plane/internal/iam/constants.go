@@ -27,6 +27,8 @@ const (
 	AggregatePasswordCredential = "iam.PasswordCredential"
 	AggregateUser               = "iam.User"
 	AggregateAgent              = "iam.Agent"
+	AggregateServiceAccount     = "iam.ServiceAccount"
+	AggregateAPIToken           = "iam.APIToken"
 	AggregateIdentityProvider   = "iam.IdentityProvider"
 	AggregateExternalIdentity   = "iam.ExternalIdentity"
 	AggregateAccountIdentity    = "iam.AccountIdentity"
@@ -49,6 +51,11 @@ const (
 	// also needs PermissionOwnerManage, which only owners hold.
 	PermissionGrantRead   = "grant.read"
 	PermissionGrantManage = "grant.manage"
+	// PermissionServiceAccountRead lists service accounts and their tokens'
+	// names; PermissionServiceAccountManage creates them, issues and revokes
+	// their API tokens, and suspends them.
+	PermissionServiceAccountRead   = "service_account.read"
+	PermissionServiceAccountManage = "service_account.manage"
 )
 
 // Actions name what an actor asks the authorizer to allow. Policy rules and
@@ -60,6 +67,15 @@ const (
 	ActionGrantList          = "grant.list"
 	ActionGrantCreate        = "grant.create"
 	ActionGrantRemove        = "grant.remove"
+
+	ActionServiceAccountCreate     = "service_account.create"
+	ActionServiceAccountList       = "service_account.list"
+	ActionServiceAccountRead       = "service_account.read"
+	ActionServiceAccountSuspend    = "service_account.suspend"
+	ActionServiceAccountReactivate = "service_account.reactivate"
+	ActionAPITokenCreate           = "api_token.create"
+	ActionAPITokenList             = "api_token.list"
+	ActionAPITokenRevoke           = "api_token.revoke"
 )
 
 // Audit event types IAM emits.
@@ -67,4 +83,10 @@ const (
 	EventOrganizationUpdated = "organization.updated"
 	EventGrantCreated        = "grant.created"
 	EventGrantRemoved        = "grant.removed"
+
+	EventServiceAccountCreated     = "service_account.created"
+	EventServiceAccountSuspended   = "service_account.suspended"
+	EventServiceAccountReactivated = "service_account.reactivated"
+	EventAPITokenCreated           = "api_token.created"
+	EventAPITokenRevoked           = "api_token.revoked"
 )

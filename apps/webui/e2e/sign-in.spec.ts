@@ -82,8 +82,9 @@ test.describe('sign-in', () => {
     await page.getByRole('textbox', { name: 'Email' }).fill(admin!.email);
     await page.getByLabel('Password').fill(admin!.password);
 
-    // The web app has no /auth/callback route yet and routes the address away as soon as
-    // it loads, so the test keeps the request the control plane redirected the browser to.
+    // The web app's /auth/callback refuses a sign-in this tab didn't start, as this one
+    // wasn't, so the test keeps the request the control plane redirected the browser to and
+    // exchanges the code itself.
     const callbackRequest = page.waitForRequest((r) => r.url().startsWith(`${redirectURI}?`));
     await page.getByRole('button', { name: 'Sign in' }).click();
     const callback = new URL((await callbackRequest).url());

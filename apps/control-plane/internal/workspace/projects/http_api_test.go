@@ -66,7 +66,23 @@ func TestProjectsOverHTTP(t *testing.T) {
 
 	code, out = h.call(t, http.MethodGet, "/workspaces/"+ws.ID()+"/projects", "")
 	require.Equal(t, http.StatusOK, code, out)
-	assert.Len(t, out["data"], 1)
+	page := workspacetest.Data(t, out)
+	assert.Len(t, page["items"], 1)
+	assert.EqualValues(t, 1, page["total_count"])
+
+	for query, want := range map[string]int{
+		"?q=PAY":               1,
+		"?q=payments-and-more": 0,
+		"?owner_team_id=tem_2": 1,
+		"?owner_team_id=tem_1": 0,
+		"?sort_by=display_name&sort_order=desc&limit=10": 1,
+	} {
+		code, out = h.call(t, http.MethodGet, "/workspaces/"+ws.ID()+"/projects"+query, "")
+		require.Equal(t, http.StatusOK, code, out)
+		assert.Len(t, workspacetest.Data(t, out)["items"], want, query)
+	}
+	code, out = h.call(t, http.MethodGet, "/workspaces/"+ws.ID()+"/projects?sort_by=owner", "")
+	assert.Equal(t, http.StatusUnprocessableEntity, code, out)
 
 	code, out = h.call(t, http.MethodPost, "/projects/"+id+"/archive", "")
 	require.Equal(t, http.StatusOK, code, out)

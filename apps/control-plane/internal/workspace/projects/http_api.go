@@ -81,11 +81,11 @@ func (c *ProjectController) ListProjects(ctx context.Context, req *ListProjectsR
 	if err != nil {
 		return nil, err
 	}
-	ps, err := c.service.ListProjects(ctx, who.Actor, who.OrganizationID, req.WorkspaceID, req.IncludeArchived)
+	page, err := c.service.ListProjects(ctx, who.Actor, req.query(who.OrganizationID))
 	if err != nil {
 		return nil, httpError(ctx, err)
 	}
-	return projectListResponse(ps), nil
+	return projectListResponse(page), nil
 }
 
 func (c *ProjectController) GetProject(ctx context.Context, req *ProjectRequest) (*ProjectResponse, error) {

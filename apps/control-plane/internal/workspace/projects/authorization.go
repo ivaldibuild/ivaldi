@@ -6,6 +6,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
+	"github.com/ivaldibuild/ivaldi/pkg/pagination"
 )
 
 // authorized asks the authorizer before each operation and passes its
@@ -66,11 +67,11 @@ func (a *authorized) GetProject(ctx context.Context, actor identity.Actor, organ
 	return a.next.GetProject(ctx, actor, organizationID, projectID)
 }
 
-func (a *authorized) ListProjects(ctx context.Context, actor identity.Actor, organizationID, workspaceID string, includeArchived bool) ([]*workspace.Project, error) {
-	if err := a.read(ctx, actor, organizationID, workspaceID, workspace.ActionProjectList); err != nil {
+func (a *authorized) ListProjects(ctx context.Context, actor identity.Actor, q workspace.ListProjectsQuery) (*pagination.Result[*workspace.Project], error) {
+	if err := a.read(ctx, actor, q.OrganizationID, q.WorkspaceID, workspace.ActionProjectList); err != nil {
 		return nil, err
 	}
-	return a.next.ListProjects(ctx, actor, organizationID, workspaceID, includeArchived)
+	return a.next.ListProjects(ctx, actor, q)
 }
 
 func (a *authorized) UpdateProject(ctx context.Context, actor identity.Actor, organizationID, projectID string, props workspace.UpdateProjectProps) (*workspace.Project, error) {

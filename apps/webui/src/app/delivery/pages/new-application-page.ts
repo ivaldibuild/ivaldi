@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, resource, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, resource, signal } from '@angular/core';
 import { form, FormField, minLength, required, submit } from '@angular/forms/signals';
 import { Router, RouterLink } from '@angular/router';
 import { HlmAlertImports } from '@spartan-ng/helm/alert';
@@ -34,6 +34,9 @@ export class NewApplicationPage {
   private readonly api = inject(DeliveryApi);
   private readonly router = inject(Router);
   protected readonly context = inject(WorkspaceContext);
+
+  /** The `?project=` query parameter: the Project to start from, such as the one it was opened from. */
+  readonly project = input<string>();
 
   protected readonly newProject = newProject;
   protected readonly status = new RequestStatus();
@@ -79,7 +82,7 @@ export class NewApplicationPage {
       if (!choices) {
         return;
       }
-      const project = choices.projects[0];
+      const project = choices.projects.find((p) => p.id === this.project()) ?? choices.projects[0];
       const lifecycle =
         choices.lifecycles.find((l) => l.slug === 'standard') ?? choices.lifecycles[0];
       this.model.update((m) => ({

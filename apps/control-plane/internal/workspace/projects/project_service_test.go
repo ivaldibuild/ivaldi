@@ -66,7 +66,10 @@ func TestOperationsAreAuthorizedOnTheirResource(t *testing.T) {
 			workspace.PermissionProjectManage, workspace.ActionProjectCreate, ws.ID(), create},
 		{"get", func() error { _, err := w.svc.GetProject(ctx, alice, org, p.ID()); return err },
 			workspace.PermissionProjectRead, workspace.ActionProjectRead, p.ID(), nil},
-		{"list", func() error { _, err := w.svc.ListProjects(ctx, alice, org, ws.ID(), false); return err },
+		{"list", func() error {
+			_, err := w.svc.ListProjects(ctx, alice, workspace.ListProjectsQuery{OrganizationID: org, WorkspaceID: ws.ID()})
+			return err
+		},
 			workspace.PermissionProjectRead, workspace.ActionProjectList, ws.ID(), nil},
 		{"update", func() error { _, err := w.svc.UpdateProject(ctx, alice, org, p.ID(), update); return err },
 			workspace.PermissionProjectManage, workspace.ActionProjectUpdate, p.ID(), update},

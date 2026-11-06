@@ -11,7 +11,10 @@ import { NewApplicationPage } from './new-application-page';
 
 const v1 = 'https://cp.test/v1';
 const ok = <T>(data: T) => ({ status: 'success', data });
-const page = <T>(items: T[]) => ok({ items, total_count: items.length });
+const page = <T>(items: T[]) =>
+  ok({ items, total_count: items.length, has_next: false, next_cursor: null });
+/** The Workspace's Projects, as labels and pickers ask for them. */
+const projectList = `${v1}/workspaces/wsp_1/projects?limit=100&sort_by=display_name`;
 
 const workspace = { id: 'wsp_1', slug: 'platform', display_name: 'Platform', is_default: true };
 const team = { id: 'team_1', slug: 'payments', display_name: 'Payments', members: [] };
@@ -130,7 +133,7 @@ describe('delivery pages', () => {
         const url = req.request.url.replace(v1, '');
         const body: Record<string, unknown> = {
           '/applications/app_1': ok(application),
-          '/workspaces/wsp_1/projects': ok([project]),
+          '/workspaces/wsp_1/projects?limit=100&sort_by=display_name': page([project]),
           '/teams': page([team]),
           '/applications/app_1/channels': ok([]),
           '/applications/app_1/artifacts': ok([]),
@@ -152,7 +155,7 @@ describe('delivery pages', () => {
     await settle(fixture);
     http.expectOne(`${v1}/workspaces/wsp_1/applications`).flush(page([application]));
     http.expectOne(`${v1}/workspaces/wsp_1/environments`).flush(page(environments));
-    http.expectOne(`${v1}/workspaces/wsp_1/projects`).flush(ok([project]));
+    http.expectOne(projectList).flush(page([project]));
     http.expectOne(`${v1}/teams`).flush(page([team]));
     await settle(fixture);
     flushTargets();
@@ -177,10 +180,25 @@ describe('delivery pages', () => {
     );
   });
 
+  it('starts from the Project it was opened from', async () => {
+    const other = { ...project, id: 'prj_2', owner_team_id: 'team_2', display_name: 'Core' };
+    const { fixture, el } = render(NewApplicationPage, { project: 'prj_2' });
+    await settle(fixture);
+    http.expectOne(projectList).flush(page([project, other]));
+    http
+      .expectOne(`${v1}/teams`)
+      .flush(page([team, { ...team, id: 'team_2', display_name: 'Core' }]));
+    http.expectOne(`${v1}/workspaces/wsp_1/lifecycles`).flush(page([standard]));
+    await settle(fixture);
+
+    expect(el.querySelector<HTMLSelectElement>('#application-project')!.value).toBe('prj_2');
+    expect(el.querySelector<HTMLSelectElement>('#application-team')!.value).toBe('team_2');
+  });
+
   it('creates a Project and an Application on its Lifecycle', async () => {
     const { fixture, el } = render(NewApplicationPage);
     await settle(fixture);
-    http.expectOne(`${v1}/workspaces/wsp_1/projects`).flush(ok([]));
+    http.expectOne(projectList).flush(page([]));
     http.expectOne(`${v1}/teams`).flush(page([team]));
     http.expectOne(`${v1}/workspaces/wsp_1/lifecycles`).flush(page([standard]));
     await settle(fixture);
@@ -201,6 +219,7 @@ describe('delivery pages', () => {
       slug: 'payments-team',
       owner_team_id: 'team_1',
     });
+    expect(createProject.request.method).toBe('POST');
     createProject.flush(ok({ ...project, id: 'prj_new' }));
     await settle(fixture);
 
@@ -221,7 +240,7 @@ describe('delivery pages', () => {
     await settle(fixture);
     http.expectOne(`${v1}/applications/app_1`).flush(ok(application));
     await settle(fixture);
-    http.expectOne(`${v1}/workspaces/wsp_1/projects`).flush(ok([project]));
+    http.expectOne(projectList).flush(page([project]));
     http.expectOne(`${v1}/teams`).flush(page([team]));
     http.expectOne(`${v1}/applications/app_1/channels`).flush(
       ok([

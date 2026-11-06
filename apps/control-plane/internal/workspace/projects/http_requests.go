@@ -1,6 +1,9 @@
 package projects
 
-import "github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
+import (
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
+	"github.com/ivaldibuild/ivaldi/pkg/pagination"
+)
 
 type CreateProjectRequest struct {
 	WorkspaceID string `path:"workspace_id" doc:"The Workspace the Project belongs to"`
@@ -25,7 +28,32 @@ func (r *CreateProjectRequest) input(organizationID string) workspace.CreateProj
 
 type ListProjectsRequest struct {
 	WorkspaceID     string `path:"workspace_id" doc:"The Workspace to list Projects in"`
+	Search          string `query:"q" maxLength:"255" doc:"Keep the Projects whose name or slug contains this, ignoring case"`
+	OwnerTeamID     string `query:"owner_team_id" doc:"Keep the Projects this Team owns"`
 	IncludeArchived bool   `query:"include_archived" doc:"Include archived Projects"`
+	Limit           int    `query:"limit" minimum:"1" maximum:"100" doc:"Most items to return"`
+	SortBy          string `query:"sort_by" enum:"created_at,slug,display_name" doc:"Field to sort by: created_at (the default), slug, or display_name"`
+	SortOrder       string `query:"sort_order" enum:"asc,desc" doc:"Sort direction"`
+	NextCursor      string `query:"next_cursor" doc:"Cursor from a previous page's next_cursor"`
+	PreviousCursor  string `query:"previous_cursor" doc:"Cursor from a previous page's previous_cursor"`
+}
+
+func (r *ListProjectsRequest) query(organizationID string) workspace.ListProjectsQuery {
+	page := pagination.Query{Limit: r.Limit, SortBy: r.SortBy, SortOrder: r.SortOrder}
+	if r.NextCursor != "" {
+		page.NextCursor = &r.NextCursor
+	}
+	if r.PreviousCursor != "" {
+		page.PreviousCursor = &r.PreviousCursor
+	}
+	return workspace.ListProjectsQuery{
+		OrganizationID:  organizationID,
+		WorkspaceID:     r.WorkspaceID,
+		Search:          r.Search,
+		OwnerTeamID:     r.OwnerTeamID,
+		IncludeArchived: r.IncludeArchived,
+		Page:            page,
+	}
 }
 
 type ProjectRequest struct {

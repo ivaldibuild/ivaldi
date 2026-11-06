@@ -8,6 +8,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/lifecycles"
 	deliverypg "github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/registries"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/releases"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/authorizer"
 	iampg "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/team"
@@ -134,11 +135,28 @@ func (a *app) wireDelivery() error {
 		return err
 	}
 
+	// Tags cannot be resolved to digests until a registry client exists, so
+	// Builds are named by digest.
+	rels, err := releases.NewReleaseService(
+		releases.WithBuildRepo(deliverypg.NewBuildRepository(a.db)),
+		releases.WithReleaseRepo(deliverypg.NewReleaseRepository(a.db)),
+		releases.WithApplications(applicationRepo),
+		releases.WithTagResolver(delivery.NoTagResolver()),
+		releases.WithAuthorizer(a.authz),
+		releases.WithTransactor(a.tx),
+		releases.WithOutboxRecorder(a.outbox),
+		releases.WithAuditRecorder(a.audit),
+	)
+	if err != nil {
+		return err
+	}
+
 	a.routes = append(a.routes,
 		environments.NewEnvironmentController(envs),
 		registries.NewRegistryController(regs),
 		lifecycles.NewLifecycleController(lifecycleSvc),
 		applications.NewApplicationController(apps),
+		releases.NewReleaseController(rels),
 	)
 	return nil
 }

@@ -41,6 +41,8 @@ const (
 	AggregateArtifact    = "delivery.Artifact"
 	AggregateChannel     = "delivery.Channel"
 	AggregatePlacement   = "delivery.Placement"
+	AggregateBuild       = "delivery.Build"
+	AggregateRelease     = "delivery.Release"
 )
 
 // Permissions this capability asks the authorizer about. The full catalog,
@@ -56,6 +58,12 @@ const (
 	PermissionRegistryManage    = "registry.manage"
 	PermissionApplicationRead   = "application.read"
 	PermissionApplicationManage = "application.manage"
+	// PermissionReleaseManage records Builds, creates Releases, and
+	// withdraws them; PermissionReleasePublish publishes them. Both are
+	// checked on the Application's Project; reading Releases follows
+	// PermissionApplicationRead.
+	PermissionReleaseManage  = "release.manage"
+	PermissionReleasePublish = "release.publish"
 )
 
 // Actions name what an actor asks the authorizer to allow. Policy rules
@@ -69,6 +77,12 @@ const (
 	ActionApplicationRestore    = "application.restore"
 	ActionApplicationTransfer   = "application.transfer"
 	ActionApplicationUpdate     = "application.update"
+	ActionBuildReport           = "build.report"
+	ActionReleaseCreate         = "release.create"
+	ActionReleaseList           = "release.list"
+	ActionReleasePublish        = "release.publish"
+	ActionReleaseRead           = "release.read"
+	ActionReleaseWithdraw       = "release.withdraw"
 	ActionArtifactArchive       = "artifact.archive"
 	ActionArtifactCreate        = "artifact.create"
 	ActionArtifactDeclare       = "artifact.declare"
@@ -167,4 +181,15 @@ const (
 	EventPlacementCreated = "placement.created"
 	EventPlacementUpdated = "placement.updated"
 	EventPlacementRemoved = "placement.removed"
+
+	EventBuildRecorded = "build.recorded"
+	EventBuildReported = "build.reported"
+	// EventBuildReportRefused records a report that gave a Build another
+	// commit: a CI misconfiguration or tampering. It is committed although
+	// the request fails.
+	EventBuildReportRefused = "build.report_refused"
+
+	EventReleaseCreated   = "release.created"
+	EventReleasePublished = "release.published"
+	EventReleaseWithdrawn = "release.withdrawn"
 )

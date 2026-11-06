@@ -51,6 +51,16 @@ var (
 		func(e *registryEntity) string { return e.Slug },
 		func(e *registryEntity) string { return e.DisplayName },
 	)
+	// releaseKeyset sorts Releases by "created_at" (the default) or
+	// "version", as text, with the ID breaking ties.
+	releaseKeyset = database.Keyset[releaseEntity]{
+		Keys: map[string]database.SortKey[releaseEntity]{
+			"created_at": database.TimeKey("created_at", func(e *releaseEntity) time.Time { return e.CreatedAt }),
+			"version":    database.StringKey("version", func(e *releaseEntity) string { return e.Version }),
+		},
+		Default: "created_at",
+		ID:      func(e *releaseEntity) string { return e.ID },
+	}
 	applicationKeyset = standardKeyset(
 		func(e *applicationEntity) string { return e.ID },
 		func(e *applicationEntity) time.Time { return e.CreatedAt },

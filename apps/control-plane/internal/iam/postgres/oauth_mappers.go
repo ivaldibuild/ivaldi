@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam"
+	"github.com/ivaldibuild/ivaldi/pkg/database"
 )
 
 type oauthClientMapper struct{}
@@ -17,7 +18,7 @@ func (m *oauthClientMapper) ToPersistence(c *iam.OAuthClient) *oauthClientEntity
 		ClientID:     s.ClientID,
 		Registration: string(s.Registration),
 		Name:         s.Name,
-		RedirectURIs: textArray(s.RedirectURIs),
+		RedirectURIs: database.TextArray(s.RedirectURIs),
 		MetadataURL:  s.MetadataURL,
 		CreatedAt:    s.CreatedAt,
 		LastUsedAt:   s.LastUsedAt,
@@ -52,7 +53,7 @@ func (m *authorizationCodeMapper) ToPersistence(c *iam.OAuthAuthorizationCode) *
 		RedirectURI:    s.RedirectURI,
 		CodeChallenge:  s.CodeChallenge,
 		Resource:       s.Resource,
-		Scopes:         textArray(s.Scopes),
+		Scopes:         database.TextArray(s.Scopes),
 		ExpiresAt:      s.ExpiresAt,
 		UsedAt:         s.UsedAt,
 	}
@@ -89,7 +90,7 @@ func (m *refreshTokenMapper) ToPersistence(t *iam.OAuthRefreshToken) *refreshTok
 		FamilyID:       s.FamilyID,
 		TokenHash:      s.TokenHash,
 		Resource:       s.Resource,
-		Scopes:         textArray(s.Scopes),
+		Scopes:         database.TextArray(s.Scopes),
 		ExpiresAt:      s.ExpiresAt,
 		ReplacedBy:     s.ReplacedBy,
 		RevokedAt:      s.RevokedAt,

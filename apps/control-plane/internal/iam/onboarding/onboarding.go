@@ -29,6 +29,7 @@ type onboardingService struct {
 	resources              iam.ResourceRegistrar
 	grants                 iam.GrantRepository
 	platform               iam.AccountIdentityRepository
+	provisioner            iam.OrganizationProvisioner
 }
 
 func WithLogger(logger logging.Logger) OnboardingServiceOption {
@@ -106,6 +107,15 @@ func WithAccountIdentityRepo(repo iam.AccountIdentityRepository) OnboardingServi
 	}
 }
 
+// WithOrganizationProvisioner sets up what a new Organization starts with in
+// other capabilities, such as its default Workspace, in the transaction that
+// creates it.
+func WithOrganizationProvisioner(p iam.OrganizationProvisioner) OnboardingServiceOption {
+	return func(s *onboardingService) {
+		s.provisioner = p
+	}
+}
+
 // NewOnboardingService returns the Onboarding service, or an error naming a
 // missing dependency.
 func NewOnboardingService(opts ...OnboardingServiceOption) (iam.Onboarding, error) {
@@ -129,6 +139,7 @@ func NewOnboardingService(opts ...OnboardingServiceOption) (iam.Onboarding, erro
 		{"ResourceRegistrar", s.resources != nil},
 		{"GrantRepo", s.grants != nil},
 		{"AccountIdentityRepo", s.platform != nil},
+		{"OrganizationProvisioner", s.provisioner != nil},
 	}
 	for _, r := range required {
 		if !r.ok {
@@ -355,8 +366,9 @@ func (s *onboardingService) ProvisionInstallation(ctx context.Context, input iam
 	return org, nil
 }
 
-// writeOrganization saves a new Organization and registers it in IAM's
-// resource hierarchy. Every Organization is created through it, so what an
+// writeOrganization saves a new Organization, registers it in IAM's resource
+// hierarchy, and provisions it in other capabilities, such as its default
+// Workspace. Every Organization is created through it, so what an
 // Organization needs from the start is added here.
 func (s *onboardingService) writeOrganization(ctx context.Context, org *iam.Organization) error {
 	if err := s.organizationRepo.Write(ctx, org); err != nil {
@@ -367,6 +379,9 @@ func (s *onboardingService) writeOrganization(ctx context.Context, org *iam.Orga
 	}
 	if err := s.resources.RegisterResource(ctx, org.Resource()); err != nil {
 		return fmt.Errorf("register organization resource: %w", err)
+	}
+	if err := s.provisioner.ProvisionOrganization(ctx, org.ID()); err != nil {
+		return fmt.Errorf("provision organization: %w", err)
 	}
 	return nil
 }

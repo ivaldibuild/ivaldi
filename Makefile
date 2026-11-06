@@ -7,7 +7,7 @@ LDFLAGS := -ldflags "-X main.VERSION=$(VERSION)"
 
 # Control-plane capabilities with their own migrations, in the order they are applied.
 # There are no foreign keys between capabilities, so the order is for readability only.
-CAPABILITIES := outbox iam workspace versioncontrol delivery
+CAPABILITIES := outbox audit iam workspace versioncontrol delivery team
 
 MIGRATIONS_ROOT := apps/control-plane/internal
 
@@ -24,15 +24,15 @@ migrations_table = $(if $(filter versioncontrol,$(1)),version_control,$(1))_sche
 database_url = $$(case "$(DATABASE_URL)" in *\?*) printf '%s&' "$(DATABASE_URL)";; *) printf '%s?' "$(DATABASE_URL)";; esac)x-migrations-table=$(call migrations_table,$(1))
 
 # Local development: PostgreSQL and Valkey from docker-compose.yml, and the
-# control plane configured by config.local.yml. Generated secrets live in
-# .local/, which git ignores.
+# control plane configured by config.local.yml, which starts as a copy of
+# config.local.example.yml. Generated secrets live in .local/. Git ignores both.
 LOCAL_CONFIG := config.local.yml
 LOCAL_DIR := .local
 PG_PASSWORD ?= brokandsindri
 LOCAL_DATABASE_URL ?= postgres://ivaldi_db_user:$(PG_PASSWORD)@127.0.0.1:5433/ivaldi?sslmode=disable
 
 .PHONY: help prepare build build-cli build-server migration_generate migrate_up migrate_down migrate_version check_capability check_database_url \
-	local local_up local_secrets local_database local_migrate local_serve local_down local_reset
+	local local_up local_stack local_secrets local_database local_migrate local_serve local_down local_reset
 
 help:
 	@echo "Build (into bin/, version $(VERSION))"
@@ -50,7 +50,9 @@ help:
 	@echo "Local development ($(LOCAL_CONFIG))"
 	@echo "  make local                                         Start PostgreSQL and Valkey, generate secrets, migrate"
 	@echo "  make local_serve                                   Run the control plane on http://localhost:8660"
-	@echo "  make local_down                                    Stop PostgreSQL and Valkey (data stays in volumes/)"
+	@echo "  make local_stack                                   Run everything in containers (docker-compose.yml): the"
+	@echo "                                                     web app on http://localhost:3000, the control plane on 8660"
+	@echo "  make local_down                                    Stop the containers (data stays in volumes/)"
 	@echo "  make local_reset                                   Drop the local database and migrate a fresh one, so"
 	@echo "                                                     the next start bootstraps from $(LOCAL_CONFIG) again"
 
@@ -115,13 +117,27 @@ check_database_url:
 		exit 1; \
 	fi
 
-local: local_up local_secrets local_database local_migrate
+local: $(LOCAL_CONFIG) local_up local_secrets local_database local_migrate
 	@echo ""
-	@echo "Ready. Run 'make local_serve', then sign in as admin@ivaldi.local"
-	@echo "with the password in $(LOCAL_DIR)/admin-password."
+	@echo "Ready. Run 'make local_serve', then sign in as bootstrap.admin_email from"
+	@echo "$(LOCAL_CONFIG) with the password in $(LOCAL_DIR)/admin-password."
+
+# Copied once and never overwritten: edit the copy, not the example.
+$(LOCAL_CONFIG):
+	@cp config.local.example.yml $@
+	@echo "Created $@ from config.local.example.yml"
 
 local_up:
-	@docker compose up -d --wait
+	@docker compose up -d --wait postgres redis
+
+# PostgreSQL, Valkey, the migrations, the control plane, and the web app, all
+# in containers. The control plane reads $(LOCAL_CONFIG) as local_serve does,
+# and runs as you so it can read .local/.
+local_stack: $(LOCAL_CONFIG) local_secrets
+	@IVALDI_UID=$$(id -u) IVALDI_GID=$$(id -g) docker compose up -d --build --wait
+	@echo ""
+	@echo "Ready. Open http://localhost:3000 and sign in as bootstrap.admin_email from"
+	@echo "$(LOCAL_CONFIG) with the password in $(LOCAL_DIR)/admin-password."
 
 # Secrets are generated once and kept, so tokens and the admin password
 # survive restarts.
@@ -150,7 +166,7 @@ local_database:
 local_migrate:
 	@$(MAKE) --no-print-directory migrate_up DATABASE_URL='$(LOCAL_DATABASE_URL)'
 
-local_serve:
+local_serve: $(LOCAL_CONFIG)
 	@go run $(LDFLAGS) ./apps/control-plane/cmd serve --config $(LOCAL_CONFIG)
 
 local_down:

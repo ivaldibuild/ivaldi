@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/ivaldibuild/ivaldi/pkg/authorization"
+	"github.com/ivaldibuild/ivaldi/pkg/clock"
 )
 
 const lifecycleKey = "delivery.default_lifecycle"
@@ -65,7 +65,7 @@ func TestDefinitionsRegister(t *testing.T) {
 
 func TestResolve(t *testing.T) {
 	stored := func(scope Scope, v string) *Setting {
-		return fakeSetting(SettingSnapshot{Scope: scope, Key: lifecycleKey, Value: json.RawMessage(v), Version: 1})
+		return rebuildSetting(SettingSnapshot{Scope: scope, Key: lifecycleKey, Value: json.RawMessage(v), Version: 1})
 	}
 	org := stored(OrganizationScope(testOrg), `"lfc_org"`)
 	ws := stored(WorkspaceScope(testOrg, "wsp_1"), `"lfc_ws"`)
@@ -108,188 +108,8 @@ func TestResolve(t *testing.T) {
 	}
 }
 
-// settingsFixture has a workspace with a project in it, and the lifecycle setting registered.
-func settingsFixture(t *testing.T) (*fixture, *Workspace, *Project) {
-	t.Helper()
-	f := newFixture(t)
-	require.NoError(t, f.definitions.Register(lifecycleDefinition()))
-	require.NoError(t, f.definitions.Register(Definition{Key: "delivery.workspace_only", Levels: []Level{LevelWorkspace}, Permission: "p"}))
-	w := f.workspace(t, "platform")
-	return f, w, f.project(t, w, "checkout")
-}
-
-func TestChangeSettingIsRefused(t *testing.T) {
-	ctx := context.Background()
-	f, w, p := settingsFixture(t)
-	other := f.workspace(t, "data")
-
-	tests := []struct {
-		name    string
-		in      ChangeSettingInput
-		wantErr error
-	}{
-		{"unknown key", ChangeSettingInput{Scope: WorkspaceScope(testOrg, w.ID()), Key: "delivery.nope", Value: json.RawMessage(`1`)}, ErrUnknownSetting},
-		{"level not allowed", ChangeSettingInput{Scope: ProjectScope(testOrg, w.ID(), p.ID()), Key: "delivery.workspace_only", Value: json.RawMessage(`1`)}, ErrLevelNotAllowed},
-		{"invalid JSON", ChangeSettingInput{Scope: WorkspaceScope(testOrg, w.ID()), Key: lifecycleKey, Value: json.RawMessage(`{`)}, ErrInvalid},
-		{"too large", ChangeSettingInput{Scope: WorkspaceScope(testOrg, w.ID()), Key: lifecycleKey, Value: json.RawMessage(`"lfc_` + strings.Repeat("x", MaxSettingValueBytes) + `"`)}, ErrInvalid},
-		{"rejected by the owning capability", ChangeSettingInput{Scope: WorkspaceScope(testOrg, w.ID()), Key: lifecycleKey, Value: json.RawMessage(`"env_1"`)}, ErrInvalid},
-		{"project without its workspace", ChangeSettingInput{Scope: Scope{OrganizationID: testOrg, ProjectID: p.ID()}, Key: lifecycleKey, Value: json.RawMessage(`"lfc_1"`)}, ErrInvalid},
-		{"project named under another workspace", ChangeSettingInput{Scope: ProjectScope(testOrg, other.ID(), p.ID()), Key: lifecycleKey, Value: json.RawMessage(`"lfc_1"`)}, ErrNotFound},
-		{"workspace that does not exist", ChangeSettingInput{Scope: WorkspaceScope(testOrg, "wsp_gone"), Key: lifecycleKey, Value: json.RawMessage(`"lfc_1"`)}, ErrNotFound},
-		{"stale version", ChangeSettingInput{Scope: WorkspaceScope(testOrg, w.ID()), Key: lifecycleKey, Value: json.RawMessage(`"lfc_1"`), ExpectedVersion: 3}, ErrConflict},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := f.svc.ChangeSetting(ctx, alice, tt.in)
-			require.ErrorIs(t, err, tt.wantErr)
-		})
-	}
-
-	t.Run("archived workspace", func(t *testing.T) {
-		_, err := f.svc.ArchiveWorkspace(ctx, alice, testOrg, other.ID())
-		require.NoError(t, err)
-		_, err = f.svc.ChangeSetting(ctx, alice, ChangeSettingInput{Scope: WorkspaceScope(testOrg, other.ID()), Key: lifecycleKey, Value: json.RawMessage(`"lfc_1"`)})
-		require.ErrorIs(t, err, ErrArchived)
-	})
-
-	t.Run("denied by policy, for example a lock", func(t *testing.T) {
-		f.authz.decide = func(authorization.Request) authorization.Decision {
-			return authorization.Decision{ID: "dec_lock", Outcome: authorization.OutcomeDeny, Reason: "locked by the organization"}
-		}
-		defer func() { f.authz.decide = nil }()
-		_, err := f.svc.ChangeSetting(ctx, alice, ChangeSettingInput{Scope: WorkspaceScope(testOrg, w.ID()), Key: lifecycleKey, Value: json.RawMessage(`"lfc_1"`)})
-		require.ErrorIs(t, err, authorization.ErrDenied)
-		assert.Contains(t, err.Error(), "locked by the organization")
-	})
-}
-
-func TestChangeSetting(t *testing.T) {
-	ctx := context.Background()
-	f, w, _ := settingsFixture(t)
-	scope := WorkspaceScope(testOrg, w.ID())
-
-	first, err := f.svc.ChangeSetting(ctx, alice, ChangeSettingInput{Scope: scope, Key: lifecycleKey, Value: json.RawMessage(`"lfc_std"`)})
-	require.NoError(t, err)
-	assert.Equal(t, int64(1), first.Version())
-	assert.Equal(t, "dec_allow", first.PolicyDecisionID())
-
-	req := f.authz.last()
-	assert.Equal(t, "delivery.settings.manage", req.Permission, "the definition's permission is checked")
-	assert.Equal(t, w.ID(), req.ResourceID)
-	assert.Equal(t, LevelWorkspace, req.Proposal.(SettingChange).Level)
-
-	second, err := f.svc.ChangeSetting(ctx, alice, ChangeSettingInput{Scope: scope, Key: lifecycleKey, Value: json.RawMessage(`"lfc_hotfix"`), ExpectedVersion: 1})
-	require.NoError(t, err)
-	assert.Equal(t, int64(2), second.Version())
-
-	e := f.audit.last()
-	assert.Equal(t, EventSettingChanged, e.Type)
-	assert.Equal(t, w.ID(), e.ResourceID)
-	assert.JSONEq(t, `"lfc_std"`, string(e.Before.(settingAudit).Value))
-	assert.JSONEq(t, `"lfc_hotfix"`, string(e.After.(settingAudit).Value))
-
-	t.Run("a change against an old version is refused", func(t *testing.T) {
-		_, err := f.svc.ChangeSetting(ctx, alice, ChangeSettingInput{Scope: scope, Key: lifecycleKey, Value: json.RawMessage(`"lfc_x"`), ExpectedVersion: 1})
-		require.ErrorIs(t, err, ErrConflict)
-	})
-}
-
-func TestAgentSettingChangesNeedApproval(t *testing.T) {
-	ctx := context.Background()
-	f, w, _ := settingsFixture(t)
-	in := ChangeSettingInput{Scope: WorkspaceScope(testOrg, w.ID()), Key: lifecycleKey, Value: json.RawMessage(`"lfc_std"`)}
-
-	// Policy as ADR 0007 requires: an agent's change waits for approval, and
-	// is allowed once resubmitted with an approved decision.
-	f.authz.decide = func(req authorization.Request) authorization.Decision {
-		if req.Actor.IsAgent() && req.ApprovalID != "dec_pending" {
-			return authorization.Decision{ID: "dec_pending", Outcome: authorization.OutcomeRequiresApproval}
-		}
-		return authorization.Decision{ID: "dec_pending", Outcome: authorization.OutcomeAllow, ApprovedByPrincipalID: "prn_alice"}
-	}
-
-	_, err := f.svc.ChangeSetting(ctx, agent, in)
-	var approval *authorization.ApprovalRequiredError
-	require.ErrorAs(t, err, &approval)
-	assert.Equal(t, "dec_pending", approval.DecisionID)
-	_, getErr := f.repo.GetSetting(ctx, in.Scope, lifecycleKey)
-	require.ErrorIs(t, getErr, ErrNotFound, "nothing is written while the change waits")
-
-	in.ApprovalID = approval.DecisionID
-	s, err := f.svc.ChangeSetting(ctx, agent, in)
-	require.NoError(t, err)
-	assert.Equal(t, "dec_pending", s.PolicyDecisionID())
-	assert.Equal(t, "prn_alice", f.audit.last().ApprovedByPrincipalID)
-
-	t.Run("an allow without a human approver is refused anyway", func(t *testing.T) {
-		f.authz.decide = func(authorization.Request) authorization.Decision {
-			return authorization.Decision{ID: "dec_bad", Outcome: authorization.OutcomeAllow}
-		}
-		_, err := f.svc.ChangeSetting(ctx, agent, ChangeSettingInput{Scope: in.Scope, Key: lifecycleKey, Value: json.RawMessage(`"lfc_x"`), ExpectedVersion: 1})
-		require.ErrorIs(t, err, authorization.ErrDenied)
-
-		err = f.svc.RemoveSetting(ctx, agent, RemoveSettingInput{Scope: in.Scope, Key: lifecycleKey, ExpectedVersion: 1})
-		require.ErrorIs(t, err, authorization.ErrDenied, "removing a setting needs approval too")
-	})
-}
-
-func TestRemoveSetting(t *testing.T) {
-	ctx := context.Background()
-	f, w, _ := settingsFixture(t)
-	scope := WorkspaceScope(testOrg, w.ID())
-
-	err := f.svc.RemoveSetting(ctx, alice, RemoveSettingInput{Scope: scope, Key: lifecycleKey})
-	require.ErrorIs(t, err, ErrNotFound)
-
-	_, err = f.svc.ChangeSetting(ctx, alice, ChangeSettingInput{Scope: scope, Key: lifecycleKey, Value: json.RawMessage(`"lfc_std"`)})
-	require.NoError(t, err)
-
-	require.NoError(t, f.svc.RemoveSetting(ctx, alice, RemoveSettingInput{Scope: scope, Key: lifecycleKey, ExpectedVersion: 1}))
-	e := f.audit.last()
-	assert.Equal(t, EventSettingRemoved, e.Type)
-	assert.JSONEq(t, `"lfc_std"`, string(e.Before.(settingAudit).Value))
-	assert.Equal(t, "setting.remove", f.authz.last().Action)
-
-	got, err := f.svc.ResolveSetting(ctx, scope, lifecycleKey)
-	require.NoError(t, err)
-	assert.True(t, got.FromDefault(), "the value from the next level up applies again")
-}
-
-func TestResolveSetting(t *testing.T) {
-	ctx := context.Background()
-	f, w, p := settingsFixture(t)
-	set := func(scope Scope, v string) {
-		t.Helper()
-		_, err := f.svc.ChangeSetting(ctx, alice, ChangeSettingInput{Scope: scope, Key: lifecycleKey, Value: json.RawMessage(v)})
-		require.NoError(t, err)
-	}
-	set(OrganizationScope(testOrg), `"lfc_org"`)
-	set(WorkspaceScope(testOrg, w.ID()), `"lfc_ws"`)
-	set(ProjectScope(testOrg, w.ID(), p.ID()), `"lfc_prj"`)
-	projectScope := ProjectScope(testOrg, w.ID(), p.ID())
-
-	got, err := f.svc.ResolveSetting(ctx, projectScope, lifecycleKey)
-	require.NoError(t, err)
-	assert.JSONEq(t, `"lfc_prj"`, string(got.Value))
-	assert.Equal(t, LevelProject, got.Level)
-
-	f.locks[testOrg+"/"+w.ID()] = map[string]Level{lifecycleKey: LevelWorkspace}
-	got, err = f.svc.ResolveSetting(ctx, projectScope, lifecycleKey)
-	require.NoError(t, err)
-	assert.JSONEq(t, `"lfc_ws"`, string(got.Value), "a workspace lock ignores project values")
-	assert.True(t, got.Locked)
-
-	f.locks[testOrg+"/"] = map[string]Level{lifecycleKey: LevelOrganization}
-	got, err = f.svc.ResolveSetting(ctx, projectScope, lifecycleKey)
-	require.NoError(t, err)
-	assert.JSONEq(t, `"lfc_org"`, string(got.Value), "an organization lock wins over a workspace lock")
-
-	_, err = f.svc.ResolveSetting(ctx, projectScope, "delivery.nope")
-	require.ErrorIs(t, err, ErrUnknownSetting)
-}
-
 func TestNewSetting(t *testing.T) {
-	fixClock(t, t0)
+	clock.Fix(t, t0)
 	scope := WorkspaceScope(testOrg, "wsp_1")
 
 	s, err := NewSetting(NewSettingProps{Scope: scope, Key: lifecycleKey, Value: json.RawMessage(`"lfc_std"`), UpdatedByPrincipalID: "prn_alice", PolicyDecisionID: "dec_1"})
@@ -327,10 +147,10 @@ func TestNewSettingIsRefused(t *testing.T) {
 }
 
 func TestSettingChange(t *testing.T) {
-	fixClock(t, t0)
+	clock.Fix(t, t0)
 	s, err := NewSetting(NewSettingProps{Scope: WorkspaceScope(testOrg, "wsp_1"), Key: lifecycleKey, Value: json.RawMessage(`"lfc_std"`), UpdatedByPrincipalID: "prn_alice", PolicyDecisionID: "dec_1"})
 	require.NoError(t, err)
-	fixClock(t, t1)
+	clock.Fix(t, t1)
 
 	require.NoError(t, s.Change(json.RawMessage(`"lfc_hotfix"`), "prn_bob", "dec_2"))
 

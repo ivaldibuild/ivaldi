@@ -1,0 +1,9 @@
+# The build context for apps/control-plane/Dockerfile. apps/webui has its own.
+.git
+.local
+.env
+*.local.yml
+bin
+volumes
+apps/webui
+**/node_modules

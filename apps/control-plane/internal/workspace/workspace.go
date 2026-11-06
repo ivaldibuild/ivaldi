@@ -2,15 +2,18 @@
 // Organizations, Workspaces, and Projects.
 //
 // See docs/design/workspace-data-model.md. This package holds the domain types,
-// the repository interface, and the service with the capability's rules. The
-// PostgreSQL implementation lives in the postgres subpackage; this package
-// never imports a database driver (ADR 0005).
+// the repository and service interfaces, the provisioner IAM calls for a new
+// Organization, and the unauthorized reads other capabilities use (Lookups
+// and SettingResolver). The services live in sub-packages: workspaces,
+// projects, and settings, each with its HTTP API. The PostgreSQL
+// implementation lives in the postgres subpackage; this package never
+// imports a database driver (ADR 0005).
 //
 // Domain objects are the only way to change domain state. Their fields are
 // unexported, they are created through New functions that apply the creation
 // rules, and they change only through their methods, which enforce the rest.
-// The service orchestrates: it authorizes, loads, calls those methods, and
-// persists. Repositories read state through Snapshot and rebuild stored
+// The services orchestrate: they authorize, load, call those methods, and
+// persist. Repositories read state through Snapshot and rebuild stored
 // objects with the same New functions, passing the stored ID and timestamps;
 // they never change an object. Creation rules therefore also run on load, so
 // a rule added later must still accept existing rows.
@@ -24,6 +27,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
+	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
 )
 
@@ -100,7 +104,7 @@ func NewWorkspace(p NewWorkspaceProps, workspaceID *string) (*Workspace, error) 
 		return nil, err
 	}
 
-	now := now()
+	now := clock.Now()
 
 	w := &Workspace{
 		Root:                 root,
@@ -112,7 +116,7 @@ func NewWorkspace(p NewWorkspaceProps, workspaceID *string) (*Workspace, error) 
 		createdByPrincipalID: p.CreatedByPrincipalID,
 		createdAt:            timeOr(p.CreatedAt, now),
 		updatedAt:            timeOr(p.UpdatedAt, now),
-		archivedAt:           copyTime(p.ArchivedAt),
+		archivedAt:           clock.CopyTime(p.ArchivedAt),
 	}
 
 	if w.IsNew() {
@@ -138,7 +142,7 @@ func (w *Workspace) IsDefault() bool              { return w.isDefault }
 func (w *Workspace) CreatedByPrincipalID() string { return w.createdByPrincipalID }
 func (w *Workspace) CreatedAt() time.Time         { return w.createdAt }
 func (w *Workspace) UpdatedAt() time.Time         { return w.updatedAt }
-func (w *Workspace) ArchivedAt() *time.Time       { return copyTime(w.archivedAt) }
+func (w *Workspace) ArchivedAt() *time.Time       { return clock.CopyTime(w.archivedAt) }
 
 // Archived reports whether the Workspace is archived.
 func (w *Workspace) Archived() bool { return w.archivedAt != nil }
@@ -155,7 +159,7 @@ func (w *Workspace) Snapshot() WorkspaceSnapshot {
 		CreatedByPrincipalID: w.createdByPrincipalID,
 		CreatedAt:            w.createdAt,
 		UpdatedAt:            w.updatedAt,
-		ArchivedAt:           copyTime(w.archivedAt),
+		ArchivedAt:           clock.CopyTime(w.archivedAt),
 	}
 }
 
@@ -199,7 +203,7 @@ func (w *Workspace) Update(p UpdateWorkspaceProps) error {
 		set(&w.description, p.Description),
 	)
 
-	w.updatedAt = now()
+	w.updatedAt = clock.Now()
 
 	if changed {
 		w.RecordEvent(WorkspaceUpdated{w.Snapshot()})
@@ -217,7 +221,7 @@ func (w *Workspace) MakeDefault() error {
 
 	changed := !w.isDefault
 	w.isDefault = true
-	w.updatedAt = now()
+	w.updatedAt = clock.Now()
 
 	if changed {
 		w.RecordEvent(WorkspaceMadeDefault{w.Snapshot()})
@@ -230,7 +234,7 @@ func (w *Workspace) MakeDefault() error {
 func (w *Workspace) ClearDefault() {
 	changed := w.isDefault
 	w.isDefault = false
-	w.updatedAt = now()
+	w.updatedAt = clock.Now()
 
 	if changed {
 		w.RecordEvent(WorkspaceDefaultCleared{w.Snapshot()})
@@ -249,7 +253,7 @@ func (w *Workspace) Archive() error {
 		return fmt.Errorf("archive workspace %s: %w; make another workspace the default first", w.ID(), ErrDefaultWorkspace)
 	}
 
-	t := now()
+	t := clock.Now()
 	w.archivedAt = &t
 	w.updatedAt = t
 	w.RecordEvent(WorkspaceArchived{w.Snapshot()})
@@ -264,7 +268,7 @@ func (w *Workspace) Restore() {
 	}
 
 	w.archivedAt = nil
-	w.updatedAt = now()
+	w.updatedAt = clock.Now()
 	w.RecordEvent(WorkspaceRestored{w.Snapshot()})
 }
 
@@ -284,16 +288,6 @@ func validateDisplayName(s string) error {
 		return fmt.Errorf("%w: display name must be 1-%d characters", ErrInvalid, maxDisplayNameLength)
 	}
 	return nil
-}
-
-// copyTime returns a copy of t, so callers cannot change a domain object
-// through a pointer it handed out or was given.
-func copyTime(t *time.Time) *time.Time {
-	if t == nil {
-		return nil
-	}
-	c := *t
-	return &c
 }
 
 // set assigns *v to *dst when v is given and differs, and reports whether it

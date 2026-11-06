@@ -32,7 +32,7 @@ func (fakeRoutes) RegisterRoutes(api huma.API) {
 		out := &pingOutput{}
 		out.Body.Message = "pong"
 		return out, nil
-	})
+	}, public)
 	huma.Register(api, huma.Operation{
 		OperationID: "secret",
 		Method:      http.MethodGet,
@@ -47,7 +47,26 @@ func (fakeRoutes) RegisterRoutes(api huma.API) {
 	})
 	huma.Get(api, "/boom", func(context.Context, *struct{}) (*pingOutput, error) {
 		panic("boom")
+	}, public)
+}
+
+func public(op *huma.Operation) { op.Metadata = map[string]any{Public: true} }
+
+// openRoutes registers an operation that neither requires a token nor is
+// marked public.
+type openRoutes struct{}
+
+func (openRoutes) RegisterRoutes(api huma.API) {
+	huma.Get(api, "/forgotten", func(context.Context, *struct{}) (*pingOutput, error) {
+		return &pingOutput{}, nil
 	})
+}
+
+func TestNewRefusesOperationsThatAreNeitherSecuredNorPublic(t *testing.T) {
+	_, err := New(testConfig(), "test", logging.NewMockLogger(), WithRoutes(fakeRoutes{}, openRoutes{}))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "GET /v1/forgotten")
+	assert.NotContains(t, err.Error(), "ping")
 }
 
 // logged matches a log message with n fields of any value.
@@ -269,4 +288,28 @@ func TestServerAllowsConfiguredOrigins(t *testing.T) {
 
 	other := call(http.MethodGet, "https://evil.example.com")
 	assert.Empty(t, other.Header().Get("Access-Control-Allow-Origin"))
+}
+
+// failingRoutes registers an operation that fails unexpectedly.
+type failingRoutes struct{}
+
+func (failingRoutes) RegisterRoutes(api huma.API) {
+	huma.Register(api, huma.Operation{
+		OperationID: "fail", Method: http.MethodGet, Path: "/fail", Metadata: map[string]any{Public: true},
+	}, func(ctx context.Context, _ *struct{}) (*pingOutput, error) {
+		return nil, InternalError(ctx, errors.New(`pq: relation "secret_table" does not exist`))
+	})
+}
+
+func TestInternalErrorLogsAndHidesTheCause(t *testing.T) {
+	logger := logging.NewMockLogger()
+	logger.On("Error", logged("request failed", 4)...).Once()
+	s, err := New(testConfig(), "test", logger, WithRoutes(failingRoutes{}))
+	require.NoError(t, err)
+
+	rec := serve(s, http.MethodGet, "/v1/fail")
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	assert.NotContains(t, rec.Body.String(), "secret_table")
+	logger.AssertExpectations(t)
 }

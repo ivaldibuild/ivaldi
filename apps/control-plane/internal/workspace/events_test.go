@@ -80,7 +80,7 @@ func TestNewRecordsCreatedOnlyForNewObjects(t *testing.T) {
 	t.Run("setting", func(t *testing.T) {
 		s := newTestSetting(t)
 		assert.Equal(t, []aggregate.Event{SettingCreated{s.Snapshot()}}, s.PullEvents())
-		stored := fakeSetting(s.Snapshot())
+		stored := rebuildSetting(s.Snapshot())
 		assert.Empty(t, stored.PullEvents(), "a setting with a creation time is stored")
 	})
 }

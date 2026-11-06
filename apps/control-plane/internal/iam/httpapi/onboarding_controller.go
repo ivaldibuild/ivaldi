@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/api"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/onboarding"
 )
@@ -28,6 +29,9 @@ func (c *OnboardingController) RegisterRoutes(h huma.API) {
 		Summary:       "Onboarding an organization via email",
 		Tags:          []string{"onboarding"},
 		DefaultStatus: http.StatusCreated,
+		// Onboarding creates the Organization and its owner, so there is no
+		// one to have a token yet.
+		Metadata: map[string]any{api.Public: true},
 	}, c.OnboardWithEmail)
 }
 

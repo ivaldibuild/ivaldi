@@ -1,3 +1,14 @@
+# Local development and testing.
+#
+#   make local_stack   Everything in containers: PostgreSQL, Valkey, the
+#                      migrations, the control plane on http://localhost:8660,
+#                      and the web app on http://localhost:3000
+#   make local         Only PostgreSQL and Valkey, for `make local_serve`
+#
+# Both create config.local.yml from config.local.example.yml when it is
+# missing, and generate the secrets in .local/. The control plane reads the
+# same config.local.yml either way; in a container, only the database and
+# Valkey addresses are overridden. Variables in .env override it too.
 services:
   postgres:
     image: postgres:17.5-alpine3.22
@@ -16,8 +27,11 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+      start_period: 30s
+      start_interval: 1s
     restart: unless-stopped
-  cache:
+
+  redis:
     image: valkey/valkey:8.1-alpine3.22
     container_name: ivaldi_valkey
     ports:
@@ -31,5 +45,76 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+      start_period: 30s
+      start_interval: 1s
     restart: unless-stopped
-  
+
+  # Applies every capability's migrations, as `make migrate_up` does, then exits.
+  # Each capability keeps its versions in its own table.
+  migrate:
+    image: migrate/migrate:v4.20.1
+    container_name: ivaldi_migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./apps/control-plane/internal:/capabilities:ro
+    environment:
+      DATABASE_URL: postgres://ivaldi_db_user:${PG_PASSWORD:-brokandsindri}@postgres:5432/ivaldi?sslmode=disable
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        for dir in /capabilities/*/migrations; do
+          capability=$$(basename "$$(dirname "$$dir")")
+          table=$$capability
+          if [ "$$capability" = versioncontrol ]; then table=version_control; fi
+          echo "migrating $$capability"
+          migrate -path "$$dir" -database "$$DATABASE_URL&x-migrations-table=$${table}_schema_migrations" up
+        done
+
+  control-plane:
+    container_name: ivaldi_control_plane
+    build:
+      context: .
+      dockerfile: apps/control-plane/Dockerfile
+    # The working directory mirrors the repository root, so the relative paths
+    # in config.local.yml, such as .local/signing.pem, resolve as they do for
+    # `make local_serve`.
+    working_dir: /ivaldi
+    command: ["serve", "--config", "config.local.yml"]
+    # Runs as you, so it can read the secrets in .local/, which only you may
+    # read. `make local_stack` sets these to your IDs.
+    user: "${IVALDI_UID:-1000}:${IVALDI_GID:-1000}"
+    ports:
+      - "127.0.0.1:8660:8660"
+    volumes:
+      - ./config.local.yml:/ivaldi/config.local.yml:ro
+      - ./.local:/ivaldi/.local:ro
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Only what differs inside the compose network.
+      IVALDI_DATABASE_URL: postgres://ivaldi_db_user:${PG_PASSWORD:-brokandsindri}@postgres:5432/ivaldi?sslmode=disable
+      IVALDI_REDIS_ADDRESS: redis:6379
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  webui:
+    container_name: ivaldi_webui
+    build:
+      context: ./apps/webui
+    # Port 3000 is where config.local.yml expects the web app (login_url,
+    # allowed_origins, and the web client's redirect_uris).
+    ports:
+      - "127.0.0.1:3000:8080"
+    environment:
+      # Where the browser reaches the control plane: external_url.
+      IVALDI_API_URL: http://localhost:8660
+    depends_on:
+      - control-plane
+    restart: unless-stopped

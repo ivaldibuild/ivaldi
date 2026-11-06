@@ -1,10 +1,14 @@
 package main
 
-import "log"
+import (
+	"log"
+
+	"github.com/ivaldibuild/ivaldi-cli/internal/cli"
+)
 
 func main() {
-	err := rootCmd.Execute()
-	if err != nil {
+	cmd := cli.NewCLI()
+	if err := cmd.Execute(); err != nil {
 		log.Fatal(err)
 	}
 }

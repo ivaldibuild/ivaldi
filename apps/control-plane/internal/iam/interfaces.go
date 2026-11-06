@@ -120,6 +120,20 @@ type AccountIdentityRepository interface {
 	Write(ctx context.Context, a *AccountIdentity) error
 }
 
+// OrganizationProvisioner sets up what every new Organization starts with in
+// other capabilities, such as its default Workspace. IAM calls it inside the
+// transaction that creates the Organization, so if it fails the Organization
+// is not created. The control plane wires it at startup, so IAM depends on no
+// other capability.
+type OrganizationProvisioner interface {
+	ProvisionOrganization(ctx context.Context, organizationID string) error
+}
+
+// AccessRepository reads what an authorization check needs.
+type AccessRepository interface {
+	Access(ctx context.Context, q AccessQuery) (Access, error)
+}
+
 type GrantRepository interface {
 	// ExistsForRole reports whether anyone holds the role on the resource,
 	// such as whether an Organization has an owner.

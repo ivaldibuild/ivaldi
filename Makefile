@@ -51,7 +51,7 @@ help:
 	@echo "  make local                                         Start PostgreSQL and Valkey, generate secrets, migrate"
 	@echo "  make local_serve                                   Run the control plane on http://localhost:8660"
 	@echo "  make local_stack                                   Run everything in containers (docker-compose.yml): the"
-	@echo "                                                     web app on http://localhost:3000, the control plane on 8660"
+	@echo "                                                     web app on http://localhost:8670, the control plane on 8660"
 	@echo "  make local_down                                    Stop the containers (data stays in volumes/)"
 	@echo "  make local_reset                                   Drop the local database and migrate a fresh one, so"
 	@echo "                                                     the next start bootstraps from $(LOCAL_CONFIG) again"
@@ -136,7 +136,7 @@ local_up:
 local_stack: $(LOCAL_CONFIG) local_secrets
 	@IVALDI_UID=$$(id -u) IVALDI_GID=$$(id -g) docker compose up -d --build --wait
 	@echo ""
-	@echo "Ready. Open http://localhost:3000 and sign in as bootstrap.admin_email from"
+	@echo "Ready. Open http://localhost:8670 and sign in as bootstrap.admin_email from"
 	@echo "$(LOCAL_CONFIG) with the password in $(LOCAL_DIR)/admin-password."
 
 # Secrets are generated once and kept, so tokens and the admin password

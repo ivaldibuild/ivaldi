@@ -6,14 +6,14 @@
 # `make local_serve` runs the control plane on your machine with this file.
 # `make local_stack` runs the control plane in a container with the same file,
 # overriding only the database and Valkey addresses, and serves the web app
-# on http://localhost:3000.
+# on http://localhost:8670.
 #
 # Paths are relative to the repository root. `make local_secrets` generates the
 # files in .local/.
 deployment_mode: self-hosted
 external_url: http://localhost:8660
 # The web app, which renders sign-in and calls the API from the browser.
-allowed_origins: [http://localhost:3000]
+allowed_origins: [http://localhost:8670]
 
 logging:
   level: debug
@@ -27,11 +27,11 @@ redis:
   password_file: .local/valkey-password
 
 auth:
-  login_url: http://localhost:3000/login
+  login_url: http://localhost:8670/login
   signing_key_files: [.local/signing.pem]
   builtin_accounts: true
   web_client:
-    redirect_uris: [http://localhost:3000/auth/callback]
+    redirect_uris: [http://localhost:8670/auth/callback]
   # Sign-in providers. Register the callback
   # http://localhost:8660/auth/oauth/<provider>/callback with the provider,
   # and put the client secret in .local/. See docs/self-hosting/sign-in.md.

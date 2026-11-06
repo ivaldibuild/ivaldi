@@ -27,9 +27,9 @@ To start a local development server, run:
 ng serve
 ```
 
-Once the server is running, open your browser and navigate to `http://localhost:3000/`. The application will automatically reload whenever you modify any of the source files.
+Once the server is running, open your browser and navigate to `http://localhost:8670/`. The application will automatically reload whenever you modify any of the source files.
 
-The dev server forwards the control plane's paths (`/v1`, `/oauth`, `/.well-known`, `/auth/oauth`, `/auth/logout`) to `http://localhost:8660`, as a reverse proxy would on one origin (see `proxy.conf.json`). Start the control plane first, with `make local` and `make local_serve` from the repository root, or with `make local_stack` followed by `docker compose stop webui`, because the stack's web app also uses port 3000. Port 3000 matches `login_url`, `allowed_origins`, and the web client's redirect URIs in `config.local.yml`.
+The dev server forwards the control plane's paths (`/v1`, `/oauth`, `/.well-known`, `/auth/oauth`, `/auth/logout`) to `http://localhost:8660`, as a reverse proxy would on one origin (see `proxy.conf.json`). Start the control plane first, with `make local` and `make local_serve` from the repository root, or with `make local_stack` followed by `docker compose stop webui`, because the stack's web app also uses port 8670. Port 8670 matches `login_url`, `allowed_origins`, and the web client's redirect URIs in `config.local.yml`.
 
 ## Code scaffolding
 
@@ -73,7 +73,7 @@ pnpm exec playwright install   # once, to download the browsers
 pnpm e2e
 ```
 
-They use `http://localhost:3000` for the web app and `http://localhost:8660` for the control plane; set `IVALDI_E2E_WEB_URL` and `IVALDI_E2E_API_URL` to test elsewhere, such as `ng serve` with `make local_serve`. The password sign-in test signs in as the bootstrap administrator: `bootstrap.admin_email` from `config.local.yml` and the password in `.local/admin-password`, or `IVALDI_E2E_ADMIN_EMAIL` and `IVALDI_E2E_ADMIN_PASSWORD`. Without either, it is skipped.
+They use `http://localhost:8670` for the web app and `http://localhost:8660` for the control plane; set `IVALDI_E2E_WEB_URL` and `IVALDI_E2E_API_URL` to test elsewhere, such as `ng serve` with `make local_serve`. The password sign-in test signs in as the bootstrap administrator: `bootstrap.admin_email` from `config.local.yml` and the password in `.local/admin-password`, or `IVALDI_E2E_ADMIN_EMAIL` and `IVALDI_E2E_ADMIN_PASSWORD`. Without either, it is skipped.
 
 `make local_stack` builds the web app's image from the source at that moment, so rebuild it (run it again) to test changes, or test `ng serve` instead.
 

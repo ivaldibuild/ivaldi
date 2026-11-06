@@ -2,7 +2,7 @@
 #
 #   make local_stack   Everything in containers: PostgreSQL, Valkey, the
 #                      migrations, the control plane on http://localhost:8660,
-#                      and the web app on http://localhost:3000
+#                      and the web app on http://localhost:8670
 #   make local         Only PostgreSQL and Valkey, for `make local_serve`
 #
 # Both create config.local.yml from config.local.example.yml when it is
@@ -108,10 +108,10 @@ services:
     container_name: ivaldi_webui
     build:
       context: ./apps/webui
-    # Port 3000 is where config.local.yml expects the web app (login_url,
+    # Port 8670 is where config.local.yml expects the web app (login_url,
     # allowed_origins, and the web client's redirect_uris).
     ports:
-      - "127.0.0.1:3000:8080"
+      - "127.0.0.1:8670:8080"
     environment:
       # Where the browser reaches the control plane: external_url.
       IVALDI_API_URL: http://localhost:8660

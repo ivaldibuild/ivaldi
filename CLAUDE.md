@@ -50,7 +50,7 @@ IVALDI_TEST_REDIS_URL='redis://localhost:6379/0' go test ./pkg/events/redisstrea
 gofmt -l .        # list unformatted files
 
 # Everything in containers (docker-compose.yml): PostgreSQL, Valkey, the migrations,
-# the control plane on :8660, and the web app on :3000. The containerized control
+# the control plane on :8660, and the web app on :8670. The containerized control
 # plane reads config.local.yml like `make local_serve`, overriding only the database
 # and Valkey addresses. `make local` starts only PostgreSQL and Valkey, for
 # `make local_serve`. All three create config.local.yml from config.local.example.yml

@@ -173,11 +173,17 @@ type ApplicationRepository interface {
 
 // Workspaces looks up Workspaces and Projects in the workspace capability,
 // without authorizing, to check the boundaries delivery records must keep.
-// workspace.Service implements it.
+// workspace.NewLookups implements it.
 type Workspaces interface {
 	LookupWorkspace(ctx context.Context, organizationID, workspaceID string) (*workspace.Workspace, error)
 	LookupProject(ctx context.Context, organizationID, projectID string) (*workspace.Project, error)
 }
+
+// Each service interface below is implemented by one sub-package, such as
+// environments for EnvironmentService, which also serves it over HTTP. A
+// sub-package's constructor returns its service wrapped in an authorizing
+// layer that checks every operation with the single authorizer before it
+// runs, so the interface is the only way in.
 
 // EnvironmentService manages Environments and the Targets they run on.
 type EnvironmentService interface {
@@ -204,6 +210,30 @@ type EnvironmentService interface {
 	RestoreTarget(ctx context.Context, actor identity.Actor, organizationID, targetID string) (*Target, error)
 }
 
+// CreateEnvironmentInput describes a new Environment.
+type CreateEnvironmentInput struct {
+	OrganizationID string
+	WorkspaceID    string
+	// Slug is derived from DisplayName when empty.
+	Slug             string
+	DisplayName      string
+	Tier             Tier
+	ExecutionEnabled bool
+}
+
+// CreateTargetInput describes a new Target.
+type CreateTargetInput struct {
+	OrganizationID string
+	EnvironmentID  string
+	// Slug is derived from DisplayName when empty.
+	Slug        string
+	DisplayName string
+	Runtime     Runtime
+	Locator     map[string]string
+	// AgentPrincipalID is the runtime agent that serves the Target, if known yet.
+	AgentPrincipalID string
+}
+
 // LifecycleService manages Lifecycles and their phases.
 type LifecycleService interface {
 	CreateLifecycle(ctx context.Context, actor identity.Actor, in CreateLifecycleInput) (*Lifecycle, error)
@@ -218,6 +248,17 @@ type LifecycleService interface {
 	RestoreLifecycle(ctx context.Context, actor identity.Actor, organizationID, lifecycleID string) (*Lifecycle, error)
 }
 
+// CreateLifecycleInput describes a new Lifecycle and its phases, in order.
+type CreateLifecycleInput struct {
+	OrganizationID string
+	WorkspaceID    string
+	// Slug is derived from DisplayName when empty.
+	Slug        string
+	DisplayName string
+	Description string
+	Phases      []LifecyclePhaseProps
+}
+
 // RegistryService manages Registries.
 type RegistryService interface {
 	CreateRegistry(ctx context.Context, actor identity.Actor, in CreateRegistryInput) (*Registry, error)
@@ -230,6 +271,21 @@ type RegistryService interface {
 	SetRegistryLookup(ctx context.Context, actor identity.Actor, organizationID, registryID string, from LookupFrom, pool string) (*Registry, error)
 	ArchiveRegistry(ctx context.Context, actor identity.Actor, organizationID, registryID string) (*Registry, error)
 	RestoreRegistry(ctx context.Context, actor identity.Actor, organizationID, registryID string) (*Registry, error)
+}
+
+// CreateRegistryInput describes a new Registry.
+type CreateRegistryInput struct {
+	OrganizationID string
+	WorkspaceID    string
+	// Slug is derived from DisplayName when empty.
+	Slug          string
+	DisplayName   string
+	Kind          RegistryKind
+	URL           string
+	CredentialRef string
+	// LookupFrom defaults to LookupFromControlPlane.
+	LookupFrom LookupFrom
+	LookupPool string
 }
 
 // ApplicationService manages Applications, their artifacts, their Channels,
@@ -279,19 +335,54 @@ type ApplicationService interface {
 	RemovePlacement(ctx context.Context, actor identity.Actor, organizationID, applicationID, targetID string) error
 }
 
-// Service orchestrates the delivery capability: it authorizes, checks rules
-// that span several records or capabilities, calls domain methods to change
-// state, and persists the result with its audit record. It never sets a
-// domain object's state itself.
-//
-// Environments are IAM resources, so their permissions are checked on the
-// Environment, or on its Workspace before it exists or while it is archived.
-// Targets follow their Environment. Lifecycles and Registries are checked on
-// their Workspace, and Applications and what belongs to them on their Project.
-type Service interface {
-	EnvironmentService
-	LifecycleService
-	RegistryService
-	ApplicationService
-	workspace.Dependent
+// CreateApplicationInput describes a new Application and the Lifecycle its
+// default Channel follows.
+type CreateApplicationInput struct {
+	OrganizationID string
+	ProjectID      string
+	// OwnerTeamID defaults to the Project's owning Team.
+	OwnerTeamID string
+	// Slug is derived from DisplayName when empty.
+	Slug             string
+	DisplayName      string
+	SourceID         string
+	WorkloadSelector map[string]string
+	// DefaultLifecycleID is the Lifecycle the default Channel follows. It
+	// must be active and in the Project's Workspace.
+	DefaultLifecycleID string
+}
+
+// CreateArtifactInput describes an artifact someone declares for an Application.
+type CreateArtifactInput struct {
+	OrganizationID string
+	ApplicationID  string
+	Name           string
+	ArtifactKind   ArtifactKind
+	ArtifactName   string
+	// RegistryID must be an active Registry in the Application's Workspace.
+	RegistryID string
+	Required   bool
+}
+
+// CreateChannelInput describes a new, non-default Channel.
+type CreateChannelInput struct {
+	OrganizationID string
+	ApplicationID  string
+	// LifecycleID must be an active Lifecycle in the Application's Workspace.
+	LifecycleID string
+	// Slug is derived from DisplayName when empty.
+	Slug        string
+	DisplayName string
+	Description string
+	Rules       []ChannelRuleProps
+}
+
+// CreatePlacementInput places an Application on a Target.
+type CreatePlacementInput struct {
+	OrganizationID string
+	ApplicationID  string
+	TargetID       string
+	// ApplyConfig says how Ivaldi applies Releases there; nil means
+	// Deployments there are tracked only, until it is configured.
+	ApplyConfig *ApplyConfig
 }

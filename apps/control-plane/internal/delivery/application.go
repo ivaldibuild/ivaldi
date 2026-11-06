@@ -8,6 +8,7 @@ import (
 
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
+	"github.com/ivaldibuild/ivaldi/pkg/id"
 )
 
 // WorkloadSelectorLabel is the label an Application's workloads carry when
@@ -320,4 +321,24 @@ func (a *Application) Restore() {
 		a.updatedAt = clock.Now()
 		a.RecordEvent(ApplicationRestored{a.Snapshot()})
 	}
+}
+
+// Validate checks what can be checked of a new Application before its
+// Project is read: the Lifecycle its default Channel follows, its display
+// name, its slug, and its workload selector. NewApplication checks them
+// again, with the rest.
+func (in CreateApplicationInput) Validate() error {
+	if !id.Valid(Lifecycle{}.Prefix(), in.DefaultLifecycleID) {
+		return NewErrInvalidInput("an application needs the lifecycle its default channel follows")
+	}
+	if err := validateDisplayName(in.DisplayName); err != nil {
+		return err
+	}
+	if _, err := slugOrDerived(in.Slug, in.DisplayName); err != nil {
+		return err
+	}
+	if len(in.WorkloadSelector) > 0 {
+		return validateSelector(in.WorkloadSelector)
+	}
+	return nil
 }

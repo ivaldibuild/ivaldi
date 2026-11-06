@@ -18,6 +18,15 @@ const (
 	TierOther       Tier = "other"
 )
 
+func (t Tier) Valid() (bool, error) {
+	switch t {
+	case TierDevelopment, TierStaging, TierProduction, TierOther:
+		return true, nil
+	default:
+		return false, fmt.Errorf("invalid tier %s", t)
+	}
+}
+
 // Environment is a named stage in a Workspace, such as staging or
 // production. It is registered with IAM as a resource under its Workspace.
 type Environment struct {

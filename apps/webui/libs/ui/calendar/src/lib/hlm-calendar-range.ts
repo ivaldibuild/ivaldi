@@ -180,7 +180,7 @@ export class HlmCalendarRange<T> {
     'data-[highlighted]:before:h-1',
     'data-[highlighted]:before:w-1',
     'data-[highlighted]:before:-translate-x-1/2',
-    'data-[highlighted]:before:rounded-full',
+    'data-[highlighted]:before:rounded-none',
     'data-[highlighted]:before:bg-destructive',
   );
 

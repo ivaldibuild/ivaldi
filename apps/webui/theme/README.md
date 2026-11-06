@@ -30,12 +30,23 @@ Spartan's variables can't express everything in the brand rules, so the theme ad
 | `--eyebrow`                | `text-eyebrow`                | bronze       | steel        | Labels set in capitals with wide tracking    |
 | `--primary-text`           | `text-primary-text`           | bronze       | charcoal     | Bronze as text; it fails on Paper below 24px |
 | `--destructive-foreground` | `text-destructive-foreground` | white        | white        | Text on an ember fill                        |
+| `--destructive-text`       | `text-destructive-text`       | white        | ember        | Error text: ember fails as text on Forge     |
 | `--overlay`                | `bg-overlay`                  | charcoal 80% | charcoal 60% | Dialog and sheet backdrops                   |
+
+## How `libs/ui` follows the brand
+
+The generated components have been adjusted where a theme variable alone could not make them follow the brand:
+
+- **Destructive fills, not tints.** The destructive button, badge, alert and chat bubble, a destructive dropdown item on hover or focus, and a failed attachment's thumbnail use `bg-destructive text-destructive-foreground`. Spartan's `bg-destructive/10` tints are gone, except behind removed lines in a code diff.
+- **Error text uses `text-destructive-text`**: field and questionnaire errors, invalid labels and radios, failed trace lines, destructive code blocks and dropdown items. It is ember on Paper and white on Forge.
+- **Invalid controls keep a solid ember border in both modes.** The `dark:…:border-destructive/50` overrides are removed.
+- **Square corners.** Switches, progress bars, sliders, carousel buttons, the drawer handle, bubble reactions, avatar badges and calendar markers no longer use `rounded-full`. Avatars use the app-icon radius (`rounded-[19.5%]`). Radio buttons stay round, so they can't be mistaken for checkboxes.
+
+Regenerating a component with the Spartan CLI brings back its default classes, so re-apply these changes after an update.
 
 ## Rules the variables can't enforce
 
-- **Ember is a fill, never text on Forge** (2.9:1). Use `bg-destructive text-destructive-foreground` for destructive buttons, badges and alerts. Spartan's generated components use `text-destructive` and `bg-destructive/10` in places (error text, the destructive button and badge); restyle those before they ship.
 - **Never put bronze on steel** (2.7:1). Primary buttons sit on `background` or `card`, not on `muted` or `secondary` panels.
-- **Corners are square.** `rounded-full` is not tied to `--radius`, so pills, switches and progress bars generated with it stay round until changed. Avatars may keep the app-icon radius (19.5%).
+- **Ember appears as a fill or a border**, with a word or icon so the state never relies on colour. For error text use `text-destructive-text`, never `text-destructive`.
 - **Focus** is a visible `ring` outline on every interactive element.
 - **No gradients.**

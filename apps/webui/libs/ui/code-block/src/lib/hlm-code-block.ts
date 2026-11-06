@@ -9,7 +9,7 @@ const codeBlockVariants = cva(
       variant: {
         default:
           'border-input text-foreground dark:bg-input/30 has-[>[data-slot=code-block-content]:focus-visible]:border-ring border',
-        destructive: 'border-destructive/30 text-destructive dark:border-destructive/40 border',
+        destructive: 'border-destructive text-destructive-text border',
       },
     },
     defaultVariants: {

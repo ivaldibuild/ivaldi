@@ -10,7 +10,7 @@ export class HlmMessageAvatar {
   constructor() {
     classes(
       () =>
-        'bg-muted min-w-9 rounded-full flex w-fit shrink-0 items-center justify-center self-end overflow-hidden group-has-data-[slot=message-footer]/message:-translate-y-8',
+        'bg-muted min-w-9 rounded-[19.5%] flex w-fit shrink-0 items-center justify-center self-end overflow-hidden group-has-data-[slot=message-footer]/message:-translate-y-8',
     );
   }
 }

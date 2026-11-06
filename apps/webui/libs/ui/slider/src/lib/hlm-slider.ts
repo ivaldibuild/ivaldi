@@ -40,7 +40,7 @@ import { classes } from '@spartan-ng/helm/utils';
     >
       <div
         brnSliderTrack
-        class="bg-muted rounded-full data-horizontal:h-1.5 data-horizontal:w-full data-vertical:h-full data-vertical:w-1.5 relative grow overflow-hidden"
+        class="bg-muted rounded-none data-horizontal:h-1.5 data-horizontal:w-full data-vertical:h-full data-vertical:w-1.5 relative grow overflow-hidden"
       >
         <div
           class="bg-primary absolute select-none data-draggable-range:cursor-move data-horizontal:h-full data-vertical:w-full"
@@ -50,7 +50,7 @@ import { classes } from '@spartan-ng/helm/utils';
 
       @for (i of _slider.thumbIndexes(); track i) {
         <span
-          class="border-primary ring-ring/50 size-4 rounded-full border bg-white shadow-sm transition-[color,box-shadow] hover:ring-4 focus-visible:ring-4 focus-visible:outline-hidden absolute block shrink-0 select-none after:absolute after:-inset-2"
+          class="border-primary ring-ring/50 size-4 rounded-none border bg-white shadow-sm transition-[color,box-shadow] hover:ring-4 focus-visible:ring-4 focus-visible:outline-hidden absolute block shrink-0 select-none after:absolute after:-inset-2"
           brnSliderThumb
         ></span>
       }

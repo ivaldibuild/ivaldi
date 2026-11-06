@@ -55,7 +55,12 @@
           <li
             class="border-border flex items-center justify-between gap-4 border-b px-4 py-3 text-sm"
           >
-            <span class="text-heading font-semibold">You</span>
+            <span class="text-heading font-semibold">
+              {{ user.displayName() || 'You' }}
+              @if (user.displayName()) {
+                <span class="text-muted-foreground font-normal">(you)</span>
+              }
+            </span>
             <span class="text-muted-foreground">Lead</span>
           </li>
           @for (agent of agents(); track agent) {

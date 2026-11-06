@@ -114,3 +114,26 @@ export interface Placement {
   source: 'configured' | 'observed';
   current_release_id: string | null;
 }
+
+/** The caller's Organisation as `GET /v1/organization` returns it. */
+export interface Organization {
+  id: string;
+  slug: string;
+  name: string;
+  display_name: string;
+  logo_url: string | null;
+}
+
+export interface MeRole {
+  /** The built-in role's key, such as `owner`, or empty for a custom role. */
+  role: string;
+  role_id: string;
+  resource_id: string;
+}
+
+/** The signed-in caller, from `GET /v1/me`. */
+export interface Me {
+  principal: { id: string; kind: string; display_name: string; email: string | null };
+  organization: { id: string; slug: string; display_name: string; logo_url: string | null };
+  roles: MeRole[];
+}

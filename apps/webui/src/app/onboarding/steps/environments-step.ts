@@ -9,7 +9,7 @@ import { HlmInputImports } from '@spartan-ng/helm/input';
 import { HlmSpinnerImports } from '@spartan-ng/helm/spinner';
 import { Environment, Lifecycle, OnboardingApi, Tier, Workspace } from '../onboarding-api';
 import { SetupStep } from '../setup-step';
-import { StepStatus } from './step-status';
+import { RequestStatus } from '../../shared/request-status';
 
 interface DraftEnvironment {
   display_name: string;
@@ -46,7 +46,7 @@ export class EnvironmentsStep {
   private readonly api = inject(OnboardingApi);
   private readonly router = inject(Router);
 
-  protected readonly status = new StepStatus();
+  protected readonly status = new RequestStatus();
   protected readonly workspace = signal<Workspace | null>(null);
   protected readonly existing = signal<Environment[]>([]);
   protected readonly lifecycles = signal<Lifecycle[]>([]);

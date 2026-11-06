@@ -1,0 +1,260 @@
+@if (failure(); as message) {
+  <div hlmAlert variant="destructive" role="alert">
+    <h2 hlmAlertTitle>The Application didn't load</h2>
+    <p hlmAlertDescription>{{ message }}</p>
+  </div>
+} @else if (!application()) {
+  <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+    <hlm-spinner aria-hidden="true" /> Loading the Application…
+  </p>
+} @else {
+  <div class="flex flex-col gap-10">
+    <app-page-header
+      [heading]="application()!.display_name"
+      [trail]="project() + ' / Applications'"
+    >
+      <p pageMeta class="text-muted-foreground flex flex-wrap gap-x-4 text-sm">
+        @if (team()) {
+          <span
+            >Owned by <span class="text-foreground">{{ team() }}</span></span
+          >
+        }
+        <span
+          >Address <code class="text-foreground">{{ application()!.slug }}</code></span
+        >
+      </p>
+    </app-page-header>
+
+    <section aria-labelledby="channels-heading" class="flex flex-col gap-4">
+      <h2 id="channels-heading" class="text-heading text-lg font-semibold">Channels</h2>
+      <ul class="flex flex-col gap-3">
+        @for (item of channels(); track item.channel.id) {
+          <li class="border-border flex flex-col gap-4 border p-5">
+            <div class="flex flex-wrap items-center gap-3">
+              <span class="text-heading font-semibold">{{ item.channel.display_name }}</span>
+              @if (item.channel.is_default) {
+                <span hlmBadge variant="outline">Default</span>
+              }
+              <span class="text-muted-foreground text-sm">
+                Follows {{ item.lifecycle }} ·
+                {{ rulesLabel(item.channel.rules.length) }}
+              </span>
+            </div>
+            <ol
+              class="flex flex-wrap items-center gap-2 text-sm"
+              [attr.aria-label]="item.lifecycle + ' phases'"
+            >
+              @for (phase of item.phases; track $index; let last = $last) {
+                <li class="border-input flex flex-col border px-3 py-2">
+                  <span class="text-heading font-semibold">{{ phase.name }}</span>
+                  @if (phase.environments && phase.environments !== phase.name) {
+                    <span class="text-muted-foreground text-[13px]">{{ phase.environments }}</span>
+                  }
+                </li>
+                @if (!last) {
+                  <li aria-hidden="true" class="text-muted-foreground">
+                    <ng-icon name="lucideArrowRight" />
+                  </li>
+                }
+              }
+            </ol>
+          </li>
+        }
+      </ul>
+    </section>
+
+    <section aria-labelledby="releases-heading" class="flex flex-col gap-4">
+      <h2 id="releases-heading" class="text-heading text-lg font-semibold">Releases</h2>
+      <div hlmAlert role="note">
+        <ng-icon name="lucideInfo" aria-hidden="true" />
+        <h3 hlmAlertTitle>Not tracked yet</h3>
+        <p hlmAlertDescription>
+          Once the control plane records Builds, Releases and Deployments, this shows each Release
+          and how far it has moved through its Channel's Lifecycle.
+        </p>
+      </div>
+    </section>
+
+    <section aria-labelledby="artifacts-heading" class="flex flex-col gap-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <h2 id="artifacts-heading" class="text-heading text-lg font-semibold">Artifacts</h2>
+        @if (!addingArtifact()) {
+          <button hlmBtn variant="outline" type="button" (click)="addingArtifact.set(true)">
+            <ng-icon name="lucidePlus" aria-hidden="true" /> Add artifact
+          </button>
+        }
+      </div>
+      <p class="text-muted-foreground text-sm">
+        What each Release is made of: one Build per artifact. Artifacts the runtime agent finds
+        without a declaration show as observed.
+      </p>
+
+      @if (artifacts().length > 0) {
+        <div class="border-border relative overflow-x-auto border">
+          <table class="w-full min-w-150 border-collapse text-sm">
+            <thead>
+              <tr class="text-muted-foreground text-left">
+                <th scope="col" class="border-border border-b px-4 py-3 font-semibold">Name</th>
+                <th scope="col" class="border-border border-b px-4 py-3 font-semibold">Kind</th>
+                <th scope="col" class="border-border border-b px-4 py-3 font-semibold">
+                  Published as
+                </th>
+                <th scope="col" class="border-border border-b px-4 py-3 font-semibold">
+                  In every Release
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (artifact of artifacts(); track artifact.id) {
+                <tr>
+                  <td class="border-border text-heading border-b px-4 py-3 font-semibold">
+                    {{ artifact.name }}
+                    @if (artifact.source === 'observed') {
+                      <span hlmBadge variant="outline" class="ml-2">Observed</span>
+                    }
+                  </td>
+                  <td class="border-border border-b px-4 py-3">
+                    {{ kindLabel(artifact.artifact_kind) }}
+                  </td>
+                  <td class="border-border border-b px-4 py-3">
+                    <code>{{ artifact.artifact_name }}</code>
+                  </td>
+                  <td class="border-border border-b px-4 py-3">
+                    {{ artifact.required ? 'Required' : 'Optional' }}
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      } @else if (!addingArtifact()) {
+        <p class="text-foreground text-sm">No artifacts declared yet.</p>
+      }
+
+      @if (addingArtifact()) {
+        <form
+          class="border-border grid gap-4 border p-5 md:grid-cols-2"
+          novalidate
+          (submit)="addArtifact($event)"
+        >
+          @if (artifactStatus.error(); as message) {
+            <div hlmAlert variant="destructive" role="alert" class="md:col-span-2">
+              <p hlmAlertDescription>{{ message }}</p>
+            </div>
+          }
+          <div hlmField>
+            <label hlmFieldLabel for="artifact-name">Name</label>
+            <input hlmInput id="artifact-name" placeholder="api" [formField]="artifactForm.name" />
+            @if (artifactForm.name().touched() && artifactForm.name().invalid()) {
+              <hlm-field-error forceShow>{{
+                artifactForm.name().errors()[0].message
+              }}</hlm-field-error>
+            }
+          </div>
+          <div hlmField>
+            <label hlmFieldLabel for="artifact-kind">Kind</label>
+            <select
+              id="artifact-kind"
+              class="border-input bg-background text-foreground h-9 border px-2"
+              [formField]="artifactForm.artifact_kind"
+            >
+              @for (kind of kinds; track kind.value) {
+                <option [value]="kind.value">{{ kind.label }}</option>
+              }
+            </select>
+          </div>
+          <div hlmField class="md:col-span-2">
+            <label hlmFieldLabel for="artifact-published">Published as</label>
+            <input
+              hlmInput
+              id="artifact-published"
+              placeholder="ghcr.io/northwind/payments-api"
+              [formField]="artifactForm.artifact_name"
+            />
+            @if (artifactForm.artifact_name().touched() && artifactForm.artifact_name().invalid()) {
+              <hlm-field-error forceShow>{{
+                artifactForm.artifact_name().errors()[0].message
+              }}</hlm-field-error>
+            }
+          </div>
+          <label class="flex items-center gap-2 text-sm md:col-span-2">
+            <input
+              type="checkbox"
+              class="accent-primary size-4"
+              [formField]="artifactForm.required"
+            />
+            Every Release must include a Build of it
+          </label>
+          <div class="flex flex-wrap gap-2 md:col-span-2">
+            <button hlmBtn type="submit" [disabled]="artifactStatus.saving()">
+              @if (artifactStatus.saving()) {
+                <hlm-spinner aria-hidden="true" /> Adding…
+              } @else {
+                Add artifact
+              }
+            </button>
+            <button hlmBtn variant="outline" type="button" (click)="addingArtifact.set(false)">
+              Cancel
+            </button>
+          </div>
+        </form>
+      }
+    </section>
+
+    <section aria-labelledby="placements-heading" class="flex flex-col gap-4">
+      <h2 id="placements-heading" class="text-heading text-lg font-semibold">Runs on</h2>
+      @if (placements().length > 0) {
+        <ul class="border-border flex flex-col border">
+          @for (item of placements(); track item.placement.target_id) {
+            <li
+              class="border-border flex flex-wrap justify-between gap-2 border-b px-4 py-3 text-sm last:border-b-0"
+            >
+              <span>
+                <span class="text-heading font-semibold">{{ item.target }}</span>
+                <span class="text-muted-foreground"> · {{ item.locator }}</span>
+              </span>
+              <span class="text-muted-foreground">
+                {{ item.environment
+                }}{{ item.placement.source === 'observed' ? ' · observed' : '' }}
+              </span>
+            </li>
+          }
+        </ul>
+      } @else {
+        <p class="text-foreground text-sm">Not placed on any Target yet.</p>
+      }
+
+      @if (unplacedTargets().length > 0) {
+        <form class="flex flex-wrap items-end gap-3" novalidate (submit)="place($event)">
+          <div hlmField class="min-w-60">
+            <label hlmFieldLabel for="placement-target">Place on a Target</label>
+            <select
+              id="placement-target"
+              class="border-input bg-background text-foreground h-9 border px-2"
+              [value]="targetToPlace() || unplacedTargets()[0].id"
+              (change)="targetToPlace.set($any($event.target).value)"
+            >
+              @for (target of unplacedTargets(); track target.id) {
+                <option [value]="target.id">{{ target.label }}</option>
+              }
+            </select>
+          </div>
+          <button hlmBtn variant="outline" type="submit" [disabled]="placementStatus.saving()">
+            @if (placementStatus.saving()) {
+              <hlm-spinner aria-hidden="true" /> Placing…
+            } @else {
+              Place
+            }
+          </button>
+        </form>
+        @if (placementStatus.error(); as message) {
+          <p class="text-destructive-text text-sm" role="alert">{{ message }}</p>
+        }
+      } @else if (placements().length === 0) {
+        <p class="text-muted-foreground text-sm">
+          There are no Targets to place it on. <a routerLink="/setup/cluster">Record a Target</a>
+        </p>
+      }
+    </section>
+  </div>
+}

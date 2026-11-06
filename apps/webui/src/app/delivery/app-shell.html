@@ -1,0 +1,81 @@
+<div class="bg-background text-foreground flex min-h-dvh flex-wrap">
+  <nav
+    aria-label="Primary"
+    class="border-sidebar-border bg-sidebar text-sidebar-foreground flex w-full flex-col gap-6 border-b px-3 py-5 md:min-h-dvh md:w-64 md:border-r md:border-b-0"
+  >
+    <span class="text-heading px-2 text-sm font-semibold">Ivaldi</span>
+
+    <div class="flex flex-col gap-1.5 px-2">
+      <label for="workspace-switcher" class="text-muted-foreground text-xs">Workspace</label>
+      <select
+        id="workspace-switcher"
+        class="border-input bg-background text-foreground h-9 border px-2 text-sm"
+        [value]="context.current()?.id ?? ''"
+        (change)="selectWorkspace($event)"
+      >
+        @for (workspace of context.workspaces(); track workspace.id) {
+          <option [value]="workspace.id">{{ workspace.display_name }}</option>
+        }
+      </select>
+    </div>
+
+    <div class="flex flex-col gap-0.5">
+      <span
+        class="text-muted-foreground px-3 pb-2 text-[11px] font-semibold tracking-[0.24em] uppercase"
+      >
+        Delivery
+      </span>
+      @for (item of delivery; track item.path) {
+        <a
+          [routerLink]="item.path"
+          routerLinkActive
+          #active="routerLinkActive"
+          [attr.aria-current]="active.isActive ? 'page' : null"
+          class="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex h-9 items-center gap-3 border-l-2 px-3 text-sm no-underline"
+          [class.border-sidebar-primary]="active.isActive"
+          [class.border-transparent]="!active.isActive"
+          [class.text-heading]="active.isActive"
+          [class.font-semibold]="active.isActive"
+        >
+          <ng-icon
+            [name]="item.icon"
+            aria-hidden="true"
+            [class.text-primary-text]="active.isActive"
+            [class.text-muted-foreground]="!active.isActive"
+          />
+          {{ item.label }}
+        </a>
+      }
+    </div>
+
+    <div class="flex flex-col gap-0.5">
+      <span
+        class="text-muted-foreground px-3 pb-2 text-[11px] font-semibold tracking-[0.24em] uppercase"
+      >
+        Organisation
+      </span>
+      <a
+        routerLink="/setup"
+        class="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex h-9 items-center gap-3 border-l-2 border-transparent px-3 text-sm no-underline"
+      >
+        <ng-icon name="lucideSettings" class="text-muted-foreground" aria-hidden="true" />
+        Setup
+      </a>
+    </div>
+
+    <div class="border-sidebar-border mt-auto border-t px-2 pt-4">
+      <button
+        type="button"
+        class="hover:text-heading flex h-9 items-center gap-3 text-sm"
+        (click)="signOut()"
+      >
+        <ng-icon name="lucideLogOut" class="text-muted-foreground" aria-hidden="true" />
+        Sign out
+      </button>
+    </div>
+  </nav>
+
+  <main class="min-w-0 flex-[999_1_560px] px-4 py-8 md:px-12">
+    <router-outlet />
+  </main>
+</div>

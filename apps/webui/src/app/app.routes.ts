@@ -52,5 +52,42 @@ export const routes: Routes = [
       },
     ],
   },
-  { path: '', pathMatch: 'full', redirectTo: 'setup' },
+  {
+    path: '',
+    canActivate: [requireSignIn],
+    loadComponent: () => import('./delivery/app-shell').then((m) => m.AppShell),
+    children: [
+      { path: '', pathMatch: 'full', redirectTo: 'applications' },
+      {
+        path: 'applications',
+        title: 'Applications · Ivaldi',
+        loadComponent: () =>
+          import('./delivery/pages/applications-page').then((m) => m.ApplicationsPage),
+      },
+      {
+        path: 'applications/new',
+        title: 'New application · Ivaldi',
+        loadComponent: () =>
+          import('./delivery/pages/new-application-page').then((m) => m.NewApplicationPage),
+      },
+      {
+        path: 'applications/:id',
+        title: 'Application · Ivaldi',
+        loadComponent: () =>
+          import('./delivery/pages/application-page').then((m) => m.ApplicationPage),
+      },
+      {
+        path: 'environments',
+        title: 'Environments · Ivaldi',
+        loadComponent: () =>
+          import('./delivery/pages/environments-page').then((m) => m.EnvironmentsPage),
+      },
+      {
+        path: 'lifecycles',
+        title: 'Lifecycles · Ivaldi',
+        loadComponent: () =>
+          import('./delivery/pages/lifecycles-page').then((m) => m.LifecyclesPage),
+      },
+    ],
+  },
 ];

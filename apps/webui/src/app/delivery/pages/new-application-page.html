@@ -1,0 +1,130 @@
+<div class="flex max-w-205 flex-col gap-8">
+  <app-page-header
+    heading="New application"
+    [trail]="(context.current()?.display_name ?? 'Workspace') + ' / Applications'"
+  />
+
+  <p class="text-foreground text-base leading-relaxed">
+    An Application is a deployable unit, such as an API or a web app. It gets a default Channel
+    whose Releases move through the Lifecycle you choose.
+  </p>
+
+  @if (status.error(); as message) {
+    <div hlmAlert variant="destructive" role="alert">
+      <h2 hlmAlertTitle>The Application wasn't created</h2>
+      <p hlmAlertDescription>{{ message }}</p>
+    </div>
+  }
+
+  @if (choices.isLoading() && !choices.hasValue()) {
+    <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+      <hlm-spinner aria-hidden="true" /> Loading Projects…
+    </p>
+  } @else if (teams().length === 0 || lifecycles().length === 0) {
+    <section class="border-border flex flex-col items-start gap-3 border p-6">
+      <h2 class="text-heading text-lg font-semibold">Set up a Team and a Lifecycle first</h2>
+      <p class="text-muted-foreground text-sm">
+        Every Application is owned by a Team, and its Releases follow a Lifecycle.
+      </p>
+      <a hlmBtn routerLink="/setup/team">Go to setup</a>
+    </section>
+  } @else {
+    <form
+      id="application-form"
+      class="grid gap-5 md:grid-cols-2"
+      novalidate
+      (submit)="create($event)"
+    >
+      <div hlmField class="md:col-span-2">
+        <label hlmFieldLabel for="application-name">Name</label>
+        <input
+          hlmInput
+          id="application-name"
+          class="h-10"
+          placeholder="payments-api"
+          [formField]="applicationForm.display_name"
+        />
+        @if (applicationForm.display_name().touched() && applicationForm.display_name().invalid()) {
+          <hlm-field-error forceShow>{{
+            applicationForm.display_name().errors()[0].message
+          }}</hlm-field-error>
+        }
+      </div>
+
+      <div hlmField>
+        <label hlmFieldLabel for="application-project">Project</label>
+        <select
+          id="application-project"
+          class="border-input bg-background text-foreground h-10 border px-2"
+          [formField]="applicationForm.project_id"
+          (change)="projectChanged()"
+        >
+          @for (project of projects(); track project.id) {
+            <option [value]="project.id">{{ project.display_name }}</option>
+          }
+          <option [value]="newProject">New Project…</option>
+        </select>
+      </div>
+
+      @if (creatingProject()) {
+        <div hlmField>
+          <label hlmFieldLabel for="project-name">Project name</label>
+          <input
+            hlmInput
+            id="project-name"
+            class="h-10"
+            placeholder="Payments"
+            [value]="applicationForm.project_name().value()"
+            (input)="applicationForm.project_name().value.set($any($event.target).value)"
+          />
+          @if (projectNameError(); as message) {
+            <hlm-field-error forceShow>{{ message }}</hlm-field-error>
+          }
+        </div>
+      }
+
+      <div hlmField>
+        <label hlmFieldLabel for="application-team">Owning Team</label>
+        <select
+          id="application-team"
+          class="border-input bg-background text-foreground h-10 border px-2"
+          [formField]="applicationForm.owner_team_id"
+        >
+          @for (team of teams(); track team.id) {
+            <option [value]="team.id">{{ team.display_name }}</option>
+          }
+        </select>
+      </div>
+
+      <div hlmField>
+        <label hlmFieldLabel for="application-lifecycle">Lifecycle for its default Channel</label>
+        <select
+          id="application-lifecycle"
+          class="border-input bg-background text-foreground h-10 border px-2"
+          [formField]="applicationForm.lifecycle_id"
+        >
+          @for (lifecycle of lifecycles(); track lifecycle.id) {
+            <option [value]="lifecycle.id">{{ lifecycle.display_name }}</option>
+          }
+        </select>
+      </div>
+    </form>
+  }
+
+  <div class="flex flex-wrap gap-3">
+    <button
+      hlmBtn
+      size="lg"
+      type="submit"
+      form="application-form"
+      [disabled]="status.saving() || teams().length === 0 || lifecycles().length === 0"
+    >
+      @if (status.saving()) {
+        <hlm-spinner aria-hidden="true" /> Creating…
+      } @else {
+        Create application
+      }
+    </button>
+    <a hlmBtn size="lg" variant="outline" routerLink="/applications">Cancel</a>
+  </div>
+</div>

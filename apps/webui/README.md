@@ -7,13 +7,9 @@ This project was generated using [Angular CLI](https://github.com/angular/angula
 `/login` is the page the control plane sends browsers to when someone needs to sign in. It reads the `login_challenge` and calls the control plane's `/v1/auth` operations (see [docs/design/sign-in-flow.md](../../docs/design/sign-in-flow.md)). To connect the two:
 
 - Set the control plane's `auth.login_url` to this page, such as `https://app.example.com/login`.
-- If the web app is served from a different origin than the control plane, list the web app's origin in the control plane's `allowed_origins`, and put the control plane's address in `src/index.html`:
+- Serve the web app and the control plane on one origin, and the web app needs no configuration. If the web app has its own origin, list it in the control plane's `allowed_origins` and give the web app the control plane's address: the image reads `IVALDI_API_URL` when it starts and writes it into the `<meta name="ivaldi-api-url">` tag in `index.html`.
 
-  ```html
-  <meta name="ivaldi-api-url" content="https://ivaldi.example.com" />
-  ```
-
-  Leave it empty when both are served from the same origin.
+See [Serving the web app](../../docs/self-hosting/web-app.md) for the image, the reverse proxy routes, and both layouts.
 
 ## Development server
 
@@ -23,7 +19,9 @@ To start a local development server, run:
 ng serve
 ```
 
-Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
+Once the server is running, open your browser and navigate to `http://localhost:3000/`. The application will automatically reload whenever you modify any of the source files.
+
+The dev server forwards the control plane's paths (`/v1`, `/oauth`, `/.well-known`, `/auth/oauth`, `/auth/logout`) to `http://localhost:8660`, as a reverse proxy would on one origin (see `proxy.conf.json`). Start the control plane first, with `make local` and `make local_serve` from the repository root, or with `make local_stack` followed by `docker compose stop webui`, because the stack's web app also uses port 3000. Port 3000 matches `login_url`, `allowed_origins`, and the web client's redirect URIs in `config.local.yml`.
 
 ## Code scaffolding
 

@@ -48,6 +48,14 @@ IVALDI_TEST_DATABASE_URL='postgres://user:pass@localhost:5432/postgres?sslmode=d
 IVALDI_TEST_REDIS_URL='redis://localhost:6379/0' go test ./pkg/events/redisstream/
 
 gofmt -l .        # list unformatted files
+
+# Everything in containers (docker-compose.yml): PostgreSQL, Valkey, the migrations,
+# the control plane on :8660, and the web app on :3000. The containerized control
+# plane reads config.local.yml like `make local_serve`, overriding only the database
+# and Valkey addresses. `make local` starts only PostgreSQL and Valkey, for
+# `make local_serve`. All three create config.local.yml from config.local.example.yml
+# when it is missing.
+make local_stack
 ```
 
 There is no lint config or lint target yet; `go vet` and `gofmt` are the checks.

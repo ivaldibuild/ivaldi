@@ -1,0 +1,7 @@
+{
+  "/v1": { "target": "http://localhost:8660" },
+  "/oauth": { "target": "http://localhost:8660" },
+  "/.well-known": { "target": "http://localhost:8660" },
+  "/auth/oauth": { "target": "http://localhost:8660" },
+  "/auth/logout": { "target": "http://localhost:8660" }
+}

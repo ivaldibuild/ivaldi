@@ -106,22 +106,30 @@ The file is used once. Ivaldi never replaces a password with it: it does nothing
 
 ## The sign-in page
 
-The control plane serves no sign-in pages; the Ivaldi web app does. Tell the control plane where its sign-in page is:
+The control plane serves no sign-in pages; the Ivaldi web app does. Tell the control plane where its sign-in page is. When a reverse proxy serves the web app and the control plane on one origin, as [Serving the web app](web-app.md) recommends, that is the external URL's `/login`:
+
+```sh
+IVALDI_AUTH_LOGIN_URL=https://ivaldi.example.com/login
+```
+
+When the web app has its own origin, point at it there and let it call the control plane's API from the browser:
 
 ```sh
 IVALDI_AUTH_LOGIN_URL=https://app.example.com/login
 IVALDI_ALLOWED_ORIGINS=https://app.example.com
 ```
 
-`IVALDI_ALLOWED_ORIGINS` lets the web app call the control plane's API from the browser. See [the sign-in flow](../design/sign-in-flow.md) for how the page and the control plane work together.
+The web app then also needs the control plane's address; see [Serving the web app](web-app.md#separate-origins). See [the sign-in flow](../design/sign-in-flow.md) for how the page and the control plane work together.
 
 ## Applications that sign in
 
 Ivaldi registers its own OAuth clients on every start. `ivaldictl` signs in through a browser and a loopback redirect, and needs no configuration. To let the web app sign people in, register its callback addresses:
 
 ```sh
-IVALDI_AUTH_WEB_CLIENT_REDIRECT_URIS=https://app.example.com/auth/callback
+IVALDI_AUTH_WEB_CLIENT_REDIRECT_URIS=https://ivaldi.example.com/auth/callback
 ```
+
+Use the web app's own origin instead, such as `https://app.example.com/auth/callback`, when it has one.
 
 Clients follow the OAuth 2.1 authorization code flow with PKCE, starting at `<external URL>/oauth/authorize`. The server's metadata is at `<external URL>/.well-known/oauth-authorization-server`.
 
@@ -131,13 +139,12 @@ The same settings, except the secrets, can go in the configuration file:
 
 ```yaml
 external_url: https://ivaldi.example.com
-allowed_origins: [https://app.example.com]
 auth:
-  login_url: https://app.example.com/login
+  login_url: https://ivaldi.example.com/login
   signing_key_files: [/run/secrets/signing.pem]
   builtin_accounts: true
   web_client:
-    redirect_uris: [https://app.example.com/auth/callback]
+    redirect_uris: [https://ivaldi.example.com/auth/callback]
   providers:
     google:
       client_id: 1234567890-abc.apps.googleusercontent.com
@@ -155,4 +162,4 @@ bootstrap:
   admin_password_file: /run/secrets/admin-password
 ```
 
-Environment variables override the file.
+With the web app on its own origin, add `allowed_origins: [https://app.example.com]` and use that origin in `login_url` and `redirect_uris`. Environment variables override the file.

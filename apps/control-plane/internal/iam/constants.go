@@ -42,6 +42,8 @@ const (
 const (
 	PermissionOrganizationRead   = "organization.read"
 	PermissionOrganizationManage = "organization.manage"
+	// PermissionUserRead lists the Organization's people, with their emails.
+	PermissionUserRead = "user.read"
 )
 
 // Actions name what an actor asks the authorizer to allow. Policy rules and
@@ -49,6 +51,7 @@ const (
 const (
 	ActionOrganizationRead   = "organization.read"
 	ActionOrganizationUpdate = "organization.update"
+	ActionPeopleList         = "people.list"
 )
 
 // Audit event types IAM emits.

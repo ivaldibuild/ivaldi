@@ -137,11 +137,11 @@ func (s *service) email(ctx context.Context, organizationID, principalID string)
 	return a.Email(), nil
 }
 
-func roles(resourceID string, roleIDs []string) []iam.ProfileRole {
-	out := make([]iam.ProfileRole, 0, len(roleIDs))
+func roles(resourceID string, roleIDs []string) []iam.HeldRole {
+	out := make([]iam.HeldRole, 0, len(roleIDs))
 	for _, id := range slices.Compact(slices.Sorted(slices.Values(roleIDs))) {
 		key, _ := iam.BuiltInRoleKey(id)
-		out = append(out, iam.ProfileRole{Key: key, RoleID: id, ResourceID: resourceID})
+		out = append(out, iam.HeldRole{Key: key, RoleID: id, ResourceID: resourceID})
 	}
 	return out
 }

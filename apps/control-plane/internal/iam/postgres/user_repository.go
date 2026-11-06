@@ -83,8 +83,8 @@ func (r *userRepository) ListMemberships(ctx context.Context, accountID string) 
 }
 
 // Write inserts the User's principal and membership rows together, or
-// updates the principal when its ID is stored. A membership never changes
-// Organization or Account. A second membership of an Account in an
+// updates the principal and the last sign-in time when its ID is stored. A
+// membership never changes Organization or Account. A second membership of an Account in an
 // Organization fails with ErrAlreadyExists, and a missing Organization or
 // Account with ErrNotFound.
 func (r *userRepository) Write(ctx context.Context, user *iam.User) error {
@@ -102,7 +102,7 @@ func (r *userRepository) Write(ctx context.Context, user *iam.User) error {
 		}
 		return tx.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "principal_id"}},
-			DoNothing: true,
+			DoUpdates: clause.AssignmentColumns([]string{"last_signed_in_at"}),
 		}).Create(u).Error
 	}))
 }

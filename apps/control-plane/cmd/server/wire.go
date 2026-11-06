@@ -19,6 +19,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/oauthserver"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/onboarding"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/organizations"
+	peopleapi "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/people"
 	iampg "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/profile"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/signin"
@@ -211,6 +212,9 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 	if err := a.wireOrganization(); err != nil {
 		return nil, nil, err
 	}
+	if err := a.wireAccessAPI(); err != nil {
+		return nil, nil, err
+	}
 
 	// Anyone may call onboarding, so it is only offered where anyone may
 	// create an Organization: the managed cloud, with built-in accounts. A
@@ -251,6 +255,19 @@ func (a *app) wireOrganization() error {
 		return err
 	}
 	a.routes = append(a.routes, organizations.NewOrganizationController(svc))
+	return nil
+}
+
+// wireAccessAPI serves who is in the Organization: GET /v1/people.
+func (a *app) wireAccessAPI() error {
+	people, err := peopleapi.NewPeopleService(
+		peopleapi.WithPeopleRepo(iampg.NewPeopleRepository(a.db)),
+		peopleapi.WithAuthorizer(a.authz),
+	)
+	if err != nil {
+		return err
+	}
+	a.routes = append(a.routes, peopleapi.NewPeopleController(people))
 	return nil
 }
 

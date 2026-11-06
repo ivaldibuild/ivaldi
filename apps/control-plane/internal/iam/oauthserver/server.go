@@ -239,7 +239,13 @@ func (s *server) exchangeCode(ctx context.Context, client *iam.OAuthClient, req 
 		if req.Resource != "" && req.Resource != code.Resource() {
 			return &iam.OAuthError{Code: iam.OAuthInvalidTarget, Description: "the resource must be the one authorized"}
 		}
-		if err := s.checkMembership(ctx, code.OrganizationID(), code.PrincipalID()); err != nil {
+		user, err := s.checkMembership(ctx, code.OrganizationID(), code.PrincipalID())
+		if err != nil {
+			return err
+		}
+		// Redeeming a code is signing in to the Organization; refreshing is not.
+		user.RecordSignIn()
+		if err := s.users.Write(ctx, user); err != nil {
 			return err
 		}
 
@@ -318,7 +324,7 @@ func (s *server) refresh(ctx context.Context, client *iam.OAuthClient, req iam.T
 		if err != nil {
 			return grantError(err)
 		}
-		if err := s.checkMembership(ctx, old.OrganizationID(), old.PrincipalID()); err != nil {
+		if _, err := s.checkMembership(ctx, old.OrganizationID(), old.PrincipalID()); err != nil {
 			return err
 		}
 		if err := s.refreshes.Write(ctx, next); err != nil {
@@ -410,22 +416,23 @@ func (s *server) Metadata() iam.AuthorizationServerMetadata {
 }
 
 // checkMembership refuses to issue for a person who can no longer act in
-// the Organization, such as one suspended since signing in.
-func (s *server) checkMembership(ctx context.Context, organizationID, principalID string) error {
+// the Organization, such as one suspended since signing in. It returns their
+// User.
+func (s *server) checkMembership(ctx context.Context, organizationID, principalID string) (*iam.User, error) {
 	user, err := s.users.Get(ctx, organizationID, principalID)
 	if errors.Is(err, iam.ErrNotFound) {
-		return invalidGrant("the membership no longer exists")
+		return nil, invalidGrant("the membership no longer exists")
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if _, err := s.auth.Membership(ctx, user.AccountID(), organizationID); err != nil {
 		if errors.Is(err, iam.ErrNoMembership) {
-			return invalidGrant("the membership is no longer active")
+			return nil, invalidGrant("the membership is no longer active")
 		}
-		return err
+		return nil, err
 	}
-	return nil
+	return user, nil
 }
 
 func (s *server) respond(ctx context.Context, client *iam.OAuthClient, rt *iam.OAuthRefreshToken, refresh string) (*iam.TokenResponse, error) {

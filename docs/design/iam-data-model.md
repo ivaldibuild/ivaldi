@@ -199,3 +199,4 @@ The schema is implemented as golang-migrate migrations in [`apps/control-plane/i
 | 000026 | `account_identities` | platform |
 | 000027 | `agents` | tenant |
 | 000028 | a unique index on team-managed `groups` (`source = 'team'`, one per Team) | tenant |
+| 000029 | `users.last_signed_in_at`, set when the user redeems an authorization code | tenant |

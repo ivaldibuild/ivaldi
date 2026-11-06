@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
+	"github.com/ivaldibuild/ivaldi/pkg/pagination"
 )
 
 // OrganizationService reads and changes the caller's Organization. Any
@@ -15,6 +16,19 @@ type OrganizationService interface {
 	// UpdateOrganization changes the fields props sets. A slug another
 	// Organization holds fails with ErrAlreadyExists.
 	UpdateOrganization(ctx context.Context, actor identity.Actor, organizationID string, props UpdateOrganizationProps) (*Organization, error)
+}
+
+// PeopleService lists an Organization's people: its users. Agents are
+// listed through their Teams, and service accounts and workloads are left
+// out. Any member may list them.
+type PeopleService interface {
+	ListPeople(ctx context.Context, actor identity.Actor, query ListPeopleQuery) (*pagination.Result[Person], error)
+}
+
+// PeopleRepository reads an Organization's users with their emails and
+// Organization roles. An invalid sort or cursor fails with ErrInvalid.
+type PeopleRepository interface {
+	ListPeople(ctx context.Context, query ListPeopleQuery) (*pagination.Result[Person], error)
 }
 
 // ProfileService tells a signed-in caller who they are. It reads only the

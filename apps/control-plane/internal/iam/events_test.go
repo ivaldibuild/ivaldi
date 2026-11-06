@@ -648,7 +648,7 @@ func TestSnapshotJSONKeys(t *testing.T) {
 		{OrganizationSnapshot{}, []string{"id", "slug", "name", "display_name", "logo_url", "status", "metadata", "created_at", "updated_at"}},
 		{AccountSnapshot{}, []string{"id", "email", "email_verified_at", "display_name", "status", "created_at", "updated_at"}},
 		{PrincipalSnapshot{}, principal},
-		{UserSnapshot{}, append(slices.Clone(principal), "account_id", "joined_at")},
+		{UserSnapshot{}, append(slices.Clone(principal), "account_id", "joined_at", "last_signed_in_at")},
 		{ServiceAccountSnapshot{}, append(slices.Clone(principal), "description", "created_by_principal_id")},
 		{AgentSnapshot{}, append(slices.Clone(principal), "slug")},
 		{AgentSessionSnapshot{}, append(slices.Clone(principal), "session_id", "work_item_id", "delegator_principal_id", "expires_at", "revoked_at", "scope_resource_ids")},

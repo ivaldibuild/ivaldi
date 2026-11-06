@@ -31,6 +31,7 @@ func (m *userMapper) ToPersistence(u *iam.User) (*principalEntity, *userEntity, 
 		OrganizationID: s.OrganizationID,
 		AccountID:      s.AccountID,
 		JoinedAt:       s.JoinedAt,
+		LastSignedInAt: s.LastSignedInAt,
 	}, nil
 }
 
@@ -48,7 +49,8 @@ func (m *userMapper) ToDomain(p *principalEntity, u *userEntity) (*iam.User, err
 			CreatedAt:      utc(p.CreatedAt),
 			UpdatedAt:      utc(p.UpdatedAt),
 		},
-		AccountID: u.AccountID,
-		JoinedAt:  utc(u.JoinedAt),
+		AccountID:      u.AccountID,
+		JoinedAt:       utc(u.JoinedAt),
+		LastSignedInAt: utcPtr(u.LastSignedInAt),
 	}, &p.ID)
 }

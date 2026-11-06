@@ -32,6 +32,12 @@ const BasePath = "/v1"
 // token: Security: []map[string][]string{{api.BearerAuth: {}}}.
 const BearerAuth = "bearer"
 
+// Public is the Metadata key that serves an operation without an access
+// token: Metadata: map[string]any{api.Public: true}. New refuses an operation
+// that declares neither Security nor Public, so an operation cannot be left
+// open by forgetting to secure it.
+const Public = "ivaldi.public"
+
 // protectedResourcePath serves the API's protected resource metadata (RFC
 // 9728), which tells clients where to get a token.
 const protectedResourcePath = "/.well-known/oauth-protected-resource"
@@ -115,11 +121,21 @@ func New(cfg *config.Config, version string, logger logging.Logger, opts ...Opti
 		BearerAuth: {Type: "http", Scheme: "bearer", BearerFormat: "JWT"},
 	}
 	hapi := humago.New(mux, hcfg)
-	hapi.UseMiddleware(authenticate(hapi, o.verifier, logger, resource+protectedResourcePath))
+	hapi.UseMiddleware(withRequest(logger), authenticate(hapi, o.verifier, logger, resource+protectedResourcePath))
 	v1 := huma.NewGroup(hapi, BasePath)
+	var open []string
+	v1.UseModifier(func(op *huma.Operation, next func(*huma.Operation)) {
+		if len(op.Security) == 0 && op.Metadata[Public] != true {
+			open = append(open, op.Method+" "+op.Path)
+		}
+		next(op)
+	})
 
 	for _, r := range o.routes {
 		r.RegisterRoutes(v1)
+	}
+	if len(open) > 0 {
+		return nil, fmt.Errorf("api: operations must require an access token or be marked api.Public: %s", strings.Join(open, ", "))
 	}
 
 	return &Server{

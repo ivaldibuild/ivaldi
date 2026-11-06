@@ -8,6 +8,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	ivaldiapi "github.com/ivaldibuild/ivaldi-control-plane/internal/api"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/onboarding"
 	"github.com/ivaldibuild/ivaldi/pkg/logging"
@@ -79,20 +80,22 @@ type loginStepOutput struct {
 
 func (h *handlers) RegisterRoutes(api huma.API) {
 	tags := []string{"sign-in"}
+	// Signing in is how a caller gets a token, so these need none.
+	public := map[string]any{ivaldiapi.Public: true}
 	huma.Register(api, huma.Operation{
-		OperationID: "get-login-request", Method: http.MethodGet, Path: "/auth/login", Tags: tags,
+		OperationID: "get-login-request", Metadata: public, Method: http.MethodGet, Path: "/auth/login", Tags: tags,
 		Summary: "Describe a sign-in: the asking application and the ways to sign in",
 	}, h.loginRequest)
 	huma.Register(api, huma.Operation{
-		OperationID: "login-with-password", Method: http.MethodPost, Path: "/auth/login/password", Tags: tags,
+		OperationID: "login-with-password", Metadata: public, Method: http.MethodPost, Path: "/auth/login/password", Tags: tags,
 		Summary: "Sign in with an email and password",
 	}, h.loginWithPassword)
 	huma.Register(api, huma.Operation{
-		OperationID: "choose-login-organization", Method: http.MethodPost, Path: "/auth/login/organization", Tags: tags,
+		OperationID: "choose-login-organization", Metadata: public, Method: http.MethodPost, Path: "/auth/login/organization", Tags: tags,
 		Summary: "Choose the organization to sign in to",
 	}, h.chooseOrganization)
 	huma.Register(api, huma.Operation{
-		OperationID: "sign-up", Method: http.MethodPost, Path: "/auth/signup", Tags: tags,
+		OperationID: "sign-up", Metadata: public, Method: http.MethodPost, Path: "/auth/signup", Tags: tags,
 		Summary: "Sign up with a provider identity and create an organization",
 	}, h.signUp)
 }

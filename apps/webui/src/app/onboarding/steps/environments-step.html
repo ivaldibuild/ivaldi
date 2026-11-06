@@ -1,0 +1,229 @@
+<app-setup-step step="environments" heading="Lay out the path to production">
+  <ng-container setupLead>
+    Environments are the stages your software runs in. A Lifecycle orders them, so a Release reaches
+    production only after it has run healthy before it.
+  </ng-container>
+
+  @if (status.error(); as message) {
+    <div hlmAlert variant="destructive" role="alert">
+      <h2 hlmAlertTitle>That didn't save</h2>
+      <p hlmAlertDescription>{{ message }}</p>
+    </div>
+  }
+
+  @if (status.loading()) {
+    <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+      <hlm-spinner aria-hidden="true" /> Loading Environments…
+    </p>
+  } @else if (!workspace()) {
+    <p class="text-foreground text-sm">There's no Workspace to add Environments to yet.</p>
+  } @else if (existing().length > 0) {
+    <section aria-labelledby="existing-heading" class="flex flex-col gap-4">
+      <h2 id="existing-heading" class="text-heading text-lg font-semibold">
+        Environments in {{ workspace()!.display_name }}
+      </h2>
+      <ul class="border-border flex flex-col border">
+        @for (environment of existing(); track environment.id) {
+          <li
+            class="border-border flex flex-wrap justify-between gap-4 border-b px-4 py-3 text-sm last:border-b-0"
+          >
+            <span class="text-heading font-semibold">{{ environment.display_name }}</span>
+            <span class="text-muted-foreground">
+              {{ tierLabel(environment.tier) }} ·
+              {{ environment.execution_enabled ? 'Ivaldi deploys here' : 'Tracked only' }}
+            </span>
+          </li>
+        }
+      </ul>
+      @for (lifecycle of lifecycles(); track lifecycle.id) {
+        <div class="flex flex-col gap-2">
+          <h3 class="text-heading text-base font-semibold">
+            Lifecycle · {{ lifecycle.display_name }}
+          </h3>
+          <ol class="flex flex-wrap items-center gap-2 text-sm">
+            @for (phase of lifecycle.phases; track phase.id; let last = $last) {
+              <li class="border-input border px-3 py-2">
+                {{ phase.name }}
+                <span class="text-muted-foreground">
+                  ·
+                  @for (id of phase.environment_ids; track id; let lastEnv = $last) {
+                    {{ environmentName(id) }}{{ lastEnv ? '' : ', ' }}
+                  }
+                </span>
+              </li>
+              @if (!last) {
+                <li aria-hidden="true" class="text-muted-foreground">
+                  <ng-icon name="lucideArrowRight" />
+                </li>
+              }
+            }
+          </ol>
+        </div>
+      }
+    </section>
+  } @else {
+    <form id="environments-form" class="flex flex-col gap-8" novalidate (submit)="create($event)">
+      <section aria-labelledby="env-heading" class="flex flex-col gap-4">
+        <h2 id="env-heading" class="text-heading text-lg font-semibold">
+          Environments in {{ workspace()!.display_name }}
+        </h2>
+        <div class="border-border relative overflow-x-auto border">
+          <table class="w-full min-w-150 border-collapse text-sm">
+            <thead>
+              <tr class="text-muted-foreground text-left">
+                <th scope="col" class="border-border border-b px-4 py-3 font-semibold">Name</th>
+                <th scope="col" class="border-border border-b px-4 py-3 font-semibold">Tier</th>
+                <th scope="col" class="border-border border-b px-4 py-3 font-semibold">
+                  Ivaldi deploys here
+                </th>
+                <th scope="col" class="border-border border-b px-4 py-3">
+                  <span class="sr-only">Remove</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (environment of plan.environments; track $index; let i = $index) {
+                <tr>
+                  <td class="border-border border-b px-4 py-2 align-top">
+                    <input
+                      hlmInput
+                      [attr.aria-label]="'Name of environment ' + (i + 1)"
+                      [formField]="environment.display_name"
+                    />
+                    @if (
+                      environment.display_name().touched() && environment.display_name().invalid()
+                    ) {
+                      <p class="text-destructive-text mt-1 text-sm" role="alert">
+                        {{ environment.display_name().errors()[0].message }}
+                      </p>
+                    }
+                  </td>
+                  <td class="border-border border-b px-4 py-2 align-top">
+                    <select
+                      class="border-input bg-background text-foreground h-9 border px-2"
+                      [attr.aria-label]="'Tier of environment ' + (i + 1)"
+                      [formField]="environment.tier"
+                    >
+                      @for (tier of tiers; track tier.value) {
+                        <option [value]="tier.value">{{ tier.label }}</option>
+                      }
+                    </select>
+                  </td>
+                  <td class="border-border border-b px-4 py-2 align-top">
+                    <label class="flex h-9 items-center gap-2">
+                      <input
+                        type="checkbox"
+                        class="accent-primary size-4"
+                        [formField]="environment.execution_enabled"
+                      />
+                      <span class="text-muted-foreground">
+                        {{
+                          environment.execution_enabled().value()
+                            ? 'Deploy and track'
+                            : 'Track only'
+                        }}
+                      </span>
+                    </label>
+                  </td>
+                  <td class="border-border border-b px-2 py-2 text-right align-top">
+                    <button
+                      hlmBtn
+                      variant="ghost"
+                      size="icon"
+                      type="button"
+                      [attr.aria-label]="'Remove environment ' + (i + 1)"
+                      [disabled]="locked()"
+                      (click)="remove(i)"
+                    >
+                      <ng-icon name="lucideX" aria-hidden="true" />
+                    </button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        <div class="flex flex-wrap items-center justify-between gap-4">
+          <button hlmBtn variant="outline" type="button" [disabled]="locked()" (click)="add()">
+            <ng-icon name="lucidePlus" aria-hidden="true" /> Add Environment
+          </button>
+          <p class="text-muted-foreground text-sm">
+            Track only: another tool deploys there, and Ivaldi records what it sees.
+          </p>
+        </div>
+      </section>
+
+      <section aria-labelledby="lifecycle-heading" class="flex flex-col gap-4">
+        <div class="flex flex-col gap-1">
+          <h2 id="lifecycle-heading" class="text-heading text-lg font-semibold">
+            Lifecycle · Standard
+          </h2>
+          <p class="text-muted-foreground text-sm">
+            One phase per Environment, in the order above. Each opens once the one before has a
+            healthy Deployment.
+          </p>
+        </div>
+        <ol class="flex flex-wrap items-center gap-2 text-sm">
+          @for (
+            environment of model().environments;
+            track $index;
+            let last = $last;
+            let i = $index
+          ) {
+            <li
+              class="border-input flex flex-col gap-1 border px-4 py-3"
+              [class.border-primary]="last"
+            >
+              <span class="text-muted-foreground text-xs font-semibold tracking-[0.24em] uppercase">
+                Phase {{ i + 1 }}
+              </span>
+              <span class="text-heading font-semibold">{{
+                environment.display_name || 'Unnamed'
+              }}</span>
+            </li>
+            @if (!last) {
+              <li aria-hidden="true" class="text-muted-foreground">
+                <ng-icon name="lucideArrowRight" />
+              </li>
+            }
+          }
+        </ol>
+        @if (canHotfix()) {
+          <label class="border-border flex items-start gap-3 border p-4">
+            <input type="checkbox" class="accent-primary mt-1 size-4" [formField]="plan.hotfix" />
+            <span class="flex flex-col gap-0.5">
+              <span class="text-heading text-sm font-semibold">
+                Also create a Hotfix Lifecycle: Staging, then Production
+              </span>
+              <span class="text-muted-foreground text-sm">
+                For urgent fixes that skip earlier stages. Channels choose which Lifecycle they
+                follow.
+              </span>
+            </span>
+          </label>
+        }
+      </section>
+    </form>
+  }
+
+  <ng-container setupActions>
+    @if (!status.loading() && workspace() && existing().length === 0) {
+      <button
+        hlmBtn
+        size="lg"
+        type="submit"
+        form="environments-form"
+        [disabled]="status.saving() || model().environments.length === 0"
+      >
+        @if (status.saving()) {
+          <hlm-spinner aria-hidden="true" /> Creating…
+        } @else {
+          Create and continue
+        }
+      </button>
+    } @else {
+      <a hlmBtn size="lg" routerLink="/setup/cluster">Continue</a>
+    }
+    <a hlmBtn size="lg" variant="outline" routerLink="/setup/team">Back</a>
+  </ng-container>
+</app-setup-step>

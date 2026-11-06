@@ -18,10 +18,12 @@ import (
 // Workspace, or Project. A change or removal asks for the permission the
 // key's definition names, with the proposed change, including the value it
 // replaces, as the proposal; reading that value means reading the stored
-// Setting first. A change made against a version that is no longer current
-// is refused then, so no approval is ever requested for a change that
-// cannot apply; next reads the Setting again, in its transaction, and checks
-// once more. Input that can never be valid (an unknown key, a level the
+// Setting first. A change made against a version that is no longer current,
+// or to a key policy locks above the change's level, is refused then, so no
+// approval is ever requested for a change that cannot apply; next reads the
+// Setting and the locks again, in its transaction, and checks once more.
+// Until policy has an engine, the lock check here is how policy's denial of
+// changes below a lock is enforced. Input that can never be valid (an unknown key, a level the
 // definition does not allow, a value that is not JSON or too large) is
 // refused before asking. The owning capability's validation of the value,
 // and the checks that the Workspace and Project are active, may read other
@@ -31,6 +33,7 @@ type authorized struct {
 	authz       authorization.Authorizer
 	repo        workspace.Repository
 	definitions *workspace.Definitions
+	locks       workspace.LockSource
 }
 
 var _ workspace.SettingService = (*authorized)(nil)
@@ -72,6 +75,9 @@ func (a *authorized) ChangeSetting(ctx context.Context, actor identity.Actor, in
 	if err := workspace.ValidateSettingValue(in.Value); err != nil {
 		return nil, err
 	}
+	if err := workspace.CheckUnlocked(ctx, a.locks, in.Scope, in.Key); err != nil {
+		return nil, err
+	}
 	current, err := currentSetting(ctx, a.repo, in.Scope, in.Key, in.ExpectedVersion)
 	if err != nil {
 		return nil, err
@@ -93,6 +99,9 @@ func (a *authorized) ChangeSetting(ctx context.Context, actor identity.Actor, in
 func (a *authorized) RemoveSetting(ctx context.Context, actor identity.Actor, in workspace.RemoveSettingInput) error {
 	def, err := a.definitions.ForScope(in.Scope, in.Key)
 	if err != nil {
+		return err
+	}
+	if err := workspace.CheckUnlocked(ctx, a.locks, in.Scope, in.Key); err != nil {
 		return err
 	}
 	current, err := currentSetting(ctx, a.repo, in.Scope, in.Key, in.ExpectedVersion)

@@ -27,6 +27,8 @@ func httpError(ctx context.Context, err error) error {
 	case errors.Is(err, workspace.ErrArchived),
 		errors.Is(err, workspace.ErrConflict):
 		return huma.Error409Conflict(err.Error())
+	case errors.Is(err, workspace.ErrLocked):
+		return huma.Error403Forbidden(err.Error())
 	case errors.As(err, &approval):
 		return huma.Error403Forbidden("the change needs approval; decision " + approval.DecisionID)
 	case errors.Is(err, authorization.ErrDenied):

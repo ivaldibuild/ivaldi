@@ -45,8 +45,8 @@ func WithDefinitions(d *workspace.Definitions) SettingServiceOption {
 	return func(o *options) { o.definitions = d }
 }
 
-// WithLockSource reports the keys policy locks. Until the policy capability
-// exists, pass workspace.NoLocks().
+// WithLockSource reports the keys policy locks (policy.NewLockSource):
+// changes below a lock are refused, and resolution stops at the lock's level.
 func WithLockSource(l workspace.LockSource) SettingServiceOption {
 	return func(o *options) { o.locks = l }
 }
@@ -98,8 +98,8 @@ func NewSettingService(opts ...SettingServiceOption) (workspace.SettingService, 
 	if err != nil {
 		return nil, fmt.Errorf("setting service: %w", err)
 	}
-	s := &service{repo: o.repo, definitions: o.definitions, resolver: resolver, w: o.writer}
-	return &authorized{next: s, authz: o.authz, repo: o.repo, definitions: o.definitions}, nil
+	s := &service{repo: o.repo, definitions: o.definitions, locks: o.locks, resolver: resolver, w: o.writer}
+	return &authorized{next: s, authz: o.authz, repo: o.repo, definitions: o.definitions, locks: o.locks}, nil
 }
 
 // service carries out setting operations once they are authorized. It
@@ -108,6 +108,7 @@ func NewSettingService(opts ...SettingServiceOption) (workspace.SettingService, 
 type service struct {
 	repo        workspace.Repository
 	definitions *workspace.Definitions
+	locks       workspace.LockSource
 	resolver    workspace.SettingResolver
 	w           change.Writer
 }
@@ -133,7 +134,7 @@ func decision(ctx context.Context, scope workspace.Scope, action string) (author
 
 // ChangeSetting sets a value at one level: a new Setting at version 1, or
 // the current one moved to its next version, refused if the version the
-// caller read is no longer current.
+// caller read is no longer current or policy locks the key above the level.
 func (s *service) ChangeSetting(ctx context.Context, actor identity.Actor, in workspace.ChangeSettingInput) (*workspace.Setting, error) {
 	def, err := s.definitions.ForScope(in.Scope, in.Key)
 	if err != nil {
@@ -149,6 +150,9 @@ func (s *service) ChangeSetting(ctx context.Context, actor identity.Actor, in wo
 			return err
 		}
 		if err := s.checkScopeActive(ctx, in.Scope); err != nil {
+			return err
+		}
+		if err := workspace.CheckUnlocked(ctx, s.locks, in.Scope, in.Key); err != nil {
 			return err
 		}
 		current, err := currentSetting(ctx, s.repo, in.Scope, in.Key, in.ExpectedVersion)
@@ -193,7 +197,9 @@ func (s *service) ChangeSetting(ctx context.Context, actor identity.Actor, in wo
 }
 
 // RemoveSetting removes a value at one level, refused if the version the
-// caller read is no longer current.
+// caller read is no longer current or policy locks the key above the level.
+// A value below a lock is inactive; removing the lock brings it back, so it
+// can only be removed once the lock is.
 func (s *service) RemoveSetting(ctx context.Context, actor identity.Actor, in workspace.RemoveSettingInput) error {
 	if _, err := s.definitions.ForScope(in.Scope, in.Key); err != nil {
 		return err
@@ -204,6 +210,9 @@ func (s *service) RemoveSetting(ctx context.Context, actor identity.Actor, in wo
 	}
 	return s.w.Tx.WithinTx(ctx, func(ctx context.Context) error {
 		if err := s.checkScopeActive(ctx, in.Scope); err != nil {
+			return err
+		}
+		if err := workspace.CheckUnlocked(ctx, s.locks, in.Scope, in.Key); err != nil {
 			return err
 		}
 		current, err := currentSetting(ctx, s.repo, in.Scope, in.Key, in.ExpectedVersion)

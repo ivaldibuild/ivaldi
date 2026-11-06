@@ -3,7 +3,7 @@ package settings
 import (
 	"context"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -38,7 +38,7 @@ func lifecycleDefinition() workspace.Definition {
 		Validate: func(_ context.Context, _ workspace.Scope, v json.RawMessage) error {
 			var s string
 			if err := json.Unmarshal(v, &s); err != nil || !strings.HasPrefix(s, "lfc_") {
-				return errors.New("must be a lifecycle ID")
+				return fmt.Errorf("%w: must be a lifecycle ID", workspace.ErrInvalid)
 			}
 			return nil
 		},

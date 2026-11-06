@@ -24,6 +24,7 @@ func Execute() error {
 func init() {
 	rootCmd.AddCommand(
 		server.NewServeCommand(VERSION),
+		server.NewOpenAPICommand(),
 		gateway.NewGatewayCommand(),
 		indexer.NewIndexerCommand(),
 		worker.NewWorkerCommand(),

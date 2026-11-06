@@ -12,17 +12,18 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/config"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/hasher"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/apitokens"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/authhttp"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/authhttp/session"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/bootstrap"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/grants"
-	iamhttp "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/httpapi"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/oauthserver"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/onboarding"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/organizations"
 	peopleapi "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/people"
 	iampg "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/profile"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/serviceaccounts"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/signin"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/token"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/outbox"
@@ -61,8 +62,9 @@ type app struct {
 	provisioner iam.OrganizationProvisioner
 	keys        token.KeyRing
 	verifier    identity.Verifier
-	routes      []api.Routes
-	handlers    []api.Handlers
+	// services serve the API's operations; root.go builds its routes from them.
+	services services
+	handlers []api.Handlers
 }
 
 // tokenLeeway allows for clock skew between replicas verifying tokens.
@@ -122,12 +124,19 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 	if err != nil {
 		return nil, nil, err
 	}
-	a.verifier, err = identity.NewVerifier(identity.VerifierConfig{
+	accessTokens, err := identity.NewVerifier(identity.VerifierConfig{
 		Issuer:   cfg.IssuerURL(),
 		Audience: cfg.IssuerURL(),
 		Keys:     identity.NewStaticKeySource(a.keys.PublicKeys()...),
 		Leeway:   tokenLeeway,
 	})
+	if err != nil {
+		return nil, nil, err
+	}
+	// API tokens, which service accounts such as CI use, are checked against
+	// the database; every other bearer token is an access token, verified
+	// offline.
+	a.verifier, err = apitokens.NewVerifier(iampg.NewAPITokenRepository(db), iampg.NewPrincipalRepository(db), accessTokens)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -217,12 +226,15 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 	if err := a.wireAccessAPI(); err != nil {
 		return nil, nil, err
 	}
+	if err := a.wireServiceAccounts(); err != nil {
+		return nil, nil, err
+	}
 
 	// Anyone may call onboarding, so it is only offered where anyone may
 	// create an Organization: the managed cloud, with built-in accounts. A
 	// self-hosted installation's Organization comes from its configuration.
 	if cfg.Mode() == config.DeploymentModeCloud && cfg.Auth.BuiltinAccounts {
-		a.routes = append(a.routes, iamhttp.NewOnboardingController(a.onboarding))
+		a.services.onboarding = a.onboarding
 	}
 	return a, close, nil
 }
@@ -239,7 +251,7 @@ func (a *app) wireProfile() error {
 	if err != nil {
 		return err
 	}
-	a.routes = append(a.routes, profile.NewProfileController(svc))
+	a.services.profile = svc
 	return nil
 }
 
@@ -256,7 +268,7 @@ func (a *app) wireOrganization() error {
 	if err != nil {
 		return err
 	}
-	a.routes = append(a.routes, organizations.NewOrganizationController(svc))
+	a.services.organizations = svc
 	return nil
 }
 
@@ -290,7 +302,24 @@ func (a *app) wireAccessAPI() error {
 	if err != nil {
 		return err
 	}
-	a.routes = append(a.routes, peopleapi.NewPeopleController(people), grants.NewGrantController(grantSvc))
+	a.services.people, a.services.grants = people, grantSvc
+	return nil
+}
+
+// wireServiceAccounts serves service accounts and their API tokens.
+func (a *app) wireServiceAccounts() error {
+	svc, err := serviceaccounts.NewService(
+		serviceaccounts.WithServiceAccountRepo(iampg.NewServiceAccountRepository(a.db)),
+		serviceaccounts.WithAPITokenRepo(iampg.NewAPITokenRepository(a.db)),
+		serviceaccounts.WithAuthorizer(a.authz),
+		serviceaccounts.WithTransactor(a.tx),
+		serviceaccounts.WithOutboxRecorder(a.outbox),
+		serviceaccounts.WithAuditRecorder(a.audit),
+	)
+	if err != nil {
+		return err
+	}
+	a.services.serviceAccounts = svc
 	return nil
 }
 
@@ -386,7 +415,7 @@ func (a *app) wireSignIn(cfg *config.Config, logger logging.Logger, passwords ha
 		return err
 	}
 	a.handlers = append(a.handlers, authServer)
-	a.routes = append(a.routes, authServer)
+	a.services.signIn = authServer
 	return nil
 }
 

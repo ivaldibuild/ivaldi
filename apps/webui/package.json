@@ -7,7 +7,8 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "api:types": "openapi-typescript ../../api/openapi.json -o src/app/api/schema.gen.ts && prettier --write src/app/api/schema.gen.ts"
   },
   "private": true,
   "packageManager": "pnpm@12.16.1+sha512.091d1dee7927575661b25dab3c2ae31cafc1c54d6b71ed6a6600cf0c1cb10434a447eae14015f1b23e2e6bedeed79df94a932e2164d2832280dce3fb32f656d1",
@@ -43,6 +44,7 @@
     "@tailwindcss/postcss": "^4.1.12",
     "@types/node": "^26.6.6",
     "jsdom": "^30.0.0",
+    "openapi-typescript": "7.13.0",
     "postcss": "^8.5.3",
     "prettier": "^3.8.1",
     "tailwindcss": "^4.1.12",

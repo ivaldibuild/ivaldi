@@ -1,192 +1,53 @@
-/** The control plane's snapshots, as the web app reads them. Fields it doesn't use are left out. */
+/**
+ * The control plane's types under the names the web app uses. They come from
+ * `schema.gen.ts`, which is generated from the API's description
+ * (`api/openapi.json`), so they cannot drift from what the control plane sends.
+ * Regenerate both with `make openapi` from the repository root.
+ */
+import type { components } from './schema.gen';
 
-export interface Workspace {
-  id: string;
-  slug: string;
-  display_name: string;
-  is_default: boolean;
-}
+type Schemas = components['schemas'];
 
-export interface Project {
-  id: string;
-  workspace_id: string;
-  owner_team_id: string;
-  slug: string;
-  display_name: string;
-  description: string;
-  created_at: string;
-  /** When it was archived, or null while it's active. */
-  archived_at: string | null;
-}
-
-/** Where a setting's value is stored. */
-export type SettingLevel = 'organization' | 'workspace' | 'project';
+export type Workspace = Schemas['WorkspaceSnapshot'];
+export type Project = Schemas['ProjectSnapshot'];
 
 /** A setting's value as stored at one level. */
-export interface Setting {
-  key: string;
-  value: unknown;
-  /** Increases with every change; a change or removal sends the version it read. */
-  version: number;
-}
-
+export type Setting = Schemas['SettingSnapshot'];
 /** A setting's effective value at a level, and where it comes from. */
-export interface ResolvedSetting {
-  key: string;
-  value: unknown;
-  /** The level the value is stored at; absent for the default or no value. */
-  level?: SettingLevel;
-  from_default: boolean;
-  /** Whether a lock at a higher level fixed the value. */
-  locked: boolean;
-}
+export type ResolvedSetting = Schemas['Resolved'];
+/** Where a setting's value is stored. */
+export type SettingLevel = NonNullable<ResolvedSetting['level']>;
 
-export type TeamRole = 'lead' | 'member';
+export type TeamMember = Schemas['TeamMemberSnapshot'];
+export type TeamRole = TeamMember['role'];
+export type Team = Schemas['TeamSnapshot'];
+export type Agent = Schemas['AgentSnapshot'];
 
-export interface TeamMember {
-  principal_id: string;
-  principal_kind: string;
-  role: TeamRole;
-}
+export type Environment = Schemas['EnvironmentSnapshot'];
+export type Tier = Environment['tier'];
+export type Target = Schemas['TargetSnapshot'];
+export type LifecyclePhase = Schemas['LifecyclePhaseSnapshot'];
+export type Lifecycle = Schemas['LifecycleSnapshot'];
 
-export interface Team {
-  id: string;
-  slug: string;
-  display_name: string;
-  members: TeamMember[];
-}
-
-export interface Agent {
-  id: string;
-  display_name: string;
-}
-
-export type Tier = 'development' | 'staging' | 'production' | 'other';
-
-export interface Environment {
-  id: string;
-  slug: string;
-  display_name: string;
-  tier: Tier;
-  execution_enabled: boolean;
-}
-
-export interface Target {
-  id: string;
-  environment_id: string;
-  slug: string;
-  display_name: string;
-  locator: Record<string, string>;
-  agent_principal_id?: string | null;
-  last_reported_at?: string | null;
-}
-
-export interface LifecyclePhase {
-  id: string;
-  name: string;
-  position: number;
-  optional?: boolean;
-  environment_ids: string[];
-}
-
-export interface Lifecycle {
-  id: string;
-  slug: string;
-  display_name: string;
-  description?: string | null;
-  phases: LifecyclePhase[];
-}
-
-export interface Application {
-  id: string;
-  workspace_id: string;
-  project_id: string;
-  owner_team_id: string;
-  slug: string;
-  display_name: string;
-  source_id: string | null;
-}
-
-export type ArtifactKind = 'container_image' | 'helm_chart' | 'archive';
-
-export interface Artifact {
-  id: string;
-  name: string;
-  artifact_kind: ArtifactKind;
-  artifact_name: string;
-  registry_id: string | null;
-  required: boolean;
-  source: 'declared' | 'observed';
-}
-
-export interface ChannelRule {
-  id: string;
-  kind: 'version' | 'git_ref';
-}
-
-export interface Channel {
-  id: string;
-  lifecycle_id: string;
-  slug: string;
-  display_name: string;
-  description: string | null;
-  is_default: boolean;
-  rules: ChannelRule[];
-}
-
-export interface Placement {
-  application_id: string;
-  target_id: string;
-  source: 'configured' | 'observed';
-  current_release_id: string | null;
-}
+export type Application = Schemas['ApplicationSnapshot'];
+export type Artifact = Schemas['ArtifactSnapshot'];
+export type ArtifactKind = Artifact['artifact_kind'];
+export type ChannelRule = Schemas['ChannelRuleSnapshot'];
+export type Channel = Schemas['ChannelSnapshot'];
+export type Placement = Schemas['PlacementSnapshot'];
 
 /** The caller's Organisation as `GET /v1/organization` returns it. */
-export interface Organization {
-  id: string;
-  slug: string;
-  name: string;
-  display_name: string;
-  logo_url: string | null;
-}
+export type Organization = Schemas['Organization'];
 
-export interface MeRole {
-  /** The built-in role's key, such as `owner`, or empty for a custom role. */
-  role: string;
-  role_id: string;
-  resource_id: string;
-}
-
+export type MeRole = Schemas['MeRole'];
 /** The signed-in caller, from `GET /v1/me`. */
-export interface Me {
-  principal: { id: string; kind: string; display_name: string; email: string | null };
-  organization: { id: string; slug: string; display_name: string; logo_url: string | null };
-  roles: MeRole[];
-}
-
-export type BuiltInRole = 'owner' | 'admin' | 'member' | 'viewer';
+export type Me = Schemas['Me'];
 
 /** One of the Organisation's users, from `GET /v1/people`. */
-export interface Person {
-  id: string;
-  display_name: string;
-  email: string;
-  status: string;
-  joined_at: string;
-  last_signed_in_at: string | null;
-  /** Roles held on the Organisation itself, directly or through a group. */
-  roles: { role: string; role_id: string }[];
-}
-
+export type Person = Schemas['Person'];
 /** A role granted on a resource, from `GET /v1/grants`. */
-export interface Grant {
-  id: string;
-  role: string;
-  resource_id: string;
-  principal: { id: string; kind: string; display_name: string; status: string } | null;
-  group: { id: string; name: string; source: string; team_id: string | null } | null;
-  expires_at: string | null;
-}
+export type Grant = Schemas['Grant'];
+export type BuiltInRole = Schemas['CreateGrantRequestBody']['role'];
 
 /** A cursor-paged list's page, with its cursors. */
 export interface CursorPage<T> {

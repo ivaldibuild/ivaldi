@@ -72,10 +72,6 @@ func (a *app) wireWorkspace() error {
 	if err != nil {
 		return err
 	}
-	a.routes = append(a.routes,
-		workspaces.NewWorkspaceController(ws),
-		projects.NewProjectController(ps),
-		settings.NewSettingController(ss),
-	)
+	a.services.workspaces, a.services.projects, a.services.settings = ws, ps, ss
 	return nil
 }

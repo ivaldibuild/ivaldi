@@ -50,7 +50,7 @@ type EnvironmentSnapshot struct {
 	WorkspaceID      string     `json:"workspace_id"`
 	Slug             string     `json:"slug"`
 	DisplayName      string     `json:"display_name"`
-	Tier             Tier       `json:"tier"`
+	Tier             Tier       `json:"tier" enum:"development,staging,production,other"`
 	ExecutionEnabled bool       `json:"execution_enabled"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`

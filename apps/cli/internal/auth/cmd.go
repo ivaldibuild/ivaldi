@@ -1,31 +1,30 @@
+// Package auth signs ivaldictl in and out of a control plane.
 package auth
 
 import (
-	"github.com/ivaldibuild/ivaldi-cli/internal/helpers"
-	"github.com/ivaldibuild/ivaldi-cli/internal/types"
 	"github.com/spf13/cobra"
+
+	"github.com/ivaldibuild/ivaldi-cli/internal/app"
 )
 
-func NewCommand() *cobra.Command {
+func New(a *app.App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "auth",
-		Short: "Perform authentication operations on the Ivaldi control plane",
+		Short: "Sign in to and out of the Ivaldi control plane",
+		Long: `ivaldictl authenticates in one of two ways:
+
+  - Interactively, with "ivaldictl auth login", which signs you in through your
+    browser and keeps the session for later commands.
+  - With a service account's API token, given by --api-token or the
+    IVALDI_API_TOKEN environment variable. CI uses this: in CI, ivaldictl never
+    opens a browser.`,
 	}
 
-	helpers.AddPersistentFlags(cmd, initPersistentFlags())
-
-	cmd.AddCommand(NewLoginCommand())
+	cmd.AddCommand(
+		loginCommand(a),
+		statusCommand(a),
+		logoutCommand(a),
+	)
 
 	return cmd
-}
-
-func initPersistentFlags() map[string]types.Flag {
-	return map[string]types.Flag{
-		"api-token": {
-			Type:        "string",
-			Short:       "a",
-			Description: "API token for authentication. Use when you dont want to use the browser-based login",
-			Default:     "",
-		},
-	}
 }

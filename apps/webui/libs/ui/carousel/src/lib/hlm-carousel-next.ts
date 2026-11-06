@@ -37,7 +37,7 @@ export class HlmCarouselNext {
   protected readonly _carousel = inject(HlmCarousel);
   private readonly _computedClass = computed(() =>
     hlm(
-      'rounded-full absolute h-8 w-8',
+      'rounded-none absolute h-8 w-8',
       this._carousel.orientation() === 'horizontal'
         ? '-end-12 top-1/2 -translate-y-1/2'
         : '-bottom-12 left-1/2 -translate-x-1/2 rotate-90',

@@ -3,7 +3,7 @@ import { classes } from '@spartan-ng/helm/utils';
 import { cva, type VariantProps } from 'class-variance-authority';
 
 const attachmentVariants = cva(
-  'bg-card text-card-foreground rounded-xl border shadow-xs group/attachment focus-within:ring-ring/50 has-[>a,>button]:hover:bg-muted/50 data-[state=error]:border-destructive/30 relative flex w-fit max-w-full min-w-0 shrink-0 flex-wrap transition-colors focus-within:ring-1 data-[state=idle]:border-dashed',
+  'bg-card text-card-foreground rounded-xl border shadow-xs group/attachment focus-within:ring-ring/50 has-[>a,>button]:hover:bg-muted/50 data-[state=error]:border-destructive relative flex w-fit max-w-full min-w-0 shrink-0 flex-wrap transition-colors focus-within:ring-1 data-[state=idle]:border-dashed',
   {
     variants: {
       size: {

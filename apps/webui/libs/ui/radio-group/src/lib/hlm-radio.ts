@@ -68,7 +68,7 @@ export class HlmRadio<T = unknown> {
   );
 
   protected readonly _errorStateClass = computed(() =>
-    this._groupSpartanInvalid() ? 'text-destructive' : '',
+    this._groupSpartanInvalid() ? 'text-destructive-text' : '',
   );
 
   public readonly userClass = input<ClassValue>('', { alias: 'class' });

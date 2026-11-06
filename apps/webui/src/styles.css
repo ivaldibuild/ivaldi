@@ -38,6 +38,7 @@
   --accent-foreground: #0b0f14;
   --destructive: #9a3f2d; /* ember */
   --destructive-foreground: #ffffff;
+  --destructive-text: #9a3f2d; /* ember as text passes on Paper (6.1:1) */
   --border: #e7ded1;
   --input: #374151;
   --ring: #374151;
@@ -81,6 +82,7 @@
   --accent-foreground: #ffffff;
   --destructive: #9a3f2d;
   --destructive-foreground: #ffffff;
+  --destructive-text: #ffffff; /* ember as text fails on Forge (2.9:1) */
   --border: #374151;
   --input: rgb(231 222 209 / 50%);
   --ring: #e7ded1;
@@ -104,12 +106,14 @@
   --overlay: rgb(11 15 20 / 80%);
 }
 
-/* Utilities for the extensions: text-heading, text-eyebrow, text-primary-text, bg-overlay. */
+/* Utilities for the extensions: text-heading, text-eyebrow, text-primary-text,
+   text-destructive-text, bg-overlay. */
 @theme inline {
   --color-heading: var(--heading);
   --color-eyebrow: var(--eyebrow);
   --color-primary-text: var(--primary-text);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-text: var(--destructive-text);
   --color-overlay: var(--overlay);
 }
 

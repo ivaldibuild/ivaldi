@@ -363,3 +363,23 @@ func countRows(t *testing.T, db *gorm.DB, query string, args ...any) int {
 	require.NoError(t, db.Raw(query, args...).Scan(&n).Error)
 	return int(n)
 }
+
+func TestCodeExchangeRecordsTheSignIn(t *testing.T) {
+	f := newFixture(t)
+	signedIn := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+	clock.Fix(t, signedIn)
+	users := iampg.NewUserRepository(f.db)
+
+	resp, err := f.exchange(t, f.code(t))
+	require.NoError(t, err)
+	u, err := users.Get(f.ctx, f.org.ID(), f.user.ID())
+	require.NoError(t, err)
+	assert.Equal(t, &signedIn, u.LastSignedInAt())
+
+	clock.Fix(t, signedIn.Add(time.Minute))
+	_, err = f.refresh(resp.RefreshToken)
+	require.NoError(t, err)
+	u, err = users.Get(f.ctx, f.org.ID(), f.user.ID())
+	require.NoError(t, err)
+	assert.Equal(t, &signedIn, u.LastSignedInAt(), "refreshing is not signing in")
+}

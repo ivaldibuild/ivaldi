@@ -38,7 +38,7 @@ func TestProfileOfAUser(t *testing.T) {
 	require.NotNil(t, p.Email)
 	assert.Equal(t, "ada@example.com", *p.Email)
 	assert.Equal(t, "acme", p.Organization.Slug)
-	assert.Equal(t, []iam.ProfileRole{
+	assert.Equal(t, []iam.HeldRole{
 		{Key: iam.RoleOwner, RoleID: role(iam.RoleOwner), ResourceID: w.org.ID()},
 		{Key: iam.RoleMember, RoleID: role(iam.RoleMember), ResourceID: w.org.ID()},
 	}, p.Roles, "sorted from owner down, each role once")

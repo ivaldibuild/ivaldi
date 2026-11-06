@@ -60,10 +60,11 @@ type principalEntity struct {
 func (principalEntity) TableName() string { return "iam.principals" }
 
 type userEntity struct {
-	PrincipalID    string    `gorm:"column:principal_id;primaryKey"`
-	OrganizationID string    `gorm:"column:organization_id"`
-	AccountID      string    `gorm:"column:account_id"`
-	JoinedAt       time.Time `gorm:"column:joined_at"`
+	PrincipalID    string     `gorm:"column:principal_id;primaryKey"`
+	OrganizationID string     `gorm:"column:organization_id"`
+	AccountID      string     `gorm:"column:account_id"`
+	JoinedAt       time.Time  `gorm:"column:joined_at"`
+	LastSignedInAt *time.Time `gorm:"column:last_signed_in_at"`
 }
 
 func (userEntity) TableName() string { return "iam.users" }

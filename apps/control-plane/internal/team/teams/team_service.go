@@ -156,29 +156,10 @@ func (s *service) CreateTeam(ctx context.Context, actor identity.Actor, in team.
 	return t, nil
 }
 
-// groupName names the IAM group that mirrors t. An archived Team's slug may
-// be taken by an active one, and group names are unique in the
-// Organization, so an archived Team's group is named by its ID instead.
-func groupName(t *team.Team) string {
-	if t.Archived() {
-		return "team:" + t.ID()
-	}
-	return "team:" + t.Slug()
-}
-
-// syncGroup makes t's IAM group match it: named for it, with its members,
-// or with none while it is archived, so its grants stop applying.
+// syncGroup makes t's IAM group match it.
 func (s *service) syncGroup(ctx context.Context, t *team.Team) error {
-	var members []string
-	if !t.Archived() {
-		for _, m := range t.Members() {
-			members = append(members, m.PrincipalID)
-		}
-	}
-	if err := s.groups.SyncTeamGroup(ctx, t.OrganizationID(), t.ID(), groupName(t), members); err != nil {
-		return fmt.Errorf("sync the group of team %s: %w", t.ID(), err)
-	}
-	return nil
+	_, err := team.SyncGroup(ctx, s.groups, t)
+	return err
 }
 
 func (s *service) GetTeam(ctx context.Context, _ identity.Actor, organizationID, teamID string) (*team.Team, error) {

@@ -2,8 +2,10 @@ package iam
 
 import (
 	"context"
+	"time"
 
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
+	"github.com/ivaldibuild/ivaldi/pkg/pagination"
 )
 
 // OrganizationService reads and changes the caller's Organization. Any
@@ -15,6 +17,35 @@ type OrganizationService interface {
 	// UpdateOrganization changes the fields props sets. A slug another
 	// Organization holds fails with ErrAlreadyExists.
 	UpdateOrganization(ctx context.Context, actor identity.Actor, organizationID string, props UpdateOrganizationProps) (*Organization, error)
+}
+
+// GrantService grants and removes roles on resources. Only someone allowed
+// to manage grants on a resource may change them there, and only owners may
+// grant or remove the owner role. Agent Sessions may not change grants
+// without a human's approval, which the authorizer refuses for now.
+type GrantService interface {
+	// ListGrants lists the grants on a resource, and optionally on the
+	// resources above it.
+	ListGrants(ctx context.Context, actor identity.Actor, query ListResourceGrantsQuery) (*pagination.Result[GrantEntry], error)
+	// CreateGrant grants a role where role.go allows it. The same role on
+	// the same resource for the same grantee is ErrAlreadyExists.
+	CreateGrant(ctx context.Context, actor identity.Actor, input CreateGrantInput) (*GrantEntry, error)
+	// RemoveGrant removes a grant. Removing the Organization's last owner is
+	// ErrLastOwner.
+	RemoveGrant(ctx context.Context, actor identity.Actor, organizationID, grantID string) error
+}
+
+// PeopleService lists an Organization's people: its users. Agents are
+// listed through their Teams, and service accounts and workloads are left
+// out. Any member may list them.
+type PeopleService interface {
+	ListPeople(ctx context.Context, actor identity.Actor, query ListPeopleQuery) (*pagination.Result[Person], error)
+}
+
+// PeopleRepository reads an Organization's users with their emails and
+// Organization roles. An invalid sort or cursor fails with ErrInvalid.
+type PeopleRepository interface {
+	ListPeople(ctx context.Context, query ListPeopleQuery) (*pagination.Result[Person], error)
 }
 
 // ProfileService tells a signed-in caller who they are. It reads only the
@@ -153,7 +184,26 @@ type TeamGroups interface {
 	// makes its members exactly memberPrincipalIDs. It is idempotent. A
 	// member that is not one of the Organization's principals is
 	// ErrNotFound, and a name another group holds is ErrAlreadyExists.
-	SyncTeamGroup(ctx context.Context, organizationID, teamID, name string, memberPrincipalIDs []string) error
+	// It returns the group's ID.
+	SyncTeamGroup(ctx context.Context, organizationID, teamID, name string, memberPrincipalIDs []string) (string, error)
+}
+
+// TeamGroupSource finds the group that mirrors a Team, so the Team can be
+// granted roles. The team capability implements it (team.NewGroupSource),
+// syncing the group first, so a Team whose group does not exist yet gets
+// one. It joins the transaction its context carries. A Team that is not one
+// of the Organization's is ErrNotFound, and an archived one ErrStatus.
+type TeamGroupSource interface {
+	TeamGroupID(ctx context.Context, organizationID, teamID string) (string, error)
+}
+
+// ResourceRepository reads IAM's resource hierarchy.
+type ResourceRepository interface {
+	// GetResource returns the resource, archived or not, or ErrNotFound.
+	GetResource(ctx context.Context, organizationID, resourceID string) (Resource, error)
+	// ResourceAncestors returns the IDs of the resource and the resources
+	// above it, from the resource up to the Organization.
+	ResourceAncestors(ctx context.Context, organizationID, resourceID string) ([]string, error)
 }
 
 type IdentityProviderRepository interface {
@@ -193,6 +243,18 @@ type GrantRepository interface {
 	ExistsForRole(ctx context.Context, organizationID, roleID, resourceID string) (bool, error)
 	// Write inserts the Grant; grants never change.
 	Write(ctx context.Context, g *Grant) error
+	// Get returns the Grant, or ErrNotFound.
+	Get(ctx context.Context, organizationID, grantID string) (*Grant, error)
+	// GetForUpdate returns the Grant locked until the transaction ends.
+	GetForUpdate(ctx context.Context, organizationID, grantID string) (*Grant, error)
+	// Delete deletes the Grant.
+	Delete(ctx context.Context, g *Grant) error
+	// ListGrants lists grants with their grantees named. An invalid sort or
+	// cursor fails with ErrInvalid.
+	ListGrants(ctx context.Context, query ListGrantsQuery) (*pagination.Result[GrantEntry], error)
+	// CountOwners counts the active users that hold the owner role on the
+	// Organization directly, unexpired at at.
+	CountOwners(ctx context.Context, organizationID string, at time.Time) (int, error)
 }
 
 type OAuthClientRepository interface {

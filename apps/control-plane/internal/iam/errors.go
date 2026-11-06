@@ -46,6 +46,9 @@ var (
 	// ErrAccountExists means an Account already has the email, and it cannot
 	// be linked to the new sign-in without proof the person owns it.
 	ErrAccountExists = errors.New("an account with this email already exists")
+	// ErrLastOwner means the change would leave the Organization with no
+	// active user who holds the owner role.
+	ErrLastOwner = errors.New("is the organization's last owner")
 )
 
 // ErrInvalidInput describes why input failed validation. It matches ErrInvalid.

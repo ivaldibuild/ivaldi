@@ -132,6 +132,18 @@ func (g *Grant) GrantedByPrincipalID() string { return g.grantedByPrincipalID }
 func (g *Grant) ExpiresAt() *time.Time        { return clock.CopyTime(g.expiresAt) }
 func (g *Grant) CreatedAt() time.Time         { return g.createdAt }
 
+// Remove records that the Grant is removed. The repository deletes it.
+func (g *Grant) Remove() {
+	g.RecordEvent(GrantRemoved{g.Snapshot()})
+}
+
+// IsOwnerGrant reports whether the Grant gives a principal, not a group,
+// the owner role on the Organization.
+func (g *Grant) IsOwnerGrant() bool {
+	owner, _ := BuiltInRoleID(RoleOwner)
+	return g.roleID == owner && g.resourceID == g.organizationID && g.principalID != nil
+}
+
 // Expired reports whether the grant no longer applies.
 func (g *Grant) Expired() bool {
 	return g.expiresAt != nil && !clock.Now().Before(*g.expiresAt)

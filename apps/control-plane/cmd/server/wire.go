@@ -15,10 +15,12 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/authhttp"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/authhttp/session"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/bootstrap"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/grants"
 	iamhttp "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/httpapi"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/oauthserver"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/onboarding"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/organizations"
+	peopleapi "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/people"
 	iampg "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/profile"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/signin"
@@ -26,6 +28,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/outbox"
 	outboxpg "github.com/ivaldibuild/ivaldi-control-plane/internal/outbox/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/team"
+	teampg "github.com/ivaldibuild/ivaldi-control-plane/internal/team/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/database"
@@ -211,6 +214,9 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 	if err := a.wireOrganization(); err != nil {
 		return nil, nil, err
 	}
+	if err := a.wireAccessAPI(); err != nil {
+		return nil, nil, err
+	}
 
 	// Anyone may call onboarding, so it is only offered where anyone may
 	// create an Organization: the managed cloud, with built-in accounts. A
@@ -251,6 +257,40 @@ func (a *app) wireOrganization() error {
 		return err
 	}
 	a.routes = append(a.routes, organizations.NewOrganizationController(svc))
+	return nil
+}
+
+// wireAccessAPI serves who is in the Organization and what they may do:
+// GET /v1/people, and granting and removing roles at /v1/grants.
+func (a *app) wireAccessAPI() error {
+	people, err := peopleapi.NewPeopleService(
+		peopleapi.WithPeopleRepo(iampg.NewPeopleRepository(a.db)),
+		peopleapi.WithAuthorizer(a.authz),
+	)
+	if err != nil {
+		return err
+	}
+	// Roles granted to a Team go to the group that mirrors it, which the
+	// team capability keeps.
+	teamGroups, err := team.NewGroupSource(teampg.NewTeamRepository(a.db), iampg.NewTeamGroups(a.db))
+	if err != nil {
+		return err
+	}
+	grantSvc, err := grants.NewGrantService(
+		grants.WithGrantRepo(a.iam.grants),
+		grants.WithResourceRepo(iampg.NewResourceRepository(a.db)),
+		grants.WithPrincipalRepo(iampg.NewPrincipalRepository(a.db)),
+		grants.WithOrganizationRepo(a.iam.orgs),
+		grants.WithTeamGroupSource(teamGroups),
+		grants.WithAuthorizer(a.authz),
+		grants.WithTransactor(a.tx),
+		grants.WithOutboxRecorder(a.outbox),
+		grants.WithAuditRecorder(a.audit),
+	)
+	if err != nil {
+		return err
+	}
+	a.routes = append(a.routes, peopleapi.NewPeopleController(people), grants.NewGrantController(grantSvc))
 	return nil
 }
 

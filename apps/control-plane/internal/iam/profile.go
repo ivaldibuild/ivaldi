@@ -10,11 +10,12 @@ type Profile struct {
 	// Roles are the unexpired roles granted on the Organization itself, to
 	// the principal or to a group it is in, sorted by role ID, which puts
 	// the built-in roles from owner to viewer.
-	Roles []ProfileRole
+	Roles []HeldRole
 }
 
-// ProfileRole is a role the caller holds on a resource.
-type ProfileRole struct {
+// HeldRole is a role a principal holds on a resource, granted to it
+// directly or to a group it is in.
+type HeldRole struct {
 	// Key is the built-in role's key, such as RoleOwner, or empty for a
 	// custom role.
 	Key        string

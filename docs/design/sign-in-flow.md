@@ -67,3 +67,17 @@ for a wrong email or password (never saying which); 403 when the account,
 provider, or organization does not allow the sign-in; 409 when an
 organization's name or address is taken, or the person already has an
 account; 422 for invalid input.
+
+## After sign-in: who is signed in
+
+The access token carries only IDs: the principal (`sub`), the Organization
+(`org`), the actor kind, and, for an agent Session, `sid`. To show who is
+signed in, the frontend calls `GET /v1/me` with the token. It needs no
+permission beyond a valid token, and returns the caller's principal (its
+`display_name` in this Organization, and the Account's `email` for a user,
+`null` otherwise), the Organization (`id`, `slug`, `display_name`,
+`logo_url`), and the roles the caller holds on the Organization, directly or
+through a group, as `{ role, role_id, resource_id }`, where `role` is the
+built-in role's key (`owner`, `admin`, `member`, `viewer`) and empty for a
+custom role. It answers 403 once the caller's principal, Account, or
+Organization is no longer active, even while the token has not expired.

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
+	"github.com/ivaldibuild/ivaldi/pkg/clock"
 )
 
 // Level is where a setting value is stored.
@@ -80,7 +81,9 @@ func (s Scope) ResourceID() string {
 	}
 }
 
-func (s Scope) validate() error {
+// Validate checks that the scope names an Organization, and a Project only
+// with its Workspace.
+func (s Scope) Validate() error {
 	if s.OrganizationID == "" {
 		return fmt.Errorf("%w: scope needs an organization", ErrInvalid)
 	}
@@ -138,7 +141,7 @@ type NewSettingProps struct {
 // key's definition is the caller's job, because the definition's validation
 // may need other capabilities.
 func NewSetting(p NewSettingProps) (*Setting, error) {
-	if err := p.Scope.validate(); err != nil {
+	if err := p.Scope.Validate(); err != nil {
 		return nil, err
 	}
 	if !settingKeyFormat.MatchString(p.Key) {
@@ -156,7 +159,7 @@ func NewSetting(p NewSettingProps) (*Setting, error) {
 		version = 1
 	}
 
-	now := now()
+	now := clock.Now()
 
 	s := &Setting{
 		scope:                p.Scope,
@@ -177,6 +180,7 @@ func NewSetting(p NewSettingProps) (*Setting, error) {
 }
 
 func (s *Setting) Scope() Scope                 { return s.scope }
+func (s *Setting) OrganizationID() string       { return s.scope.OrganizationID }
 func (s *Setting) Key() string                  { return s.key }
 func (s *Setting) Value() json.RawMessage       { return bytes.Clone(s.value) }
 func (s *Setting) Version() int64               { return s.version }
@@ -184,6 +188,10 @@ func (s *Setting) UpdatedByPrincipalID() string { return s.updatedByPrincipalID 
 func (s *Setting) PolicyDecisionID() string     { return s.policyDecisionID }
 func (s *Setting) CreatedAt() time.Time         { return s.createdAt }
 func (s *Setting) UpdatedAt() time.Time         { return s.updatedAt }
+
+// AggregateID names the Setting in the events it raises: its level's
+// resource ID and its key, since a Setting has no ID of its own.
+func (s *Setting) AggregateID() string { return s.scope.ResourceID() + ":" + s.key }
 
 // Snapshot returns the Setting's state.
 func (s *Setting) Snapshot() SettingSnapshot {
@@ -211,7 +219,7 @@ func (s *Setting) Change(value json.RawMessage, updatedBy, decisionID string) er
 	s.version++
 	s.updatedByPrincipalID = updatedBy
 	s.policyDecisionID = decisionID
-	s.updatedAt = now()
+	s.updatedAt = clock.Now()
 	if !bytes.Equal(previous, value) {
 		s.RecordEvent(SettingChanged{Setting: s.Snapshot(), PreviousValue: bytes.Clone(previous)})
 	}
@@ -245,7 +253,22 @@ type Definition struct {
 	Validate func(ctx context.Context, scope Scope, value json.RawMessage) error
 }
 
-func (d Definition) allows(l Level) bool { return slices.Contains(d.Levels, l) }
+// Allows reports whether the setting may be set at level l.
+func (d Definition) Allows(l Level) bool { return slices.Contains(d.Levels, l) }
+
+// ValidateValue checks a proposed value: well-formed JSON within the size
+// limit, then the owning capability's Validate, which may read other records.
+func (d Definition) ValidateValue(ctx context.Context, scope Scope, value json.RawMessage) error {
+	if err := ValidateSettingValue(value); err != nil {
+		return err
+	}
+	if d.Validate != nil {
+		if err := d.Validate(ctx, scope, value); err != nil {
+			return fmt.Errorf("%w: setting %s: %w", ErrInvalid, d.Key, err)
+		}
+	}
+	return nil
+}
 
 var settingKeyFormat = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`)
 
@@ -299,6 +322,29 @@ func (r *Definitions) Lookup(key string) (Definition, bool) {
 	defer r.mu.RUnlock()
 	d, ok := r.defs[key]
 	return d, ok
+}
+
+// ForScope returns the definition for key after checking the scope, that the
+// key is registered (ErrUnknownSetting), and that its definition allows the
+// scope's level (ErrLevelNotAllowed). It reads nothing but the registry.
+func (r *Definitions) ForScope(scope Scope, key string) (Definition, error) {
+	if err := scope.Validate(); err != nil {
+		return Definition{}, err
+	}
+	def, ok := r.Lookup(key)
+	if !ok {
+		return Definition{}, fmt.Errorf("%w: %s", ErrUnknownSetting, key)
+	}
+	if !def.Allows(scope.Level()) {
+		return Definition{}, fmt.Errorf("%w: %s at %s level", ErrLevelNotAllowed, key, scope.Level())
+	}
+	return def, nil
+}
+
+// ValidateSettingValue checks that v is well-formed JSON of at most
+// MaxSettingValueBytes. It reads nothing.
+func ValidateSettingValue(v json.RawMessage) error {
+	return checkValue(v)
 }
 
 func checkValue(v json.RawMessage) error {

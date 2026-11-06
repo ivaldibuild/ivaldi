@@ -181,6 +181,16 @@ func (s *Store) CountActiveProjects(_ context.Context, organizationID, workspace
 	return n, nil
 }
 
+func (s *Store) CountActiveProjectsOwnedBy(_ context.Context, organizationID, teamID string) (int, error) {
+	n := 0
+	for _, d := range s.Projects {
+		if d.OrganizationID == organizationID && d.OwnerTeamID == teamID && d.ArchivedAt == nil {
+			n++
+		}
+	}
+	return n, nil
+}
+
 // Projects.
 
 func (s *Store) checkProject(p workspace.ProjectSnapshot) error {

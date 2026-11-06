@@ -84,7 +84,11 @@ func (f *fixture) assertNotLocked(t *testing.T, rowID string) {
 }
 
 func member(principalID string, role team.Role) team.NewTeamMemberProps {
-	return team.NewTeamMemberProps{PrincipalID: principalID, Role: role}
+	return team.NewTeamMemberProps{PrincipalID: principalID, PrincipalKind: team.MemberUser, Role: role}
+}
+
+func agentMember(principalID string, role team.Role) team.NewTeamMemberProps {
+	return team.NewTeamMemberProps{PrincipalID: principalID, PrincipalKind: team.MemberAgent, Role: role}
 }
 
 func newTeam(org, slug string, members ...team.NewTeamMemberProps) *team.Team {

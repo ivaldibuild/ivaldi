@@ -7,6 +7,15 @@ const (
 	DefaultChannelName = "Default"
 )
 
+// Settings this capability defines, registered by RegisterSettings and
+// stored and resolved by the workspace capability.
+const (
+	// SettingDefaultLifecycle is the Lifecycle a new Application's default
+	// Channel follows when its creator names none: a Lifecycle ID, set for a
+	// Workspace or a Project.
+	SettingDefaultLifecycle = "delivery.default_lifecycle"
+)
+
 // Limits on what one record may hold. Text lengths match the columns.
 const (
 	maxDisplayNameLength   = 255

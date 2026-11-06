@@ -135,6 +135,14 @@ func (r *Repository) CountActiveProjects(ctx context.Context, organizationID, wo
 	return int(n), translate(err)
 }
 
+func (r *Repository) CountActiveProjectsOwnedBy(ctx context.Context, organizationID, teamID string) (int, error) {
+	var n int64
+	err := r.conn(ctx).Model(&projectEntity{}).
+		Where("organization_id = ? AND owner_team_id = ? AND archived_at IS NULL", organizationID, teamID).
+		Count(&n).Error
+	return int(n), translate(err)
+}
+
 func (r *Repository) CreateProject(ctx context.Context, p *workspace.Project) error {
 	return translate(r.conn(ctx).Create(toProjectEntity(p)).Error)
 }

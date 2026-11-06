@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/team"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
 )
 
@@ -99,4 +100,21 @@ func TestNewDependents(t *testing.T) {
 		_, err = NewDependents(envs, countLifecycles{}, countRegistries{}, nil)
 		assert.Error(t, err)
 	})
+}
+
+type ownedApplications map[string]int
+
+func (o ownedApplications) CountActiveApplicationsOwnedBy(_ context.Context, _, teamID string) (int, error) {
+	return o[teamID], nil
+}
+
+func TestNewTeamOwnership(t *testing.T) {
+	_, err := NewTeamOwnership(nil)
+	require.Error(t, err)
+
+	owner, err := NewTeamOwnership(ownedApplications{"tem_1": 2})
+	require.NoError(t, err)
+	got, err := owner.ActiveOwned(context.Background(), "org", "tem_1")
+	require.NoError(t, err)
+	assert.Equal(t, []team.Owned{{Capability: "delivery", Kind: "Application", Count: 2}}, got)
 }

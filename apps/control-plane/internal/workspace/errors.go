@@ -20,6 +20,8 @@ var (
 	ErrDefaultWorkspace = errors.New("not allowed on the default workspace")
 	// ErrUnknownSetting means no capability registered a definition for the key.
 	ErrUnknownSetting = errors.New("unknown setting")
+	// ErrLocked means policy locks the setting at a level above the one being changed.
+	ErrLocked = errors.New("setting is locked")
 	// ErrLevelNotAllowed means the setting's definition does not allow this level.
 	ErrLevelNotAllowed = errors.New("setting not allowed at this level")
 	// ErrInactiveTeam means the owning Team does not exist, is inactive, or is in another Organization.

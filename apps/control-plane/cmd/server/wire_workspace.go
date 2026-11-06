@@ -22,8 +22,7 @@ func (a *app) wireProvisioner() error {
 }
 
 // wireWorkspace builds the workspace capability's services and HTTP APIs.
-// Nothing is locked until the policy capability exists, and no setting is
-// defined until a capability registers one.
+// Settings use the registry, locks, and resolver from wireSettings.
 func (a *app) wireWorkspace() error {
 	repo := workspacepg.NewRepository(a.db)
 	dependents, err := delivery.NewDependents(
@@ -63,8 +62,8 @@ func (a *app) wireWorkspace() error {
 	}
 	ss, err := settings.NewSettingService(
 		settings.WithRepository(repo),
-		settings.WithDefinitions(workspace.NewDefinitions()),
-		settings.WithLockSource(workspace.NoLocks()),
+		settings.WithDefinitions(a.settingDefs),
+		settings.WithLockSource(a.settingLocks),
 		settings.WithAuthorizer(a.authz),
 		settings.WithTransactor(a.tx),
 		settings.WithOutboxRecorder(a.outbox),

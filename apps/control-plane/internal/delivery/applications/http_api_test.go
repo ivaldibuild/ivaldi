@@ -257,6 +257,9 @@ func TestHTTPErrors(t *testing.T) {
 		{"bad input is refused before asking", func(*httpWorld) (string, string, string) {
 			return http.MethodPost, "/projects/" + prjActive + "/applications", `{"display_name": "API", "default_lifecycle_id": "nope"}`
 		}, http.StatusUnprocessableEntity, true},
+		{"no lifecycle named or set", func(*httpWorld) (string, string, string) {
+			return http.MethodPost, "/projects/" + prjActive + "/applications", `{"display_name": "API"}`
+		}, http.StatusUnprocessableEntity, false},
 		{"a refusal", func(h *httpWorld) (string, string, string) {
 			h.authz.deny = func(authorization.Request) bool { return true }
 			l := h.lifecycle(t, wsActive, "l", false)
@@ -319,4 +322,14 @@ func TestHTTPErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCreatingAnApplicationWithTheDefaultLifecycleSetting(t *testing.T) {
+	h := newHTTPWorld(t)
+	l := h.lifecycle(t, wsActive, "mainline", false)
+	h.setDefaultLifecycle(wsActive, l.ID())
+
+	rec, out := h.call(t, http.MethodPost, "/projects/"+prjActive+"/applications", "ada", `{"display_name": "Checkout API"}`)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	assert.Equal(t, l.ID(), data(out)["default_channel"].(map[string]any)["lifecycle_id"], "the default channel follows the workspace's default lifecycle")
 }

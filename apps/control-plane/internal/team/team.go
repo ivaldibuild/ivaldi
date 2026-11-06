@@ -10,9 +10,10 @@
 // New… constructors that also rebuild stored objects, Snapshot for reading
 // state, and events recorded only when something changes.
 //
-// Members are users for now. Agents (ADR 0007) join once IAM models them.
-// The IAM group that mirrors each Team, so Teams can receive grants, is
-// deferred until IAM offers team-managed groups.
+// Members are users or Agents (ADR 0007), and every Agent stays in at least
+// one active Team; Agents are created through a Team. Each Team has an IAM
+// group that mirrors its members, so Teams can receive grants: the service
+// keeps it in sync through iam.TeamGroups in the transaction of every change.
 package team
 
 import (
@@ -43,6 +44,23 @@ const (
 	RoleMember Role = "member"
 )
 
+// MemberKind is the kind of principal a member is. Its values are IAM's
+// principal kinds.
+type MemberKind string
+
+const (
+	MemberUser  MemberKind = MemberKind(iam.PrincipalUser)
+	MemberAgent MemberKind = MemberKind(iam.PrincipalAgent)
+)
+
+func validateMemberKind(k MemberKind) error {
+	switch k {
+	case MemberUser, MemberAgent:
+		return nil
+	}
+	return NewErrInvalidInput(fmt.Sprintf("member kind %q must be user or agent", k))
+}
+
 func validateRole(r Role) error {
 	switch r {
 	case RoleLead, RoleMember:
@@ -69,6 +87,7 @@ type Team struct {
 // member is one principal on a Team.
 type member struct {
 	principalID string
+	kind        MemberKind
 	role        Role
 	createdAt   time.Time
 	updatedAt   time.Time
@@ -92,10 +111,11 @@ type TeamSnapshot struct {
 // TeamMemberSnapshot is a member's state. CreatedAt is when the principal
 // joined the Team, UpdatedAt when its role last changed.
 type TeamMemberSnapshot struct {
-	PrincipalID string    `json:"principal_id"`
-	Role        Role      `json:"role"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	PrincipalID   string     `json:"principal_id"`
+	PrincipalKind MemberKind `json:"principal_kind"`
+	Role          Role       `json:"role"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 // NewTeamProps describes a Team. A new one leaves the timestamps nil; a
@@ -115,10 +135,11 @@ type NewTeamProps struct {
 // NewTeamMemberProps describes a member given to NewTeam. A new one leaves
 // the timestamps nil; a stored one sets them.
 type NewTeamMemberProps struct {
-	PrincipalID string
-	Role        Role
-	CreatedAt   *time.Time
-	UpdatedAt   *time.Time
+	PrincipalID   string
+	PrincipalKind MemberKind
+	Role          Role
+	CreatedAt     *time.Time
+	UpdatedAt     *time.Time
 }
 
 // UpdateTeamProps changes the fields that are set. An empty Description
@@ -158,7 +179,7 @@ func NewTeam(props NewTeamProps, teamID *string) (*Team, error) {
 		archivedAt:     clock.CopyTime(props.ArchivedAt),
 	}
 	for _, p := range props.Members {
-		if err := validateMember(p.PrincipalID, p.Role); err != nil {
+		if err := validateMember(p.PrincipalID, p.PrincipalKind, p.Role); err != nil {
 			return nil, err
 		}
 		if _, ok := t.memberIndex(p.PrincipalID); ok {
@@ -166,6 +187,7 @@ func NewTeam(props NewTeamProps, teamID *string) (*Team, error) {
 		}
 		t.insertMember(&member{
 			principalID: p.PrincipalID,
+			kind:        p.PrincipalKind,
 			role:        p.Role,
 			createdAt:   timeOr(p.CreatedAt, now),
 			updatedAt:   timeOr(p.UpdatedAt, now),
@@ -177,11 +199,14 @@ func NewTeam(props NewTeamProps, teamID *string) (*Team, error) {
 	return t, nil
 }
 
-// validateMember checks a member's principal ID and role. Users and, once
-// they exist, Agents share IAM's principal prefix.
-func validateMember(principalID string, role Role) error {
+// validateMember checks a member's principal ID, kind, and role. Users and
+// Agents share IAM's principal prefix.
+func validateMember(principalID string, kind MemberKind, role Role) error {
 	if !id.Valid(iam.User{}.Prefix(), principalID) {
 		return NewErrInvalidInput(fmt.Sprintf("%q is not a principal ID", principalID))
+	}
+	if err := validateMemberKind(kind); err != nil {
+		return err
 	}
 	return validateRole(role)
 }
@@ -217,7 +242,7 @@ func (t *Team) Member(principalID string) (TeamMemberSnapshot, bool) {
 }
 
 func (m *member) snapshot() TeamMemberSnapshot {
-	return TeamMemberSnapshot{PrincipalID: m.principalID, Role: m.role, CreatedAt: m.createdAt, UpdatedAt: m.updatedAt}
+	return TeamMemberSnapshot{PrincipalID: m.principalID, PrincipalKind: m.kind, Role: m.role, CreatedAt: m.createdAt, UpdatedAt: m.updatedAt}
 }
 
 func (t *Team) Snapshot() TeamSnapshot {
@@ -269,19 +294,24 @@ func (t *Team) Update(props UpdateTeamProps) error {
 	return nil
 }
 
-// SetMember adds principalID to an active Team with role, or changes the
-// role of a member. Setting a member's current role changes nothing. The
-// caller checks that the principal exists and is active.
-func (t *Team) SetMember(principalID string, role Role) error {
+// SetMember adds principalID, a principal of kind, to an active Team with
+// role, or changes the role of a member. Setting a member's current role
+// changes nothing. A principal's kind never changes, so a member given
+// another kind is refused. The caller checks that the principal exists, is
+// of kind, and is active.
+func (t *Team) SetMember(principalID string, kind MemberKind, role Role) error {
 	if err := t.checkActive(); err != nil {
 		return err
 	}
-	if err := validateMember(principalID, role); err != nil {
+	if err := validateMember(principalID, kind, role); err != nil {
 		return err
 	}
 	now := clock.Now()
 	if i, ok := t.memberIndex(principalID); ok {
 		m := t.members[i]
+		if m.kind != kind {
+			return NewErrInvalidInput(fmt.Sprintf("member %s is a %s, not a %s", principalID, m.kind, kind))
+		}
 		if m.role == role {
 			return nil
 		}
@@ -296,7 +326,7 @@ func (t *Team) SetMember(principalID string, role Role) error {
 		return nil
 	}
 	t.members = slices.Clone(t.members)
-	t.insertMember(&member{principalID: principalID, role: role, createdAt: now, updatedAt: now})
+	t.insertMember(&member{principalID: principalID, kind: kind, role: role, createdAt: now, updatedAt: now})
 	t.updatedAt = now
 	t.RecordEvent(TeamMemberAdded{Team: t.Snapshot(), PrincipalID: principalID})
 	return nil

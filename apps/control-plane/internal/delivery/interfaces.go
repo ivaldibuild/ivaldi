@@ -143,6 +143,8 @@ type ApplicationRepository interface {
 	ListApplications(ctx context.Context, query ListApplicationsQuery) (*pagination.Result[*Application], error)
 	UpdateApplication(ctx context.Context, a *Application) error
 	CountActiveApplications(ctx context.Context, organizationID, projectID string) (int, error)
+	// CountActiveApplicationsOwnedBy counts the active Applications a Team owns.
+	CountActiveApplicationsOwnedBy(ctx context.Context, organizationID, teamID string) (int, error)
 
 	CreateArtifact(ctx context.Context, a *Artifact) error
 	GetArtifact(ctx context.Context, organizationID, artifactID string) (*Artifact, error)
@@ -348,7 +350,8 @@ type CreateApplicationInput struct {
 	SourceID         string
 	WorkloadSelector map[string]string
 	// DefaultLifecycleID is the Lifecycle the default Channel follows. It
-	// must be active and in the Project's Workspace.
+	// must be active and in the Project's Workspace. When it is empty, the
+	// delivery.default_lifecycle setting resolved for the Project names it.
 	DefaultLifecycleID string
 }
 

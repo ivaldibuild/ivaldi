@@ -17,8 +17,8 @@ type SettingResolver interface {
 }
 
 // NewSettingResolver returns a SettingResolver that reads values through
-// repo, definitions from definitions, and locks from locks. Use NoLocks
-// until the policy capability provides them.
+// repo, definitions from definitions, and locks from locks, which the
+// policy capability provides.
 func NewSettingResolver(repo Repository, definitions *Definitions, locks LockSource) (SettingResolver, error) {
 	switch {
 	case repo == nil:

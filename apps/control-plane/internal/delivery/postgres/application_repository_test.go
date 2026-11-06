@@ -179,6 +179,13 @@ func TestApplicationListAndCount(t *testing.T) {
 	n, err = f.apps.CountActiveApplications(ctx, orgA, projB)
 	require.NoError(t, err)
 	assert.Equal(t, 1, n)
+
+	n, err = f.apps.CountActiveApplicationsOwnedBy(ctx, orgA, teamA)
+	require.NoError(t, err)
+	assert.Equal(t, 3, n, "a1, b1, and elsewhere; not the archived one or another organization's")
+	n, err = f.apps.CountActiveApplicationsOwnedBy(ctx, orgA, teamB)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
 }
 
 func TestApplicationForUpdate(t *testing.T) {

@@ -88,7 +88,7 @@ Every actor is a row in **principals**, the common parent table that grants and 
 | `service_account` | **service_accounts** | A non-human integration that uses API tokens, e.g. CI or SCIM provisioning. |
 | `agent_session` | **agent_sessions** | The identity of one orchestrated Session. Links to the Session and Work Item, the delegating principal, an expiry, and a revocation time. |
 | `workload` | **workloads** | An enrolled data-plane component (worker, indexer, gateway, runtime agent) with its pool and last-seen time. |
-| `agent` | **agents** | A durable agent identity, such as `release-agent`, that can belong to Teams and hold grants. Every agent Session runs as one Agent. How the Agent runs (harness, model, instructions) belongs to orchestration, not IAM. *Proposed in [ADR 0007](../adr/0007-teams-and-agent-identity.md); not yet migrated.* |
+| `agent` | **agents** | A durable agent identity, such as `release-agent`, that can belong to Teams and hold grants. Every agent Session runs as one Agent. How the Agent runs (harness, model, instructions) belongs to orchestration, not IAM. *Added by [ADR 0007](../adr/0007-teams-and-agent-identity.md). An Agent is created through a Team, which keeps it in at least one Team; Sessions do not run as Agents yet.* |
 
 **Principals are never hard-deleted.** Audit and provenance records refer to them, so they are suspended or deactivated instead.
 
@@ -121,7 +121,7 @@ Every actor is a row in **principals**, the common parent table that grants and 
 ### Authorization
 
 - **roles** — built-in roles are rows with no Organization (`organization_id` is NULL), seeded by migration. A future custom role is a row that belongs to an Organization. The permissions of built-in roles are defined in Go code, so they are versioned with the binary.
-- **groups** and **group_members** — manual or SCIM-provisioned groups. *Proposed in [ADR 0007](../adr/0007-teams-and-agent-identity.md):* a third kind, team-managed groups, mirrors each Team so it can receive grants. Only the Team capability changes their membership, and their members can include Agents.
+- **groups** and **group_members** — manual or SCIM-provisioned groups. A third kind, team-managed groups ([ADR 0007](../adr/0007-teams-and-agent-identity.md)), mirrors each Team so it can receive grants: `source` is `team` and `external_id` the Team's ID. Only the Team capability changes their membership, through `iam.TeamGroups`, and their members can include Agents. An archived Team's group has no members, so grants to it stop applying until the Team is restored.
 - **grants** — gives a role to exactly one principal or one group, on one resource. Grants can optionally expire.
 - **agent_session_scopes** — the resources an agent Session is limited to.
 
@@ -196,3 +196,6 @@ The schema is implemented as golang-migrate migrations in [`apps/control-plane/i
 | 000023 | `grants` | tenant |
 | 000024 | `agent_session_scopes` | tenant |
 | 000025 | `organization_domains` | tenant |
+| 000026 | `account_identities` | platform |
+| 000027 | `agents` | tenant |
+| 000028 | a unique index on team-managed `groups` (`source = 'team'`, one per Team) | tenant |

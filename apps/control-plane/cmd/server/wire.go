@@ -24,6 +24,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/outbox"
 	outboxpg "github.com/ivaldibuild/ivaldi-control-plane/internal/outbox/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/team"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/database"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
@@ -46,6 +47,11 @@ type app struct {
 	authz      authorization.Authorizer
 	audit      audit.Recorder
 	teams      team.Directory
+	// settingDefs, settingLocks, and settingResolver are shared by the
+	// capabilities that define, lock, and read settings.
+	settingDefs     *workspace.Definitions
+	settingLocks    workspace.LockSource
+	settingResolver workspace.SettingResolver
 	// provisioner sets up each new Organization's default Workspace.
 	provisioner iam.OrganizationProvisioner
 	keys        token.KeyRing
@@ -185,6 +191,9 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 		return nil, nil, err
 	}
 
+	if err := a.wireSettings(); err != nil {
+		return nil, nil, err
+	}
 	if err := a.wireTeams(); err != nil {
 		return nil, nil, err
 	}

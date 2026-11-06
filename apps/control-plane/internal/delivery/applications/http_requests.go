@@ -45,7 +45,7 @@ type CreateApplicationRequest struct {
 		OwnerTeamID        *string           `json:"owner_team_id,omitempty" required:"false" doc:"The Team that owns the application; the Project's owning Team when omitted"`
 		SourceID           *string           `json:"source_id,omitempty" required:"false" doc:"The Source the application is built from"`
 		WorkloadSelector   map[string]string `json:"workload_selector,omitempty" required:"false" doc:"Labels that pick out the application's workloads; a label with the application's ID when omitted"`
-		DefaultLifecycleID string            `json:"default_lifecycle_id" required:"true" doc:"The Lifecycle the default Channel follows, in the Project's Workspace"`
+		DefaultLifecycleID *string           `json:"default_lifecycle_id,omitempty" required:"false" doc:"The Lifecycle the default Channel follows, in the Project's Workspace; the delivery.default_lifecycle setting for the Project when omitted"`
 	}
 }
 
@@ -58,7 +58,7 @@ func (r *CreateApplicationRequest) input(organizationID string) delivery.CreateA
 		DisplayName:        r.Body.DisplayName,
 		SourceID:           deref(r.Body.SourceID),
 		WorkloadSelector:   r.Body.WorkloadSelector,
-		DefaultLifecycleID: r.Body.DefaultLifecycleID,
+		DefaultLifecycleID: deref(r.Body.DefaultLifecycleID),
 	}
 }
 

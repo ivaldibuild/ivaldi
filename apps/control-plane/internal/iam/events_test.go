@@ -120,6 +120,14 @@ func TestNewRecordsCreatedOnlyForNewObjects(t *testing.T) {
 			func(t *testing.T) []aggregate.Event {
 				return mustBuild(NewServiceAccount(principalServiceAccountProps(), new(id.New("prn")))).PullEvents()
 			}},
+		{"agent",
+			func(t *testing.T) ([]aggregate.Event, aggregate.Event) {
+				a := agentNew(t)
+				return a.PullEvents(), AgentCreated{a.Snapshot()}
+			},
+			func(t *testing.T) []aggregate.Event {
+				return mustBuild(NewAgent(agentProps(), new(id.New("prn")))).PullEvents()
+			}},
 		{"agent session",
 			func(t *testing.T) ([]aggregate.Event, aggregate.Event) {
 				s := sessionNew(t)
@@ -642,6 +650,7 @@ func TestSnapshotJSONKeys(t *testing.T) {
 		{PrincipalSnapshot{}, principal},
 		{UserSnapshot{}, append(slices.Clone(principal), "account_id", "joined_at")},
 		{ServiceAccountSnapshot{}, append(slices.Clone(principal), "description", "created_by_principal_id")},
+		{AgentSnapshot{}, append(slices.Clone(principal), "slug")},
 		{AgentSessionSnapshot{}, append(slices.Clone(principal), "session_id", "work_item_id", "delegator_principal_id", "expires_at", "revoked_at", "scope_resource_ids")},
 		{WorkloadSnapshot{}, append(slices.Clone(principal), "component", "pool", "enrolled_at", "last_seen_at")},
 		{APITokenSnapshot{}, []string{"id", "organization_id", "principal_id", "name", "token_prefix", "expires_at", "last_used_at", "revoked_at", "created_at"}},

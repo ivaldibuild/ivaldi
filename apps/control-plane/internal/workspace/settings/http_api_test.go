@@ -98,6 +98,9 @@ func TestHTTPErrors(t *testing.T) {
 		{name: "removing a value that is not there", method: http.MethodDelete, path: "/settings/" + lifecycleKey + "?expected_version=1", want: http.StatusConflict, wantNotAsked: true},
 		{name: "a refusal", method: http.MethodGet, path: "/settings", setup: func(h *httpWorld) { h.authz.Decide = workspacetest.Deny }, want: http.StatusForbidden},
 		{name: "a project without its workspace", method: http.MethodGet, path: "/settings?project_id=prj_1", want: http.StatusUnprocessableEntity, wantNotAsked: true},
+		{name: "a key locked above the level", method: http.MethodPut, path: "/settings/" + lifecycleKey + "?workspace_id=wsp_1", body: `{"value": "lfc_1", "expected_version": 0}`, setup: func(h *httpWorld) {
+			h.Locks[org+"/"] = map[string]workspace.Level{lifecycleKey: workspace.LevelOrganization}
+		}, want: http.StatusForbidden, wantNotAsked: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

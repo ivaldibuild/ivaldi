@@ -118,6 +118,16 @@ func (r *teamRepository) ListTeams(ctx context.Context, query team.ListTeamsQuer
 	return pagination.NewResult(items, p.Total, p.HasNext, p.HasPrevious, p.Next, p.Previous), nil
 }
 
+func (r *teamRepository) CountActiveTeamsWithMember(ctx context.Context, organizationID, principalID string) (int, error) {
+	var n int64
+	err := r.conn(ctx).Raw(`
+		SELECT count(*) FROM team.team_members m
+		JOIN team.teams t ON t.organization_id = m.organization_id AND t.id = m.team_id
+		WHERE m.organization_id = ? AND m.principal_id = ? AND t.archived_at IS NULL`,
+		organizationID, principalID).Scan(&n).Error
+	return int(n), translate(err)
+}
+
 // UpdateTeam writes the Team's row and replaces its members: kept members
 // are updated in place, so the time they joined survives, new ones are
 // inserted, and removed ones are deleted.

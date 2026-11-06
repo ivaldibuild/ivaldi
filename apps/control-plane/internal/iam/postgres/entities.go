@@ -68,6 +68,36 @@ type userEntity struct {
 
 func (userEntity) TableName() string { return "iam.users" }
 
+// agentEntity holds what only an Agent has, under its principal's ID.
+type agentEntity struct {
+	PrincipalID    string `gorm:"column:principal_id;primaryKey"`
+	OrganizationID string `gorm:"column:organization_id"`
+	Slug           string `gorm:"column:slug"`
+}
+
+func (agentEntity) TableName() string { return "iam.agents" }
+
+type groupEntity struct {
+	ID             string    `gorm:"column:id;primaryKey"`
+	OrganizationID string    `gorm:"column:organization_id"`
+	Name           string    `gorm:"column:name"`
+	Source         string    `gorm:"column:source"`
+	ExternalID     *string   `gorm:"column:external_id"`
+	CreatedAt      time.Time `gorm:"column:created_at;autoCreateTime:false"`
+	UpdatedAt      time.Time `gorm:"column:updated_at;autoUpdateTime:false"`
+}
+
+func (groupEntity) TableName() string { return "iam.groups" }
+
+type groupMemberEntity struct {
+	OrganizationID string    `gorm:"column:organization_id"`
+	GroupID        string    `gorm:"column:group_id;primaryKey"`
+	PrincipalID    string    `gorm:"column:principal_id;primaryKey"`
+	CreatedAt      time.Time `gorm:"column:created_at;autoCreateTime:false"`
+}
+
+func (groupMemberEntity) TableName() string { return "iam.group_members" }
+
 type identityProviderEntity struct {
 	ID              string    `gorm:"column:id;primaryKey"`
 	OrganizationID  string    `gorm:"column:organization_id"`

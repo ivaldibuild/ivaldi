@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/team"
+	"github.com/ivaldibuild/ivaldi/pkg/id"
 	"github.com/ivaldibuild/ivaldi/pkg/pagination"
 )
 
@@ -18,19 +19,22 @@ func TestTeamRepository(t *testing.T) {
 	ctx := f.ctx
 
 	t.Run("round trip", func(t *testing.T) {
+		agent := id.New("prn")
 		tm := must(team.NewTeam(team.NewTeamProps{
 			OrganizationID: orgA,
 			Slug:           "platform",
 			DisplayName:    "Platform",
 			Description:    new("Runs the platform"),
-			Members:        []team.NewTeamMemberProps{member(bob, team.RoleMember), member(alice, team.RoleLead)},
+			Members:        []team.NewTeamMemberProps{member(bob, team.RoleMember), member(alice, team.RoleLead), agentMember(agent, team.RoleMember)},
 		}, nil))
 		require.NoError(t, f.teams.CreateTeam(ctx, tm))
 
 		got, err := f.teams.GetTeam(ctx, orgA, tm.ID())
 		require.NoError(t, err)
 		assert.Equal(t, tm.Snapshot(), got.Snapshot())
-		assert.Len(t, got.Members(), 2)
+		assert.Len(t, got.Members(), 3)
+		m, _ := got.Member(agent)
+		assert.Equal(t, team.MemberAgent, m.PrincipalKind, "the member's kind round trips")
 		assert.Empty(t, got.PullEvents(), "a loaded team records no event")
 
 		bySlug, err := f.teams.GetTeamBySlug(ctx, orgA, "platform")
@@ -105,9 +109,9 @@ func TestTeamUpdateMembers(t *testing.T) {
 
 	at(t, time.Hour)
 	require.NoError(t, tm.Update(team.UpdateTeamProps{DisplayName: new("Core Platform"), Description: new("Changed")}))
-	require.NoError(t, tm.SetMember(alice, team.RoleMember))
+	require.NoError(t, tm.SetMember(alice, team.MemberUser, team.RoleMember))
 	require.NoError(t, tm.RemoveMember(bob))
-	require.NoError(t, tm.SetMember(carol, team.RoleLead))
+	require.NoError(t, tm.SetMember(carol, team.MemberUser, team.RoleLead))
 	require.NoError(t, f.teams.UpdateTeam(ctx, tm))
 
 	got, err := f.teams.GetTeam(ctx, orgA, tm.ID())
@@ -143,7 +147,7 @@ func TestTeamForUpdate(t *testing.T) {
 			assert.Equal(t, tm.Snapshot(), got.Snapshot())
 			f.assertLocked(t, tm.ID())
 
-			require.NoError(t, got.SetMember(alice, team.RoleLead))
+			require.NoError(t, got.SetMember(alice, team.MemberUser, team.RoleLead))
 			return f.teams.UpdateTeam(ctx, got)
 		})
 		require.NoError(t, err)
@@ -170,7 +174,7 @@ func TestTeamForUpdate(t *testing.T) {
 		err := f.tx.WithinTx(f.ctx, func(ctx context.Context) error {
 			got, err := f.teams.GetTeamForUpdate(ctx, orgA, tm.ID())
 			require.NoError(t, err)
-			require.NoError(t, got.SetMember(bob, team.RoleMember))
+			require.NoError(t, got.SetMember(bob, team.MemberUser, team.RoleMember))
 			require.NoError(t, f.teams.UpdateTeam(ctx, got))
 			return stop
 		})
@@ -229,4 +233,27 @@ func TestTeamPagination(t *testing.T) {
 
 	_, err := f.teams.ListTeams(f.ctx, team.ListTeamsQuery{OrganizationID: orgA, Page: pagination.Query{SortBy: "members"}})
 	assert.ErrorIs(t, err, team.ErrInvalid, "an unknown sort field is invalid input")
+}
+
+func TestCountActiveTeamsWithMember(t *testing.T) {
+	f := newFixture(t)
+	ctx := f.ctx
+	f.createTeam(t, orgA, "one", agentMember(carol, team.RoleMember))
+	two := f.createTeam(t, orgA, "two", agentMember(carol, team.RoleLead), member(alice, team.RoleLead))
+	f.createTeam(t, orgA, "three", member(alice, team.RoleLead))
+	f.createTeam(t, orgB, "other-org", agentMember(carol, team.RoleMember))
+
+	count := func(org, principalID string) int {
+		n, err := f.teams.CountActiveTeamsWithMember(ctx, org, principalID)
+		require.NoError(t, err)
+		return n
+	}
+	assert.Equal(t, 2, count(orgA, carol), "teams in another organization do not count")
+	assert.Equal(t, 2, count(orgA, alice))
+	assert.Equal(t, 0, count(orgA, bob))
+
+	two.Archive()
+	require.NoError(t, f.teams.UpdateTeam(ctx, two))
+	assert.Equal(t, 1, count(orgA, carol), "archived teams do not count")
+	assert.Equal(t, 1, count(orgB, carol))
 }

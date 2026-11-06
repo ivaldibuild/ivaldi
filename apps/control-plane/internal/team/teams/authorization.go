@@ -14,7 +14,8 @@ import (
 // new operation does not compile until it says how it is authorized.
 //
 // Teams are not IAM resources, so every operation is checked on the
-// Organization: team.read to read, team.manage to change.
+// Organization: team.read to read, team.manage to change, and agent.manage
+// to create an Agent.
 type authorized struct {
 	next  team.TeamService
 	authz authorization.Authorizer
@@ -37,10 +38,15 @@ func (a *authorized) read(ctx context.Context, actor identity.Actor, organizatio
 	return err
 }
 
-// manage asks for a decision and returns ctx carrying it for the call.
+// manage asks for a decision to change Teams and returns ctx carrying it
+// for the call.
 func (a *authorized) manage(ctx context.Context, actor identity.Actor, organizationID, action string, proposal any) (context.Context, error) {
+	return a.decide(ctx, actor, team.PermissionTeamManage, organizationID, action, proposal)
+}
+
+func (a *authorized) decide(ctx context.Context, actor identity.Actor, permission, organizationID, action string, proposal any) (context.Context, error) {
 	d, err := authorization.Require(ctx, a.authz, authorization.Request{
-		Actor: actor, Permission: team.PermissionTeamManage, OrganizationID: organizationID,
+		Actor: actor, Permission: permission, OrganizationID: organizationID,
 		ResourceID: organizationID, Action: action, Proposal: proposal,
 	})
 	if err != nil {
@@ -125,4 +131,14 @@ func (a *authorized) RemoveTeamMember(ctx context.Context, actor identity.Actor,
 		return nil, err
 	}
 	return a.next.RemoveTeamMember(ctx, actor, organizationID, teamID, principalID)
+}
+
+// CreateAgent needs agent.manage rather than team.manage: an Agent is an
+// IAM principal that can hold grants.
+func (a *authorized) CreateAgent(ctx context.Context, actor identity.Actor, in team.CreateAgentInput) (*team.CreatedAgent, error) {
+	ctx, err := a.decide(ctx, actor, team.PermissionAgentManage, in.OrganizationID, team.ActionTeamCreateAgent, in)
+	if err != nil {
+		return nil, err
+	}
+	return a.next.CreateAgent(ctx, actor, in)
 }

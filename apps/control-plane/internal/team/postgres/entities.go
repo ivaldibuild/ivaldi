@@ -22,6 +22,7 @@ type teamMemberEntity struct {
 	OrganizationID string    `gorm:"column:organization_id"`
 	TeamID         string    `gorm:"column:team_id;primaryKey"`
 	PrincipalID    string    `gorm:"column:principal_id;primaryKey"`
+	PrincipalKind  string    `gorm:"column:principal_kind"`
 	Role           string    `gorm:"column:role"`
 	CreatedAt      time.Time `gorm:"column:created_at;autoCreateTime:false"`
 	UpdatedAt      time.Time `gorm:"column:updated_at;autoUpdateTime:false"`

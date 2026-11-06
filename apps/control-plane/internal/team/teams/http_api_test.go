@@ -72,6 +72,7 @@ func TestEveryOperationNeedsAToken(t *testing.T) {
 		{http.MethodGet, "/teams/tem_x/members"},
 		{http.MethodPut, "/teams/tem_x/members/prn_x"},
 		{http.MethodDelete, "/teams/tem_x/members/prn_x"},
+		{http.MethodPost, "/teams/tem_x/agents"},
 	} {
 		rec, _ := h.call(t, op.method, op.path, "", "")
 		assert.Equal(t, http.StatusUnauthorized, rec.Code, "%s %s", op.method, op.path)
@@ -136,6 +137,41 @@ func TestTeamsOverHTTP(t *testing.T) {
 	}, h.auditTypes())
 }
 
+func TestCreateAgentOverHTTP(t *testing.T) {
+	h := newHTTPWorld(t)
+	tm := h.team(t, "platform", false, lead(alice))
+
+	rec, out := h.call(t, http.MethodPost, "/teams/"+tm.ID()+"/agents", "ada", `{"display_name": "Release agent", "slug": "release-agent", "role": "lead"}`)
+
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	data := out["data"].(map[string]any)
+	agent := data["agent"].(map[string]any)
+	agentID := agent["id"].(string)
+	assert.Equal(t, "release-agent", agent["slug"])
+	assert.Equal(t, "Release agent", agent["display_name"])
+	assert.Equal(t, "agent", agent["kind"])
+	assert.Equal(t, "active", agent["status"])
+	assert.Equal(t, org, agent["organization_id"], "the Organization comes from the token")
+	members := data["team"].(map[string]any)["members"].([]any)
+	require.Len(t, members, 2)
+	var found bool
+	for _, m := range members {
+		m := m.(map[string]any)
+		if m["principal_id"] == agentID {
+			found = true
+			assert.Equal(t, "agent", m["principal_kind"])
+			assert.Equal(t, "lead", m["role"])
+		}
+	}
+	assert.True(t, found, "the agent is a member of the team")
+	require.Len(t, h.authz.asked, 1)
+	assert.Equal(t, team.PermissionAgentManage, h.authz.asked[0].Permission)
+
+	rec, out = h.call(t, http.MethodGet, "/teams/"+tm.ID()+"/members", "ada", "")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Len(t, out["data"].([]any), 2)
+}
+
 func TestHTTPErrors(t *testing.T) {
 	cases := []struct {
 		name         string
@@ -176,6 +212,28 @@ func TestHTTPErrors(t *testing.T) {
 		{"a bad slug", func(*httpWorld) (string, string, string) {
 			return http.MethodPost, "/teams", `{"display_name": "Platform", "slug": "Not A Slug"}`
 		}, http.StatusUnprocessableEntity, false},
+		{"removing an agent from its only team", func(h *httpWorld) (string, string, string) {
+			tm := h.team(t, "platform", false, agentMember(releaseBot))
+			return http.MethodDelete, "/teams/" + tm.ID() + "/members/" + releaseBot, ""
+		}, http.StatusConflict, false},
+		{"archiving an agent's only team", func(h *httpWorld) (string, string, string) {
+			tm := h.team(t, "platform", false, agentMember(releaseBot))
+			return http.MethodPost, "/teams/" + tm.ID() + "/archive", ""
+		}, http.StatusConflict, false},
+		{"an agent with an unknown role is refused before asking", func(h *httpWorld) (string, string, string) {
+			tm := h.team(t, "platform", false)
+			return http.MethodPost, "/teams/" + tm.ID() + "/agents", `{"display_name": "Release agent", "role": "owner"}`
+		}, http.StatusUnprocessableEntity, true},
+		{"an agent with a taken slug", func(h *httpWorld) (string, string, string) {
+			tm := h.team(t, "platform", false)
+			_, err := h.svc.CreateAgent(context.Background(), ada, team.CreateAgentInput{OrganizationID: org, TeamID: tm.ID(), DisplayName: "Release agent"})
+			require.NoError(t, err)
+			return http.MethodPost, "/teams/" + tm.ID() + "/agents", `{"display_name": "Release agent"}`
+		}, http.StatusConflict, false},
+		{"an agent in an archived team", func(h *httpWorld) (string, string, string) {
+			tm := h.team(t, "platform", true)
+			return http.MethodPost, "/teams/" + tm.ID() + "/agents", `{"display_name": "Release agent"}`
+		}, http.StatusConflict, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

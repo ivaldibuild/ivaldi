@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -34,6 +35,15 @@ func (l Level) rank() int {
 		return 2
 	}
 	return -1
+}
+
+// Valid reports whether l is one of the three levels.
+func (l Level) Valid() bool { return l.rank() >= 0 }
+
+// Below reports whether l is more specific than other: a Project is below
+// its Workspace, and both are below the Organization.
+func (l Level) Below(other Level) bool {
+	return l.Valid() && other.Valid() && l.rank() > other.rank()
 }
 
 // Scope identifies a level: the Organization alone, a Workspace in it, or a
@@ -144,8 +154,8 @@ func NewSetting(p NewSettingProps) (*Setting, error) {
 	if err := p.Scope.Validate(); err != nil {
 		return nil, err
 	}
-	if !settingKeyFormat.MatchString(p.Key) {
-		return nil, fmt.Errorf("%w: setting key %q must be namespaced, such as capability.name", ErrInvalid, p.Key)
+	if err := ValidateSettingKey(p.Key); err != nil {
+		return nil, err
 	}
 	if err := checkValue(p.Value); err != nil {
 		return nil, err
@@ -249,7 +259,10 @@ type Definition struct {
 	// Permission is what the authorizer checks on the level's resource before a change.
 	Permission string
 	// Validate checks a proposed value, for example that a Lifecycle ID exists
-	// in the Workspace. It may be nil when JSON well-formedness is enough.
+	// in the Workspace. It refuses a value with an error matching ErrInvalid,
+	// whose message is shown to the caller; any other error is unexpected,
+	// such as a failed lookup, and is not. It may be nil when JSON
+	// well-formedness is enough.
 	Validate func(ctx context.Context, scope Scope, value json.RawMessage) error
 }
 
@@ -263,14 +276,42 @@ func (d Definition) ValidateValue(ctx context.Context, scope Scope, value json.R
 		return err
 	}
 	if d.Validate != nil {
-		if err := d.Validate(ctx, scope, value); err != nil {
-			return fmt.Errorf("%w: setting %s: %w", ErrInvalid, d.Key, err)
+		err := d.Validate(ctx, scope, value)
+		if errors.Is(err, ErrInvalid) {
+			return fmt.Errorf("setting %s: %w", d.Key, err)
+		}
+		if err != nil {
+			return fmt.Errorf("validate setting %s: %w", d.Key, err)
 		}
 	}
 	return nil
 }
 
 var settingKeyFormat = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`)
+
+// ValidateSettingKey checks that key is namespaced by a capability, such as
+// delivery.default_lifecycle. It does not check that the key is registered.
+func ValidateSettingKey(key string) error {
+	if !settingKeyFormat.MatchString(key) {
+		return fmt.Errorf("%w: setting key %q must be namespaced, such as capability.name", ErrInvalid, key)
+	}
+	return nil
+}
+
+// CheckUnlocked refuses a change to key at scope when policy locks the key
+// at a level above it (ErrLocked): an Organization lock fixes the key for
+// every Workspace and Project, and a Workspace lock for its Projects. A
+// change at the lock's own level is allowed.
+func CheckUnlocked(ctx context.Context, locks LockSource, scope Scope, key string) error {
+	locked, err := locks.LockedKeys(ctx, scope.OrganizationID, scope.WorkspaceID)
+	if err != nil {
+		return fmt.Errorf("read setting locks: %w", err)
+	}
+	if at, ok := locked[key]; ok && scope.Level().Below(at) {
+		return fmt.Errorf("%w: %s is locked at %s level", ErrLocked, key, at)
+	}
+	return nil
+}
 
 // Definitions is the registry of setting definitions. It is safe for
 // concurrent use.
@@ -287,14 +328,14 @@ func NewDefinitions() *Definitions {
 // Register adds a definition. It refuses malformed keys, duplicate keys,
 // unknown levels, a missing permission, and a default that is not valid JSON.
 func (r *Definitions) Register(d Definition) error {
-	if !settingKeyFormat.MatchString(d.Key) {
-		return fmt.Errorf("%w: setting key %q must be namespaced, such as capability.name", ErrInvalid, d.Key)
+	if err := ValidateSettingKey(d.Key); err != nil {
+		return err
 	}
 	if len(d.Levels) == 0 {
 		return fmt.Errorf("%w: setting %s allows no levels", ErrInvalid, d.Key)
 	}
 	for _, l := range d.Levels {
-		if l.rank() < 0 {
+		if !l.Valid() {
 			return fmt.Errorf("%w: setting %s has unknown level %q", ErrInvalid, d.Key, l)
 		}
 	}

@@ -26,7 +26,8 @@ func translateToHttpError(ctx context.Context, err error) error {
 		return huma.Error404NotFound("not found")
 	case errors.Is(err, team.ErrSlugTaken):
 		return huma.Error409Conflict("the slug is already in use")
-	case errors.Is(err, team.ErrArchived), errors.Is(err, team.ErrConflict):
+	case errors.Is(err, team.ErrArchived), errors.Is(err, team.ErrConflict), errors.Is(err, team.ErrOwnsWork),
+		errors.Is(err, team.ErrLastTeam):
 		return huma.Error409Conflict(err.Error())
 	case errors.As(err, &approval):
 		return huma.Error403Forbidden("the change needs approval; decision " + approval.DecisionID)

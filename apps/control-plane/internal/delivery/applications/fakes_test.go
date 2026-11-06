@@ -3,6 +3,7 @@ package applications
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -67,6 +68,11 @@ type store struct {
 	inUse map[string]bool
 	// fail makes the named method return the error.
 	fail map[string]error
+	// settings holds setting values by key and then by the ID of the
+	// Workspace or Project they are set for.
+	settings map[string]map[string]json.RawMessage
+	// resolved records the scopes settings were resolved for.
+	resolved []workspace.Scope
 }
 
 func newStore() *store {
@@ -86,6 +92,7 @@ func newStore() *store {
 		teams:      map[string]bool{},
 		inUse:      map[string]bool{},
 		fail:       map[string]error{},
+		settings:   map[string]map[string]json.RawMessage{},
 	}
 }
 
@@ -262,6 +269,16 @@ func (s *store) CountActiveApplications(_ context.Context, organizationID, proje
 	n := 0
 	for _, snap := range s.applications {
 		if snap.OrganizationID == organizationID && snap.ProjectID == projectID && snap.ArchivedAt == nil {
+			n++
+		}
+	}
+	return n, nil
+}
+
+func (s *store) CountActiveApplicationsOwnedBy(_ context.Context, organizationID, teamID string) (int, error) {
+	n := 0
+	for _, snap := range s.applications {
+		if snap.OrganizationID == organizationID && snap.OwnerTeamID == teamID && snap.ArchivedAt == nil {
 			n++
 		}
 	}
@@ -524,6 +541,32 @@ func (s *store) LookupProject(_ context.Context, _, projectID string) (*workspac
 	return p, nil
 }
 
+// ResolveSetting resolves a setting as workspace.SettingResolver does, from
+// the values set for the scope's Project, then its Workspace. A "resolve"
+// entry in fail makes it fail.
+func (s *store) ResolveSetting(_ context.Context, scope workspace.Scope, key string) (workspace.Resolved, error) {
+	s.resolved = append(s.resolved, scope)
+	if err := s.fail["resolve"]; err != nil {
+		return workspace.Resolved{}, err
+	}
+	values := s.settings[key]
+	if v, ok := values[scope.ProjectID]; ok && scope.ProjectID != "" {
+		return workspace.Resolved{Key: key, Value: v, Level: workspace.LevelProject}, nil
+	}
+	if v, ok := values[scope.WorkspaceID]; ok && scope.WorkspaceID != "" {
+		return workspace.Resolved{Key: key, Value: v, Level: workspace.LevelWorkspace}, nil
+	}
+	return workspace.Resolved{Key: key}, nil
+}
+
+// setDefaultLifecycle sets delivery.default_lifecycle for a Workspace or Project.
+func (s *store) setDefaultLifecycle(resourceID, lifecycleID string) {
+	if s.settings[delivery.SettingDefaultLifecycle] == nil {
+		s.settings[delivery.SettingDefaultLifecycle] = map[string]json.RawMessage{}
+	}
+	s.settings[delivery.SettingDefaultLifecycle][resourceID] = json.RawMessage(`"` + lifecycleID + `"`)
+}
+
 func (s *store) IsActiveTeam(_ context.Context, _, teamID string) (bool, error) {
 	return s.teams[teamID], nil
 }
@@ -629,7 +672,7 @@ func newWorld(t *testing.T) *world {
 func (s *store) options(authz authorization.Authorizer) []ApplicationServiceOption {
 	return []ApplicationServiceOption{
 		WithApplicationRepo(s), WithLifecycleLookup(s), WithRegistryLookup(s), WithTargetLookup(s),
-		WithEnvironmentLookup(s), WithWorkspaces(s), WithTeamDirectory(s), WithAuthorizer(authz),
+		WithEnvironmentLookup(s), WithWorkspaces(s), WithSettingResolver(s), WithTeamDirectory(s), WithAuthorizer(authz),
 		WithTransactor(s), WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
 	}
 }

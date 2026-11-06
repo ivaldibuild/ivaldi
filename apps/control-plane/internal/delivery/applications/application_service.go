@@ -18,6 +18,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/outbox"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/team"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
 	"github.com/ivaldibuild/ivaldi/pkg/pagination"
@@ -58,6 +59,7 @@ type options struct {
 	targets      TargetLookup
 	environments EnvironmentLookup
 	workspaces   delivery.Workspaces
+	settings     workspace.SettingResolver
 	teams        team.Directory
 	authz        authorization.Authorizer
 	writer       change.Writer
@@ -80,6 +82,13 @@ func WithEnvironmentLookup(e EnvironmentLookup) ApplicationServiceOption {
 }
 func WithWorkspaces(w delivery.Workspaces) ApplicationServiceOption {
 	return func(o *options) { o.workspaces = w }
+}
+
+// WithSettingResolver resolves delivery.default_lifecycle for a new
+// Application whose creator names no Lifecycle (workspace.NewSettingResolver,
+// over the Definitions delivery.RegisterSettings registered in).
+func WithSettingResolver(r workspace.SettingResolver) ApplicationServiceOption {
+	return func(o *options) { o.settings = r }
 }
 
 // WithTeamDirectory checks the Teams that own Applications.
@@ -120,6 +129,7 @@ func NewApplicationService(opts ...ApplicationServiceOption) (delivery.Applicati
 		{"TargetLookup", o.targets != nil},
 		{"EnvironmentLookup", o.environments != nil},
 		{"Workspaces", o.workspaces != nil},
+		{"SettingResolver", o.settings != nil},
 		{"TeamDirectory", o.teams != nil},
 		{"Authorizer", o.authz != nil},
 	}
@@ -138,6 +148,7 @@ func NewApplicationService(opts ...ApplicationServiceOption) (delivery.Applicati
 		targets:      o.targets,
 		environments: o.environments,
 		workspaces:   o.workspaces,
+		settings:     o.settings,
 		teams:        o.teams,
 		w:            o.writer,
 	}
@@ -154,6 +165,7 @@ type service struct {
 	targets      TargetLookup
 	environments EnvironmentLookup
 	workspaces   delivery.Workspaces
+	settings     workspace.SettingResolver
 	teams        team.Directory
 	w            change.Writer
 }
@@ -162,6 +174,8 @@ var _ delivery.ApplicationService = (*service)(nil)
 
 // CreateApplication creates an Application in an active Project, with its
 // default Channel. The Application's Workspace is copied from the Project.
+// The default Channel follows the Lifecycle the input names, or else the
+// one delivery.default_lifecycle resolves to for the Project.
 func (s *service) CreateApplication(ctx context.Context, actor identity.Actor, in delivery.CreateApplicationInput) (*delivery.Application, *delivery.Channel, error) {
 	// NewApplication needs the Project's Workspace, so it runs in the
 	// transaction; this refuses bad input before it starts.
@@ -195,7 +209,11 @@ func (s *service) CreateApplication(ctx context.Context, actor identity.Actor, i
 		if err != nil {
 			return err
 		}
-		l, err := s.lifecycleFor(ctx, in.OrganizationID, app.WorkspaceID(), in.DefaultLifecycleID)
+		lifecycleID, err := s.defaultLifecycleID(ctx, p, in.DefaultLifecycleID)
+		if err != nil {
+			return err
+		}
+		l, err := s.lifecycleFor(ctx, in.OrganizationID, app.WorkspaceID(), lifecycleID)
 		if err != nil {
 			return err
 		}
@@ -231,6 +249,28 @@ func (s *service) CreateApplication(ctx context.Context, actor identity.Actor, i
 		return nil, nil, err
 	}
 	return app, ch, nil
+}
+
+// defaultLifecycleID returns the Lifecycle a new Application's default
+// Channel follows: the one named, or the delivery.default_lifecycle setting
+// resolved for its Project.
+func (s *service) defaultLifecycleID(ctx context.Context, p *workspace.Project, named string) (string, error) {
+	if named != "" {
+		return named, nil
+	}
+	resolved, err := s.settings.ResolveSetting(ctx, workspace.ProjectScope(p.OrganizationID(), p.WorkspaceID(), p.ID()), delivery.SettingDefaultLifecycle)
+	if err != nil {
+		return "", fmt.Errorf("resolve %s: %w", delivery.SettingDefaultLifecycle, err)
+	}
+	lifecycleID, err := delivery.DefaultLifecycleID(resolved)
+	if err != nil {
+		return "", err
+	}
+	if lifecycleID == "" {
+		return "", delivery.NewErrInvalidInput(fmt.Sprintf(
+			"an application needs the lifecycle its default channel follows: name one, or set %s for the project or its workspace", delivery.SettingDefaultLifecycle))
+	}
+	return lifecycleID, nil
 }
 
 func (s *service) checkTeam(ctx context.Context, organizationID, teamID string) error {

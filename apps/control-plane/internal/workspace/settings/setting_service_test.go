@@ -31,7 +31,7 @@ func TestTheServiceRefusesAChangeThatWasNotAuthorized(t *testing.T) {
 	w := newWorld(t)
 	r, err := workspace.NewSettingResolver(w.Store, w.definitions, w.Store)
 	require.NoError(t, err)
-	svc := &service{repo: w.Store, definitions: w.definitions, resolver: r, w: change.Writer{Tx: w.Store, Outbox: w.Outbox(), Audit: w.Audit()}}
+	svc := &service{repo: w.Store, definitions: w.definitions, locks: w.Store, resolver: r, w: change.Writer{Tx: w.Store, Outbox: w.Outbox(), Audit: w.Audit()}}
 
 	_, err = svc.ChangeSetting(context.Background(), alice, workspace.ChangeSettingInput{Scope: w.workspaceScope(), Key: lifecycleKey, Value: json.RawMessage(`"lfc_std"`)})
 
@@ -280,4 +280,111 @@ func TestListSettings(t *testing.T) {
 	_, err = w.svc.ListSettings(ctx, alice, workspace.Scope{OrganizationID: org, ProjectID: w.project.ID()})
 	require.ErrorIs(t, err, workspace.ErrInvalid)
 	assert.Empty(t, w.authz.Asked)
+}
+
+// Locks come from the policy capability through workspace.LockSource; the
+// Store's Locks play that part here.
+func TestSettingsBelowALockCannotChange(t *testing.T) {
+	ctx := context.Background()
+	orgScope := workspace.OrganizationScope(org)
+
+	t.Run("an organization lock fixes every workspace and project", func(t *testing.T) {
+		w := newWorld(t)
+		w.Locks[org+"/"] = map[string]workspace.Level{lifecycleKey: workspace.LevelOrganization}
+
+		for _, scope := range []workspace.Scope{w.workspaceScope(), w.projectScope()} {
+			w.reset()
+			_, err := w.svc.ChangeSetting(ctx, alice, workspace.ChangeSettingInput{Scope: scope, Key: lifecycleKey, Value: json.RawMessage(`"lfc_1"`)})
+			require.ErrorIs(t, err, workspace.ErrLocked, "at %s level", scope.Level())
+			assert.Contains(t, err.Error(), "locked at organization level")
+			assert.Empty(t, w.authz.Asked, "refused before asking, so no approval is requested for a change that cannot apply")
+		}
+		assert.Empty(t, w.Settings)
+
+		w.set(t, orgScope, `"lfc_org"`, 0)
+		assert.Len(t, w.Settings, 1, "the organization's own value can change")
+	})
+
+	t.Run("a workspace lock fixes its projects only", func(t *testing.T) {
+		w := newWorld(t)
+		w.Locks[org+"/"+w.ws.ID()] = map[string]workspace.Level{lifecycleKey: workspace.LevelWorkspace}
+
+		_, err := w.svc.ChangeSetting(ctx, alice, workspace.ChangeSettingInput{Scope: w.projectScope(), Key: lifecycleKey, Value: json.RawMessage(`"lfc_1"`)})
+		require.ErrorIs(t, err, workspace.ErrLocked)
+		assert.Contains(t, err.Error(), "locked at workspace level")
+
+		w.set(t, w.workspaceScope(), `"lfc_ws"`, 0)
+		w.set(t, orgScope, `"lfc_org"`, 0)
+
+		other := w.workspace(t, "data", false)
+		w.set(t, workspace.WorkspaceScope(org, other.ID()), `"lfc_data"`, 0)
+	})
+
+	t.Run("an organization lock wins over a workspace lock", func(t *testing.T) {
+		w := newWorld(t)
+		w.Locks[org+"/"+w.ws.ID()] = map[string]workspace.Level{lifecycleKey: workspace.LevelWorkspace}
+		w.Locks[org+"/"] = map[string]workspace.Level{lifecycleKey: workspace.LevelOrganization}
+
+		_, err := w.svc.ChangeSetting(ctx, alice, workspace.ChangeSettingInput{Scope: w.workspaceScope(), Key: lifecycleKey, Value: json.RawMessage(`"lfc_1"`)})
+		require.ErrorIs(t, err, workspace.ErrLocked, "the workspace cannot change a key the organization locked")
+	})
+
+	t.Run("a value below a lock cannot be removed until the lock is", func(t *testing.T) {
+		w := newWorld(t)
+		w.set(t, w.projectScope(), `"lfc_prj"`, 0)
+		w.Locks[org+"/"+w.ws.ID()] = map[string]workspace.Level{lifecycleKey: workspace.LevelWorkspace}
+		w.reset()
+
+		err := w.svc.RemoveSetting(ctx, alice, workspace.RemoveSettingInput{Scope: w.projectScope(), Key: lifecycleKey, ExpectedVersion: 1})
+		require.ErrorIs(t, err, workspace.ErrLocked)
+		assert.Empty(t, w.authz.Asked)
+		assert.Len(t, w.Settings, 1, "the value is kept, inactive")
+
+		delete(w.Locks, org+"/"+w.ws.ID())
+		require.NoError(t, w.svc.RemoveSetting(ctx, alice, workspace.RemoveSettingInput{Scope: w.projectScope(), Key: lifecycleKey, ExpectedVersion: 1}))
+	})
+
+	t.Run("a lock added after the decision is still enforced", func(t *testing.T) {
+		w := newWorld(t)
+		w.authz.Decide = func(req authorization.Request) authorization.Decision {
+			w.Locks[org+"/"] = map[string]workspace.Level{lifecycleKey: workspace.LevelOrganization}
+			return authorization.Decision{ID: "dec-" + req.ResourceID, Outcome: authorization.OutcomeAllow}
+		}
+		_, err := w.svc.ChangeSetting(ctx, alice, workspace.ChangeSettingInput{Scope: w.workspaceScope(), Key: lifecycleKey, Value: json.RawMessage(`"lfc_1"`)})
+		require.ErrorIs(t, err, workspace.ErrLocked)
+		assert.Empty(t, w.Settings)
+		assert.Empty(t, w.AuditLog)
+		assert.Empty(t, w.Events)
+	})
+}
+
+func TestResolvingALockedSetting(t *testing.T) {
+	ctx := context.Background()
+	w := newWorld(t)
+	w.set(t, w.workspaceScope(), `"lfc_ws"`, 0)
+	w.set(t, w.projectScope(), `"lfc_prj"`, 0)
+
+	resolve := func() workspace.Resolved {
+		t.Helper()
+		got, err := w.svc.ResolveSetting(ctx, alice, w.projectScope(), lifecycleKey)
+		require.NoError(t, err)
+		return got
+	}
+
+	w.Locks[org+"/"] = map[string]workspace.Level{lifecycleKey: workspace.LevelOrganization}
+	got := resolve()
+	assert.JSONEq(t, `"lfc_basic"`, string(got.Value), "an organization lock without an organization value gives the default")
+	assert.True(t, got.FromDefault())
+	assert.True(t, got.Locked)
+
+	w.set(t, workspace.OrganizationScope(org), `"lfc_org"`, 0)
+	got = resolve()
+	assert.JSONEq(t, `"lfc_org"`, string(got.Value))
+	assert.Equal(t, workspace.LevelOrganization, got.Level)
+	assert.True(t, got.Locked)
+
+	delete(w.Locks, org+"/")
+	got = resolve()
+	assert.JSONEq(t, `"lfc_prj"`, string(got.Value), "removing the lock brings the values below it back")
+	assert.False(t, got.Locked)
 }

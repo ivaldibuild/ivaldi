@@ -3,7 +3,7 @@ package workspace
 import (
 	"context"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -24,7 +24,7 @@ func lifecycleDefinition() Definition {
 		Validate: func(_ context.Context, _ Scope, v json.RawMessage) error {
 			var s string
 			if err := json.Unmarshal(v, &s); err != nil || !strings.HasPrefix(s, "lfc_") {
-				return errors.New("must be a lifecycle ID")
+				return fmt.Errorf("%w: must be a lifecycle ID", ErrInvalid)
 			}
 			return nil
 		},
@@ -198,4 +198,36 @@ func TestNewSettingRebuildsAStoredSetting(t *testing.T) {
 
 	_, err = NewSetting(NewSettingProps{Scope: d.Scope, Key: d.Key, Value: d.Value, Version: -1})
 	assert.ErrorIs(t, err, ErrInvalid, "a stored version cannot be negative")
+}
+
+func TestLevelBelow(t *testing.T) {
+	assert.True(t, LevelProject.Below(LevelWorkspace))
+	assert.True(t, LevelProject.Below(LevelOrganization))
+	assert.True(t, LevelWorkspace.Below(LevelOrganization))
+	assert.False(t, LevelWorkspace.Below(LevelWorkspace), "a level is not below itself")
+	assert.False(t, LevelOrganization.Below(LevelWorkspace))
+	assert.False(t, Level("team").Below(LevelOrganization), "an unknown level is below nothing")
+	assert.False(t, LevelProject.Below(Level("")))
+}
+
+func TestValidateSettingKey(t *testing.T) {
+	require.NoError(t, ValidateSettingKey("delivery.default_lifecycle"))
+	for _, k := range []string{"", "lifecycle", "Delivery.x", "delivery.", ".x", "delivery.default-lifecycle"} {
+		assert.ErrorIs(t, ValidateSettingKey(k), ErrInvalid, "%q", k)
+	}
+}
+
+func TestValidateValueKeepsUnexpectedErrorsApart(t *testing.T) {
+	scope := Scope{OrganizationID: "org_1", WorkspaceID: "wsp_1"}
+	def := lifecycleDefinition()
+
+	err := def.ValidateValue(context.Background(), scope, json.RawMessage(`"nope"`))
+	require.ErrorIs(t, err, ErrInvalid, "a refused value is invalid input")
+
+	def.Validate = func(context.Context, Scope, json.RawMessage) error {
+		return fmt.Errorf("look up lifecycle: connection refused")
+	}
+	err = def.ValidateValue(context.Background(), scope, json.RawMessage(`"lfc_x"`))
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, ErrInvalid, "a failed lookup is unexpected, so its message is not shown to the caller")
 }

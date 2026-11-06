@@ -26,6 +26,7 @@ const (
 	AggregateAccount            = "iam.Account"
 	AggregatePasswordCredential = "iam.PasswordCredential"
 	AggregateUser               = "iam.User"
+	AggregateAgent              = "iam.Agent"
 	AggregateIdentityProvider   = "iam.IdentityProvider"
 	AggregateExternalIdentity   = "iam.ExternalIdentity"
 	AggregateAccountIdentity    = "iam.AccountIdentity"

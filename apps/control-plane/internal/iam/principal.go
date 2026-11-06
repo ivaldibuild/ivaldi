@@ -21,6 +21,9 @@ const (
 	PrincipalServiceAccount PrincipalKind = "service_account"
 	PrincipalAgentSession   PrincipalKind = "agent_session"
 	PrincipalWorkload       PrincipalKind = "workload"
+	// PrincipalAgent is a durable agent identity, such as release-agent,
+	// that belongs to Teams and holds grants (ADR 0007).
+	PrincipalAgent PrincipalKind = "agent"
 )
 
 // PrincipalStatus is where a principal is in its life. Principals are never
@@ -35,7 +38,7 @@ const (
 
 // principal is what every actor in an Organization has in common: the row
 // in principals that grants, group memberships, and audit records point to.
-// User, ServiceAccount, AgentSession, and Workload embed it.
+// User, ServiceAccount, AgentSession, Workload, and Agent embed it.
 type principal struct {
 	aggregate.Root
 	organizationID string

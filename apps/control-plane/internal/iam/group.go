@@ -17,6 +17,10 @@ const (
 	// GroupSCIM groups are provisioned from an identity provider through
 	// SCIM, and identified there by their external ID.
 	GroupSCIM GroupSource = "scim"
+	// GroupTeam groups mirror a Team, so the Team can receive grants (ADR
+	// 0007). Their external ID is the Team's ID, and only the team
+	// capability changes their name and members, through TeamGroups.
+	GroupTeam GroupSource = "team"
 )
 
 // Group is a set of principals in an Organization that can receive grants
@@ -51,8 +55,9 @@ type NewGroupProps struct {
 	OrganizationID string
 	Name           string
 	Source         GroupSource
-	// ExternalID is the identity provider's ID for a SCIM group, required
-	// for one and not allowed for a manual group.
+	// ExternalID is the identity provider's ID for a SCIM group, or the
+	// Team's ID for a team group. It is required for both and not allowed
+	// for a manual group.
 	ExternalID *string
 	CreatedAt  *time.Time
 	UpdatedAt  *time.Time
@@ -76,15 +81,15 @@ func NewGroup(props NewGroupProps, groupID *string) (*Group, error) {
 		if externalID != nil {
 			return nil, NewErrInvalidInput("a manual group has no external ID")
 		}
-	case GroupSCIM:
+	case GroupSCIM, GroupTeam:
 		if externalID == nil {
-			return nil, NewErrInvalidInput("a SCIM group needs its external ID")
+			return nil, NewErrInvalidInput(fmt.Sprintf("a %s group needs its external ID", props.Source))
 		}
 		if err := validateName("external ID", *externalID, maxExternalIDLength); err != nil {
 			return nil, err
 		}
 	default:
-		return nil, NewErrInvalidInput(fmt.Sprintf("group source %q must be manual or scim", props.Source))
+		return nil, NewErrInvalidInput(fmt.Sprintf("group source %q must be manual, scim, or team", props.Source))
 	}
 
 	now := clock.Now()

@@ -103,6 +103,38 @@ type UserRepository interface {
 	Write(ctx context.Context, user *User) error
 }
 
+// PrincipalRepository reads what every principal has, whatever its kind,
+// for capabilities that accept several kinds, such as Teams, whose members
+// are users or Agents.
+type PrincipalRepository interface {
+	// Get returns the principal's common state, or ErrNotFound when it is
+	// not one of the Organization's principals.
+	Get(ctx context.Context, organizationID, principalID string) (PrincipalSnapshot, error)
+}
+
+type AgentRepository interface {
+	Get(ctx context.Context, organizationID, principalID string) (*Agent, error)
+	// GetBySlug returns the Organization's Agent with the slug.
+	GetBySlug(ctx context.Context, organizationID, slug string) (*Agent, error)
+	// Write inserts the Agent's principal and agent rows together, or
+	// updates the principal when its ID is stored. A slug another of the
+	// Organization's Agents holds is ErrAlreadyExists.
+	Write(ctx context.Context, agent *Agent) error
+}
+
+// TeamGroups keeps the IAM group that mirrors each Team, so Teams can
+// receive grants (ADR 0007). The team capability calls it in the
+// transaction of every change that affects the group, and nothing else
+// changes team groups. IAM does not depend on Teams: it only stores the
+// group, a GroupTeam group whose external ID is the Team's ID.
+type TeamGroups interface {
+	// SyncTeamGroup creates the Team's group named name, or renames it, and
+	// makes its members exactly memberPrincipalIDs. It is idempotent. A
+	// member that is not one of the Organization's principals is
+	// ErrNotFound, and a name another group holds is ErrAlreadyExists.
+	SyncTeamGroup(ctx context.Context, organizationID, teamID, name string, memberPrincipalIDs []string) error
+}
+
 type IdentityProviderRepository interface {
 	Get(ctx context.Context, organizationID, identityProviderID string) (*IdentityProvider, error)
 	// List returns the Organization's identity providers, oldest first.

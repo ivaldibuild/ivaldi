@@ -1,7 +1,7 @@
 package iam
 
 // Events every kind of principal records, through the methods User,
-// ServiceAccount, AgentSession, and Workload share. They carry the state
+// ServiceAccount, AgentSession, Workload, and Agent share. They carry the state
 // every principal has, including its kind; the audit record keeps the state
 // before the change. Each kind's creation and own changes have their own
 // events.

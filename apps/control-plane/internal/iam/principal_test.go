@@ -101,6 +101,11 @@ func TestNewPrincipalIsRefused(t *testing.T) {
 			tt.mutate(&w.PrincipalProps)
 			_, err = NewWorkload(w, tt.id)
 			assert.ErrorIs(t, err, ErrInvalid, "workload")
+
+			a := agentProps()
+			tt.mutate(&a.PrincipalProps)
+			_, err = NewAgent(a, tt.id)
+			assert.ErrorIs(t, err, ErrInvalid, "agent")
 		})
 	}
 }

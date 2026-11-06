@@ -19,6 +19,10 @@ func groupSCIMProps() NewGroupProps {
 	return NewGroupProps{OrganizationID: testOrg, Name: "Engineering", Source: GroupSCIM, ExternalID: new("00g1abcd")}
 }
 
+func groupTeamProps() NewGroupProps {
+	return NewGroupProps{OrganizationID: testOrg, Name: "team:platform", Source: GroupTeam, ExternalID: new("tem_01ARZ3NDEKTSV4RRFFQ69G5FAV")}
+}
+
 func groupNew(t *testing.T) *Group {
 	t.Helper()
 	g, err := NewGroup(groupManualProps(), nil)
@@ -49,6 +53,15 @@ func TestNewGroupSCIM(t *testing.T) {
 	assert.Equal(t, "00g1abcd", *g.ExternalID())
 }
 
+func TestNewGroupTeam(t *testing.T) {
+	g, err := NewGroup(groupTeamProps(), nil)
+
+	require.NoError(t, err)
+	assert.Equal(t, GroupTeam, g.Source())
+	require.NotNil(t, g.ExternalID())
+	assert.Equal(t, "tem_01ARZ3NDEKTSV4RRFFQ69G5FAV", *g.ExternalID(), "a team group is identified by its Team")
+}
+
 func TestNewGroupWithStoredState(t *testing.T) {
 	clock.Fix(t, t2)
 	given := id.New("grp")
@@ -77,7 +90,8 @@ func TestNewGroupIsRefused(t *testing.T) {
 		{"blank name", groupManualProps, func(p *NewGroupProps) { p.Name = " " }, nil},
 		{"name too long", groupManualProps, func(p *NewGroupProps) { p.Name = strings.Repeat("é", maxNameLength+1) }, nil},
 		{"no source", groupManualProps, func(p *NewGroupProps) { p.Source = "" }, nil},
-		{"unknown source", groupManualProps, func(p *NewGroupProps) { p.Source = "team" }, nil},
+		{"unknown source", groupManualProps, func(p *NewGroupProps) { p.Source = "ldap" }, nil},
+		{"team without external ID", groupTeamProps, func(p *NewGroupProps) { p.ExternalID = nil }, nil},
 		{"manual with external ID", groupManualProps, func(p *NewGroupProps) { p.ExternalID = new("00g1abcd") }, nil},
 		{"SCIM without external ID", groupSCIMProps, func(p *NewGroupProps) { p.ExternalID = nil }, nil},
 		{"SCIM with empty external ID", groupSCIMProps, func(p *NewGroupProps) { p.ExternalID = new("") }, nil},

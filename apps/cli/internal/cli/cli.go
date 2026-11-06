@@ -1,15 +1,24 @@
 package cli
 
 import (
+	"github.com/spf13/cobra"
+
+	"github.com/ivaldibuild/ivaldi-cli/internal/app"
 	"github.com/ivaldibuild/ivaldi-cli/internal/auth"
 	"github.com/ivaldibuild/ivaldi-cli/internal/helpers"
+	"github.com/ivaldibuild/ivaldi-cli/internal/release"
 	"github.com/ivaldibuild/ivaldi-cli/internal/types"
-	"github.com/spf13/cobra"
 )
 
 const CLI_VERSION = "dev"
 
+// NewCLI returns ivaldictl's root command for the real process.
 func NewCLI() *cobra.Command {
+	return New(app.Default())
+}
+
+// New returns ivaldictl's root command running in a.
+func New(a *app.App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "ivaldictl",
 		Aliases:      []string{"iv", "ivldctl"},
@@ -18,11 +27,14 @@ func NewCLI() *cobra.Command {
 		Version:      CLI_VERSION,
 		SilenceUsage: true,
 	}
+	cmd.SetOut(a.Out)
 
 	helpers.AddPersistentFlags(cmd, initPersistentFlags())
 
-	// Register sub-commands
-	cmd.AddCommand(auth.NewCommand())
+	cmd.AddCommand(
+		auth.New(a),
+		release.New(a),
+	)
 
 	return cmd
 }
@@ -32,8 +44,14 @@ func initPersistentFlags() map[string]types.Flag {
 		"server-url": {
 			Type:        "string",
 			Short:       "s",
-			Description: "URL of the Ivaldi control plane server",
-			Default:     "http://localhost:8080",
+			Description: "URL of the Ivaldi control plane; defaults to IVALDI_SERVER_URL, then " + app.DefaultServer,
+			Default:     "",
+		},
+		"api-token": {
+			Type:        "string",
+			Short:       "a",
+			Description: "A service account's API token; defaults to IVALDI_API_TOKEN. Without one, ivaldictl uses the session from ivaldictl auth login",
+			Default:     "",
 		},
 		"verbose": {
 			Type:        "bool",
@@ -44,7 +62,7 @@ func initPersistentFlags() map[string]types.Flag {
 		"output": {
 			Type:        "string",
 			Short:       "o",
-			Description: "Output format (e.g., json, yaml)",
+			Description: "Output format: json or text",
 			Default:     "json",
 		},
 	}

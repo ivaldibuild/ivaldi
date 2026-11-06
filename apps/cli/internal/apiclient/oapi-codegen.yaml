@@ -1,0 +1,21 @@
+# Generates the control plane's API types and client from the committed
+# description, api/openapi.json. Run make openapi after the API changes.
+package: apiclient
+output: client.gen.go
+generate:
+  models: true
+  client: true
+output-options:
+  # Only the operations ivaldictl calls, and the schemas they use. Add an
+  # operation here when a command starts calling it.
+  include-operation-ids:
+    - get-me
+    - create-release
+    - list-releases
+    - get-release
+    - publish-release
+    - withdraw-release
+compatibility:
+  # Name enum values after their type, such as ListReleasesParamsSortOrderDesc,
+  # so values of different enums never collide.
+  always-prefix-enum-values: true

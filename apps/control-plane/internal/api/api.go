@@ -105,6 +105,7 @@ func New(cfg *config.Config, version string, logger logging.Logger, opts ...Opti
 	if o.verifier != nil {
 		mux.HandleFunc("GET "+protectedResourcePath, protectedResourceMetadata(resource))
 	}
+
 	for _, h := range o.handlers {
 		h.RegisterHandlers(mux)
 	}
@@ -244,13 +245,16 @@ func cors(origins []string, next http.Handler) http.Handler {
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
+
 		if origin == "" || !allowed[origin] {
 			next.ServeHTTP(w, r)
 			return
 		}
+
 		h := w.Header()
 		h.Add("Vary", "Origin")
 		h.Set("Access-Control-Allow-Origin", origin)
+
 		if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
 			h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE")
 			h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
@@ -258,7 +262,9 @@ func cors(origins []string, next http.Handler) http.Handler {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+
 		h.Set("Access-Control-Expose-Headers", "WWW-Authenticate")
+
 		next.ServeHTTP(w, r)
 	})
 }

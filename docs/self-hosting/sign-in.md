@@ -92,7 +92,7 @@ People with an account can then sign in with their email and password. There is 
 
 ## The first administrator
 
-When the database is empty, Ivaldi creates the Organization named by `IVALDI_BOOTSTRAP_ORGANIZATION_NAME`, with the address `IVALDI_BOOTSTRAP_ORGANIZATION_SLUG` (derived from the name when unset). A self-hosted installation has exactly one Organization; Ivaldi refuses to start with an empty database and no bootstrap settings.
+When the database is empty, Ivaldi creates the Organization named by `IVALDI_BOOTSTRAP_ORGANIZATION_NAME`, with the address `IVALDI_BOOTSTRAP_ORGANIZATION_SLUG` (derived from the name when unset). A self-hosted installation has exactly one Organization; Ivaldi refuses to start with an empty database and no bootstrap settings. The bootstrap settings are used only then: owners and admins can later rename the Organization or change its address (`PATCH /v1/organization`), and Ivaldi does not change it back to match the settings when it restarts.
 
 The first person to sign in as `IVALDI_BOOTSTRAP_ADMIN_EMAIL` through any enabled provider becomes the Organization's owner. The provider must have verified that email, and the address must pass the provider's limits, but just-in-time provisioning need not be on. This happens once: as soon as the Organization has an owner, the admin email gives no special rights.
 

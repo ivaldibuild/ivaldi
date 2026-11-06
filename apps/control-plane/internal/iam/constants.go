@@ -35,3 +35,23 @@ const (
 	AggregateAuthorizationCode  = "iam.OAuthAuthorizationCode"
 	AggregateRefreshToken       = "iam.OAuthRefreshToken"
 )
+
+// Permissions IAM asks the authorizer about for the Organization itself,
+// checked on its root resource. Every built-in role reads it; owners and
+// admins manage it.
+const (
+	PermissionOrganizationRead   = "organization.read"
+	PermissionOrganizationManage = "organization.manage"
+)
+
+// Actions name what an actor asks the authorizer to allow. Policy rules and
+// approval requests match on them, and they appear in its decisions.
+const (
+	ActionOrganizationRead   = "organization.read"
+	ActionOrganizationUpdate = "organization.update"
+)
+
+// Audit event types IAM emits.
+const (
+	EventOrganizationUpdated = "organization.updated"
+)

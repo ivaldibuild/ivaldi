@@ -6,6 +6,17 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
 )
 
+// OrganizationService reads and changes the caller's Organization. Any
+// member may read it; owners and admins may change it. A slug change takes
+// effect at once: links and sign-in hints that name the old slug stop
+// matching, while ones that name the Organization's ID keep working.
+type OrganizationService interface {
+	GetOrganization(ctx context.Context, actor identity.Actor, organizationID string) (*Organization, error)
+	// UpdateOrganization changes the fields props sets. A slug another
+	// Organization holds fails with ErrAlreadyExists.
+	UpdateOrganization(ctx context.Context, actor identity.Actor, organizationID string, props UpdateOrganizationProps) (*Organization, error)
+}
+
 // ProfileService tells a signed-in caller who they are. It reads only the
 // caller's own records, so it asks the authorizer nothing, but it refuses
 // with ErrStatus when the caller's principal, Account, or Organization is

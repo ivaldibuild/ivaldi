@@ -2,6 +2,7 @@ package server
 
 import (
 	auditpg "github.com/ivaldibuild/ivaldi-control-plane/internal/audit/postgres"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/applications"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/environments"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/lifecycles"
@@ -36,8 +37,19 @@ func (a *app) wireAccess(logger logging.Logger) error {
 // Directory other capabilities check owning Teams through.
 func (a *app) wireTeams() error {
 	repo := teampg.NewTeamRepository(a.db)
+	// Workspace and delivery record owning Teams, so a Team that still owns
+	// active Projects or Applications cannot be archived.
+	projectOwners, err := workspace.NewTeamOwnership(workspacepg.NewRepository(a.db))
+	if err != nil {
+		return err
+	}
+	applicationOwners, err := delivery.NewTeamOwnership(deliverypg.NewApplicationRepository(a.db))
+	if err != nil {
+		return err
+	}
 	svc, err := teams.NewTeamService(
 		teams.WithTeamRepo(repo),
+		teams.WithOwners(projectOwners, applicationOwners),
 		teams.WithPrincipals(iampg.NewPrincipalRepository(a.db)),
 		teams.WithAgents(iampg.NewAgentRepository(a.db)),
 		teams.WithTeamGroups(iampg.NewTeamGroups(a.db)),

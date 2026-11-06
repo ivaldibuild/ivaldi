@@ -268,6 +268,16 @@ func (s *store) CountActiveApplications(_ context.Context, organizationID, proje
 	return n, nil
 }
 
+func (s *store) CountActiveApplicationsOwnedBy(_ context.Context, organizationID, teamID string) (int, error) {
+	n := 0
+	for _, snap := range s.applications {
+		if snap.OrganizationID == organizationID && snap.OwnerTeamID == teamID && snap.ArchivedAt == nil {
+			n++
+		}
+	}
+	return n, nil
+}
+
 // Artifacts.
 
 func (s *store) checkArtifact(snap delivery.ArtifactSnapshot) error {

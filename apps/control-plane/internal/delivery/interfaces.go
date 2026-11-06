@@ -143,6 +143,8 @@ type ApplicationRepository interface {
 	ListApplications(ctx context.Context, query ListApplicationsQuery) (*pagination.Result[*Application], error)
 	UpdateApplication(ctx context.Context, a *Application) error
 	CountActiveApplications(ctx context.Context, organizationID, projectID string) (int, error)
+	// CountActiveApplicationsOwnedBy counts the active Applications a Team owns.
+	CountActiveApplicationsOwnedBy(ctx context.Context, organizationID, teamID string) (int, error)
 
 	CreateArtifact(ctx context.Context, a *Artifact) error
 	GetArtifact(ctx context.Context, organizationID, artifactID string) (*Artifact, error)

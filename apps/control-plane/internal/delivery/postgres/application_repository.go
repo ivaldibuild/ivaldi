@@ -111,6 +111,14 @@ func (r *applicationRepository) CountActiveApplications(ctx context.Context, org
 	return int(n), translate(err)
 }
 
+func (r *applicationRepository) CountActiveApplicationsOwnedBy(ctx context.Context, organizationID, teamID string) (int, error) {
+	var n int64
+	err := r.conn(ctx).Model(&applicationEntity{}).
+		Where("organization_id = ? AND owner_team_id = ? AND archived_at IS NULL", organizationID, teamID).
+		Count(&n).Error
+	return int(n), translate(err)
+}
+
 // Artifacts
 
 func (r *applicationRepository) CreateArtifact(ctx context.Context, a *delivery.Artifact) error {

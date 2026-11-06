@@ -64,3 +64,25 @@ func TestRequire(t *testing.T) {
 		assert.Contains(t, err.Error(), "authorize workspace.create")
 	})
 }
+
+func TestDecisionInContext(t *testing.T) {
+	ctx := context.Background()
+	_, ok := DecisionFor(ctx, "env_1")
+	assert.False(t, ok, "no decision, no authorization")
+
+	call := Decision{ID: "dec_call", Outcome: OutcomeAllow}
+	ctx = WithDecision(ctx, "", call)
+	got, ok := DecisionFor(ctx, "env_1")
+	require.True(t, ok)
+	assert.Equal(t, call, got, "the call's decision covers every subject")
+
+	one := Decision{ID: "dec_env_1", Outcome: OutcomeAllow}
+	withOne := WithDecision(ctx, "env_1", one)
+	got, _ = DecisionFor(withOne, "env_1")
+	assert.Equal(t, one, got, "a subject's own decision wins")
+	got, _ = DecisionFor(withOne, "env_2")
+	assert.Equal(t, call, got)
+
+	got, _ = DecisionFor(ctx, "env_1")
+	assert.Equal(t, call, got, "adding a decision leaves the parent context as it was")
+}

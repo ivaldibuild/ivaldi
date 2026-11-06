@@ -8,6 +8,7 @@ import {
   lucideLayers,
   lucideLogOut,
   lucideSettings,
+  lucideUsers,
 } from '@ng-icons/lucide';
 import { HlmButtonImports } from '@spartan-ng/helm/button';
 import { Session } from '../auth/session';
@@ -34,6 +35,7 @@ import { WorkspaceContext } from './workspace-context';
       lucideLayers,
       lucideLogOut,
       lucideSettings,
+      lucideUsers,
     }),
   ],
   templateUrl: './app-shell.html',
@@ -47,6 +49,10 @@ export class AppShell {
     { path: '/projects', label: 'Projects', icon: 'lucideFolder' },
     { path: '/environments', label: 'Environments', icon: 'lucideLayers' },
     { path: '/lifecycles', label: 'Lifecycles', icon: 'lucideGitBranch' },
+  ];
+
+  protected readonly organisation = [
+    { path: '/people', label: 'People & access', icon: 'lucideUsers' },
   ];
 
   constructor() {

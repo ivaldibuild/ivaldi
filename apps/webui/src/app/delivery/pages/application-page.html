@@ -231,11 +231,15 @@
             <select
               id="placement-target"
               class="border-input bg-background text-foreground h-9 border px-2"
-              [value]="targetToPlace() || unplacedTargets()[0].id"
               (change)="targetToPlace.set($any($event.target).value)"
             >
               @for (target of unplacedTargets(); track target.id) {
-                <option [value]="target.id">{{ target.label }}</option>
+                <option
+                  [value]="target.id"
+                  [selected]="target.id === (targetToPlace() || unplacedTargets()[0].id)"
+                >
+                  {{ target.label }}
+                </option>
               }
             </select>
           </div>

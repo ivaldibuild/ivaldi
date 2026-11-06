@@ -63,6 +63,26 @@
             </span>
             <span class="text-muted-foreground">Lead</span>
           </li>
+          @for (person of people(); track person.id) {
+            <li class="border-border flex items-center gap-3 border-b px-4 py-2 text-sm">
+              <ng-icon name="lucideUser" class="text-muted-foreground" aria-hidden="true" />
+              <span class="flex min-w-0 flex-1 flex-col">
+                <span class="text-heading font-semibold">{{ person.display_name }}</span>
+                <span class="text-muted-foreground truncate text-[13px]">{{ person.email }}</span>
+              </span>
+              <span class="text-muted-foreground">Person · member</span>
+              <button
+                hlmBtn
+                variant="ghost"
+                size="icon-sm"
+                type="button"
+                [attr.aria-label]="'Remove ' + person.display_name"
+                (click)="removePerson(person.id)"
+              >
+                <ng-icon name="lucideX" aria-hidden="true" />
+              </button>
+            </li>
+          }
           @for (agent of agents(); track agent) {
             <li class="border-border flex items-center gap-3 border-b px-4 py-2 text-sm">
               <ng-icon name="lucideBot" class="text-primary-text" aria-hidden="true" />
@@ -80,6 +100,49 @@
               </button>
             </li>
           }
+          <li class="border-border flex flex-col gap-2 border-b px-4 py-3">
+            <div hlmField>
+              <label hlmFieldLabel for="person-search">Add a person</label>
+              <input
+                hlmInput
+                id="person-search"
+                type="search"
+                autocomplete="off"
+                placeholder="Name or email"
+                aria-describedby="person-search-help"
+                [value]="personSearch()"
+                (input)="onPersonSearch($any($event.target).value)"
+              />
+            </div>
+            @if (matches().length > 0) {
+              <ul class="border-border flex flex-col border" aria-label="People found">
+                @for (match of matches(); track match.id) {
+                  <li>
+                    <button
+                      type="button"
+                      class="hover:bg-accent hover:text-accent-foreground flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm"
+                      (click)="addPerson(match)"
+                    >
+                      <span class="flex min-w-0 flex-col">
+                        <span class="text-heading font-semibold">{{ match.display_name }}</span>
+                        <span class="text-muted-foreground truncate text-[13px]">{{
+                          match.email
+                        }}</span>
+                      </span>
+                      <span class="text-muted-foreground shrink-0">Add</span>
+                    </button>
+                  </li>
+                }
+              </ul>
+            } @else if (personSearch().trim().length >= 2 && !searching()) {
+              <p class="text-muted-foreground text-sm" role="status">
+                No one who has signed in matches that.
+              </p>
+            }
+            <p id="person-search-help" class="text-muted-foreground text-[13px]">
+              People appear here once they've signed in.
+            </p>
+          </li>
           <li class="flex flex-wrap items-end gap-3 px-4 py-3">
             <div hlmField class="min-w-60 flex-1">
               <label hlmFieldLabel for="agent-name">Add an agent</label>
@@ -103,9 +166,6 @@
             </button>
           </li>
         </ul>
-        <p class="text-muted-foreground text-sm leading-relaxed">
-          People join the Team once they've signed in. Adding them from here isn't available yet.
-        </p>
       </section>
 
       <div hlmAlert role="note">

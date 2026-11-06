@@ -1,0 +1,149 @@
+<div class="flex flex-col gap-8">
+  <app-page-header
+    heading="People & access"
+    [trail]="(user.organization()?.display_name ?? 'Organisation') + ' / Organisation'"
+  />
+
+  <p class="text-foreground max-w-205 text-base leading-relaxed">
+    Everyone who has signed in to {{ user.organization()?.display_name ?? 'your Organisation' }},
+    and the role each holds on it. A role here applies to every Workspace and Project beneath it.
+    @if (user.canManageOrganization()) {
+      @if (user.role() === 'owner') {
+        You can change anyone's role.
+      } @else {
+        You can change roles other than owner.
+      }
+    }
+  </p>
+
+  @if (error(); as message) {
+    <div hlmAlert variant="destructive" role="alert">
+      <h2 hlmAlertTitle>That didn't work</h2>
+      <p hlmAlertDescription>{{ message }}</p>
+    </div>
+  }
+
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div class="relative w-80 max-w-full">
+      <label for="people-search" class="sr-only">Find people by name or email</label>
+      <ng-icon
+        name="lucideSearch"
+        aria-hidden="true"
+        class="text-muted-foreground absolute top-2.5 left-3"
+      />
+      <input
+        hlmInput
+        id="people-search"
+        type="search"
+        class="w-full pl-9"
+        placeholder="Find people by name or email"
+        [value]="search()"
+        (input)="onSearch($any($event.target).value)"
+      />
+    </div>
+    @if (!loading()) {
+      <span class="text-muted-foreground text-sm" role="status">
+        {{ total() }} {{ total() === 1 ? 'person' : 'people' }}
+      </span>
+    }
+  </div>
+
+  @if (loading()) {
+    <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+      <hlm-spinner aria-hidden="true" /> Loading people…
+    </p>
+  } @else if (rows().length === 0) {
+    <p class="text-foreground text-sm">
+      @if (search()) {
+        No one matches “{{ search() }}”.
+      } @else {
+        No one has signed in yet.
+      }
+    </p>
+  } @else {
+    <div class="border-border relative overflow-x-auto border">
+      <table class="w-full min-w-170 border-collapse text-sm">
+        <thead>
+          <tr class="text-muted-foreground text-left">
+            <th scope="col" class="border-border border-b px-4 py-3 font-semibold">Person</th>
+            <th scope="col" class="border-border border-b px-4 py-3 font-semibold">Role</th>
+            <th scope="col" class="border-border border-b px-4 py-3 font-semibold">
+              Last signed in
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of rows(); track row.person.id) {
+            <tr>
+              <th
+                scope="row"
+                class="border-border border-b px-4 py-3 text-left align-top font-normal"
+              >
+                <span class="text-heading font-semibold">{{ row.person.display_name }}</span>
+                @if (row.person.id === user.profile()?.principal?.id) {
+                  <span class="text-muted-foreground"> (you)</span>
+                }
+                @if (row.person.status !== 'active') {
+                  <span hlmBadge variant="outline" class="ml-2 capitalize">{{
+                    row.person.status
+                  }}</span>
+                }
+                <div class="text-muted-foreground text-[13px]">{{ row.person.email }}</div>
+              </th>
+              <td class="border-border border-b px-4 py-3 align-top">
+                @if (canChange(row)) {
+                  <div class="flex items-center gap-2">
+                    <select
+                      class="border-input bg-background text-foreground h-9 border px-2"
+                      [attr.aria-label]="'Role of ' + row.person.display_name"
+                      [disabled]="changing() !== null"
+                      (change)="changeRole(row, $any($event.target).value)"
+                    >
+                      @if (!row.role) {
+                        <option value="" disabled selected>No role</option>
+                      }
+                      @for (role of assignable(); track role) {
+                        <option [value]="role" [selected]="role === row.role">
+                          {{ roleLabels[role] }}
+                        </option>
+                      }
+                    </select>
+                    @if (changing() === row.person.id) {
+                      <hlm-spinner aria-label="Changing the role" />
+                    }
+                  </div>
+                } @else {
+                  <span class="text-foreground">{{
+                    row.role ? roleLabels[row.role] : 'No role'
+                  }}</span>
+                }
+                @if (row.throughGroup) {
+                  <div class="text-muted-foreground mt-1 text-[13px]">Through a Team</div>
+                }
+              </td>
+              <td class="border-border text-muted-foreground border-b px-4 py-3 align-top">
+                {{ lastSignedIn(row.person) }}
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    @if (hasMore()) {
+      <button
+        hlmBtn
+        variant="outline"
+        type="button"
+        class="self-start"
+        [disabled]="loadingMore()"
+        (click)="loadMore()"
+      >
+        @if (loadingMore()) {
+          <hlm-spinner aria-hidden="true" /> Loading…
+        } @else {
+          Show more
+        }
+      </button>
+    }
+  }
+</div>

@@ -10,11 +10,12 @@
       <select
         id="workspace-switcher"
         class="border-input bg-background text-foreground h-9 border px-2 text-sm"
-        [value]="context.current()?.id ?? ''"
         (change)="selectWorkspace($event)"
       >
         @for (workspace of context.workspaces(); track workspace.id) {
-          <option [value]="workspace.id">{{ workspace.display_name }}</option>
+          <option [value]="workspace.id" [selected]="workspace.id === context.current()?.id">
+            {{ workspace.display_name }}
+          </option>
         }
       </select>
     </div>
@@ -54,6 +55,27 @@
       >
         Organisation
       </span>
+      @for (item of organisation; track item.path) {
+        <a
+          [routerLink]="item.path"
+          routerLinkActive
+          #orgActive="routerLinkActive"
+          [attr.aria-current]="orgActive.isActive ? 'page' : null"
+          class="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex h-9 items-center gap-3 border-l-2 px-3 text-sm no-underline"
+          [class.border-sidebar-primary]="orgActive.isActive"
+          [class.border-transparent]="!orgActive.isActive"
+          [class.text-heading]="orgActive.isActive"
+          [class.font-semibold]="orgActive.isActive"
+        >
+          <ng-icon
+            [name]="item.icon"
+            aria-hidden="true"
+            [class.text-primary-text]="orgActive.isActive"
+            [class.text-muted-foreground]="!orgActive.isActive"
+          />
+          {{ item.label }}
+        </a>
+      }
       <a
         routerLink="/setup"
         class="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex h-9 items-center gap-3 border-l-2 border-transparent px-3 text-sm no-underline"

@@ -35,7 +35,8 @@ func translate(err error) error {
 		switch {
 		case slugIndexes[c]:
 			return fmt.Errorf("%w: %w", delivery.ErrSlugTaken, err)
-		case c == "application_targets_pkey" || c == "idx_application_targets_organization":
+		case c == "application_targets_pkey" || c == "idx_application_targets_organization",
+			c == "idx_releases_version", c == "idx_builds_digest":
 			return fmt.Errorf("%w: %w", delivery.ErrAlreadyExists, err)
 		default:
 			return fmt.Errorf("%w: %w", delivery.ErrConflict, err)

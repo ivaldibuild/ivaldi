@@ -1,14 +1,14 @@
 package main
 
 import (
-	"log"
+	"os"
 
 	"github.com/ivaldibuild/ivaldi-cli/internal/cli"
 )
 
 func main() {
-	cmd := cli.NewCLI()
-	if err := cmd.Execute(); err != nil {
-		log.Fatal(err)
+	// Cobra prints the error; the exit status tells CI the command failed.
+	if err := cli.NewCLI().Execute(); err != nil {
+		os.Exit(1)
 	}
 }

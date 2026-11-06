@@ -10,6 +10,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
 	"github.com/ivaldibuild/ivaldi/pkg/pagination"
+	"github.com/ivaldibuild/ivaldi/pkg/release"
 )
 
 // Repositories persist and retrieve domain objects, and nothing more: IDs,
@@ -388,4 +389,127 @@ type CreatePlacementInput struct {
 	// ApplyConfig says how Ivaldi applies Releases there; nil means
 	// Deployments there are tracked only, until it is configured.
 	ApplyConfig *ApplyConfig
+}
+
+// BuildRepository stores Builds. A Build belongs to the Organization, not to
+// an Application: every Application that releases an artifact name shares
+// its Builds.
+type BuildRepository interface {
+	// CreateBuild inserts the Build unless one with its artifact name and
+	// digest exists, and reports whether it inserted it. It never fails
+	// because of that duplicate, so a caller in a transaction can then read
+	// the stored one.
+	CreateBuild(ctx context.Context, b *Build) (bool, error)
+	GetBuild(ctx context.Context, organizationID, buildID string) (*Build, error)
+	// GetBuildByDigestForUpdate returns the Build of artifactName with
+	// digest, locked until the transaction ends, or ErrNotFound.
+	GetBuildByDigestForUpdate(ctx context.Context, organizationID, artifactName, digest string) (*Build, error)
+	// GetBuilds returns the Builds with the IDs, in no particular order,
+	// leaving out IDs that match none.
+	GetBuilds(ctx context.Context, organizationID string, buildIDs []string) ([]*Build, error)
+	// UpdateBuild writes a Build's provenance and CI details.
+	UpdateBuild(ctx context.Context, b *Build) error
+}
+
+// ReleaseRepository stores Releases with their Builds.
+type ReleaseRepository interface {
+	// CreateRelease inserts the Release and its Builds. A version the
+	// Application already has is ErrAlreadyExists.
+	CreateRelease(ctx context.Context, r *Release) error
+	GetRelease(ctx context.Context, organizationID, releaseID string) (*Release, error)
+	// GetReleaseForUpdate is GetRelease that also locks the Release until
+	// the transaction ends.
+	GetReleaseForUpdate(ctx context.Context, organizationID, releaseID string) (*Release, error)
+	ListReleases(ctx context.Context, query ListReleasesQuery) (*pagination.Result[*Release], error)
+	// UpdateRelease writes a Release's status, publish decision, and
+	// timestamps. Its Channel, version, and Builds never change.
+	UpdateRelease(ctx context.Context, r *Release) error
+}
+
+// ListReleasesQuery lists an Application's Releases.
+type ListReleasesQuery struct {
+	OrganizationID string
+	ApplicationID  string
+	// ChannelID keeps the Releases in that Channel.
+	ChannelID string
+	// Status keeps the Releases with that status.
+	Status release.Status
+	// Page sorts by "created_at" (the default) or "version", with the ID
+	// breaking ties. Versions sort as text.
+	Page pagination.Query
+}
+
+// TagResolver resolves a tag to a digest through the artifact's Registry.
+// It is Ivaldi's interface so the registry client behind it can change.
+type TagResolver interface {
+	ResolveTag(ctx context.Context, organizationID string, artifact *Artifact, tag string) (string, error)
+}
+
+// NoTagResolver refuses every tag with ErrTagsUnsupported. It stands in
+// until a registry client resolves tags.
+func NoTagResolver() TagResolver { return noTagResolver{} }
+
+type noTagResolver struct{}
+
+func (noTagResolver) ResolveTag(context.Context, string, *Artifact, string) (string, error) {
+	return "", ErrTagsUnsupported
+}
+
+// BuildInput names one artifact's Build: by digest, or by tag, which is
+// resolved to a digest. CI fills in the details it has.
+type BuildInput struct {
+	// Artifact is the name of one of the Application's artifacts, such as "api".
+	Artifact string
+	Digest   string
+	Tag      string
+	Details  BuildDetails
+}
+
+// ReportBuildInput reports a Build of one of an Application's artifacts.
+type ReportBuildInput struct {
+	OrganizationID string
+	ApplicationID  string
+	Build          BuildInput
+}
+
+// CreateReleaseInput creates a Release of an Application from its Builds.
+type CreateReleaseInput struct {
+	OrganizationID string
+	ApplicationID  string
+	Version        string
+	// ChannelID names the Channel to join. Empty means the one active
+	// Channel whose rules the Release meets.
+	ChannelID string
+	Builds    []BuildInput
+	// Publish publishes the Release as soon as it is created, such as from
+	// a tag pipeline. It needs the permission to publish.
+	Publish bool
+}
+
+// ReleaseDetail is a Release with the Builds it carries, in the order of
+// Release.Builds.
+type ReleaseDetail struct {
+	Release *Release
+	Builds  []*Build
+}
+
+// ReleaseService records Builds and creates, publishes, and withdraws
+// Releases. Reading follows the Application's read permission; recording
+// Builds, creating, and withdrawing need release.manage; publishing needs
+// release.publish. All are checked on the Application's Project.
+type ReleaseService interface {
+	// ReportBuild records a Build of one of the Application's artifacts, or
+	// fills in an observed one. A report naming another commit for a
+	// recorded digest is refused with ErrBuildConflict, and audited.
+	ReportBuild(ctx context.Context, actor identity.Actor, in ReportBuildInput) (*Build, error)
+	// CreateRelease creates a draft from Builds named by digest, recording
+	// Builds it has not seen, and publishes it when asked to.
+	CreateRelease(ctx context.Context, actor identity.Actor, in CreateReleaseInput) (*ReleaseDetail, error)
+	GetRelease(ctx context.Context, actor identity.Actor, organizationID, releaseID string) (*ReleaseDetail, error)
+	ListReleases(ctx context.Context, actor identity.Actor, query ListReleasesQuery) (*pagination.Result[*ReleaseDetail], error)
+	// PublishRelease publishes a draft that still meets its Channel's rules
+	// and has a Build of every required artifact.
+	PublishRelease(ctx context.Context, actor identity.Actor, organizationID, releaseID string) (*ReleaseDetail, error)
+	// WithdrawRelease stops a published Release from being deployed again.
+	WithdrawRelease(ctx context.Context, actor identity.Actor, organizationID, releaseID string) (*ReleaseDetail, error)
 }

@@ -2,35 +2,20 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Service } from '@angular/core';
 import { firstValueFrom, Observable } from 'rxjs';
 import { API_BASE_URL } from '../api-base-url';
+import type { components } from '../api/schema.gen';
+
+type Schemas = components['schemas'];
 
 /** A provider the person can sign in with, from `GET /v1/auth/login`. */
-export interface SignInProvider {
-  kind: string;
-  name: string;
-  start_url: string;
-}
+export type SignInProvider = Schemas['ProviderOption'];
 
 /** What the control plane says about a sign-in it has started. */
-export interface LoginRequest {
-  client_id: string;
-  client_name: string;
-  password: boolean;
-  sign_up: boolean;
-  providers: SignInProvider[];
-}
+export type LoginRequest = Schemas['LoginRequestOutputBody'];
 
-export interface OrganizationOption {
-  id: string;
-  slug: string;
-  name: string;
-}
+export type OrganizationOption = Schemas['OrganizationOption'];
 
 /** The answer to each sign-in step: go on to `redirect_to`, or choose an organization. */
-export interface LoginStep {
-  redirect_to?: string;
-  login_session?: string;
-  organizations?: OrganizationOption[];
-}
+export type LoginStep = Schemas['LoginStepOutputBody'];
 
 /**
  * Why a step was refused, from the status of its `application/problem+json` answer

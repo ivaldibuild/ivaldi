@@ -209,3 +209,8 @@ func (h *handlers) serverError(w http.ResponseWriter, r *http.Request, challenge
 	h.logger.Error("sign-in failed", logging.F("error", err))
 	h.failToFrontend(w, r, challenge, errorServer)
 }
+
+// Routes returns the sign-in JSON operations with nothing to serve them,
+// for describing the API: registering them reads none of a server's
+// dependencies. Serving them needs New.
+func Routes() interface{ RegisterRoutes(api huma.API) } { return &handlers{} }

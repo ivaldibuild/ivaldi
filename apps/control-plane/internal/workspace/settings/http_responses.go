@@ -20,7 +20,7 @@ type Resolved struct {
 	Key   string          `json:"key" doc:"The setting's key"`
 	Value json.RawMessage `json:"value" doc:"The effective value; null when there is none"`
 	// Level is empty when the value is the definition's default.
-	Level       workspace.Level `json:"level,omitempty" doc:"The level the value is stored at; empty for the default"`
+	Level       workspace.Level `json:"level,omitempty" enum:"organization,workspace,project" doc:"The level the value is stored at; empty for the default"`
 	FromDefault bool            `json:"from_default" doc:"Whether the value is the setting's default"`
 	Locked      bool            `json:"locked" doc:"Whether a lock fixed the value at a higher level"`
 }

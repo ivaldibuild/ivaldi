@@ -60,7 +60,7 @@ type accessRow struct {
 	OrganizationActive bool
 	PrincipalStatus    *string
 	ResourceFound      bool
-	RoleIDs            textArray
+	RoleIDs            database.TextArray
 }
 
 func (r *accessRepository) Access(ctx context.Context, q iam.AccessQuery) (iam.Access, error) {

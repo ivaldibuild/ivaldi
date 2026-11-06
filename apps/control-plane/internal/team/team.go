@@ -112,8 +112,8 @@ type TeamSnapshot struct {
 // joined the Team, UpdatedAt when its role last changed.
 type TeamMemberSnapshot struct {
 	PrincipalID   string     `json:"principal_id"`
-	PrincipalKind MemberKind `json:"principal_kind"`
-	Role          Role       `json:"role"`
+	PrincipalKind MemberKind `json:"principal_kind" enum:"user,agent"`
+	Role          Role       `json:"role" enum:"lead,member"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 }

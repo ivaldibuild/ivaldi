@@ -83,6 +83,7 @@ func WithVerifier(v identity.Verifier) Option {
 // Server is the control plane's HTTP API.
 type Server struct {
 	http    *http.Server
+	openapi *huma.OpenAPI
 	logger  logging.Logger
 	tls     config.TLS
 	timeout time.Duration
@@ -120,6 +121,7 @@ func New(cfg *config.Config, version string, logger logging.Logger, opts ...Opti
 	hcfg.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
 		BearerAuth: {Type: "http", Scheme: "bearer", BearerFormat: "JWT"},
 	}
+	hcfg.Transformers = append(hcfg.Transformers, emptyLists)
 	hapi := humago.New(mux, hcfg)
 	hapi.UseMiddleware(withRequest(logger), authenticate(hapi, o.verifier, logger, resource+protectedResourcePath))
 	v1 := huma.NewGroup(hapi, BasePath)
@@ -144,11 +146,15 @@ func New(cfg *config.Config, version string, logger logging.Logger, opts ...Opti
 			Handler:           recoverPanics(logger, cors(cfg.AllowedOrigins, mux)),
 			ReadHeaderTimeout: 10 * time.Second,
 		},
+		openapi: hapi.OpenAPI(),
 		logger:  logger,
 		tls:     cfg.TLS,
 		timeout: cfg.ShutdownTimeout,
 	}, nil
 }
+
+// OpenAPI returns the API's description.
+func (s *Server) OpenAPI() *huma.OpenAPI { return s.openapi }
 
 // Handler returns the API's handler, for serving it without a listener.
 func (s *Server) Handler() http.Handler { return s.http.Handler }

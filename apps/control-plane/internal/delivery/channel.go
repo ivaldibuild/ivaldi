@@ -63,7 +63,7 @@ type ChannelSnapshot struct {
 // ChannelRuleSnapshot is a rule's state.
 type ChannelRuleSnapshot struct {
 	ID         string           `json:"id"`
-	Kind       release.RuleKind `json:"kind"`
+	Kind       release.RuleKind `json:"kind" enum:"version,git_ref"`
 	ArtifactID *string          `json:"artifact_id"`
 	Config     json.RawMessage  `json:"config"`
 	CreatedAt  time.Time        `json:"created_at"`
@@ -223,6 +223,16 @@ func (c *Channel) UpdatedAt() time.Time   { return c.updatedAt }
 func (c *Channel) ArchivedAt() *time.Time { return clock.CopyTime(c.archivedAt) }
 
 func (c *Channel) Archived() bool { return c.archivedAt != nil }
+
+// Admits evaluates the Channel's rules against a candidate Release: whether
+// it may join, and if not, why.
+func (c *Channel) Admits(candidate release.Candidate) (bool, []string, error) {
+	rules := make([]release.Rule, len(c.rules))
+	for i, r := range c.rules {
+		rules[i] = release.Rule{Kind: r.kind, ArtifactID: copyString(r.artifactID), Config: r.config}
+	}
+	return release.Admits(rules, candidate)
+}
 
 // Rules returns the Channel's rules in the order they were added.
 func (c *Channel) Rules() []ChannelRuleSnapshot {

@@ -19,4 +19,6 @@ func init() {
 	id.MustRegister(Artifact{}.Prefix(), "delivery.Artifact")
 	id.MustRegister(Channel{}.Prefix(), "delivery.Channel")
 	id.MustRegister(ChannelRule{}.Prefix(), "delivery.ChannelRule")
+	id.MustRegister(Build{}.Prefix(), "delivery.Build")
+	id.MustRegister(Release{}.Prefix(), "delivery.Release")
 }

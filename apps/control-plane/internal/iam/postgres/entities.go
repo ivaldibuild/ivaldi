@@ -1,13 +1,11 @@
 package postgres
 
 import (
-	"database/sql/driver"
 	"encoding/json"
 	"fmt"
-	"sync"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/ivaldibuild/ivaldi/pkg/database"
 )
 
 type organizationEntity struct {
@@ -164,82 +162,49 @@ type resourceEntity struct {
 func (resourceEntity) TableName() string { return "iam.resources" }
 
 type oauthClientEntity struct {
-	ID           string     `gorm:"column:id;primaryKey"`
-	ClientID     string     `gorm:"column:client_id"`
-	Registration string     `gorm:"column:registration"`
-	Name         string     `gorm:"column:name"`
-	RedirectURIs textArray  `gorm:"column:redirect_uris"`
-	MetadataURL  *string    `gorm:"column:metadata_url"`
-	CreatedAt    time.Time  `gorm:"column:created_at;autoCreateTime:false"`
-	LastUsedAt   *time.Time `gorm:"column:last_used_at"`
+	ID           string             `gorm:"column:id;primaryKey"`
+	ClientID     string             `gorm:"column:client_id"`
+	Registration string             `gorm:"column:registration"`
+	Name         string             `gorm:"column:name"`
+	RedirectURIs database.TextArray `gorm:"column:redirect_uris"`
+	MetadataURL  *string            `gorm:"column:metadata_url"`
+	CreatedAt    time.Time          `gorm:"column:created_at;autoCreateTime:false"`
+	LastUsedAt   *time.Time         `gorm:"column:last_used_at"`
 }
 
 func (oauthClientEntity) TableName() string { return "iam.oauth_clients" }
 
 type authorizationCodeEntity struct {
-	CodeHash       []byte     `gorm:"column:code_hash;primaryKey"`
-	OrganizationID string     `gorm:"column:organization_id"`
-	PrincipalID    string     `gorm:"column:principal_id"`
-	ClientID       string     `gorm:"column:client_id"`
-	RedirectURI    string     `gorm:"column:redirect_uri"`
-	CodeChallenge  string     `gorm:"column:code_challenge"`
-	Resource       string     `gorm:"column:resource"`
-	Scopes         textArray  `gorm:"column:scopes"`
-	ExpiresAt      time.Time  `gorm:"column:expires_at"`
-	UsedAt         *time.Time `gorm:"column:used_at"`
+	CodeHash       []byte             `gorm:"column:code_hash;primaryKey"`
+	OrganizationID string             `gorm:"column:organization_id"`
+	PrincipalID    string             `gorm:"column:principal_id"`
+	ClientID       string             `gorm:"column:client_id"`
+	RedirectURI    string             `gorm:"column:redirect_uri"`
+	CodeChallenge  string             `gorm:"column:code_challenge"`
+	Resource       string             `gorm:"column:resource"`
+	Scopes         database.TextArray `gorm:"column:scopes"`
+	ExpiresAt      time.Time          `gorm:"column:expires_at"`
+	UsedAt         *time.Time         `gorm:"column:used_at"`
 }
 
 func (authorizationCodeEntity) TableName() string { return "iam.oauth_authorization_codes" }
 
 type refreshTokenEntity struct {
-	ID             string     `gorm:"column:id;primaryKey"`
-	OrganizationID string     `gorm:"column:organization_id"`
-	PrincipalID    string     `gorm:"column:principal_id"`
-	ClientID       string     `gorm:"column:client_id"`
-	FamilyID       string     `gorm:"column:family_id"`
-	TokenHash      []byte     `gorm:"column:token_hash"`
-	Resource       string     `gorm:"column:resource"`
-	Scopes         textArray  `gorm:"column:scopes"`
-	ExpiresAt      time.Time  `gorm:"column:expires_at"`
-	ReplacedBy     *string    `gorm:"column:replaced_by"`
-	RevokedAt      *time.Time `gorm:"column:revoked_at"`
-	CreatedAt      time.Time  `gorm:"column:created_at;autoCreateTime:false"`
+	ID             string             `gorm:"column:id;primaryKey"`
+	OrganizationID string             `gorm:"column:organization_id"`
+	PrincipalID    string             `gorm:"column:principal_id"`
+	ClientID       string             `gorm:"column:client_id"`
+	FamilyID       string             `gorm:"column:family_id"`
+	TokenHash      []byte             `gorm:"column:token_hash"`
+	Resource       string             `gorm:"column:resource"`
+	Scopes         database.TextArray `gorm:"column:scopes"`
+	ExpiresAt      time.Time          `gorm:"column:expires_at"`
+	ReplacedBy     *string            `gorm:"column:replaced_by"`
+	RevokedAt      *time.Time         `gorm:"column:revoked_at"`
+	CreatedAt      time.Time          `gorm:"column:created_at;autoCreateTime:false"`
 }
 
 func (refreshTokenEntity) TableName() string { return "iam.oauth_refresh_tokens" }
-
-// textArray is a TEXT[] column. database/sql cannot scan an array, so Scan
-// goes through pgx's type map; Value encodes it the same way, as PostgreSQL
-// array text.
-type textArray []string
-
-// typeMaps lends pgx type maps to scans: a map is not safe for concurrent use.
-var typeMaps = sync.Pool{New: func() any { return pgtype.NewMap() }}
-
-func (a *textArray) Scan(src any) error {
-	m := typeMaps.Get().(*pgtype.Map)
-	defer typeMaps.Put(m)
-	var v []string
-	if err := m.SQLScanner(&v).Scan(src); err != nil {
-		return fmt.Errorf("scan text array: %w", err)
-	}
-	*a = v
-	return nil
-}
-
-func (a textArray) Value() (driver.Value, error) {
-	m := typeMaps.Get().(*pgtype.Map)
-	defer typeMaps.Put(m)
-	v := []string(a)
-	if v == nil {
-		v = []string{}
-	}
-	b, err := m.Encode(pgtype.TextArrayOID, pgtype.TextFormatCode, v, nil)
-	if err != nil {
-		return nil, fmt.Errorf("encode text array: %w", err)
-	}
-	return string(b), nil
-}
 
 // utc returns t in UTC. The driver returns times in the local zone, and the
 // domain records UTC.

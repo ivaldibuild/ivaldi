@@ -81,7 +81,7 @@ type PlacementSnapshot struct {
 	OrganizationID      string          `json:"organization_id"`
 	ApplicationID       string          `json:"application_id"`
 	TargetID            string          `json:"target_id"`
-	Source              PlacementSource `json:"source"`
+	Source              PlacementSource `json:"source" enum:"configured,observed"`
 	ApplyConfig         *ApplyConfig    `json:"apply_config"`
 	CurrentDeploymentID *string         `json:"current_deployment_id"`
 	CurrentReleaseID    *string         `json:"current_release_id"`

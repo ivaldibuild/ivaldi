@@ -213,17 +213,17 @@ func (s *store) Write(_ context.Context, a *iam.Agent) error {
 
 // Team groups.
 
-func (s *store) SyncTeamGroup(_ context.Context, organizationID, teamID, name string, members []string) error {
+func (s *store) SyncTeamGroup(_ context.Context, organizationID, teamID, name string, members []string) (string, error) {
 	if s.groupErr != nil {
-		return s.groupErr
+		return "", s.groupErr
 	}
 	if organizationID != org {
-		return iam.ErrNotFound
+		return "", iam.ErrNotFound
 	}
 	members = slices.Clone(members)
 	slices.Sort(members)
 	s.groups[teamID] = teamGroup{name: name, members: members}
-	return nil
+	return "grp_" + teamID, nil
 }
 
 type auditLog struct{ s *store }

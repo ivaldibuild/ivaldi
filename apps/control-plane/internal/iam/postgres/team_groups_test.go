@@ -73,10 +73,12 @@ func TestSyncTeamGroup(t *testing.T) {
 	teamID := "tem_" + id.ULID()
 
 	t.Run("creates the group with its members", func(t *testing.T) {
-		require.NoError(t, groups.SyncTeamGroup(ctx, org.ID(), teamID, "team:platform", []string{ada.ID(), bot.ID(), ada.ID()}))
+		groupID, err := groups.SyncTeamGroup(ctx, org.ID(), teamID, "team:platform", []string{ada.ID(), bot.ID(), ada.ID()})
+		require.NoError(t, err)
 
 		g, ok := f.teamGroup(t, org.ID(), teamID)
 		require.True(t, ok)
+		assert.Equal(t, g.ID, groupID, "returns the group's ID")
 		assert.Equal(t, "team:platform", g.Name)
 		assert.Equal(t, string(iam.GroupTeam), g.Source)
 		assert.Equal(t, teamID, g.ExternalID)
@@ -88,7 +90,7 @@ func TestSyncTeamGroup(t *testing.T) {
 		members := f.groupMembers(t, before.ID)
 		at(t, time.Hour)
 
-		require.NoError(t, groups.SyncTeamGroup(ctx, org.ID(), teamID, "team:platform", []string{bot.ID(), ada.ID()}))
+		require.NoError(t, syncErr(groups.SyncTeamGroup(ctx, org.ID(), teamID, "team:platform", []string{bot.ID(), ada.ID()})))
 
 		after, _ := f.teamGroup(t, org.ID(), teamID)
 		assert.Equal(t, before.UpdatedAt, after.UpdatedAt, "nothing changed")
@@ -100,7 +102,7 @@ func TestSyncTeamGroup(t *testing.T) {
 		joined := f.groupMembers(t, before.ID)
 		at(t, 2*time.Hour)
 
-		require.NoError(t, groups.SyncTeamGroup(ctx, org.ID(), teamID, "team:core", []string{bot.ID(), grace.ID()}))
+		require.NoError(t, syncErr(groups.SyncTeamGroup(ctx, org.ID(), teamID, "team:core", []string{bot.ID(), grace.ID()})))
 
 		g, _ := f.teamGroup(t, org.ID(), teamID)
 		assert.Equal(t, before.ID, g.ID, "the same group")
@@ -120,26 +122,26 @@ func TestSyncTeamGroup(t *testing.T) {
 	})
 
 	t.Run("no members empties the group", func(t *testing.T) {
-		require.NoError(t, groups.SyncTeamGroup(ctx, org.ID(), teamID, "team:core", nil))
+		require.NoError(t, syncErr(groups.SyncTeamGroup(ctx, org.ID(), teamID, "team:core", nil)))
 		g, _ := f.teamGroup(t, org.ID(), teamID)
 		assert.Empty(t, f.groupMembers(t, g.ID))
 	})
 
 	t.Run("another organization's team group is separate", func(t *testing.T) {
-		require.NoError(t, groups.SyncTeamGroup(ctx, other.ID(), teamID, "team:core", nil))
+		require.NoError(t, syncErr(groups.SyncTeamGroup(ctx, other.ID(), teamID, "team:core", nil)))
 		_, ok := f.teamGroup(t, other.ID(), teamID)
 		assert.True(t, ok)
 		assert.Equal(t, 1, f.count(t, "SELECT count(*) FROM iam.groups WHERE organization_id = ?", org.ID()))
 	})
 
 	t.Run("a member from another organization is refused", func(t *testing.T) {
-		err := groups.SyncTeamGroup(ctx, other.ID(), teamID, "team:core", []string{ada.ID()})
+		_, err := groups.SyncTeamGroup(ctx, other.ID(), teamID, "team:core", []string{ada.ID()})
 		assert.ErrorIs(t, err, iam.ErrNotFound)
 	})
 
 	t.Run("a name another group holds is refused", func(t *testing.T) {
-		require.NoError(t, groups.SyncTeamGroup(ctx, org.ID(), "tem_"+id.ULID(), "team:taken", nil))
-		err := groups.SyncTeamGroup(ctx, org.ID(), "tem_"+id.ULID(), "team:taken", nil)
+		require.NoError(t, syncErr(groups.SyncTeamGroup(ctx, org.ID(), "tem_"+id.ULID(), "team:taken", nil)))
+		_, err := groups.SyncTeamGroup(ctx, org.ID(), "tem_"+id.ULID(), "team:taken", nil)
 		assert.ErrorIs(t, err, iam.ErrAlreadyExists)
 	})
 
@@ -148,7 +150,7 @@ func TestSyncTeamGroup(t *testing.T) {
 		require.NoError(t, f.db.Exec(`INSERT INTO iam.groups (id, organization_id, name, source, external_id) VALUES (?, ?, 'Manual', 'manual', NULL)`, manual, org.ID()).Error)
 		require.NoError(t, f.db.Exec(`INSERT INTO iam.group_members (organization_id, group_id, principal_id) VALUES (?, ?, ?)`, org.ID(), manual, ada.ID()).Error)
 
-		require.NoError(t, groups.SyncTeamGroup(ctx, org.ID(), teamID, "team:core", []string{grace.ID()}))
+		require.NoError(t, syncErr(groups.SyncTeamGroup(ctx, org.ID(), teamID, "team:core", []string{grace.ID()})))
 
 		assert.Equal(t, []string{ada.ID()}, memberIDs(f.groupMembers(t, manual)))
 	})
@@ -157,7 +159,7 @@ func TestSyncTeamGroup(t *testing.T) {
 		abort := errors.New("abort")
 		rolledBack := "tem_" + id.ULID()
 		err := database.NewTransactor(f.db).WithinTx(ctx, func(ctx context.Context) error {
-			require.NoError(t, groups.SyncTeamGroup(ctx, org.ID(), rolledBack, "team:rolled-back", []string{ada.ID()}))
+			require.NoError(t, syncErr(groups.SyncTeamGroup(ctx, org.ID(), rolledBack, "team:rolled-back", []string{ada.ID()})))
 			return abort
 		})
 		require.ErrorIs(t, err, abort)
@@ -170,13 +172,16 @@ func TestSyncTeamGroup(t *testing.T) {
 func TestTeamGroupGrantsReachMembers(t *testing.T) {
 	w := newAccessWorld(t)
 	teamID := "tem_" + id.ULID()
-	require.NoError(t, NewTeamGroups(w.db).SyncTeamGroup(w.ctx, w.org, teamID, "team:platform", []string{w.ada}))
+	require.NoError(t, syncErr(NewTeamGroups(w.db).SyncTeamGroup(w.ctx, w.org, teamID, "team:platform", []string{w.ada})))
 	g, ok := w.teamGroup(t, w.org, teamID)
 	require.True(t, ok)
 	w.grant(t, iam.RoleViewer, w.ws, nil, &g.ID, nil)
 
 	assert.Equal(t, []string{roleID(iam.RoleViewer)}, w.check(t, w.ws).RoleIDs)
 
-	require.NoError(t, NewTeamGroups(w.db).SyncTeamGroup(w.ctx, w.org, teamID, "team:platform", nil))
+	require.NoError(t, syncErr(NewTeamGroups(w.db).SyncTeamGroup(w.ctx, w.org, teamID, "team:platform", nil)))
 	assert.Empty(t, w.check(t, w.ws).RoleIDs, "a team group without members passes on nothing")
 }
+
+// syncErr keeps SyncTeamGroup's error, for checks that do not need the ID.
+func syncErr(_ string, err error) error { return err }

@@ -44,6 +44,11 @@ const (
 	PermissionOrganizationManage = "organization.manage"
 	// PermissionUserRead lists the Organization's people, with their emails.
 	PermissionUserRead = "user.read"
+	// PermissionGrantRead lists the grants on a resource; PermissionGrantManage
+	// grants and removes roles on it. Granting or removing the owner role
+	// also needs PermissionOwnerManage, which only owners hold.
+	PermissionGrantRead   = "grant.read"
+	PermissionGrantManage = "grant.manage"
 )
 
 // Actions name what an actor asks the authorizer to allow. Policy rules and
@@ -52,9 +57,14 @@ const (
 	ActionOrganizationRead   = "organization.read"
 	ActionOrganizationUpdate = "organization.update"
 	ActionPeopleList         = "people.list"
+	ActionGrantList          = "grant.list"
+	ActionGrantCreate        = "grant.create"
+	ActionGrantRemove        = "grant.remove"
 )
 
 // Audit event types IAM emits.
 const (
 	EventOrganizationUpdated = "organization.updated"
+	EventGrantCreated        = "grant.created"
+	EventGrantRemoved        = "grant.removed"
 )

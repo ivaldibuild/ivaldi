@@ -22,4 +22,7 @@ type Resource struct {
 	// ParentID is the resource it sits under, such as the Organization's ID
 	// for a Workspace, or the Workspace ID for a Project.
 	ParentID string
+	// Archived is set when reading: the entity the resource mirrors is
+	// archived, so grants on it do not apply.
+	Archived bool
 }

@@ -143,7 +143,10 @@ func (f *fakeProvisioner) ProvisionOrganization(ctx context.Context, organizatio
 	return f.err
 }
 
+// fakeGrants embeds the repository, so a call to a method it does not fake
+// panics.
 type fakeGrants struct {
+	iam.GrantRepository
 	writes []write
 	err    error
 }

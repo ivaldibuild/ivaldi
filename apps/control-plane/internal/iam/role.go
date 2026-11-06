@@ -40,6 +40,16 @@ func BuiltInRoleID(key string) (string, bool) {
 	return r.id, ok
 }
 
+// BuiltInRole returns the built-in role with key. An unknown key is
+// ErrInvalid.
+func BuiltInRole(key string) (*Role, error) {
+	r, ok := builtInRoles[key]
+	if !ok {
+		return nil, NewErrInvalidInput(fmt.Sprintf("%q is not a role; use owner, admin, member, or viewer", key))
+	}
+	return NewRole(NewRoleProps{Key: key, Name: r.name}, &r.id)
+}
+
 // Role is a set of permissions that a Grant gives on a resource. Built-in
 // roles belong to no Organization, and their permissions are defined in
 // code. A custom role belongs to one Organization.

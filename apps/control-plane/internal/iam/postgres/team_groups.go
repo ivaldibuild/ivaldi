@@ -27,13 +27,15 @@ func NewTeamGroups(db *gorm.DB) iam.TeamGroups {
 // SyncTeamGroup finds the Team's group by its external ID, locking it, or
 // creates it; renames it when name differs; and replaces its members:
 // members not in memberPrincipalIDs are deleted and new ones inserted, so
-// kept members keep the time they joined.
-func (r *teamGroups) SyncTeamGroup(ctx context.Context, organizationID, teamID, name string, memberPrincipalIDs []string) error {
-	return translate(database.Conn(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+// kept members keep the time they joined. It returns the group's ID.
+func (r *teamGroups) SyncTeamGroup(ctx context.Context, organizationID, teamID, name string, memberPrincipalIDs []string) (string, error) {
+	var groupID string
+	err := translate(database.Conn(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		g, err := r.group(tx, organizationID, teamID, name)
 		if err != nil {
 			return err
 		}
+		groupID = g.ID()
 
 		members := slices.Clone(memberPrincipalIDs)
 		slices.Sort(members)
@@ -62,6 +64,10 @@ func (r *teamGroups) SyncTeamGroup(ctx context.Context, organizationID, teamID, 
 			DoNothing: true,
 		}).Create(&rows).Error
 	}))
+	if err != nil {
+		return "", err
+	}
+	return groupID, nil
 }
 
 // group returns the Team's group, locked until the transaction ends,

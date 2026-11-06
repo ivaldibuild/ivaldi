@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
 )
 
@@ -24,7 +25,7 @@ func newTestWorkspace(t *testing.T, slug string) *Workspace {
 }
 
 func TestNewWorkspace(t *testing.T) {
-	fixClock(t, t0)
+	clock.Fix(t, t0)
 
 	w, err := NewWorkspace(NewWorkspaceProps{OrganizationID: testOrg, Slug: "platform", DisplayName: "Platform", Description: "Core", CreatedByPrincipalID: "prn_alice"}, nil)
 
@@ -90,9 +91,9 @@ func TestNewDefaultWorkspace(t *testing.T) {
 }
 
 func TestWorkspaceUpdate(t *testing.T) {
-	fixClock(t, t0)
+	clock.Fix(t, t0)
 	w := newTestWorkspace(t, "platform")
-	fixClock(t, t1)
+	clock.Fix(t, t1)
 
 	require.NoError(t, w.Update(UpdateWorkspaceProps{DisplayName: new("Core"), Description: new("Shared services")}))
 
@@ -135,14 +136,14 @@ func TestWorkspaceDefault(t *testing.T) {
 
 func TestWorkspaceArchiveAndRestore(t *testing.T) {
 	w := newTestWorkspace(t, "platform")
-	fixClock(t, t1)
+	clock.Fix(t, t1)
 
 	require.NoError(t, w.Archive())
 	require.True(t, w.Archived())
 	assert.Equal(t, t1, *w.ArchivedAt())
 	assert.Equal(t, t1, w.UpdatedAt())
 
-	fixClock(t, t1.Add(time.Hour))
+	clock.Fix(t, t1.Add(time.Hour))
 	require.NoError(t, w.Archive(), "archiving again does nothing")
 	assert.Equal(t, t1, *w.ArchivedAt(), "the first archive time is kept")
 	assert.Equal(t, t1, w.UpdatedAt())

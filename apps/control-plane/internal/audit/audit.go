@@ -1,7 +1,8 @@
 // Package audit is the control plane's audit and provenance capability.
 //
-// So far it holds only the contract other capabilities depend on to record
-// what they change. Each capability names its own event types.
+// It holds the contract other capabilities depend on to record what they
+// change; each capability names its own event types. audit/postgres stores
+// the records. Nothing reads them back yet.
 package audit
 
 import (

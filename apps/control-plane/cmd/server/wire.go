@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/api"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/audit"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/config"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/hasher"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam"
@@ -22,6 +23,8 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/token"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/outbox"
 	outboxpg "github.com/ivaldibuild/ivaldi-control-plane/internal/outbox/postgres"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/team"
+	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/database"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
 	"github.com/ivaldibuild/ivaldi/pkg/logging"
@@ -40,10 +43,15 @@ type app struct {
 	auth       iam.Authentication
 	oauth      iam.AuthorizationServer
 	install    *bootstrap.Installation
-	keys       token.KeyRing
-	verifier   identity.Verifier
-	routes     []api.Routes
-	handlers   []api.Handlers
+	authz      authorization.Authorizer
+	audit      audit.Recorder
+	teams      team.Directory
+	// provisioner sets up each new Organization's default Workspace.
+	provisioner iam.OrganizationProvisioner
+	keys        token.KeyRing
+	verifier    identity.Verifier
+	routes      []api.Routes
+	handlers    []api.Handlers
 }
 
 // tokenLeeway allows for clock skew between replicas verifying tokens.
@@ -118,6 +126,16 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 	if err != nil {
 		return nil, nil, fmt.Errorf("password hasher: %w", err)
 	}
+	// Every capability writes its audit records through one recorder and
+	// authorizes through one authorizer, and onboarding provisions each new
+	// Organization's default Workspace, so these come first.
+	if err := a.wireAccess(logger); err != nil {
+		return nil, nil, err
+	}
+	if err := a.wireProvisioner(); err != nil {
+		return nil, nil, err
+	}
+
 	a.onboarding, err = onboarding.NewOnboardingService(
 		onboarding.WithLogger(logger),
 		onboarding.WithOrganizationRepo(a.iam.orgs),
@@ -130,6 +148,7 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 		onboarding.WithResourceRegistrar(a.iam.resources),
 		onboarding.WithGrantRepo(a.iam.grants),
 		onboarding.WithAccountIdentityRepo(a.iam.platform),
+		onboarding.WithOrganizationProvisioner(a.provisioner),
 	)
 	if err != nil {
 		return nil, nil, err
@@ -163,6 +182,16 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 	}
 
 	if err := a.wireSignIn(cfg, logger, passwords); err != nil {
+		return nil, nil, err
+	}
+
+	if err := a.wireTeams(); err != nil {
+		return nil, nil, err
+	}
+	if err := a.wireDelivery(); err != nil {
+		return nil, nil, err
+	}
+	if err := a.wireWorkspace(); err != nil {
 		return nil, nil, err
 	}
 

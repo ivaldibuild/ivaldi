@@ -34,6 +34,7 @@ const (
 	ActionProjectUpdate       = "project.update"
 	ActionSettingChange       = "setting.change"
 	ActionSettingList         = "setting.list"
+	ActionSettingRead         = "setting.read"
 	ActionSettingRemove       = "setting.remove"
 	ActionWorkspaceArchive    = "workspace.archive"
 	ActionWorkspaceCreate     = "workspace.create"
@@ -42,6 +43,15 @@ const (
 	ActionWorkspaceRestore    = "workspace.restore"
 	ActionWorkspaceSetDefault = "workspace.set_default"
 	ActionWorkspaceUpdate     = "workspace.update"
+)
+
+// Aggregate types name the domain objects that raise events. An envelope
+// carries the type and ID of the object whose change raised it; a Setting,
+// which has no ID, is named by its level's resource ID and key.
+const (
+	AggregateWorkspace = "workspace.Workspace"
+	AggregateProject   = "workspace.Project"
+	AggregateSetting   = "workspace.Setting"
 )
 
 // Audit event types that this capability emits. They are used for recording

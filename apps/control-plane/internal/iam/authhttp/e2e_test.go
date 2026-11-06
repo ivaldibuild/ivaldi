@@ -158,6 +158,7 @@ func start(t *testing.T, cloud bool) *controlPlane {
 		onboarding.WithResourceRegistrar(iampg.NewResourceRegistrar(db)),
 		onboarding.WithGrantRepo(iampg.NewGrantRepository(db)),
 		onboarding.WithAccountIdentityRepo(iampg.NewAccountIdentityRepository(db)),
+		onboarding.WithOrganizationProvisioner(&provisioned{}),
 	))
 	keys := mustDo(token.NewEphemeralKeyRing())
 	server := mustDo(oauthserver.New(
@@ -399,4 +400,13 @@ func TestAPIRefusesRequestsWithoutAToken(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, http.StatusOK, resp.StatusCode, path)
 	}
+}
+
+// provisioned records the Organizations onboarding provisions, standing in
+// for the workspace capability.
+type provisioned struct{ orgs []string }
+
+func (p *provisioned) ProvisionOrganization(_ context.Context, organizationID string) error {
+	p.orgs = append(p.orgs, organizationID)
+	return nil
 }

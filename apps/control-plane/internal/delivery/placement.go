@@ -59,7 +59,8 @@ func (c *ApplyConfig) equal(o *ApplyConfig) bool {
 	return c.DefinitionArtifact == o.DefinitionArtifact && slices.Equal(c.ValuesRefs, o.ValuesRefs)
 }
 
-func (c ApplyConfig) validate() error {
+// Validate checks the config on its own, without the artifacts it names.
+func (c ApplyConfig) Validate() error {
 	if err := validateArtifactName(c.DefinitionArtifact); err != nil {
 		return NewErrInvalidInput("apply config needs the name of the artifact that holds the deployment definition")
 	}
@@ -129,7 +130,7 @@ func NewPlacement(props NewPlacementProps) (*Placement, error) {
 		currentReleaseID:    optionalString(props.CurrentReleaseID),
 	}
 	if props.ApplyConfig != nil {
-		if err := props.ApplyConfig.validate(); err != nil {
+		if err := props.ApplyConfig.Validate(); err != nil {
 			return nil, err
 		}
 		p.applyConfig = props.ApplyConfig.clone()
@@ -185,7 +186,7 @@ func (p *Placement) Snapshot() PlacementSnapshot {
 // definition artifact is one of the Application's. Configuring an observed
 // placement makes it configured: someone has now set it up.
 func (p *Placement) Configure(c ApplyConfig) error {
-	if err := c.validate(); err != nil {
+	if err := c.Validate(); err != nil {
 		return err
 	}
 	changed := p.source != PlacementConfigured || !p.applyConfig.equal(&c)

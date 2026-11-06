@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
+	"github.com/ivaldibuild/ivaldi/pkg/clock"
 )
 
 // Project is a body of work in a Workspace. Its Workspace never changes.
@@ -85,7 +86,7 @@ func NewProject(p NewProjectProps, projectID *string) (*Project, error) {
 		return nil, err
 	}
 
-	now := now()
+	now := clock.Now()
 
 	pr := &Project{
 		Root:                 root,
@@ -98,7 +99,7 @@ func NewProject(p NewProjectProps, projectID *string) (*Project, error) {
 		createdByPrincipalID: p.CreatedByPrincipalID,
 		createdAt:            timeOr(p.CreatedAt, now),
 		updatedAt:            timeOr(p.UpdatedAt, now),
-		archivedAt:           copyTime(p.ArchivedAt),
+		archivedAt:           clock.CopyTime(p.ArchivedAt),
 	}
 	if pr.IsNew() {
 		pr.RecordEvent(ProjectCreated{pr.Snapshot()})
@@ -118,7 +119,7 @@ func (p *Project) Description() string          { return p.description }
 func (p *Project) CreatedByPrincipalID() string { return p.createdByPrincipalID }
 func (p *Project) CreatedAt() time.Time         { return p.createdAt }
 func (p *Project) UpdatedAt() time.Time         { return p.updatedAt }
-func (p *Project) ArchivedAt() *time.Time       { return copyTime(p.archivedAt) }
+func (p *Project) ArchivedAt() *time.Time       { return clock.CopyTime(p.archivedAt) }
 
 // Archived reports whether the Project is archived.
 func (p *Project) Archived() bool { return p.archivedAt != nil }
@@ -136,7 +137,7 @@ func (p *Project) Snapshot() ProjectSnapshot {
 		CreatedByPrincipalID: p.createdByPrincipalID,
 		CreatedAt:            p.createdAt,
 		UpdatedAt:            p.updatedAt,
-		ArchivedAt:           copyTime(p.archivedAt),
+		ArchivedAt:           clock.CopyTime(p.archivedAt),
 	}
 }
 
@@ -168,7 +169,7 @@ func (p *Project) Update(u UpdateProjectProps) error {
 		set(&p.displayName, u.DisplayName),
 		set(&p.description, u.Description),
 	)
-	p.updatedAt = now()
+	p.updatedAt = clock.Now()
 	if changed {
 		p.RecordEvent(ProjectUpdated{p.Snapshot()})
 	}
@@ -186,7 +187,7 @@ func (p *Project) TransferTo(ownerTeamID string) error {
 	}
 	previous := p.ownerTeamID
 	p.ownerTeamID = ownerTeamID
-	p.updatedAt = now()
+	p.updatedAt = clock.Now()
 	if ownerTeamID != previous {
 		p.RecordEvent(ProjectTransferred{Project: p.Snapshot(), PreviousOwnerTeamID: previous})
 	}
@@ -199,7 +200,7 @@ func (p *Project) Archive() {
 	if p.Archived() {
 		return
 	}
-	t := now()
+	t := clock.Now()
 	p.archivedAt = &t
 	p.updatedAt = t
 	p.RecordEvent(ProjectArchived{p.Snapshot()})
@@ -212,6 +213,6 @@ func (p *Project) Restore() {
 		return
 	}
 	p.archivedAt = nil
-	p.updatedAt = now()
+	p.updatedAt = clock.Now()
 	p.RecordEvent(ProjectRestored{p.Snapshot()})
 }

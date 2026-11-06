@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
 )
 
@@ -22,7 +23,7 @@ func newTestProject(t *testing.T) *Project {
 }
 
 func TestNewProject(t *testing.T) {
-	fixClock(t, t0)
+	clock.Fix(t, t0)
 
 	p, err := NewProject(validProjectProps(), nil)
 
@@ -61,9 +62,9 @@ func TestNewProjectIsRefused(t *testing.T) {
 }
 
 func TestProjectUpdate(t *testing.T) {
-	fixClock(t, t0)
+	clock.Fix(t, t0)
 	p := newTestProject(t)
-	fixClock(t, t1)
+	clock.Fix(t, t1)
 
 	require.NoError(t, p.Update(UpdateProjectProps{Slug: new("payments"), Description: new("Takes money")}))
 
@@ -80,7 +81,7 @@ func TestProjectUpdate(t *testing.T) {
 
 func TestProjectTransferTo(t *testing.T) {
 	p := newTestProject(t)
-	fixClock(t, t1)
+	clock.Fix(t, t1)
 
 	require.NoError(t, p.TransferTo("tem_2"))
 	assert.Equal(t, "tem_2", p.OwnerTeamID())
@@ -101,13 +102,13 @@ func TestArchivedProjectCannotChange(t *testing.T) {
 
 func TestProjectArchiveAndRestore(t *testing.T) {
 	p := newTestProject(t)
-	fixClock(t, t1)
+	clock.Fix(t, t1)
 
 	p.Archive()
 	require.True(t, p.Archived())
 	assert.Equal(t, t1, *p.ArchivedAt())
 
-	fixClock(t, t1.Add(time.Hour))
+	clock.Fix(t, t1.Add(time.Hour))
 	p.Archive()
 	assert.Equal(t, t1, *p.ArchivedAt(), "archiving again does nothing")
 

@@ -79,10 +79,10 @@ type BuildDetails struct {
 type BuildSnapshot struct {
 	ID             string          `json:"id"`
 	OrganizationID string          `json:"organization_id"`
-	ArtifactKind   ArtifactKind    `json:"artifact_kind"`
+	ArtifactKind   ArtifactKind    `json:"artifact_kind" enum:"container_image,helm_chart,archive"`
 	ArtifactName   string          `json:"artifact_name"`
 	Digest         string          `json:"digest"`
-	Provenance     BuildProvenance `json:"provenance"`
+	Provenance     BuildProvenance `json:"provenance" enum:"ci_reported,observed"`
 	Version        *string         `json:"version"`
 	SourceID       *string         `json:"source_id"`
 	CommitSHA      *string         `json:"commit_sha"`

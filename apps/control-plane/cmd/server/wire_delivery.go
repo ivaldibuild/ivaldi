@@ -63,7 +63,7 @@ func (a *app) wireTeams() error {
 		return err
 	}
 	a.teams = team.NewDirectory(repo)
-	a.routes = append(a.routes, teams.NewTeamController(svc))
+	a.services.teams = svc
 	return nil
 }
 
@@ -151,12 +151,7 @@ func (a *app) wireDelivery() error {
 		return err
 	}
 
-	a.routes = append(a.routes,
-		environments.NewEnvironmentController(envs),
-		registries.NewRegistryController(regs),
-		lifecycles.NewLifecycleController(lifecycleSvc),
-		applications.NewApplicationController(apps),
-		releases.NewReleaseController(rels),
-	)
+	a.services.environments, a.services.registries, a.services.lifecycles = envs, regs, lifecycleSvc
+	a.services.applications, a.services.releases = apps, rels
 	return nil
 }

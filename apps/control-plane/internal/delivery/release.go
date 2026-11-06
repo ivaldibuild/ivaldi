@@ -54,8 +54,8 @@ type ReleaseSnapshot struct {
 	ApplicationID        string                 `json:"application_id"`
 	ChannelID            string                 `json:"channel_id"`
 	Version              string                 `json:"version"`
-	Status               release.Status         `json:"status"`
-	Source               ReleaseSource          `json:"source"`
+	Status               release.Status         `json:"status" enum:"draft,published,withdrawn"`
+	Source               ReleaseSource          `json:"source" enum:"created,observed"`
 	CreatedByPrincipalID *string                `json:"created_by_principal_id"`
 	PublishDecisionID    *string                `json:"publish_decision_id"`
 	PublishedAt          *time.Time             `json:"published_at"`

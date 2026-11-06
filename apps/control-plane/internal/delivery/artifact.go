@@ -54,11 +54,11 @@ type ArtifactSnapshot struct {
 	OrganizationID string         `json:"organization_id"`
 	ApplicationID  string         `json:"application_id"`
 	Name           string         `json:"name"`
-	ArtifactKind   ArtifactKind   `json:"artifact_kind"`
+	ArtifactKind   ArtifactKind   `json:"artifact_kind" enum:"container_image,helm_chart,archive"`
 	ArtifactName   string         `json:"artifact_name"`
 	RegistryID     *string        `json:"registry_id"`
 	Required       bool           `json:"required"`
-	Source         ArtifactSource `json:"source"`
+	Source         ArtifactSource `json:"source" enum:"declared,observed"`
 	CreatedAt      time.Time      `json:"created_at"`
 	UpdatedAt      time.Time      `json:"updated_at"`
 	ArchivedAt     *time.Time     `json:"archived_at"`

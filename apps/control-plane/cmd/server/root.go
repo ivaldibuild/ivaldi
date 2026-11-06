@@ -59,7 +59,7 @@ func runServe(cmd *cobra.Command, version string) error {
 	defer func() { _ = closeDB() }()
 
 	srv, err := api.New(&cfg, version, logger,
-		api.WithRoutes(a.routes...),
+		api.WithRoutes(a.services.routes(false)...),
 		api.WithHandlers(a.handlers...),
 		api.WithVerifier(a.verifier),
 	)

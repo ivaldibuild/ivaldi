@@ -42,6 +42,6 @@ func (a *app) wireSettings() error {
 	if err != nil {
 		return err
 	}
-	a.routes = append(a.routes, locks.NewSettingLockController(lockSvc))
+	a.services.settingLocks = lockSvc
 	return nil
 }

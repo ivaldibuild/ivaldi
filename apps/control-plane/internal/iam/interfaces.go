@@ -2,7 +2,17 @@ package iam
 
 import (
 	"context"
+
+	"github.com/ivaldibuild/ivaldi/pkg/identity"
 )
+
+// ProfileService tells a signed-in caller who they are. It reads only the
+// caller's own records, so it asks the authorizer nothing, but it refuses
+// with ErrStatus when the caller's principal, Account, or Organization is
+// not active, as the authorizer would.
+type ProfileService interface {
+	Profile(ctx context.Context, actor identity.Actor, organizationID string) (*Profile, error)
+}
 
 // ResourceRegistrar keeps IAM's copy of the resource hierarchy in step with
 // the capabilities that own the entities, such as Workspaces, Projects,

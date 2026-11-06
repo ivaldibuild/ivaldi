@@ -19,6 +19,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/oauthserver"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/onboarding"
 	iampg "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/postgres"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/profile"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/signin"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/token"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/outbox"
@@ -203,6 +204,9 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 	if err := a.wireWorkspace(); err != nil {
 		return nil, nil, err
 	}
+	if err := a.wireProfile(); err != nil {
+		return nil, nil, err
+	}
 
 	// Anyone may call onboarding, so it is only offered where anyone may
 	// create an Organization: the managed cloud, with built-in accounts. A
@@ -211,6 +215,22 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 		a.routes = append(a.routes, iamhttp.NewOnboardingController(a.onboarding))
 	}
 	return a, close, nil
+}
+
+// wireProfile serves GET /v1/me, which tells a signed-in caller who they are.
+func (a *app) wireProfile() error {
+	svc, err := profile.NewProfileService(
+		profile.WithPrincipalRepo(iampg.NewPrincipalRepository(a.db)),
+		profile.WithUserRepo(a.iam.users),
+		profile.WithAccountRepo(a.iam.accounts),
+		profile.WithOrganizationRepo(a.iam.orgs),
+		profile.WithAccessRepo(iampg.NewAccessRepository(a.db)),
+	)
+	if err != nil {
+		return err
+	}
+	a.routes = append(a.routes, profile.NewProfileController(svc))
+	return nil
 }
 
 // wireSignIn builds sign-in, the authorization server, and its HTTP side.

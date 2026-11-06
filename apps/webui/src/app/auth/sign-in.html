@@ -1,0 +1,181 @@
+<div class="bg-background text-foreground flex min-h-dvh flex-col">
+  <header
+    class="border-border flex flex-wrap items-center justify-between gap-4 border-b px-4 py-6 md:px-12"
+  >
+    <span class="text-heading text-sm font-semibold">Ivaldi</span>
+    <span class="text-muted-foreground text-sm">Self-hosted · {{ host }}</span>
+  </header>
+
+  <main class="flex flex-1 items-center justify-center px-4 py-16">
+    <div class="flex w-full max-w-100 flex-col gap-8">
+      @switch (view().kind) {
+        @case ('loading') {
+          <div class="text-muted-foreground flex items-center gap-3 text-sm">
+            <hlm-spinner aria-label="Loading sign-in" />
+            Getting your sign-in ready…
+          </div>
+        }
+
+        @case ('redirecting') {
+          <div class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+            <hlm-spinner aria-hidden="true" />
+            Signed in. Taking you back…
+          </div>
+        }
+
+        @case ('ended') {
+          @if (ended(); as n) {
+            <div class="flex flex-col gap-3">
+              <h1 class="text-heading text-4xl leading-11 font-bold">{{ n.title }}</h1>
+              <p class="text-foreground text-base leading-relaxed">{{ n.body }}</p>
+            </div>
+          }
+        }
+
+        @case ('organizations') {
+          @if (organizationsView(); as v) {
+            <div class="flex flex-col gap-3">
+              <h1 class="text-heading text-4xl leading-11 font-bold">Choose an organisation</h1>
+              <p class="text-muted-foreground text-base">You belong to more than one.</p>
+            </div>
+            @if (notice(); as n) {
+              <app-sign-in-notice [notice]="n" />
+            }
+            <ul class="flex flex-col gap-3" aria-label="Your organisations">
+              @for (organization of v.organizations; track organization.id) {
+                <li>
+                  <button
+                    hlmBtn
+                    variant="outline"
+                    size="lg"
+                    type="button"
+                    class="h-auto w-full justify-between py-3"
+                    [disabled]="busy()"
+                    (click)="chooseOrganization(organization)"
+                  >
+                    <span class="text-heading font-semibold">{{ organization.name }}</span>
+                    <span class="text-muted-foreground font-normal">{{ organization.slug }}</span>
+                  </button>
+                </li>
+              }
+            </ul>
+          }
+        }
+
+        @case ('form') {
+          @if (formView(); as v) {
+            <div class="flex flex-col gap-3">
+              <h1 class="text-heading text-4xl leading-11 font-bold">Sign in</h1>
+              <p class="text-muted-foreground text-base">
+                to continue to {{ v.request.client_name }}.
+              </p>
+            </div>
+
+            @if (notice(); as n) {
+              <app-sign-in-notice [notice]="n" />
+            }
+
+            @if (v.request.providers.length > 0) {
+              <div class="flex flex-col gap-3">
+                @for (provider of v.request.providers; track provider.kind) {
+                  <a
+                    hlmBtn
+                    variant="outline"
+                    size="lg"
+                    class="w-full justify-start gap-3"
+                    [attr.href]="provider.start_url"
+                  >
+                    <ng-icon [name]="providerIcon(provider.kind)" aria-hidden="true" />
+                    Continue with {{ provider.name }}
+                  </a>
+                }
+              </div>
+            }
+
+            @if (v.request.password) {
+              @if (v.request.providers.length > 0) {
+                <hlm-field-separator>or with email</hlm-field-separator>
+              }
+
+              <form class="flex flex-col gap-4" novalidate (submit)="signInWithPassword($event)">
+                <div hlmField>
+                  <label hlmFieldLabel for="sign-in-email">Email</label>
+                  <input
+                    hlmInput
+                    id="sign-in-email"
+                    type="email"
+                    autocomplete="username"
+                    class="h-10"
+                    [formField]="loginForm.email"
+                    [attr.aria-invalid]="loginForm.email().touched() && loginForm.email().invalid()"
+                    [attr.aria-describedby]="
+                      loginForm.email().touched() && loginForm.email().invalid()
+                        ? 'sign-in-email-error'
+                        : null
+                    "
+                  />
+                  @if (loginForm.email().touched() && loginForm.email().invalid()) {
+                    <hlm-field-error id="sign-in-email-error" forceShow>
+                      {{ loginForm.email().errors()[0].message }}
+                    </hlm-field-error>
+                  }
+                </div>
+
+                <div hlmField>
+                  <label hlmFieldLabel for="sign-in-password">Password</label>
+                  <input
+                    hlmInput
+                    id="sign-in-password"
+                    type="password"
+                    autocomplete="current-password"
+                    class="h-10"
+                    [formField]="loginForm.password"
+                    [attr.aria-invalid]="
+                      loginForm.password().touched() && loginForm.password().invalid()
+                    "
+                    [attr.aria-describedby]="
+                      loginForm.password().touched() && loginForm.password().invalid()
+                        ? 'sign-in-password-error'
+                        : null
+                    "
+                  />
+                  @if (loginForm.password().touched() && loginForm.password().invalid()) {
+                    <hlm-field-error id="sign-in-password-error" forceShow>
+                      {{ loginForm.password().errors()[0].message }}
+                    </hlm-field-error>
+                  }
+                </div>
+
+                <button hlmBtn size="lg" type="submit" class="mt-2 w-full" [disabled]="busy()">
+                  @if (busy()) {
+                    <hlm-spinner aria-hidden="true" />
+                    Signing in…
+                  } @else {
+                    Sign in
+                  }
+                </button>
+              </form>
+            }
+
+            <p class="text-muted-foreground text-sm leading-relaxed">
+              @if (v.request.sign_up) {
+                No account yet? Continue with a provider to create one.
+              } @else {
+                No account yet? Ask an owner of your organisation to add you, or sign in with a
+                provider it allows.
+              }
+            </p>
+          }
+        }
+      }
+    </div>
+  </main>
+
+  <footer
+    class="border-border flex flex-wrap items-center justify-between gap-4 border-t px-4 py-6 md:px-12"
+  >
+    <span class="text-eyebrow text-xs font-semibold tracking-[0.24em] uppercase">
+      Forged systems. Crafted software.
+    </span>
+  </footer>
+</div>

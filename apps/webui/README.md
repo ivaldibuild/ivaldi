@@ -2,6 +2,19 @@
 
 This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 22.2.5.
 
+## Sign-in
+
+`/login` is the page the control plane sends browsers to when someone needs to sign in. It reads the `login_challenge` and calls the control plane's `/v1/auth` operations (see [docs/design/sign-in-flow.md](../../docs/design/sign-in-flow.md)). To connect the two:
+
+- Set the control plane's `auth.login_url` to this page, such as `https://app.example.com/login`.
+- If the web app is served from a different origin than the control plane, list the web app's origin in the control plane's `allowed_origins`, and put the control plane's address in `src/index.html`:
+
+  ```html
+  <meta name="ivaldi-api-url" content="https://ivaldi.example.com" />
+  ```
+
+  Leave it empty when both are served from the same origin.
+
 ## Development server
 
 To start a local development server, run:

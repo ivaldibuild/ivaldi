@@ -45,3 +45,11 @@ Thumbs.db
 
 # Nx cache written by the spartan CLI
 /.nx
+
+# Playwright
+node_modules/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/

@@ -65,13 +65,17 @@ ng test
 
 ## Running end-to-end tests
 
-For end-to-end (e2e) testing, run:
+The Playwright tests in `e2e/` drive the real sign-in flow against the local stack, in Chromium, Firefox, and WebKit. Start the stack from the repository root, then run them:
 
 ```bash
-ng e2e
+make local_stack          # from the repository root
+pnpm exec playwright install   # once, to download the browsers
+pnpm e2e
 ```
 
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
+They use `http://localhost:3000` for the web app and `http://localhost:8660` for the control plane; set `IVALDI_E2E_WEB_URL` and `IVALDI_E2E_API_URL` to test elsewhere, such as `ng serve` with `make local_serve`. The password sign-in test signs in as the bootstrap administrator: `bootstrap.admin_email` from `config.local.yml` and the password in `.local/admin-password`, or `IVALDI_E2E_ADMIN_EMAIL` and `IVALDI_E2E_ADMIN_PASSWORD`. Without either, it is skipped.
+
+`make local_stack` builds the web app's image from the source at that moment, so rebuild it (run it again) to test changes, or test `ng serve` instead.
 
 ## Additional Resources
 

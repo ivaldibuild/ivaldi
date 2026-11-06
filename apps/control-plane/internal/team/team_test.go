@@ -75,8 +75,8 @@ func TestNewTeamWithStoredState(t *testing.T) {
 	clock.Fix(t, t2)
 	given := id.New("tem")
 	props := teamProps(
-		NewTeamMemberProps{PrincipalID: bob, Role: RoleMember, CreatedAt: &t0, UpdatedAt: &t1},
-		NewTeamMemberProps{PrincipalID: alice, Role: RoleLead, CreatedAt: &t0, UpdatedAt: &t0},
+		NewTeamMemberProps{PrincipalID: bob, PrincipalKind: MemberUser, Role: RoleMember, CreatedAt: &t0, UpdatedAt: &t1},
+		NewTeamMemberProps{PrincipalID: alice, PrincipalKind: MemberUser, Role: RoleLead, CreatedAt: &t0, UpdatedAt: &t0},
 	)
 	props.CreatedAt, props.UpdatedAt, props.ArchivedAt = &t0, &t1, &t1
 
@@ -89,8 +89,8 @@ func TestNewTeamWithStoredState(t *testing.T) {
 	assert.Equal(t, &t1, tm.ArchivedAt())
 	assert.True(t, tm.Archived())
 	assert.Equal(t, []TeamMemberSnapshot{
-		{PrincipalID: alice, Role: RoleLead, CreatedAt: t0, UpdatedAt: t0},
-		{PrincipalID: bob, Role: RoleMember, CreatedAt: t0, UpdatedAt: t1},
+		{PrincipalID: alice, PrincipalKind: MemberUser, Role: RoleLead, CreatedAt: t0, UpdatedAt: t0},
+		{PrincipalID: bob, PrincipalKind: MemberUser, Role: RoleMember, CreatedAt: t0, UpdatedAt: t1},
 	}, tm.Members(), "members are sorted by principal ID")
 	assert.Empty(t, tm.PullEvents(), "a stored team records no event")
 }
@@ -105,13 +105,19 @@ func TestNewTeamRules(t *testing.T) {
 		"a bad slug":            {func(p *NewTeamProps, _ **string) { p.Slug = "Not A Slug" }},
 		"an ID of another type": {func(_ *NewTeamProps, teamID **string) { *teamID = new(id.New("prn")) }},
 		"a member that is not a principal": {func(p *NewTeamProps, _ **string) {
-			p.Members = []NewTeamMemberProps{{PrincipalID: "wsp_01ARZ3NDEKTSV4RRFFQ69G5FAV", Role: RoleMember}}
+			p.Members = []NewTeamMemberProps{{PrincipalID: "wsp_01ARZ3NDEKTSV4RRFFQ69G5FAV", PrincipalKind: MemberUser, Role: RoleMember}}
 		}},
 		"an unknown role": {func(p *NewTeamProps, _ **string) {
-			p.Members = []NewTeamMemberProps{{PrincipalID: alice, Role: "owner"}}
+			p.Members = []NewTeamMemberProps{{PrincipalID: alice, PrincipalKind: MemberUser, Role: "owner"}}
+		}},
+		"an unknown member kind": {func(p *NewTeamProps, _ **string) {
+			p.Members = []NewTeamMemberProps{{PrincipalID: alice, PrincipalKind: "service_account", Role: RoleMember}}
+		}},
+		"no member kind": {func(p *NewTeamProps, _ **string) {
+			p.Members = []NewTeamMemberProps{{PrincipalID: alice, Role: RoleMember}}
 		}},
 		"a member twice": {func(p *NewTeamProps, _ **string) {
-			p.Members = []NewTeamMemberProps{{PrincipalID: alice, Role: RoleMember}, {PrincipalID: alice, Role: RoleLead}}
+			p.Members = []NewTeamMemberProps{{PrincipalID: alice, PrincipalKind: MemberUser, Role: RoleMember}, {PrincipalID: alice, PrincipalKind: MemberUser, Role: RoleLead}}
 		}},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -148,14 +154,14 @@ func TestTeamMembers(t *testing.T) {
 	clock.Fix(t, t0)
 	tm := newTestTeam(t)
 
-	require.NoError(t, tm.SetMember(carol, RoleMember))
-	require.NoError(t, tm.SetMember(alice, RoleLead))
+	require.NoError(t, tm.SetMember(carol, MemberUser, RoleMember))
+	require.NoError(t, tm.SetMember(alice, MemberUser, RoleLead))
 	clock.Fix(t, t1)
-	require.NoError(t, tm.SetMember(carol, RoleLead))
+	require.NoError(t, tm.SetMember(carol, MemberUser, RoleLead))
 
 	assert.Equal(t, []TeamMemberSnapshot{
-		{PrincipalID: alice, Role: RoleLead, CreatedAt: t0, UpdatedAt: t0},
-		{PrincipalID: carol, Role: RoleLead, CreatedAt: t0, UpdatedAt: t1},
+		{PrincipalID: alice, PrincipalKind: MemberUser, Role: RoleLead, CreatedAt: t0, UpdatedAt: t0},
+		{PrincipalID: carol, PrincipalKind: MemberUser, Role: RoleLead, CreatedAt: t0, UpdatedAt: t1},
 	}, tm.Members(), "a role change keeps when the member joined")
 	m, ok := tm.Member(carol)
 	assert.True(t, ok)
@@ -164,15 +170,23 @@ func TestTeamMembers(t *testing.T) {
 	assert.False(t, ok)
 	assert.Equal(t, t1, tm.UpdatedAt())
 
-	assert.ErrorIs(t, tm.SetMember("not-a-principal", RoleMember), ErrInvalid)
-	assert.ErrorIs(t, tm.SetMember(bob, "owner"), ErrInvalid)
+	assert.ErrorIs(t, tm.SetMember("not-a-principal", MemberUser, RoleMember), ErrInvalid)
+	assert.ErrorIs(t, tm.SetMember(bob, MemberUser, "owner"), ErrInvalid)
+
+	assert.ErrorIs(t, tm.SetMember(bob, "workload", RoleMember), ErrInvalid, "members are users or agents")
+	assert.ErrorIs(t, tm.SetMember(alice, MemberAgent, RoleLead), ErrInvalid, "a member's kind never changes")
+
+	require.NoError(t, tm.SetMember(bob, MemberAgent, RoleMember))
+	m, _ = tm.Member(bob)
+	assert.Equal(t, MemberAgent, m.PrincipalKind, "an agent member")
+	require.NoError(t, tm.RemoveMember(bob))
 
 	require.NoError(t, tm.RemoveMember(alice))
 	assert.Len(t, tm.Members(), 1)
 	assert.ErrorIs(t, tm.RemoveMember(alice), ErrNotFound)
 
 	tm.Archive()
-	assert.ErrorIs(t, tm.SetMember(bob, RoleMember), ErrArchived, "an archived team cannot change members")
+	assert.ErrorIs(t, tm.SetMember(bob, MemberUser, RoleMember), ErrArchived, "an archived team cannot change members")
 	assert.ErrorIs(t, tm.RemoveMember(carol), ErrArchived)
 	tm.Restore()
 	require.NoError(t, tm.RemoveMember(carol))
@@ -180,7 +194,7 @@ func TestTeamMembers(t *testing.T) {
 
 func TestSnapshotsDoNotShareState(t *testing.T) {
 	tm := newTestTeam(t)
-	require.NoError(t, tm.SetMember(alice, RoleLead))
+	require.NoError(t, tm.SetMember(alice, MemberUser, RoleLead))
 
 	s := tm.Snapshot()
 	*s.Description = "changed"

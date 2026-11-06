@@ -1,11 +1,12 @@
 package team
 
-// The interfaces this capability defines for itself: its repository, the
-// lookup it needs from IAM, and its service. Directory, the contract other
+// The interfaces this capability defines for itself: its repository, what
+// it needs from IAM, and its service. Directory, the contract other
 // capabilities depend on, is in directory.go.
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
@@ -38,13 +39,23 @@ type TeamRepository interface {
 	// UpdateTeam writes the Team's state, including adding, changing, and
 	// removing its members.
 	UpdateTeam(ctx context.Context, t *Team) error
+	// CountActiveTeamsWithMember counts the Organization's active Teams the
+	// principal is a member of.
+	CountActiveTeamsWithMember(ctx context.Context, organizationID, principalID string) (int, error)
 }
 
-// Users finds the users that may become members. iam.UserRepository
-// provides it. It returns iam.ErrNotFound for a principal that is not a
-// user in the Organization.
-type Users interface {
-	Get(ctx context.Context, organizationID, principalID string) (*iam.User, error)
+// Principals finds the principals that may become members: active users and
+// Agents. iam.PrincipalRepository provides it. It returns iam.ErrNotFound
+// for a principal that is not one of the Organization's.
+type Principals interface {
+	Get(ctx context.Context, organizationID, principalID string) (iam.PrincipalSnapshot, error)
+}
+
+// Agents stores the Agents a Team creates. iam.AgentRepository provides it.
+// It returns iam.ErrAlreadyExists for a slug another of the Organization's
+// Agents holds, and joins the transaction its context carries.
+type Agents interface {
+	Write(ctx context.Context, agent *iam.Agent) error
 }
 
 // TeamService manages an Organization's Teams and their members.
@@ -59,10 +70,34 @@ type TeamService interface {
 
 	// ListTeamMembers returns the Team's members, sorted by principal ID.
 	ListTeamMembers(ctx context.Context, actor identity.Actor, organizationID, teamID string) ([]TeamMemberSnapshot, error)
-	// SetTeamMember adds an active user to the Team with role, or changes
-	// the role of a member.
+	// SetTeamMember adds an active user or Agent to the Team with role, or
+	// changes the role of a member.
 	SetTeamMember(ctx context.Context, actor identity.Actor, organizationID, teamID, principalID string, role Role) (*Team, error)
+	// RemoveTeamMember removes a member. It refuses with ErrLastTeam to
+	// remove an Agent from its only active Team.
 	RemoveTeamMember(ctx context.Context, actor identity.Actor, organizationID, teamID, principalID string) (*Team, error)
+
+	// CreateAgent creates an Agent in IAM as a member of an active Team,
+	// which is accountable for it.
+	CreateAgent(ctx context.Context, actor identity.Actor, in CreateAgentInput) (*CreatedAgent, error)
+}
+
+// CreateAgentInput describes a new Agent and its first Team.
+type CreateAgentInput struct {
+	OrganizationID string
+	TeamID         string
+	// Slug is derived from DisplayName when empty. It is unique among the
+	// Organization's Agents.
+	Slug        string
+	DisplayName string
+	// Role is the Agent's role on the Team, RoleMember when empty.
+	Role Role
+}
+
+// CreatedAgent is a new Agent and the Team it joined.
+type CreatedAgent struct {
+	Agent *iam.Agent
+	Team  *Team
 }
 
 // CreateTeamInput describes a new Team. It starts with no members.
@@ -72,4 +107,24 @@ type CreateTeamInput struct {
 	Slug        string
 	DisplayName string
 	Description *string
+}
+
+// Owned is a kind of active record a Team owns in another capability, such
+// as its Applications.
+type Owned struct {
+	Capability string
+	// Kind names what is owned, such as "Application".
+	Kind  string
+	Count int
+}
+
+func (o Owned) String() string {
+	return fmt.Sprintf("%d active %s (%s)", o.Count, o.Kind, o.Capability)
+}
+
+// Owner is implemented by every capability that records an owning Team. A
+// Team cannot be archived while any reports active records it owns: they
+// must be handed to another Team first, so nothing is left without an owner.
+type Owner interface {
+	ActiveOwned(ctx context.Context, organizationID, teamID string) ([]Owned, error)
 }

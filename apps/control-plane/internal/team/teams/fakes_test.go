@@ -3,6 +3,7 @@ package teams
 import (
 	"context"
 	"maps"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -18,18 +19,29 @@ import (
 
 var org = id.New(iam.Organization{}.Prefix())
 
-// Users in the test Organization.
+// Principals in the test Organization.
 var (
-	alice     = id.New("prn") // active
-	bob       = id.New("prn") // active
-	suspended = id.New("prn")
-	stranger  = id.New("prn") // not a user in the Organization
+	alice      = id.New("prn") // active user
+	bob        = id.New("prn") // active user
+	suspended  = id.New("prn") // suspended user
+	stranger   = id.New("prn") // not in the Organization
+	releaseBot = id.New("prn") // active Agent
+	pausedBot  = id.New("prn") // suspended Agent
+	ci         = id.New("prn") // active service account
 )
+
+// teamGroup is a Team's IAM group as the fake stores it.
+type teamGroup struct {
+	name    string
+	members []string
+}
 
 // state is everything the fakes store. A transaction restores it when its
 // function fails, as a rolled-back database transaction would.
 type state struct {
 	teams  map[string]team.TeamSnapshot
+	agents map[string]iam.AgentSnapshot
+	groups map[string]teamGroup
 	audit  []audit.Event
 	events []events.Envelope
 }
@@ -37,20 +49,32 @@ type state struct {
 func (s state) clone() state {
 	return state{
 		teams:  maps.Clone(s.teams),
+		agents: maps.Clone(s.agents),
+		groups: maps.Clone(s.groups),
 		audit:  append([]audit.Event(nil), s.audit...),
 		events: append([]events.Envelope(nil), s.events...),
 	}
 }
 
-// store fakes the repository, the transactor, and the IAM user lookup. Its
-// auditLog and outboxLog fake the recorders.
+// store fakes the repository, the transactor, and what IAM provides: the
+// principal lookup, the Agent repository, and team groups. Its auditLog and
+// outboxLog fake the recorders.
 type store struct {
 	state
-	users map[string]*iam.User
+	principals map[string]iam.PrincipalSnapshot
+	// groupErr, when set, fails every group sync.
+	groupErr error
 }
 
 func newStore() *store {
-	return &store{state: state{teams: map[string]team.TeamSnapshot{}}, users: map[string]*iam.User{}}
+	return &store{
+		state: state{
+			teams:  map[string]team.TeamSnapshot{},
+			agents: map[string]iam.AgentSnapshot{},
+			groups: map[string]teamGroup{},
+		},
+		principals: map[string]iam.PrincipalSnapshot{},
+	}
 }
 
 func must[T any](v T, err error) T {
@@ -74,7 +98,7 @@ func (s *store) WithinTx(ctx context.Context, fn func(context.Context) error) er
 func rebuildTeam(s team.TeamSnapshot) *team.Team {
 	members := make([]team.NewTeamMemberProps, len(s.Members))
 	for i, m := range s.Members {
-		members[i] = team.NewTeamMemberProps{PrincipalID: m.PrincipalID, Role: m.Role, CreatedAt: &m.CreatedAt, UpdatedAt: &m.UpdatedAt}
+		members[i] = team.NewTeamMemberProps{PrincipalID: m.PrincipalID, PrincipalKind: m.PrincipalKind, Role: m.Role, CreatedAt: &m.CreatedAt, UpdatedAt: &m.UpdatedAt}
 	}
 	return must(team.NewTeam(team.NewTeamProps{
 		OrganizationID: s.OrganizationID, Slug: s.Slug, DisplayName: s.DisplayName, Description: s.Description,
@@ -144,21 +168,62 @@ func (s *store) UpdateTeam(_ context.Context, t *team.Team) error {
 	return nil
 }
 
-// Users.
-
-func (s *store) Get(_ context.Context, organizationID, principalID string) (*iam.User, error) {
-	u, ok := s.users[principalID]
-	if !ok || u.OrganizationID() != organizationID {
-		return nil, iam.ErrNotFound
+func (s *store) CountActiveTeamsWithMember(_ context.Context, organizationID, principalID string) (int, error) {
+	n := 0
+	for _, snap := range s.teams {
+		if snap.OrganizationID != organizationID || snap.ArchivedAt != nil {
+			continue
+		}
+		for _, m := range snap.Members {
+			if m.PrincipalID == principalID {
+				n++
+			}
+		}
 	}
-	return u, nil
+	return n, nil
 }
 
-func (s *store) addUser(principalID string, status iam.PrincipalStatus) {
-	s.users[principalID] = must(iam.NewUser(iam.NewUserProps{
-		PrincipalProps: iam.PrincipalProps{OrganizationID: org, DisplayName: "User", Status: status},
-		AccountID:      id.New(iam.Account{}.Prefix()),
-	}, &principalID))
+// Principals and Agents.
+
+func (s *store) Get(_ context.Context, organizationID, principalID string) (iam.PrincipalSnapshot, error) {
+	if a, ok := s.agents[principalID]; ok && a.OrganizationID == organizationID {
+		return a.PrincipalSnapshot, nil
+	}
+	p, ok := s.principals[principalID]
+	if !ok || p.OrganizationID != organizationID {
+		return iam.PrincipalSnapshot{}, iam.ErrNotFound
+	}
+	return p, nil
+}
+
+func (s *store) addPrincipal(principalID string, kind iam.PrincipalKind, status iam.PrincipalStatus) {
+	s.principals[principalID] = iam.PrincipalSnapshot{ID: principalID, OrganizationID: org, Kind: kind, DisplayName: "Principal", Status: status}
+}
+
+func (s *store) Write(_ context.Context, a *iam.Agent) error {
+	snap := a.Snapshot()
+	for _, o := range s.agents {
+		if o.ID != snap.ID && o.OrganizationID == snap.OrganizationID && o.Slug == snap.Slug {
+			return iam.ErrAlreadyExists
+		}
+	}
+	s.agents[snap.ID] = snap
+	return nil
+}
+
+// Team groups.
+
+func (s *store) SyncTeamGroup(_ context.Context, organizationID, teamID, name string, members []string) error {
+	if s.groupErr != nil {
+		return s.groupErr
+	}
+	if organizationID != org {
+		return iam.ErrNotFound
+	}
+	members = slices.Clone(members)
+	slices.Sort(members)
+	s.groups[teamID] = teamGroup{name: name, members: members}
+	return nil
 }
 
 type auditLog struct{ s *store }
@@ -207,8 +272,8 @@ func (a *authorizer) Authorize(_ context.Context, req authorization.Request) (au
 	return d, nil
 }
 
-// world is a store with alice and bob active, a suspended user, and the
-// TeamService over it.
+// world is a store with alice and bob active, a suspended user, an active
+// and a suspended Agent, a service account, and the TeamService over it.
 type world struct {
 	*store
 	authz *authorizer
@@ -218,9 +283,12 @@ type world struct {
 func newWorld(t *testing.T) *world {
 	t.Helper()
 	s := newStore()
-	s.addUser(alice, iam.PrincipalActive)
-	s.addUser(bob, iam.PrincipalActive)
-	s.addUser(suspended, iam.PrincipalSuspended)
+	s.addPrincipal(alice, iam.PrincipalUser, iam.PrincipalActive)
+	s.addPrincipal(bob, iam.PrincipalUser, iam.PrincipalActive)
+	s.addPrincipal(suspended, iam.PrincipalUser, iam.PrincipalSuspended)
+	s.addPrincipal(releaseBot, iam.PrincipalAgent, iam.PrincipalActive)
+	s.addPrincipal(pausedBot, iam.PrincipalAgent, iam.PrincipalSuspended)
+	s.addPrincipal(ci, iam.PrincipalServiceAccount, iam.PrincipalActive)
 	authz := &authorizer{}
 	svc, err := NewTeamService(s.options(authz)...)
 	require.NoError(t, err)
@@ -229,7 +297,7 @@ func newWorld(t *testing.T) *world {
 
 func (s *store) options(authz authorization.Authorizer) []TeamServiceOption {
 	return []TeamServiceOption{
-		WithTeamRepo(s), WithUsers(s), WithAuthorizer(authz), WithTransactor(s),
+		WithTeamRepo(s), WithPrincipals(s), WithAgents(s), WithTeamGroups(s), WithAuthorizer(authz), WithTransactor(s),
 		WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
 	}
 }
@@ -248,7 +316,11 @@ func (w *world) team(t *testing.T, slug string, archived bool, members ...team.N
 }
 
 func lead(principalID string) team.NewTeamMemberProps {
-	return team.NewTeamMemberProps{PrincipalID: principalID, Role: team.RoleLead}
+	return team.NewTeamMemberProps{PrincipalID: principalID, PrincipalKind: team.MemberUser, Role: team.RoleLead}
+}
+
+func agentMember(principalID string) team.NewTeamMemberProps {
+	return team.NewTeamMemberProps{PrincipalID: principalID, PrincipalKind: team.MemberAgent, Role: team.RoleMember}
 }
 
 // reset forgets what was recorded so far.

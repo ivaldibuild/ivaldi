@@ -33,6 +33,7 @@ func (m *teamMapper) ToPersistence(t *team.Team) teamRows {
 			OrganizationID: s.OrganizationID,
 			TeamID:         s.ID,
 			PrincipalID:    mem.PrincipalID,
+			PrincipalKind:  string(mem.PrincipalKind),
 			Role:           string(mem.Role),
 			CreatedAt:      mem.CreatedAt,
 			UpdatedAt:      mem.UpdatedAt,
@@ -46,10 +47,11 @@ func (m *teamMapper) ToDomain(rows teamRows) (*team.Team, error) {
 	members := make([]team.NewTeamMemberProps, len(rows.members))
 	for i, mem := range rows.members {
 		members[i] = team.NewTeamMemberProps{
-			PrincipalID: mem.PrincipalID,
-			Role:        team.Role(mem.Role),
-			CreatedAt:   utc(mem.CreatedAt),
-			UpdatedAt:   utc(mem.UpdatedAt),
+			PrincipalID:   mem.PrincipalID,
+			PrincipalKind: team.MemberKind(mem.PrincipalKind),
+			Role:          team.Role(mem.Role),
+			CreatedAt:     utc(mem.CreatedAt),
+			UpdatedAt:     utc(mem.UpdatedAt),
 		}
 	}
 	e := rows.team

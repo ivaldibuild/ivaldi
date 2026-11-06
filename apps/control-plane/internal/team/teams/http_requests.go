@@ -74,8 +74,28 @@ type TeamMemberRequest struct {
 
 type SetTeamMemberRequest struct {
 	TeamID      string `path:"team_id" doc:"The Team's ID"`
-	PrincipalID string `path:"principal_id" doc:"The principal ID of an active user in the Organization"`
+	PrincipalID string `path:"principal_id" doc:"The principal ID of an active user or Agent in the Organization"`
 	Body        struct {
 		Role string `json:"role" required:"true" enum:"lead,member" doc:"The member's role on the team"`
 	}
+}
+
+type CreateAgentRequest struct {
+	TeamID string `path:"team_id" doc:"The ID of the active Team the Agent joins"`
+	Body   struct {
+		DisplayName string  `json:"display_name" required:"true" minLength:"1" maxLength:"255" doc:"The display name for the Agent"`
+		Slug        *string `json:"slug,omitempty" required:"false" doc:"Slug for the Agent, unique among the Organization's Agents; derived from the display name when omitted"`
+		Role        *string `json:"role,omitempty" required:"false" enum:"lead,member" doc:"The Agent's role on the Team; member when omitted"`
+	}
+}
+
+func (r *CreateAgentRequest) input(organizationID string) team.CreateAgentInput {
+	in := team.CreateAgentInput{OrganizationID: organizationID, TeamID: r.TeamID, DisplayName: r.Body.DisplayName}
+	if r.Body.Slug != nil {
+		in.Slug = *r.Body.Slug
+	}
+	if r.Body.Role != nil {
+		in.Role = team.Role(*r.Body.Role)
+	}
+	return in
 }

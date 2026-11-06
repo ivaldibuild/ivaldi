@@ -38,7 +38,9 @@ func (a *app) wireTeams() error {
 	repo := teampg.NewTeamRepository(a.db)
 	svc, err := teams.NewTeamService(
 		teams.WithTeamRepo(repo),
-		teams.WithUsers(a.iam.users),
+		teams.WithPrincipals(iampg.NewPrincipalRepository(a.db)),
+		teams.WithAgents(iampg.NewAgentRepository(a.db)),
+		teams.WithTeamGroups(iampg.NewTeamGroups(a.db)),
 		teams.WithAuthorizer(a.authz),
 		teams.WithTransactor(a.tx),
 		teams.WithOutboxRecorder(a.outbox),

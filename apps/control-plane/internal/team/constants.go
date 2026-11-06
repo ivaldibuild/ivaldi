@@ -10,12 +10,15 @@ const (
 const AggregateTeam = "team.Team"
 
 // Permissions this capability asks the authorizer about. Teams are not IAM
-// resources, so both are checked on the Organization. The full catalog, and
-// which roles include each one, belongs to IAM: every built-in role reads
-// Teams, and admins and owners manage them.
+// resources, so every one is checked on the Organization. The full catalog,
+// and which roles include each one, belongs to IAM: every built-in role
+// reads Teams, and admins and owners manage Teams and create Agents.
 const (
 	PermissionTeamRead   = "team.read"
 	PermissionTeamManage = "team.manage"
+	// PermissionAgentManage creates Agents, which are IAM principals that
+	// can hold grants, so it is separate from managing Teams.
+	PermissionAgentManage = "agent.manage"
 )
 
 // Actions name what an actor asks the authorizer to allow. Policy rules
@@ -23,6 +26,7 @@ const (
 const (
 	ActionTeamArchive      = "team.archive"
 	ActionTeamCreate       = "team.create"
+	ActionTeamCreateAgent  = "team.create_agent"
 	ActionTeamList         = "team.list"
 	ActionTeamListMembers  = "team.list_members"
 	ActionTeamRead         = "team.read"
@@ -40,4 +44,7 @@ const (
 	EventTeamRestored      = "team.restored"
 	EventTeamMemberSet     = "team.member_set"
 	EventTeamMemberRemoved = "team.member_removed"
+	// EventTeamAgentCreated records the Agent a Team created; the Team's
+	// own audit record for adding it is EventTeamMemberSet.
+	EventTeamAgentCreated = "team.agent_created"
 )

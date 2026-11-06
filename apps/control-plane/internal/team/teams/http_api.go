@@ -34,8 +34,10 @@ func (c *TeamController) RegisterRoutes(h huma.API) {
 	register(h, "restore-team", http.MethodPost, "/teams/{team_id}/restore", "Restore an archived Team", 0, c.RestoreTeam)
 
 	register(h, "list-team-members", http.MethodGet, "/teams/{team_id}/members", "List a Team's members", 0, c.ListTeamMembers)
-	register(h, "set-team-member", http.MethodPut, "/teams/{team_id}/members/{principal_id}", "Add an active user to a Team, or change a member's role", 0, c.SetTeamMember)
+	register(h, "set-team-member", http.MethodPut, "/teams/{team_id}/members/{principal_id}", "Add an active user or Agent to a Team, or change a member's role", 0, c.SetTeamMember)
 	register(h, "remove-team-member", http.MethodDelete, "/teams/{team_id}/members/{principal_id}", "Remove a member from a Team", 0, c.RemoveTeamMember)
+
+	register(h, "create-team-agent", http.MethodPost, "/teams/{team_id}/agents", "Create an Agent as a member of a Team", http.StatusCreated, c.CreateAgent)
 }
 
 func register[I, O any](h huma.API, id, method, path, summary string, status int, handler func(context.Context, *I) (*O, error)) {
@@ -130,6 +132,18 @@ func (c *TeamController) RemoveTeamMember(ctx context.Context, req *TeamMemberRe
 	return c.team(ctx, req.TeamID, func(ctx context.Context, actor identity.Actor, organizationID, teamID string) (*team.Team, error) {
 		return c.service.RemoveTeamMember(ctx, actor, organizationID, teamID, req.PrincipalID)
 	})
+}
+
+func (c *TeamController) CreateAgent(ctx context.Context, req *CreateAgentRequest) (*AgentResponse, error) {
+	who, err := caller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	created, err := c.service.CreateAgent(ctx, who.Actor, req.input(who.OrganizationID))
+	if err != nil {
+		return nil, translateToHttpError(ctx, err)
+	}
+	return &AgentResponse{Body: api.SuccessResponse(nil, AgentInTeam{Agent: created.Agent.Snapshot(), Team: created.Team.Snapshot()})}, nil
 }
 
 // team calls an operation on one Team.

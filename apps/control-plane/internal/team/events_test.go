@@ -25,7 +25,7 @@ func TestNewRecordsCreatedOnlyForNewTeams(t *testing.T) {
 func TestTeamEvents(t *testing.T) {
 	// withAlice is a Team whose events so far are pulled, with Alice as a member.
 	withAlice := func(t *testing.T, tm *Team) {
-		require.NoError(t, tm.SetMember(alice, RoleMember))
+		require.NoError(t, tm.SetMember(alice, MemberUser, RoleMember))
 		tm.PullEvents()
 	}
 	cases := []struct {
@@ -39,17 +39,17 @@ func TestTeamEvents(t *testing.T) {
 		{"update with the same values", func(t *testing.T, tm *Team) {
 			require.NoError(t, tm.Update(UpdateTeamProps{Slug: new("platform"), DisplayName: new("Platform"), Description: new("Runs the platform")}))
 		}, nil},
-		{"add a member", func(t *testing.T, tm *Team) { require.NoError(t, tm.SetMember(alice, RoleLead)) },
+		{"add a member", func(t *testing.T, tm *Team) { require.NoError(t, tm.SetMember(alice, MemberUser, RoleLead)) },
 			func(tm *Team) aggregate.Event { return TeamMemberAdded{Team: tm.Snapshot(), PrincipalID: alice} }},
 		{"change a member's role", func(t *testing.T, tm *Team) {
 			withAlice(t, tm)
-			require.NoError(t, tm.SetMember(alice, RoleLead))
+			require.NoError(t, tm.SetMember(alice, MemberUser, RoleLead))
 		}, func(tm *Team) aggregate.Event {
 			return TeamMemberRoleChanged{Team: tm.Snapshot(), PrincipalID: alice, PreviousRole: RoleMember}
 		}},
 		{"set a member's current role", func(t *testing.T, tm *Team) {
 			withAlice(t, tm)
-			require.NoError(t, tm.SetMember(alice, RoleMember))
+			require.NoError(t, tm.SetMember(alice, MemberUser, RoleMember))
 		}, nil},
 		{"remove a member", func(t *testing.T, tm *Team) {
 			withAlice(t, tm)
@@ -99,7 +99,7 @@ func TestSnapshotJSONKeys(t *testing.T) {
 		keys     []string
 	}{
 		{TeamSnapshot{}, append([]string{"id", "organization_id", "slug", "display_name", "description", "members", "archived_at"}, timestamps...)},
-		{TeamMemberSnapshot{}, append([]string{"principal_id", "role"}, timestamps...)},
+		{TeamMemberSnapshot{}, append([]string{"principal_id", "principal_kind", "role"}, timestamps...)},
 	}
 	for _, tt := range tests {
 		b, err := json.Marshal(tt.snapshot)

@@ -10,7 +10,7 @@ import { HlmInputImports } from '@spartan-ng/helm/input';
 import { HlmSpinnerImports } from '@spartan-ng/helm/spinner';
 import { Environment, OnboardingApi, Target } from '../onboarding-api';
 import { SetupStep } from '../setup-step';
-import { StepStatus } from './step-status';
+import { RequestStatus } from '../../shared/request-status';
 
 const dnsLabel = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -37,7 +37,7 @@ const dnsLabel = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export class ClusterStep {
   private readonly api = inject(OnboardingApi);
 
-  protected readonly status = new StepStatus();
+  protected readonly status = new RequestStatus();
   protected readonly environments = signal<Environment[]>([]);
   protected readonly target = signal<Target | null>(null);
 

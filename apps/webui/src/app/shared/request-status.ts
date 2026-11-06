@@ -1,8 +1,8 @@
 import { signal } from '@angular/core';
-import { ApiError } from '../onboarding-api';
+import { ApiError } from '../api/api-client';
 
-/** Loading, saving and error state shared by the setup steps. */
-export class StepStatus {
+/** Loading, saving and error state for a page that loads and saves through the API. */
+export class RequestStatus {
   readonly loading = signal(true);
   readonly saving = signal(false);
   readonly error = signal<string | null>(null);

@@ -8,7 +8,7 @@ import { HlmInputImports } from '@spartan-ng/helm/input';
 import { HlmSpinnerImports } from '@spartan-ng/helm/spinner';
 import { OnboardingApi, Workspace } from '../onboarding-api';
 import { SetupStep } from '../setup-step';
-import { StepStatus } from './step-status';
+import { RequestStatus } from '../../shared/request-status';
 
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -30,7 +30,7 @@ export class OrganisationStep {
   private readonly api = inject(OnboardingApi);
   private readonly router = inject(Router);
 
-  protected readonly status = new StepStatus();
+  protected readonly status = new RequestStatus();
   protected readonly workspace = signal<Workspace | null>(null);
 
   private readonly model = signal({ display_name: '', slug: '' });

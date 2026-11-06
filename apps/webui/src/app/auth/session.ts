@@ -71,6 +71,12 @@ export class Session {
     this.location.assign(`${this.base}/oauth/authorize?${query}`);
   }
 
+  /** Ends the sign-in at the control plane, which then shows the sign-in page's signed-out notice. */
+  signOut(): void {
+    this.tokens.set(null);
+    this.location.assign(`${this.base}/auth/logout`);
+  }
+
   /** Exchanges the code the control plane sent back, and returns where to go next. */
   async completeSignIn(code: string, state: string): Promise<string> {
     const storage = this.storage();

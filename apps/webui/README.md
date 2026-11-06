@@ -19,6 +19,16 @@ The web app signs people in as the control plane's first-party OAuth client, `iv
 
 `/setup` walks an owner through a new installation: the default Workspace, how sign-in is configured, a first Team with its agents, Environments with Standard and Hotfix Lifecycles, and a first Kubernetes Target. Each step calls the control plane's `/v1` operations directly, so it also works as a review of what already exists.
 
+## Delivery
+
+Signed in, the web app opens on the delivery screens, for the Workspace chosen in the sidebar:
+
+- **Applications** (`/applications`): each Application by Environment, listing the Targets it's placed on, and a form to create one, with its Project if needed.
+- **An Application** (`/applications/:id`): its Channels and the Lifecycles they follow, its artifacts, and its placements, with forms to declare an artifact and place it on a Target.
+- **Environments** and **Lifecycles**: what the Workspace has, read-only. The first-run setup creates them.
+
+The control plane doesn't serve Builds, Releases or Deployments yet, so these screens show configuration, not which version runs where.
+
 ## Development server
 
 To start a local development server, run:

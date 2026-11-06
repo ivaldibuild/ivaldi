@@ -11,7 +11,7 @@ import { HlmSpinnerImports } from '@spartan-ng/helm/spinner';
 import { Session } from '../../auth/session';
 import { OnboardingApi, Team } from '../onboarding-api';
 import { SetupStep } from '../setup-step';
-import { StepStatus } from './step-status';
+import { RequestStatus } from '../../shared/request-status';
 
 /** Step 3: the first Team, led by the person setting up, with any agents it needs. */
 @Component({
@@ -35,7 +35,7 @@ export class TeamStep {
   private readonly session = inject(Session);
   private readonly router = inject(Router);
 
-  protected readonly status = new StepStatus();
+  protected readonly status = new RequestStatus();
   protected readonly teams = signal<Team[]>([]);
   protected readonly agents = signal<string[]>([]);
   protected readonly agentName = signal('');

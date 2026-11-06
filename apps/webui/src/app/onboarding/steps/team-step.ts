@@ -8,6 +8,7 @@ import { HlmButtonImports } from '@spartan-ng/helm/button';
 import { HlmFieldImports } from '@spartan-ng/helm/field';
 import { HlmInputImports } from '@spartan-ng/helm/input';
 import { HlmSpinnerImports } from '@spartan-ng/helm/spinner';
+import { CurrentUser } from '../../api/current-user';
 import { Session } from '../../auth/session';
 import { OnboardingApi, Team } from '../onboarding-api';
 import { SetupStep } from '../setup-step';
@@ -33,6 +34,7 @@ import { RequestStatus } from '../../shared/request-status';
 export class TeamStep {
   private readonly api = inject(OnboardingApi);
   private readonly session = inject(Session);
+  protected readonly user = inject(CurrentUser);
   private readonly router = inject(Router);
 
   protected readonly status = new RequestStatus();

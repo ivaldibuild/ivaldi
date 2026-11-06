@@ -1,7 +1,7 @@
-<app-setup-step step="organisation" heading="Welcome to Ivaldi">
+<app-setup-step step="organisation" [heading]="heading()">
   <ng-container setupLead>
-    This installation has one Organisation, created from its bootstrap settings, and you are one of
-    its owners. Check its default Workspace, then set up how your software ships.
+    Check how your Organisation is named and its default Workspace, then set up how your software
+    ships.
   </ng-container>
 
   @if (status.error(); as message) {
@@ -11,73 +11,164 @@
     </div>
   }
 
-  <section aria-labelledby="org-heading" class="border-border flex flex-col gap-2 border p-6">
-    <h2 id="org-heading" class="text-heading text-lg font-semibold">Organisation</h2>
-    <p class="text-muted-foreground text-sm leading-relaxed">
-      Its name and address come from <code>IVALDI_BOOTSTRAP_ORGANIZATION_NAME</code> and
-      <code>IVALDI_BOOTSTRAP_ORGANIZATION_SLUG</code>. Renaming it from here isn't available yet.
+  @if (status.loading()) {
+    <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+      <hlm-spinner aria-hidden="true" /> Loading your Organisation…
     </p>
-  </section>
+  } @else {
+    <form id="organisation-form" class="flex flex-col gap-8" novalidate (submit)="save($event)">
+      @if (organization(); as org) {
+        <section aria-labelledby="org-heading" class="border-border flex flex-col gap-6 border p-6">
+          <div class="flex flex-col gap-1">
+            <h2 id="org-heading" class="text-heading text-lg font-semibold">Organisation</h2>
+            <p class="text-muted-foreground text-sm leading-relaxed">
+              It holds your people, Teams and Workspaces. A self-hosted installation has one.
+            </p>
+          </div>
 
-  <section aria-labelledby="wsp-heading" class="border-border flex flex-col gap-6 border p-6">
-    <div class="flex flex-col gap-1">
-      <h2 id="wsp-heading" class="text-heading text-lg font-semibold">Default Workspace</h2>
-      <p class="text-muted-foreground text-sm leading-relaxed">
-        Workspaces hold Projects, Environments, Lifecycles and Registries. Start with one, and add
-        more when teams need separate paths to production.
-      </p>
-    </div>
+          @if (user.canManageOrganization()) {
+            <div class="grid gap-4 md:grid-cols-2">
+              <div hlmField>
+                <label hlmFieldLabel for="org-display-name">Name</label>
+                <input
+                  hlmInput
+                  id="org-display-name"
+                  class="h-10"
+                  [formField]="organizationForm.display_name"
+                />
+                @if (
+                  organizationForm.display_name().touched() &&
+                  organizationForm.display_name().invalid()
+                ) {
+                  <hlm-field-error forceShow>{{
+                    organizationForm.display_name().errors()[0].message
+                  }}</hlm-field-error>
+                }
+              </div>
+              <div hlmField>
+                <label hlmFieldLabel for="org-name">Full name</label>
+                <input hlmInput id="org-name" class="h-10" [formField]="organizationForm.name" />
+                @if (organizationForm.name().touched() && organizationForm.name().invalid()) {
+                  <hlm-field-error forceShow>{{
+                    organizationForm.name().errors()[0].message
+                  }}</hlm-field-error>
+                }
+              </div>
+              <div hlmField>
+                <label hlmFieldLabel for="org-slug">Address</label>
+                <input
+                  hlmInput
+                  id="org-slug"
+                  class="h-10"
+                  aria-describedby="org-slug-help"
+                  [formField]="organizationForm.slug"
+                />
+                @if (organizationForm.slug().touched() && organizationForm.slug().invalid()) {
+                  <hlm-field-error forceShow>{{
+                    organizationForm.slug().errors()[0].message
+                  }}</hlm-field-error>
+                } @else if (slugChanged()) {
+                  <p id="org-slug-help" class="text-foreground text-[13px] leading-5" role="status">
+                    Links and sign-in hints that name <code>{{ org.slug }}</code> will stop working.
+                  </p>
+                } @else {
+                  <p id="org-slug-help" class="text-muted-foreground text-[13px] leading-5">
+                    Used in links and by <code>ivaldictl --org {{ org.slug }}</code
+                    >.
+                  </p>
+                }
+              </div>
+              <div hlmField>
+                <label hlmFieldLabel for="org-logo"
+                  >Logo address
+                  <span class="text-muted-foreground font-normal">(optional)</span></label
+                >
+                <input
+                  hlmInput
+                  id="org-logo"
+                  class="h-10"
+                  placeholder="https://"
+                  [formField]="organizationForm.logo_url"
+                />
+                @if (
+                  organizationForm.logo_url().touched() && organizationForm.logo_url().invalid()
+                ) {
+                  <hlm-field-error forceShow>{{
+                    organizationForm.logo_url().errors()[0].message
+                  }}</hlm-field-error>
+                }
+              </div>
+            </div>
+          } @else {
+            <dl class="grid gap-4 md:grid-cols-2">
+              <div class="flex flex-col gap-1">
+                <dt class="text-muted-foreground text-[13px]">Name</dt>
+                <dd class="text-heading">{{ org.display_name }}</dd>
+              </div>
+              <div class="flex flex-col gap-1">
+                <dt class="text-muted-foreground text-[13px]">Address</dt>
+                <dd class="text-heading">
+                  <code>{{ org.slug }}</code>
+                </dd>
+              </div>
+            </dl>
+            <p class="text-muted-foreground text-sm">Only owners and admins can change these.</p>
+          }
+        </section>
+      }
 
-    @if (status.loading()) {
-      <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
-        <hlm-spinner aria-hidden="true" /> Loading the Workspace…
-      </p>
-    } @else if (workspace()) {
-      <form
-        id="workspace-form"
-        class="grid gap-4 md:grid-cols-2"
-        novalidate
-        (submit)="save($event)"
-      >
-        <div hlmField>
-          <label hlmFieldLabel for="workspace-name">Name</label>
-          <input
-            hlmInput
-            id="workspace-name"
-            class="h-10"
-            [formField]="workspaceForm.display_name"
-          />
-          @if (workspaceForm.display_name().touched() && workspaceForm.display_name().invalid()) {
-            <hlm-field-error forceShow>{{
-              workspaceForm.display_name().errors()[0].message
-            }}</hlm-field-error>
-          }
+      <section aria-labelledby="wsp-heading" class="border-border flex flex-col gap-6 border p-6">
+        <div class="flex flex-col gap-1">
+          <h2 id="wsp-heading" class="text-heading text-lg font-semibold">Default Workspace</h2>
+          <p class="text-muted-foreground text-sm leading-relaxed">
+            Workspaces hold Projects, Environments, Lifecycles and Registries. Start with one, and
+            add more when teams need separate paths to production.
+          </p>
         </div>
-        <div hlmField>
-          <label hlmFieldLabel for="workspace-slug">Address</label>
-          <input hlmInput id="workspace-slug" class="h-10" [formField]="workspaceForm.slug" />
-          @if (workspaceForm.slug().touched() && workspaceForm.slug().invalid()) {
-            <hlm-field-error forceShow>{{
-              workspaceForm.slug().errors()[0].message
-            }}</hlm-field-error>
-          }
-        </div>
-      </form>
-    } @else {
-      <p class="text-muted-foreground text-sm">
-        No Workspace found. The control plane normally creates one with the Organisation.
-      </p>
-    }
-  </section>
+        @if (workspace()) {
+          <div class="grid gap-4 md:grid-cols-2">
+            <div hlmField>
+              <label hlmFieldLabel for="workspace-name">Name</label>
+              <input
+                hlmInput
+                id="workspace-name"
+                class="h-10"
+                [formField]="workspaceForm.display_name"
+              />
+              @if (
+                workspaceForm.display_name().touched() && workspaceForm.display_name().invalid()
+              ) {
+                <hlm-field-error forceShow>{{
+                  workspaceForm.display_name().errors()[0].message
+                }}</hlm-field-error>
+              }
+            </div>
+            <div hlmField>
+              <label hlmFieldLabel for="workspace-slug">Address</label>
+              <input hlmInput id="workspace-slug" class="h-10" [formField]="workspaceForm.slug" />
+              @if (workspaceForm.slug().touched() && workspaceForm.slug().invalid()) {
+                <hlm-field-error forceShow>{{
+                  workspaceForm.slug().errors()[0].message
+                }}</hlm-field-error>
+              }
+            </div>
+          </div>
+        } @else {
+          <p class="text-muted-foreground text-sm">
+            No Workspace found. The control plane normally creates one with the Organisation.
+          </p>
+        }
+      </section>
+    </form>
+  }
 
   <ng-container setupActions>
     <button
       hlmBtn
       size="lg"
       type="submit"
-      form="workspace-form"
+      form="organisation-form"
       [disabled]="status.loading() || status.saving()"
-      (click)="workspace() ? null : save($event)"
     >
       @if (status.saving()) {
         <hlm-spinner aria-hidden="true" /> Saving…

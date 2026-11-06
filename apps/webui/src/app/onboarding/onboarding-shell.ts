@@ -4,12 +4,13 @@ import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router
 import { NgIcon, provideIcons } from '@ng-icons/core';
 import { lucideCheck } from '@ng-icons/lucide';
 import { filter, map } from 'rxjs';
+import { OrganisationBadge, UserBadge } from '../shared/identity';
 import { setupSteps } from './setup-steps';
 
 /** The first-run setup: the step rail beside the current step. */
 @Component({
   selector: 'app-onboarding-shell',
-  imports: [RouterOutlet, RouterLink, NgIcon],
+  imports: [RouterOutlet, RouterLink, NgIcon, OrganisationBadge, UserBadge],
   providers: [provideIcons({ lucideCheck })],
   templateUrl: './onboarding-shell.html',
 })

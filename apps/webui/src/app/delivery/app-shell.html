@@ -3,7 +3,7 @@
     aria-label="Primary"
     class="border-sidebar-border bg-sidebar text-sidebar-foreground flex w-full flex-col gap-6 border-b px-3 py-5 md:min-h-dvh md:w-64 md:border-r md:border-b-0"
   >
-    <span class="text-heading px-2 text-sm font-semibold">Ivaldi</span>
+    <div class="px-2"><app-organisation-badge /></div>
 
     <div class="flex flex-col gap-1.5 px-2">
       <label for="workspace-switcher" class="text-muted-foreground text-xs">Workspace</label>
@@ -63,14 +63,18 @@
       </a>
     </div>
 
-    <div class="border-sidebar-border mt-auto border-t px-2 pt-4">
+    <div class="border-sidebar-border mt-auto flex items-center gap-2 border-t px-2 pt-4">
+      <div class="min-w-0 flex-1"><app-user-badge /></div>
       <button
+        hlmBtn
+        variant="ghost"
+        size="icon"
         type="button"
-        class="hover:text-heading flex h-9 items-center gap-3 text-sm"
+        aria-label="Sign out"
+        title="Sign out"
         (click)="signOut()"
       >
-        <ng-icon name="lucideLogOut" class="text-muted-foreground" aria-hidden="true" />
-        Sign out
+        <ng-icon name="lucideLogOut" aria-hidden="true" />
       </button>
     </div>
   </nav>

@@ -8,13 +8,23 @@ import {
   lucideLogOut,
   lucideSettings,
 } from '@ng-icons/lucide';
+import { HlmButtonImports } from '@spartan-ng/helm/button';
 import { Session } from '../auth/session';
+import { OrganisationBadge, UserBadge } from '../shared/identity';
 import { WorkspaceContext } from './workspace-context';
 
 /** The signed-in app: the sidebar with the Workspace switcher beside the current page. */
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, NgIcon],
+  imports: [
+    RouterOutlet,
+    RouterLink,
+    RouterLinkActive,
+    NgIcon,
+    HlmButtonImports,
+    OrganisationBadge,
+    UserBadge,
+  ],
   providers: [
     provideIcons({ lucideBox, lucideGitBranch, lucideLayers, lucideLogOut, lucideSettings }),
   ],

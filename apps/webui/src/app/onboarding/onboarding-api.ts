@@ -4,6 +4,7 @@ import {
   Agent,
   Environment,
   Lifecycle,
+  Organization,
   Target,
   Team,
   TeamRole,
@@ -17,6 +18,7 @@ export type {
   Environment,
   Lifecycle,
   LifecyclePhase,
+  Organization,
   Target,
   Team,
   TeamMember,
@@ -29,6 +31,17 @@ export type {
 @Service()
 export class OnboardingApi {
   private readonly api = inject(ApiClient);
+
+  organization(): Promise<Organization> {
+    return this.api.get('/organization');
+  }
+
+  /** Changes only the fields given; the rest stay as they are. */
+  updateOrganization(
+    change: Partial<Pick<Organization, 'display_name' | 'name' | 'slug'>> & { logo_url?: string },
+  ): Promise<Organization> {
+    return this.api.send('PATCH', '/organization', change);
+  }
 
   async defaultWorkspace(): Promise<Workspace | null> {
     const workspaces = await this.api.get<Workspace[]>('/workspaces');

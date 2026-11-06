@@ -1,8 +1,9 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { Type } from '@angular/core';
+import { signal, Type } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
+import { CurrentUser } from '../../api/current-user';
 import { API_BASE_URL } from '../../api-base-url';
 import { Session } from '../../auth/session';
 import { ClusterStep } from './cluster-step';
@@ -13,15 +14,37 @@ import { TeamStep } from './team-step';
 const v1 = 'https://cp.test/v1';
 const ok = <T>(data: T) => ({ status: 'success', data });
 const page = <T>(items: T[]) => ok({ items, total_count: items.length });
+const organization = {
+  id: 'org_1',
+  slug: 'northwind',
+  name: 'Northwind Labs Ltd',
+  display_name: 'Northwind',
+  logo_url: null,
+};
+
+/** A stand-in for CurrentUser: Ama, an owner unless a test says otherwise. */
+function fakeUser(canManage = true) {
+  return {
+    displayName: signal('Ama Mensah'),
+    firstName: signal('Ama'),
+    canManageOrganization: signal(canManage),
+    reload: vi.fn(),
+  };
+}
+
 const workspace = { id: 'wsp_1', slug: 'default', display_name: 'Default', is_default: true };
 
 describe('setup steps', () => {
   let http: HttpTestingController;
   let navigate: ReturnType<typeof vi.spyOn>;
 
+  let user: ReturnType<typeof fakeUser>;
+
   async function render<T>(
     component: Type<T>,
+    canManage = true,
   ): Promise<{ fixture: ComponentFixture<T>; el: HTMLElement }> {
+    user = fakeUser(canManage);
     TestBed.configureTestingModule({
       imports: [component],
       providers: [
@@ -30,6 +53,7 @@ describe('setup steps', () => {
         provideRouter([]),
         { provide: API_BASE_URL, useValue: 'https://cp.test' },
         { provide: Session, useValue: { principalId: () => 'prn_me' } },
+        { provide: CurrentUser, useValue: user },
       ],
     });
     http = TestBed.inject(HttpTestingController);
@@ -59,22 +83,77 @@ describe('setup steps', () => {
 
   afterEach(() => http.verify());
 
-  it('renames the default Workspace and moves on', async () => {
-    const { fixture, el } = await render(OrganisationStep);
+  async function renderOrganisation(canManage = true) {
+    const rendered = await render(OrganisationStep, canManage);
+    http.expectOne(`${v1}/organization`).flush(ok(organization));
     http.expectOne(`${v1}/workspaces`).flush(ok([workspace]));
-    await settle(fixture);
+    await settle(rendered.fixture);
+    return rendered;
+  }
 
+  it('greets the person and fills in the Organisation and its Workspace', async () => {
+    const { el } = await renderOrganisation();
+
+    expect(el.querySelector('h1')?.textContent).toContain('Welcome to Ivaldi, Ama');
+    expect(el.querySelector<HTMLInputElement>('#org-display-name')?.value).toBe('Northwind');
+    expect(el.querySelector<HTMLInputElement>('#org-name')?.value).toBe('Northwind Labs Ltd');
+    expect(el.querySelector<HTMLInputElement>('#org-slug')?.value).toBe('northwind');
+    expect(el.querySelector<HTMLInputElement>('#workspace-name')?.value).toBe('Default');
+  });
+
+  it('saves only what changed on the Organisation and the Workspace', async () => {
+    const { fixture, el } = await renderOrganisation();
+
+    type(el, '#org-display-name', 'Northwind Labs');
     type(el, '#workspace-name', 'Platform');
     type(el, '#workspace-slug', 'platform');
-    submit(el, 'workspace-form');
+    submit(el, 'organisation-form');
     await settle(fixture);
 
-    const req = http.expectOne(`${v1}/workspaces/wsp_1`);
-    expect(req.request.method).toBe('PATCH');
-    expect(req.request.body).toEqual({ display_name: 'Platform', slug: 'platform' });
-    req.flush(ok({ ...workspace, display_name: 'Platform', slug: 'platform' }));
+    const org = http.expectOne(`${v1}/organization`);
+    expect(org.request.method).toBe('PATCH');
+    expect(org.request.body).toEqual({ display_name: 'Northwind Labs' });
+    org.flush(ok({ ...organization, display_name: 'Northwind Labs' }));
+    await settle(fixture);
+    expect(user.reload).toHaveBeenCalled();
+
+    const ws = http.expectOne(`${v1}/workspaces/wsp_1`);
+    expect(ws.request.method).toBe('PATCH');
+    expect(ws.request.body).toEqual({ display_name: 'Platform', slug: 'platform' });
+    ws.flush(ok({ ...workspace, display_name: 'Platform', slug: 'platform' }));
     await settle(fixture);
     expect(navigate).toHaveBeenCalledWith(['/setup', 'sign-in']);
+  });
+
+  it('warns that a new address breaks links that name the old one', async () => {
+    const { fixture, el } = await renderOrganisation();
+
+    type(el, '#org-slug', 'northwind-labs');
+    fixture.detectChanges();
+
+    expect(el.textContent).toContain(
+      'Links and sign-in hints that name northwind will stop working.',
+    );
+  });
+
+  it('shows the Organisation read-only to people who cannot manage it', async () => {
+    const { fixture, el } = await renderOrganisation(false);
+
+    expect(el.querySelector('#org-display-name')).toBeNull();
+    expect(el.textContent).toContain('Only owners and admins can change these.');
+
+    submit(el, 'organisation-form');
+    await settle(fixture);
+    http.expectNone((r) => r.method === 'PATCH');
+    expect(navigate).toHaveBeenCalledWith(['/setup', 'sign-in']);
+  });
+
+  it('names the person setting up as the Team lead', async () => {
+    const { fixture, el } = await render(TeamStep);
+    http.expectOne(`${v1}/teams`).flush(page([]));
+    await settle(fixture);
+
+    expect(el.textContent?.replace(/\s+/g, ' ')).toContain('Ama Mensah (you)');
   });
 
   it('creates the Team with you as lead and its agents', async () => {

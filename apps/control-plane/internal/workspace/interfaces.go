@@ -30,6 +30,8 @@ type Repository interface {
 	// default flag, archived time, and updated time.
 	UpdateWorkspace(ctx context.Context, w *Workspace) error
 	CountActiveProjects(ctx context.Context, organizationID, workspaceID string) (int, error)
+	// CountActiveProjectsOwnedBy counts the active Projects a Team owns.
+	CountActiveProjectsOwnedBy(ctx context.Context, organizationID, teamID string) (int, error)
 
 	CreateProject(ctx context.Context, p *Project) error
 	GetProject(ctx context.Context, organizationID, projectID string) (*Project, error)

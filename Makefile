@@ -31,7 +31,7 @@ LOCAL_DIR := .local
 PG_PASSWORD ?= brokandsindri
 LOCAL_DATABASE_URL ?= postgres://ivaldi_db_user:$(PG_PASSWORD)@127.0.0.1:5433/ivaldi?sslmode=disable
 
-.PHONY: help prepare build build-cli build-server migration_generate migrate_up migrate_down migrate_version check_capability check_database_url \
+.PHONY: help prepare build build-cli build-server openapi openapi_check migration_generate migrate_up migrate_down migrate_version check_capability check_database_url \
 	local local_up local_stack local_secrets local_database local_migrate local_serve local_down local_reset
 
 help:
@@ -39,6 +39,10 @@ help:
 	@echo "  make build                                         Build $(SERVER_BINARY_NAME) and $(CLI_BINARY_NAME)"
 	@echo "  make build-server                                  Build $(SERVER_BINARY_NAME): control plane, gateway, worker, indexer"
 	@echo "  make build-cli                                     Build $(CLI_BINARY_NAME)"
+	@echo ""
+	@echo "API clients"
+	@echo "  make openapi                                       Regenerate api/openapi.json, ivaldictl's client, and the web app's types"
+	@echo "  make openapi_check                                 Fail if any of them is out of date"
 	@echo ""
 	@echo "Migrations (capabilities: $(CAPABILITIES))"
 	@echo "  make <capability>_migration_generate name=<name>   Create a numbered up/down pair"
@@ -177,3 +181,15 @@ local_down:
 local_reset:
 	@docker compose exec -T postgres dropdb -U ivaldi_db_user --if-exists --force ivaldi
 	@$(MAKE) --no-print-directory local_database local_migrate
+
+# The control plane's API description is committed as api/openapi.json, and
+# ivaldictl's Go client and the web app's TypeScript types are generated from
+# it. Run this after changing an operation or a response.
+openapi:
+	go run ./apps/control-plane/cmd openapi > api/openapi.json
+	cd apps/cli && go generate ./internal/apiclient
+	cd apps/webui && pnpm run api:types
+
+# Regenerates everything and fails if that changed a committed file.
+openapi_check: openapi
+	git diff --exit-code -- api/openapi.json apps/cli/internal/apiclient apps/webui/src/app/api/schema.gen.ts

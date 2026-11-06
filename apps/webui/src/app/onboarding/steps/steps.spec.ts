@@ -187,6 +187,48 @@ describe('setup steps', () => {
     expect(navigate).toHaveBeenCalledWith(['/setup', 'environments']);
   });
 
+  it('adds people who have signed in as members', async () => {
+    const { fixture, el } = await render(TeamStep);
+    http.expectOne(`${v1}/teams`).flush(page([]));
+    await settle(fixture);
+
+    type(el, '#team-name', 'Payments');
+    type(el, '#person-search', 'jo');
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    const search = http.expectOne((r) => r.url.startsWith(`${v1}/people`));
+    expect(search.request.urlWithParams).toContain('q=jo');
+    search.flush(
+      page([
+        { id: 'prn_me', display_name: 'Ama Mensah', email: 'ama@northwind.dev', roles: [] },
+        { id: 'prn_jonas', display_name: 'Jonas Berg', email: 'jonas@northwind.dev', roles: [] },
+      ]),
+    );
+    await settle(fixture);
+    const results = [
+      ...el.querySelectorAll<HTMLButtonElement>('ul[aria-label="People found"] button'),
+    ];
+    // The lead isn't offered, since they're already on the Team.
+    expect(results).toHaveLength(1);
+    expect(results[0].textContent).toContain('Jonas Berg');
+    results[0].click();
+    await settle(fixture);
+    submit(el, 'team-form');
+    await settle(fixture);
+
+    http
+      .expectOne((r) => r.method === 'POST' && r.url === `${v1}/teams`)
+      .flush(ok({ id: 'team_1', slug: 'payments', display_name: 'Payments', members: [] }));
+    await settle(fixture);
+    http.expectOne(`${v1}/teams/team_1/members/prn_me`).flush(ok([]));
+    await settle(fixture);
+    const member = http.expectOne(`${v1}/teams/team_1/members/prn_jonas`);
+    expect(member.request.body).toEqual({ role: 'member' });
+    member.flush(ok([]));
+    await settle(fixture);
+
+    expect(navigate).toHaveBeenCalledWith(['/setup', 'environments']);
+  });
+
   it('shows the control plane’s reason when the Team is refused', async () => {
     const { fixture, el } = await render(TeamStep);
     http.expectOne(`${v1}/teams`).flush(page([]));

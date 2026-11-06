@@ -40,13 +40,13 @@ export class ApiClient {
   }
 
   send<T>(method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<T> {
-    return unwrap(this.http.request<Envelope<T>>(method, `${this.base}${path}`, { body }));
+    return unwrap(this.http.request<Envelope<T> | null>(method, `${this.base}${path}`, { body }));
   }
 }
 
-async function unwrap<T>(request: Observable<Envelope<T>>): Promise<T> {
+async function unwrap<T>(request: Observable<Envelope<T> | null>): Promise<T> {
   try {
-    return await firstValueFrom(request.pipe(map((envelope) => envelope.data)));
+    return await firstValueFrom(request.pipe(map((envelope) => envelope?.data as T)));
   } catch (error) {
     throw toApiError(error);
   }

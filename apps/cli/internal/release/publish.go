@@ -17,13 +17,16 @@ func publishCommand(a *app.App) *cobra.Command {
 			if err != nil {
 				return err
 			}
+
 			resp, err := c.PublishReleaseWithResponse(cmd.Context(), args[0])
 			if err != nil {
 				return err
 			}
+
 			if err := client.Check(resp, resp.JSON200 != nil); err != nil {
 				return err
 			}
+
 			return printRelease(a, cmd, resp.JSON200.Data)
 		},
 	}

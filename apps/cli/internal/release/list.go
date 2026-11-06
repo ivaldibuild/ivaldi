@@ -29,17 +29,21 @@ func listCommand(a *app.App) *cobra.Command {
 				}
 				params.Status = &s
 			}
+
 			c, err := a.Client(cmd)
 			if err != nil {
 				return err
 			}
+
 			resp, err := c.ListReleasesWithResponse(cmd.Context(), appID, params)
 			if err != nil {
 				return err
 			}
+
 			if err := client.Check(resp, resp.JSON200 != nil); err != nil {
 				return err
 			}
+
 			page := resp.JSON200.Data
 			return a.Print(cmd, page, func(w io.Writer) {
 				for _, r := range page.Items {
@@ -49,10 +53,12 @@ func listCommand(a *app.App) *cobra.Command {
 			})
 		},
 	}
+
 	cmd.Flags().StringVar(&appID, "app", "", "The Application's ID (required)")
 	cmd.Flags().StringVar(&status, "status", "", "Only Releases with this status: draft, published, or withdrawn")
 	cmd.Flags().StringVar(&channel, "channel", "", "Only Releases in this Channel")
 	cmd.Flags().Int64Var(&limit, "limit", 20, "Most Releases to show")
 	_ = cmd.MarkFlagRequired("app")
+
 	return cmd
 }

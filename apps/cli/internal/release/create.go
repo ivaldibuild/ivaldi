@@ -58,6 +58,7 @@ With --publish it is published at once, as a tag pipeline would.`,
 			return printRelease(a, cmd, resp.JSON201.Data)
 		},
 	}
+
 	fl := cmd.Flags()
 	fl.StringVar(&f.app, "app", "", "The Application's ID (required)")
 	fl.StringVar(&f.version, "version", "", "The Release's version; defaults to the version a v-prefixed tag names")
@@ -69,40 +70,51 @@ With --publish it is published at once, as a tag pipeline would.`,
 	fl.StringVar(&f.ref, "ref", "", "The full Git ref the Builds were built from, such as refs/tags/v1.4.0; detected in CI")
 	fl.StringVar(&f.ciProvider, "ci-provider", "", "The CI system, such as github_actions; detected in CI")
 	fl.StringVar(&f.ciRun, "ci-run", "", "The CI run's URL; detected in CI")
+
 	_ = cmd.MarkFlagRequired("app")
 	_ = cmd.MarkFlagRequired("artifact")
+
 	return cmd
 }
 
 // body builds the request from the flags, filling in what CI says.
 func (f createFlags) body(ci ciinfo.Info) (apiclient.CreateReleaseJSONRequestBody, error) {
 	var body apiclient.CreateReleaseJSONRequestBody
+
 	ref := or(f.ref, ci.Ref)
 	if ref != "" && !strings.HasPrefix(ref, "refs/") {
 		return body, fmt.Errorf("--ref %q must be a full Git ref, such as refs/heads/%s", ref, ref)
 	}
+
 	version := or(f.version, ciinfo.VersionFromRef(ref))
 	if version == "" {
 		return body, errors.New("give --version: it can be read only from a version tag such as refs/tags/v1.4.0")
 	}
+
 	body.Version = version
 	body.ChannelId = optional(f.channel)
+
 	if f.publish {
 		body.Publish = &f.publish
 	}
+
 	builds := []apiclient.BuildBody{}
 	seen := map[string]bool{}
+
 	for _, spec := range f.artifacts {
 		name, digest, ok := strings.Cut(spec, "=")
 		if !ok || name == "" || digest == "" {
 			return body, fmt.Errorf("--artifact %q must be name=digest, such as api=sha256:4f2a...", spec)
 		}
+
 		if !strings.Contains(digest, ":") {
 			return body, fmt.Errorf("--artifact %s: %q is not a digest; tags cannot be resolved yet, so give the digest, such as sha256:4f2a...", name, digest)
 		}
+
 		if seen[name] {
 			return body, fmt.Errorf("--artifact %s is given twice", name)
 		}
+
 		seen[name] = true
 		builds = append(builds, apiclient.BuildBody{
 			Artifact:   name,
@@ -114,6 +126,8 @@ func (f createFlags) body(ci ciinfo.Info) (apiclient.CreateReleaseJSONRequestBod
 			CiRunRef:   optional(or(f.ciRun, ci.RunURL)),
 		})
 	}
+
 	body.Builds = builds
+
 	return body, nil
 }

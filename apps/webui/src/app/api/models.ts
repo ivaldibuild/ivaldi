@@ -137,3 +137,35 @@ export interface Me {
   organization: { id: string; slug: string; display_name: string; logo_url: string | null };
   roles: MeRole[];
 }
+
+export type BuiltInRole = 'owner' | 'admin' | 'member' | 'viewer';
+
+/** One of the Organisation's users, from `GET /v1/people`. */
+export interface Person {
+  id: string;
+  display_name: string;
+  email: string;
+  status: string;
+  joined_at: string;
+  last_signed_in_at: string | null;
+  /** Roles held on the Organisation itself, directly or through a group. */
+  roles: { role: string; role_id: string }[];
+}
+
+/** A role granted on a resource, from `GET /v1/grants`. */
+export interface Grant {
+  id: string;
+  role: string;
+  resource_id: string;
+  principal: { id: string; kind: string; display_name: string; status: string } | null;
+  group: { id: string; name: string; source: string; team_id: string | null } | null;
+  expires_at: string | null;
+}
+
+/** A cursor-paged list's page, with its cursors. */
+export interface CursorPage<T> {
+  items: T[];
+  total_count: number;
+  has_next: boolean;
+  next_cursor: string | null;
+}

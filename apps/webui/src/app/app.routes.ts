@@ -83,6 +83,11 @@ export const routes: Routes = [
           import('./delivery/pages/environments-page').then((m) => m.EnvironmentsPage),
       },
       {
+        path: 'people',
+        title: 'People & access · Ivaldi',
+        loadComponent: () => import('./organisation/people-page').then((m) => m.PeoplePage),
+      },
+      {
         path: 'lifecycles',
         title: 'Lifecycles · Ivaldi',
         loadComponent: () =>

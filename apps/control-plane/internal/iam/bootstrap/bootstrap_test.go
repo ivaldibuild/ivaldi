@@ -82,6 +82,7 @@ func (e *env) bootstrapper(t *testing.T, s Settings) Bootstrapper {
 		onboarding.WithResourceRegistrar(resources),
 		onboarding.WithGrantRepo(grants),
 		onboarding.WithAccountIdentityRepo(iampg.NewAccountIdentityRepository(e.db)),
+		onboarding.WithOrganizationProvisioner(&provisioned{}),
 	)
 	require.NoError(t, err)
 	b, err := New(
@@ -278,4 +279,13 @@ func keys(m map[iam.IdentityProtocol]string) []iam.IdentityProtocol {
 		out = append(out, k)
 	}
 	return out
+}
+
+// provisioned records the Organizations onboarding provisions, standing in
+// for the workspace capability.
+type provisioned struct{ orgs []string }
+
+func (p *provisioned) ProvisionOrganization(_ context.Context, organizationID string) error {
+	p.orgs = append(p.orgs, organizationID)
+	return nil
 }

@@ -132,6 +132,17 @@ func (f *fakeRegistrar) RegisterResource(ctx context.Context, r iam.Resource) er
 func (f *fakeRegistrar) ArchiveResource(context.Context, string, string) error { return nil }
 func (f *fakeRegistrar) RestoreResource(context.Context, string, string) error { return nil }
 
+// fakeProvisioner records the Organizations it provisions.
+type fakeProvisioner struct {
+	writes []write
+	err    error
+}
+
+func (f *fakeProvisioner) ProvisionOrganization(ctx context.Context, organizationID string) error {
+	f.writes = append(f.writes, write{organizationID, inTx(ctx)})
+	return f.err
+}
+
 type fakeGrants struct {
 	writes []write
 	err    error
@@ -183,6 +194,7 @@ type fixture struct {
 	resources *fakeRegistrar
 	grants    *fakeGrants
 	platform  *fakePlatform
+	provision *fakeProvisioner
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -199,6 +211,7 @@ func newFixture(t *testing.T) *fixture {
 		resources: &fakeRegistrar{},
 		grants:    &fakeGrants{},
 		platform:  &fakePlatform{},
+		provision: &fakeProvisioner{},
 	}
 	svc, err := NewOnboardingService(f.options()...)
 	require.NoError(t, err)
@@ -219,6 +232,7 @@ func (f *fixture) options() []OnboardingServiceOption {
 		WithResourceRegistrar(f.resources),
 		WithGrantRepo(f.grants),
 		WithAccountIdentityRepo(f.platform),
+		WithOrganizationProvisioner(f.provision),
 	}
 }
 
@@ -249,6 +263,7 @@ func TestNewOnboardingServiceRequiresEveryDependency(t *testing.T) {
 		{"ResourceRegistrar", WithResourceRegistrar(nil)},
 		{"GrantRepo", WithGrantRepo(nil)},
 		{"AccountIdentityRepo", WithAccountIdentityRepo(nil)},
+		{"OrganizationProvisioner", WithOrganizationProvisioner(nil)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -292,6 +307,10 @@ func TestOnboardOrganization(t *testing.T) {
 	require.Len(t, f.resources.writes, 1)
 	assert.True(t, f.resources.writes[0].inTx)
 	assert.Equal(t, org.Resource(), f.resources.writes[0].obj, "the Organization is the root of its resource hierarchy")
+
+	require.Len(t, f.provision.writes, 1)
+	assert.Equal(t, org.ID(), f.provision.writes[0].obj, "the Organization is provisioned, such as with its default Workspace")
+	assert.True(t, f.provision.writes[0].inTx)
 
 	require.Len(t, f.grants.writes, 1)
 	assert.True(t, f.grants.writes[0].inTx)
@@ -510,4 +529,14 @@ func TestOnboardWithPlatformIdentityRefuses(t *testing.T) {
 		_, ok := errors.AsType[*ErrAccountConflict](err)
 		assert.True(t, ok)
 	})
+}
+
+func TestOnboardOrganizationFailsWhenProvisioningFails(t *testing.T) {
+	f := newFixture(t)
+	f.provision.err = errors.New("workspace capability down")
+	f.logger.On("Error", "failed to onboard organization", mock.Anything).Once()
+
+	err := f.svc.OnboardOrganization(context.Background(), input())
+
+	require.ErrorIs(t, err, f.provision.err)
 }

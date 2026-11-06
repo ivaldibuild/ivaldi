@@ -1,6 +1,8 @@
 package server
 
 import (
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
+	deliverypg "github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/policy"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/policy/locks"
 	policypg "github.com/ivaldibuild/ivaldi-control-plane/internal/policy/postgres"
@@ -15,6 +17,9 @@ import (
 // that define or read settings.
 func (a *app) wireSettings() error {
 	a.settingDefs = workspace.NewDefinitions()
+	if err := delivery.RegisterSettings(a.settingDefs, deliverypg.NewLifecycleRepository(a.db)); err != nil {
+		return err
+	}
 
 	lockRepo := policypg.NewSettingLockRepository(a.db)
 	a.settingLocks = policy.NewLockSource(lockRepo)

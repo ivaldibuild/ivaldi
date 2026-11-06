@@ -324,12 +324,13 @@ func (a *Application) Restore() {
 }
 
 // Validate checks what can be checked of a new Application before its
-// Project is read: the Lifecycle its default Channel follows, its display
-// name, its slug, and its workload selector. NewApplication checks them
-// again, with the rest.
+// Project is read: the Lifecycle its default Channel follows, if one is
+// named, its display name, its slug, and its workload selector.
+// NewApplication checks them again, with the rest. Without a Lifecycle, the
+// service resolves the delivery.default_lifecycle setting for the Project.
 func (in CreateApplicationInput) Validate() error {
-	if !id.Valid(Lifecycle{}.Prefix(), in.DefaultLifecycleID) {
-		return NewErrInvalidInput("an application needs the lifecycle its default channel follows")
+	if in.DefaultLifecycleID != "" && !id.Valid(Lifecycle{}.Prefix(), in.DefaultLifecycleID) {
+		return NewErrInvalidInput("the lifecycle the default channel follows must be a lifecycle ID")
 	}
 	if err := validateDisplayName(in.DisplayName); err != nil {
 		return err

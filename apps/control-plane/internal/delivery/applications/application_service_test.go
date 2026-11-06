@@ -9,6 +9,7 @@ import (
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/change"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
 )
@@ -362,9 +363,52 @@ func TestCreateApplication(t *testing.T) {
 		assert.Equal(t, teamOther, app.OwnerTeamID())
 	})
 
+	t.Run("without a lifecycle, the project's setting names it", func(t *testing.T) {
+		w := newWorld(t)
+		forProject := w.lifecycle(t, wsActive, "project", false)
+		w.setDefaultLifecycle(prjActive, forProject.ID())
+		w.setDefaultLifecycle(wsActive, w.lifecycle(t, wsActive, "workspace", false).ID())
+
+		_, ch, err := w.svc.CreateApplication(ctx, ada, delivery.CreateApplicationInput{OrganizationID: org, ProjectID: prjActive, DisplayName: "API"})
+		require.NoError(t, err)
+		assert.Equal(t, forProject.ID(), ch.LifecycleID())
+		assert.Equal(t, []workspace.Scope{workspace.ProjectScope(org, wsActive, prjActive)}, w.resolved, "resolved at the project's scope")
+	})
+
+	t.Run("without a lifecycle, the workspace's setting names it", func(t *testing.T) {
+		w := newWorld(t)
+		forWorkspace := w.lifecycle(t, wsActive, "workspace", false)
+		w.setDefaultLifecycle(wsActive, forWorkspace.ID())
+
+		_, ch, err := w.svc.CreateApplication(ctx, ada, delivery.CreateApplicationInput{OrganizationID: org, ProjectID: prjActive, DisplayName: "API"})
+		require.NoError(t, err)
+		assert.Equal(t, forWorkspace.ID(), ch.LifecycleID())
+	})
+
+	t.Run("a named lifecycle wins over the setting", func(t *testing.T) {
+		w := newWorld(t)
+		named := w.lifecycle(t, wsActive, "named", false)
+		w.setDefaultLifecycle(prjActive, w.lifecycle(t, wsActive, "set", false).ID())
+
+		_, ch, err := w.svc.CreateApplication(ctx, ada, delivery.CreateApplicationInput{OrganizationID: org, ProjectID: prjActive, DisplayName: "API", DefaultLifecycleID: named.ID()})
+		require.NoError(t, err)
+		assert.Equal(t, named.ID(), ch.LifecycleID())
+		assert.Empty(t, w.resolved, "the setting is not read")
+	})
+
+	t.Run("without a lifecycle or a setting, both fixes are named", func(t *testing.T) {
+		w := newWorld(t)
+		before := w.state.clone()
+		_, _, err := w.svc.CreateApplication(ctx, ada, delivery.CreateApplicationInput{OrganizationID: org, ProjectID: prjActive, DisplayName: "API"})
+		var invalid *delivery.ErrInvalidInput
+		require.ErrorAs(t, err, &invalid)
+		assert.Contains(t, invalid.Message, "name one")
+		assert.Contains(t, invalid.Message, delivery.SettingDefaultLifecycle)
+		assert.Equal(t, before, w.state)
+	})
+
 	t.Run("bad input is refused before asking", func(t *testing.T) {
 		for name, in := range map[string]delivery.CreateApplicationInput{
-			"no lifecycle":     {OrganizationID: org, ProjectID: prjActive, DisplayName: "API"},
 			"no display name":  {OrganizationID: org, ProjectID: prjActive, DefaultLifecycleID: id.New(delivery.Lifecycle{}.Prefix())},
 			"a bad slug":       {OrganizationID: org, ProjectID: prjActive, Slug: "Not A Slug", DisplayName: "API", DefaultLifecycleID: id.New(delivery.Lifecycle{}.Prefix())},
 			"a bad selector":   {OrganizationID: org, ProjectID: prjActive, DisplayName: "API", DefaultLifecycleID: id.New(delivery.Lifecycle{}.Prefix()), WorkloadSelector: map[string]string{"": "x"}},
@@ -410,6 +454,18 @@ func TestCreateApplication(t *testing.T) {
 		{"missing lifecycle", func(*testing.T, *world) delivery.CreateApplicationInput {
 			return delivery.CreateApplicationInput{ProjectID: prjActive, DefaultLifecycleID: "lfc_01JZ0000000000000000000099"}
 		}, delivery.ErrNotFound},
+		{"the setting names an archived lifecycle", func(t *testing.T, w *world) delivery.CreateApplicationInput {
+			w.setDefaultLifecycle(wsActive, w.lifecycle(t, wsActive, "l", true).ID())
+			return delivery.CreateApplicationInput{ProjectID: prjActive}
+		}, delivery.ErrArchived},
+		{"the setting names another workspace's lifecycle", func(t *testing.T, w *world) delivery.CreateApplicationInput {
+			w.setDefaultLifecycle(prjActive, w.lifecycle(t, wsOther, "l", false).ID())
+			return delivery.CreateApplicationInput{ProjectID: prjActive}
+		}, delivery.ErrWorkspaceMismatch},
+		{"resolving the setting fails", func(_ *testing.T, w *world) delivery.CreateApplicationInput {
+			w.fail["resolve"] = errBoom
+			return delivery.CreateApplicationInput{ProjectID: prjActive}
+		}, errBoom},
 		{"slug taken", func(t *testing.T, w *world) delivery.CreateApplicationInput {
 			l := w.lifecycle(t, wsActive, "l", false)
 			w.app(t, prjActive, "api", l)

@@ -350,7 +350,8 @@ type CreateApplicationInput struct {
 	SourceID         string
 	WorkloadSelector map[string]string
 	// DefaultLifecycleID is the Lifecycle the default Channel follows. It
-	// must be active and in the Project's Workspace.
+	// must be active and in the Project's Workspace. When it is empty, the
+	// delivery.default_lifecycle setting resolved for the Project names it.
 	DefaultLifecycleID string
 }
 

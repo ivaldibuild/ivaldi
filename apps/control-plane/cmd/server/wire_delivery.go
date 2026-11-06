@@ -124,6 +124,7 @@ func (a *app) wireDelivery() error {
 		applications.WithEnvironmentLookup(envRepo),
 		applications.WithWorkspaces(workspaces),
 		applications.WithTeamDirectory(a.teams),
+		applications.WithSettingResolver(a.settingResolver),
 		applications.WithAuthorizer(a.authz),
 		applications.WithTransactor(a.tx),
 		applications.WithOutboxRecorder(a.outbox),

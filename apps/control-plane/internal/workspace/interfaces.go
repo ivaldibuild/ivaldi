@@ -57,7 +57,9 @@ type Repository interface {
 }
 
 // LockSource reports which setting keys are locked, as Organization and
-// Workspace policy rules owned by the policy capability.
+// Workspace policy rules owned by the policy capability, which implements it
+// (policy.NewLockSource). A locked key cannot be changed or removed below
+// the lock's level, and resolves to the value at the lock's level.
 type LockSource interface {
 	// LockedKeys returns the level each locked key is locked at, for the
 	// Organization and, if workspaceID is set, that Workspace. When both lock a
@@ -65,8 +67,8 @@ type LockSource interface {
 	LockedKeys(ctx context.Context, organizationID, workspaceID string) (map[string]Level, error)
 }
 
-// NoLocks returns a LockSource that reports no locked keys. Nothing is
-// locked until the policy capability exists and provides the real source.
+// NoLocks returns a LockSource that reports no locked keys, for wiring
+// without the policy capability.
 func NoLocks() LockSource { return noLocks{} }
 
 type noLocks struct{}

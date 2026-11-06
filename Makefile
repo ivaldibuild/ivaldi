@@ -7,7 +7,7 @@ LDFLAGS := -ldflags "-X main.VERSION=$(VERSION)"
 
 # Control-plane capabilities with their own migrations, in the order they are applied.
 # There are no foreign keys between capabilities, so the order is for readability only.
-CAPABILITIES := outbox audit iam workspace versioncontrol delivery team
+CAPABILITIES := outbox audit iam workspace versioncontrol delivery team policy
 
 MIGRATIONS_ROOT := apps/control-plane/internal
 

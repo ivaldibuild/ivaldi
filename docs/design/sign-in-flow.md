@@ -40,6 +40,11 @@ in its own cookie, so the next authorization skips the web app when the
 Organization is clear: there is one, or the client passed
 `organization=<slug or ID>`. With `prompt=login` the web app is asked again;
 with `prompt=none` the client gets `login_required` instead.
+A slug changes when an owner or admin changes the Organization's address
+(`PATCH /v1/organization`), and from then on the old slug matches nothing:
+a hint naming it is treated as naming no Organization the person belongs
+to, so the web app asks them to choose. Clients that keep a hint should
+keep the Organization's ID, which never changes.
 
 ## Coming back from a provider
 

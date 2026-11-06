@@ -153,6 +153,10 @@ func (o *Organization) UpdatedAt() time.Time        { return o.updatedAt }
 
 func (o *Organization) Active() bool { return o.status == OrganizationActive }
 
+// OrganizationID returns the Organization's own ID: an Organization is its
+// own tenant, so its changes are written and audited like any aggregate's.
+func (o *Organization) OrganizationID() string { return o.ID() }
+
 // Resource returns the Organization's root entry in IAM's resource hierarchy.
 func (o *Organization) Resource() Resource {
 	return Resource{ID: o.ID(), OrganizationID: o.ID(), Type: ResourceOrganization}

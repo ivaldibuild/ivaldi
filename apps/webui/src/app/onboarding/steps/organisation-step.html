@@ -1,0 +1,89 @@
+<app-setup-step step="organisation" heading="Welcome to Ivaldi">
+  <ng-container setupLead>
+    This installation has one Organisation, created from its bootstrap settings, and you are one of
+    its owners. Check its default Workspace, then set up how your software ships.
+  </ng-container>
+
+  @if (status.error(); as message) {
+    <div hlmAlert variant="destructive" role="alert">
+      <h2 hlmAlertTitle>That didn't save</h2>
+      <p hlmAlertDescription>{{ message }}</p>
+    </div>
+  }
+
+  <section aria-labelledby="org-heading" class="border-border flex flex-col gap-2 border p-6">
+    <h2 id="org-heading" class="text-heading text-lg font-semibold">Organisation</h2>
+    <p class="text-muted-foreground text-sm leading-relaxed">
+      Its name and address come from <code>IVALDI_BOOTSTRAP_ORGANIZATION_NAME</code> and
+      <code>IVALDI_BOOTSTRAP_ORGANIZATION_SLUG</code>. Renaming it from here isn't available yet.
+    </p>
+  </section>
+
+  <section aria-labelledby="wsp-heading" class="border-border flex flex-col gap-6 border p-6">
+    <div class="flex flex-col gap-1">
+      <h2 id="wsp-heading" class="text-heading text-lg font-semibold">Default Workspace</h2>
+      <p class="text-muted-foreground text-sm leading-relaxed">
+        Workspaces hold Projects, Environments, Lifecycles and Registries. Start with one, and add
+        more when teams need separate paths to production.
+      </p>
+    </div>
+
+    @if (status.loading()) {
+      <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+        <hlm-spinner aria-hidden="true" /> Loading the Workspace…
+      </p>
+    } @else if (workspace()) {
+      <form
+        id="workspace-form"
+        class="grid gap-4 md:grid-cols-2"
+        novalidate
+        (submit)="save($event)"
+      >
+        <div hlmField>
+          <label hlmFieldLabel for="workspace-name">Name</label>
+          <input
+            hlmInput
+            id="workspace-name"
+            class="h-10"
+            [formField]="workspaceForm.display_name"
+          />
+          @if (workspaceForm.display_name().touched() && workspaceForm.display_name().invalid()) {
+            <hlm-field-error forceShow>{{
+              workspaceForm.display_name().errors()[0].message
+            }}</hlm-field-error>
+          }
+        </div>
+        <div hlmField>
+          <label hlmFieldLabel for="workspace-slug">Address</label>
+          <input hlmInput id="workspace-slug" class="h-10" [formField]="workspaceForm.slug" />
+          @if (workspaceForm.slug().touched() && workspaceForm.slug().invalid()) {
+            <hlm-field-error forceShow>{{
+              workspaceForm.slug().errors()[0].message
+            }}</hlm-field-error>
+          }
+        </div>
+      </form>
+    } @else {
+      <p class="text-muted-foreground text-sm">
+        No Workspace found. The control plane normally creates one with the Organisation.
+      </p>
+    }
+  </section>
+
+  <ng-container setupActions>
+    <button
+      hlmBtn
+      size="lg"
+      type="submit"
+      form="workspace-form"
+      [disabled]="status.loading() || status.saving()"
+      (click)="workspace() ? null : save($event)"
+    >
+      @if (status.saving()) {
+        <hlm-spinner aria-hidden="true" /> Saving…
+      } @else {
+        Save and continue
+      }
+    </button>
+  </ng-container>
+</app-setup-step>

@@ -11,6 +11,14 @@ This project was generated using [Angular CLI](https://github.com/angular/angula
 
 See [Serving the web app](../../docs/self-hosting/web-app.md) for the image, the reverse proxy routes, and both layouts.
 
+## Signing in to the web app
+
+The web app signs people in as the control plane's first-party OAuth client, `ivaldi-web`, with the authorization code flow and PKCE. Register its callback, such as `https://app.example.com/auth/callback`, in the control plane's `auth.web_client.redirect_uris`. Pages that need a signed-in person start that flow on their own (`requireSignIn`), and `authInterceptor` adds the access token to `/v1` calls. Tokens stay in memory: after a reload the web app authorizes again, and the control plane, which remembers the sign-in, sends it straight back.
+
+## First-run setup
+
+`/setup` walks an owner through a new installation: the default Workspace, how sign-in is configured, a first Team with its agents, Environments with Standard and Hotfix Lifecycles, and a first Kubernetes Target. Each step calls the control plane's `/v1` operations directly, so it also works as a review of what already exists.
+
 ## Development server
 
 To start a local development server, run:

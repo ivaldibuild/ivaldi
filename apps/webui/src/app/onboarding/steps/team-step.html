@@ -1,0 +1,130 @@
+<app-setup-step step="team" heading="Form a Team of people and agents">
+  <ng-container setupLead>
+    Every Project and Application is owned by a Team. Approval requests, alerts and findings go to
+    its members. Owning work doesn't grant access: roles do.
+  </ng-container>
+
+  @if (status.error(); as message) {
+    <div hlmAlert variant="destructive" role="alert">
+      <h2 hlmAlertTitle>The Team wasn't set up</h2>
+      <p hlmAlertDescription>{{ message }}</p>
+    </div>
+  }
+
+  @if (status.loading()) {
+    <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+      <hlm-spinner aria-hidden="true" /> Loading Teams…
+    </p>
+  } @else if (teams().length > 0) {
+    <section aria-labelledby="teams-heading" class="flex flex-col gap-4">
+      <h2 id="teams-heading" class="text-heading text-lg font-semibold">Your Teams</h2>
+      <ul class="border-border flex flex-col border">
+        @for (team of teams(); track team.id) {
+          <li
+            class="border-border flex justify-between gap-4 border-b px-4 py-3 text-sm last:border-b-0"
+          >
+            <span class="text-heading font-semibold">{{ team.display_name }}</span>
+            <span class="text-muted-foreground">
+              {{ team.members.length }} {{ team.members.length === 1 ? 'member' : 'members' }}
+            </span>
+          </li>
+        }
+      </ul>
+    </section>
+  } @else {
+    <form id="team-form" class="flex flex-col gap-6" novalidate (submit)="create($event)">
+      <div hlmField class="max-w-100">
+        <label hlmFieldLabel for="team-name">Team name</label>
+        <input
+          hlmInput
+          id="team-name"
+          class="h-10"
+          placeholder="Payments"
+          [formField]="teamForm.display_name"
+        />
+        @if (teamForm.display_name().touched() && teamForm.display_name().invalid()) {
+          <hlm-field-error forceShow>{{
+            teamForm.display_name().errors()[0].message
+          }}</hlm-field-error>
+        }
+      </div>
+
+      <section aria-labelledby="members-heading" class="flex flex-col gap-3">
+        <h2 id="members-heading" class="text-heading text-lg font-semibold">Members</h2>
+        <ul class="border-border flex flex-col border">
+          <li
+            class="border-border flex items-center justify-between gap-4 border-b px-4 py-3 text-sm"
+          >
+            <span class="text-heading font-semibold">You</span>
+            <span class="text-muted-foreground">Lead</span>
+          </li>
+          @for (agent of agents(); track agent) {
+            <li class="border-border flex items-center gap-3 border-b px-4 py-2 text-sm">
+              <ng-icon name="lucideBot" class="text-primary-text" aria-hidden="true" />
+              <span class="text-heading flex-1 font-semibold">{{ agent }}</span>
+              <span class="text-muted-foreground">Agent · member</span>
+              <button
+                hlmBtn
+                variant="ghost"
+                size="icon-sm"
+                type="button"
+                [attr.aria-label]="'Remove ' + agent"
+                (click)="removeAgent(agent)"
+              >
+                <ng-icon name="lucideX" aria-hidden="true" />
+              </button>
+            </li>
+          }
+          <li class="flex flex-wrap items-end gap-3 px-4 py-3">
+            <div hlmField class="min-w-60 flex-1">
+              <label hlmFieldLabel for="agent-name">Add an agent</label>
+              <input
+                hlmInput
+                id="agent-name"
+                placeholder="Release assistant"
+                [value]="agentName()"
+                (input)="agentName.set($any($event.target).value)"
+                (keydown)="onAgentKey($event)"
+              />
+            </div>
+            <button
+              hlmBtn
+              variant="outline"
+              type="button"
+              [disabled]="!agentName().trim()"
+              (click)="addAgent()"
+            >
+              <ng-icon name="lucidePlus" aria-hidden="true" /> Add agent
+            </button>
+          </li>
+        </ul>
+        <p class="text-muted-foreground text-sm leading-relaxed">
+          People join the Team once they've signed in. Adding them from here isn't available yet.
+        </p>
+      </section>
+
+      <div hlmAlert role="note">
+        <h2 hlmAlertTitle>Agents ask; people approve</h2>
+        <p hlmAlertDescription>
+          Agents in a Team can draft Releases and ask to deploy. Anything an autonomous agent asks
+          to deploy waits for a person on the Team who could deploy it themselves.
+        </p>
+      </div>
+    </form>
+  }
+
+  <ng-container setupActions>
+    @if (!status.loading() && teams().length === 0) {
+      <button hlmBtn size="lg" type="submit" form="team-form" [disabled]="status.saving()">
+        @if (status.saving()) {
+          <hlm-spinner aria-hidden="true" /> Creating…
+        } @else {
+          Create Team and continue
+        }
+      </button>
+    } @else {
+      <a hlmBtn size="lg" routerLink="/setup/environments">Continue</a>
+    }
+    <a hlmBtn size="lg" variant="outline" routerLink="/setup/sign-in">Back</a>
+  </ng-container>
+</app-setup-step>

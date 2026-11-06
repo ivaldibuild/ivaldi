@@ -1,0 +1,74 @@
+<div class="bg-background text-foreground flex min-h-dvh flex-wrap">
+  <nav
+    aria-label="Setup steps"
+    class="border-border flex w-full flex-col gap-8 border-b px-6 py-8 md:min-h-dvh md:w-80 md:border-r md:border-b-0"
+  >
+    <span class="text-heading text-sm font-semibold">Ivaldi</span>
+
+    <div class="flex flex-col gap-2">
+      <span class="text-eyebrow text-xs font-semibold tracking-[0.24em] uppercase">
+        First-run setup
+      </span>
+      @if (current() <= total) {
+        <span class="text-muted-foreground text-sm">Step {{ current() }} of {{ total }}</span>
+      } @else {
+        <span class="text-muted-foreground text-sm">All steps done</span>
+      }
+      <div
+        class="bg-secondary h-1"
+        role="progressbar"
+        aria-label="Setup progress"
+        aria-valuemin="0"
+        [attr.aria-valuemax]="total"
+        [attr.aria-valuenow]="current() - 1"
+      >
+        <div class="bg-primary h-1" [style.width]="progress()"></div>
+      </div>
+    </div>
+
+    <ol class="flex flex-col gap-1">
+      @for (step of steps(); track step.path) {
+        <li>
+          <a
+            [routerLink]="['/setup', step.path]"
+            [attr.aria-current]="step.state === 'current' ? 'step' : null"
+            class="flex items-start gap-3 p-3 no-underline"
+            [class.bg-secondary]="step.state === 'current'"
+          >
+            <span
+              class="inline-flex size-7 shrink-0 items-center justify-center text-sm font-semibold"
+              [class.bg-primary]="step.state === 'current'"
+              [class.text-primary-foreground]="step.state === 'current'"
+              [class.border]="step.state !== 'current'"
+              [class.border-input]="step.state !== 'current'"
+              [class.border-dashed]="step.state === 'next'"
+              [class.text-muted-foreground]="step.state === 'next'"
+            >
+              @if (step.state === 'done') {
+                <ng-icon name="lucideCheck" aria-label="Done" />
+              } @else {
+                {{ step.number }}
+              }
+            </span>
+            <span class="flex flex-col gap-0.5">
+              <span
+                class="text-sm font-semibold"
+                [class.text-heading]="step.state !== 'next'"
+                [class.text-muted-foreground]="step.state === 'next'"
+              >
+                {{ step.title }}
+              </span>
+              <span class="text-muted-foreground text-[13px] leading-5">{{
+                step.description
+              }}</span>
+            </span>
+          </a>
+        </li>
+      }
+    </ol>
+  </nav>
+
+  <main class="min-w-0 flex-[999_1_560px] px-4 py-12 md:px-12 md:py-16">
+    <router-outlet />
+  </main>
+</div>

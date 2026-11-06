@@ -1,6 +1,9 @@
 package delivery
 
-import "errors"
+import (
+	"errors"
+	"strings"
+)
 
 var (
 	// ErrInvalid means the input failed validation. ErrInvalidInput matches it.
@@ -27,7 +30,41 @@ var (
 	ErrInactiveTeam = errors.New("team is not an active team in the organization")
 	// ErrNotTargetAgent means the caller is not the runtime agent that serves the Target.
 	ErrNotTargetAgent = errors.New("not the target's agent")
+	// ErrReleaseStatus means the Release's status does not allow the change,
+	// such as publishing a Release that is already published.
+	ErrReleaseStatus = errors.New("not allowed in the release's status")
+	// ErrBuildConflict means a report gives a Build a commit other than the
+	// one it was built from.
+	ErrBuildConflict = errors.New("conflicts with the recorded build")
+	// ErrTagsUnsupported means a Build was named by tag, and tags cannot be
+	// resolved to digests yet.
+	ErrTagsUnsupported = errors.New("tags cannot be resolved to digests yet; give the digest")
 )
+
+// RulesError says why a Release does not meet a Channel's rules, or which
+// Channels it could join when none was named. It matches ErrInvalid, as the
+// caller can change the Release or name a Channel.
+type RulesError struct {
+	Message string
+	// Reasons are the rules the Release does not meet, in words.
+	Reasons []string
+	// Candidates names the Channels that admit the Release, when more than
+	// one does.
+	Candidates []string
+}
+
+func (e *RulesError) Error() string {
+	msg := e.Message
+	if len(e.Reasons) > 0 {
+		msg += ": " + strings.Join(e.Reasons, "; ")
+	}
+	if len(e.Candidates) > 0 {
+		msg += ": " + strings.Join(e.Candidates, ", ")
+	}
+	return msg
+}
+
+func (e *RulesError) Is(target error) bool { return target == ErrInvalid }
 
 // ErrInvalidInput describes why input failed validation. It matches ErrInvalid.
 type ErrInvalidInput struct {

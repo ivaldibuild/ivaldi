@@ -224,6 +224,16 @@ func (c *Channel) ArchivedAt() *time.Time { return clock.CopyTime(c.archivedAt) 
 
 func (c *Channel) Archived() bool { return c.archivedAt != nil }
 
+// Admits evaluates the Channel's rules against a candidate Release: whether
+// it may join, and if not, why.
+func (c *Channel) Admits(candidate release.Candidate) (bool, []string, error) {
+	rules := make([]release.Rule, len(c.rules))
+	for i, r := range c.rules {
+		rules[i] = release.Rule{Kind: r.kind, ArtifactID: copyString(r.artifactID), Config: r.config}
+	}
+	return release.Admits(rules, candidate)
+}
+
 // Rules returns the Channel's rules in the order they were added.
 func (c *Channel) Rules() []ChannelRuleSnapshot {
 	out := make([]ChannelRuleSnapshot, len(c.rules))

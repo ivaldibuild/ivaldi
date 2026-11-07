@@ -51,6 +51,9 @@
           <button hlmBtn variant="outline" type="button" (click)="confirmingWithdraw.set(true)">
             Withdraw
           </button>
+          <a hlmBtn [routerLink]="['/releases', release()!.id, 'deploy']">
+            <ng-icon name="lucideRocket" aria-hidden="true" /> Deploy
+          </a>
         }
       </div>
     </app-page-header>

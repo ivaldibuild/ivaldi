@@ -2,15 +2,20 @@ import { inject, Service } from '@angular/core';
 import { ApiClient } from '../api/api-client';
 import {
   Application,
+  ApplyConfig,
   Artifact,
   ArtifactKind,
   Channel,
+  CursorPage,
+  Deployment,
+  DeploymentDetail,
+  DeploymentStatus,
   Environment,
   Lifecycle,
-  CursorPage,
   Placement,
   Project,
   Release,
+  ReleaseChanges,
   ReleaseStatus,
   Target,
   Team,
@@ -101,6 +106,67 @@ export class DeliveryApi {
 
   placements(applicationId: string): Promise<Placement[]> {
     return this.api.get(`/applications/${applicationId}/placements`);
+  }
+
+  /** Sets how Releases are applied on the Target, or with null, leaves Deployments there tracked only. */
+  configurePlacement(
+    applicationId: string,
+    targetId: string,
+    applyConfig: ApplyConfig | null,
+  ): Promise<Placement> {
+    return this.api.send(
+      'PUT',
+      `/applications/${applicationId}/placements/${targetId}`,
+      applyConfig ? { apply_config: applyConfig } : {},
+    );
+  }
+
+  /** A page of an Application's Deployments, newest first. */
+  deployments(
+    applicationId: string,
+    options: {
+      status?: DeploymentStatus;
+      releaseId?: string;
+      cursor?: string | null;
+      limit?: number;
+    } = {},
+  ): Promise<CursorPage<Deployment>> {
+    const query = new URLSearchParams({
+      limit: String(options.limit ?? 20),
+      sort_by: 'requested_at',
+      sort_order: 'desc',
+    });
+    if (options.status) {
+      query.set('status', options.status);
+    }
+    if (options.releaseId) {
+      query.set('release_id', options.releaseId);
+    }
+    if (options.cursor) {
+      query.set('next_cursor', options.cursor);
+    }
+    return this.api.get(`/applications/${applicationId}/deployments?${query}`);
+  }
+
+  deployment(id: string): Promise<DeploymentDetail> {
+    return this.api.get(`/deployments/${id}`);
+  }
+
+  /** Cancels a Deployment that hasn't started applying. */
+  cancelDeployment(id: string): Promise<DeploymentDetail> {
+    return this.api.send('POST', `/deployments/${id}/cancel`);
+  }
+
+  /** What the Release would change on the Target, and the checks a Deployment there must pass. */
+  releaseChanges(releaseId: string, targetId: string): Promise<ReleaseChanges> {
+    return this.api.get(
+      `/releases/${releaseId}/changes?${new URLSearchParams({ target_id: targetId })}`,
+    );
+  }
+
+  /** Deploys a published Release to Targets: one Deployment each, applying or awaiting approval. */
+  requestDeployments(releaseId: string, targetIds: string[]): Promise<Deployment[]> {
+    return this.api.send('POST', `/releases/${releaseId}/deployments`, { target_ids: targetIds });
   }
 
   createPlacement(applicationId: string, targetId: string): Promise<Placement> {

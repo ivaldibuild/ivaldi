@@ -10,10 +10,11 @@ import { HlmFieldImports } from '@spartan-ng/helm/field';
 import { HlmInputImports } from '@spartan-ng/helm/input';
 import { HlmSpinnerImports } from '@spartan-ng/helm/spinner';
 import { ApiError } from '../../api/api-client';
-import { ArtifactKind } from '../../api/models';
+import { ArtifactKind, Placement } from '../../api/models';
 import { RequestStatus } from '../../shared/request-status';
 import { DeliveryApi } from '../delivery-api';
 import { PageHeader } from '../page-header';
+import { DeploymentList } from '../deployments/deployment-list';
 import { ReleaseList } from '../releases/release-list';
 
 const kinds: { value: ArtifactKind; label: string }[] = [
@@ -34,6 +35,7 @@ const kinds: { value: ArtifactKind; label: string }[] = [
     RouterLink,
     PageHeader,
     ReleaseList,
+    DeploymentList,
     HlmAlertImports,
     HlmBadgeImports,
     HlmButtonImports,
@@ -132,6 +134,9 @@ export class ApplicationPage {
         environment:
           d.environments.find((e) => e.id === target?.environment_id)?.display_name ?? '',
         locator: target ? `${target.locator['cluster']} / ${target.locator['namespace']}` : '',
+        applies: placement.apply_config?.definition_artifact
+          ? `Applies ${placement.apply_config.definition_artifact}`
+          : 'Tracked only',
       };
     });
   });
@@ -206,6 +211,39 @@ export class ApplicationPage {
       }
       return undefined;
     });
+  }
+
+  // How Releases are applied on a Target.
+  protected readonly configuring = signal<string | null>(null);
+  protected readonly applyArtifact = signal('');
+  protected readonly valuesRefs = signal('');
+  protected readonly configurationStatus = new RequestStatus();
+
+  protected configure(placement: Placement): void {
+    this.applyArtifact.set(placement.apply_config?.definition_artifact ?? '');
+    this.valuesRefs.set((placement.apply_config?.values_refs ?? []).join('\n'));
+    this.configurationStatus.error.set(null);
+    this.configuring.set(placement.target_id);
+  }
+
+  protected async saveConfiguration(event: Event, targetId: string): Promise<void> {
+    event.preventDefault();
+    const artifact = this.applyArtifact();
+    const refs = this.valuesRefs()
+      .split('\n')
+      .map((r) => r.trim())
+      .filter(Boolean);
+    const saved = await this.configurationStatus.run(() =>
+      this.api.configurePlacement(
+        this.id(),
+        targetId,
+        artifact ? { definition_artifact: artifact, values_refs: refs } : null,
+      ),
+    );
+    if (saved) {
+      this.configuring.set(null);
+      this.details.reload();
+    }
   }
 
   // Placing on a Target.

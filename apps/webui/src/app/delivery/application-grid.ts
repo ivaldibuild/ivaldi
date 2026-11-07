@@ -3,12 +3,18 @@ import { RouterLink } from '@angular/router';
 import { Application, Environment, Project, Team } from '../api/models';
 import { DeliveryApi } from './delivery-api';
 
+/** A Target an Application is placed on, and the version of the Release deployed there. */
+export interface GridPlacement {
+  target: string;
+  version: string | null;
+}
+
 /** One Application's row: per Environment, in column order, the Targets it's placed on. */
 export interface GridRow {
   application: Application;
   /** The owning Team's name, shown only when it differs from the Project's. */
   team: string;
-  cells: string[][];
+  cells: GridPlacement[][];
 }
 
 /** A Project's rows, under a heading that links to it. */
@@ -30,8 +36,19 @@ export async function placementRows(
     api.targetsOf(environments),
     Promise.all(applications.map((a) => api.placements(a.id))),
   ]);
+  // The version running on each Target, from the Release its placement last deployed.
+  const releaseIds = [
+    ...new Set(
+      placements.flat().flatMap((p) => (p.current_release_id ? [p.current_release_id] : [])),
+    ),
+  ];
+  const releases = await Promise.all(releaseIds.map((id) => api.release(id)));
+  const versions = new Map(releases.map((r) => [r.id, r.version]));
   return applications.map((application, i) => {
-    const placed = placements[i].map((p) => targets.find((t) => t.id === p.target_id));
+    const placed = placements[i].map((p) => ({
+      target: targets.find((t) => t.id === p.target_id),
+      version: p.current_release_id ? (versions.get(p.current_release_id) ?? null) : null,
+    }));
     const projectTeam = projects.find((p) => p.id === application.project_id)?.owner_team_id;
     return {
       application,
@@ -40,7 +57,9 @@ export async function placementRows(
           ? ''
           : (teams.find((t) => t.id === application.owner_team_id)?.display_name ?? ''),
       cells: environments.map((environment) =>
-        placed.filter((t) => t?.environment_id === environment.id).map((t) => t!.display_name),
+        placed
+          .filter((p) => p.target?.environment_id === environment.id)
+          .map((p) => ({ target: p.target!.display_name, version: p.version })),
       ),
     };
   });
@@ -132,9 +151,22 @@ export async function placementRows(
                 @for (cell of row.cells; track $index) {
                   <td class="border-border border-b border-l px-4 py-4 align-top">
                     @if (cell.length > 0) {
-                      <ul class="flex flex-col gap-1">
-                        @for (target of cell; track target) {
-                          <li class="text-foreground">{{ target }}</li>
+                      <ul class="flex flex-col gap-2">
+                        @for (placed of cell; track placed.target) {
+                          <li class="flex flex-col">
+                            @if (placed.version) {
+                              <span class="text-heading font-semibold tabular-nums">{{
+                                placed.version
+                              }}</span>
+                            } @else {
+                              <span class="text-muted-foreground text-[13px]"
+                                >Nothing deployed</span
+                              >
+                            }
+                            <span class="text-muted-foreground text-[13px]">{{
+                              placed.target
+                            }}</span>
+                          </li>
                         }
                       </ul>
                     } @else {

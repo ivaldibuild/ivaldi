@@ -1,4 +1,7 @@
 import { Component, computed, inject, input, resource, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { NgIcon, provideIcons } from '@ng-icons/core';
+import { lucideRocket } from '@ng-icons/lucide';
 import { HlmAlertImports } from '@spartan-ng/helm/alert';
 import { HlmBadgeImports } from '@spartan-ng/helm/badge';
 import { HlmButtonImports } from '@spartan-ng/helm/button';
@@ -14,7 +17,16 @@ import { channelName } from './release-labels';
 /** One Release: its Channel, its Builds in full, and publishing or withdrawing it. */
 @Component({
   selector: 'app-release-page',
-  imports: [PageHeader, HlmAlertImports, HlmBadgeImports, HlmButtonImports, HlmSpinnerImports],
+  imports: [
+    NgIcon,
+    RouterLink,
+    PageHeader,
+    HlmAlertImports,
+    HlmBadgeImports,
+    HlmButtonImports,
+    HlmSpinnerImports,
+  ],
+  providers: [provideIcons({ lucideRocket })],
   templateUrl: './release-page.html',
 })
 export class ReleasePage {

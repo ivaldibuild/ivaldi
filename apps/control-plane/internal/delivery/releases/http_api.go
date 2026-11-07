@@ -4,14 +4,12 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/api"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
-	"github.com/ivaldibuild/ivaldi/pkg/optional"
 	"github.com/ivaldibuild/ivaldi/pkg/pagination"
 	"github.com/ivaldibuild/ivaldi/pkg/release"
 )
@@ -57,99 +55,6 @@ func register[I, O any](h huma.API, id, method, path, summary string, status int
 	}, handler)
 }
 
-// BuildBody names one artifact's Build and carries what CI knows about it.
-type BuildBody struct {
-	Artifact string `json:"artifact" required:"true" minLength:"1" doc:"The name of the Application's artifact, such as api"`
-	Digest   string `json:"digest,omitempty" required:"false" doc:"The content digest, such as sha256:<64 hex characters>"`
-	Tag      string `json:"tag,omitempty" required:"false" doc:"A tag to resolve to a digest through the artifact's Registry; not supported yet, give the digest"`
-	Version  string `json:"version,omitempty" required:"false" doc:"The version CI gave the Build"`
-	SourceID string `json:"source_id,omitempty" required:"false" doc:"The Source it was built from"`
-	// CommitSHA and SourceRef are what Channel rules and change history use.
-	CommitSHA  string     `json:"commit_sha,omitempty" required:"false" doc:"The commit it was built from"`
-	SourceRef  string     `json:"source_ref,omitempty" required:"false" doc:"The full Git ref it was built from, such as refs/tags/v1.4.0 or refs/pull/42/head"`
-	CIProvider string     `json:"ci_provider,omitempty" required:"false" doc:"The CI system, such as github_actions"`
-	CIRunRef   string     `json:"ci_run_ref,omitempty" required:"false" doc:"The CI run, such as its URL"`
-	BuiltAt    *time.Time `json:"built_at,omitempty" required:"false" doc:"When it was built"`
-	Tags       []string   `json:"tags,omitempty" required:"false" doc:"Tags pushed with the digest, as hints"`
-}
-
-func (b BuildBody) input() delivery.BuildInput {
-	return delivery.BuildInput{
-		Artifact: b.Artifact, Digest: b.Digest, Tag: b.Tag,
-		Details: delivery.BuildDetails{
-			Version: optional.Of(b.Version), SourceID: optional.Of(b.SourceID), CommitSHA: optional.Of(b.CommitSHA),
-			SourceRef: optional.Of(b.SourceRef), CIProvider: optional.Of(b.CIProvider), CIRunRef: optional.Of(b.CIRunRef),
-			ReportedTags: b.Tags, BuiltAt: b.BuiltAt,
-		},
-	}
-}
-
-type ReportBuildRequest struct {
-	ApplicationIdentifier string `path:"application" doc:"The Application's ID, or the slug of an active Application"`
-	Body                  BuildBody
-}
-
-type CreateReleaseRequest struct {
-	ApplicationIdentifier string `path:"application" doc:"The Application's ID, or the slug of an active Application"`
-	Body                  struct {
-		Version   string      `json:"version" required:"true" minLength:"1" maxLength:"255" doc:"The Release's version, unique within the Application, such as 1.4.0"`
-		ChannelID string      `json:"channel_id,omitempty" required:"false" doc:"The Channel to join; when omitted, the one active Channel whose rules the Release meets"`
-		Builds    []BuildBody `json:"builds" required:"true" minItems:"1" doc:"One Build per artifact"`
-		Publish   bool        `json:"publish,omitempty" required:"false" doc:"Publish the Release as soon as it is created"`
-	}
-}
-
-type ListReleasesRequest struct {
-	ApplicationIdentifier string `path:"application" doc:"The Application's ID, or the slug of an active Application"`
-	ChannelID             string `query:"channel_id" doc:"Keep the Releases in this Channel"`
-	Status                string `query:"status" enum:"draft,published,withdrawn" doc:"Keep the Releases with this status"`
-	Limit                 int    `query:"limit" minimum:"1" maximum:"100" doc:"Most items to return"`
-	SortBy                string `query:"sort_by" enum:"created_at,version" doc:"Field to sort by: created_at (the default) or version, as text"`
-	SortOrder             string `query:"sort_order" enum:"asc,desc" doc:"Sort direction"`
-	NextCursor            string `query:"next_cursor" doc:"Cursor from a previous page's next_cursor"`
-	PreviousCursor        string `query:"previous_cursor" doc:"Cursor from a previous page's previous_cursor"`
-}
-
-type ReleaseRequest struct {
-	ReleaseID string `path:"release_id" doc:"The Release"`
-}
-
-type BuildResponse struct {
-	Body api.Response[delivery.BuildSnapshot]
-}
-
-type ReleaseResponse struct {
-	Body api.Response[Release]
-}
-
-type ReleaseListResponse struct {
-	Body api.Response[pagination.Result[Release]]
-}
-
-// Release is a Release with each of its Builds in full.
-type Release struct {
-	delivery.ReleaseSnapshot
-	Builds []ReleaseBuild `json:"builds"`
-}
-
-// ReleaseBuild is the Build a Release carries for one artifact.
-type ReleaseBuild struct {
-	ArtifactID string                 `json:"artifact_id"`
-	Build      delivery.BuildSnapshot `json:"build"`
-}
-
-func releaseView(d *delivery.ReleaseDetail) Release {
-	out := Release{ReleaseSnapshot: d.Release.Snapshot(), Builds: []ReleaseBuild{}}
-	for i, rb := range d.Release.Builds() {
-		item := ReleaseBuild{ArtifactID: rb.ArtifactID}
-		if i < len(d.Builds) && d.Builds[i] != nil {
-			item.Build = d.Builds[i].Snapshot()
-		}
-		out.Builds = append(out.Builds, item)
-	}
-	return out
-}
-
 // caller returns the authenticated caller. The API refuses a secured
 // operation without a valid token, so a missing caller is a wiring bug.
 func caller(ctx context.Context) (identity.Caller, error) {
@@ -180,11 +85,13 @@ func (c *ReleaseController) CreateRelease(ctx context.Context, req *CreateReleas
 		return nil, err
 	}
 	in := delivery.CreateReleaseInput{
-		OrganizationID: who.OrganizationID,
-		ApplicationID:  req.ApplicationIdentifier,
-		Version:        req.Body.Version,
-		ChannelID:      req.Body.ChannelID,
-		Publish:        req.Body.Publish,
+		OrganizationID:   who.OrganizationID,
+		ApplicationID:    req.ApplicationIdentifier,
+		Version:          req.Body.Version,
+		ChannelID:        req.Body.ChannelID,
+		Publish:          req.Body.Publish,
+		TriggeredBy:      req.Body.TriggeredBy,
+		TriggeredByEmail: req.Body.TriggeredByEmail,
 	}
 
 	for _, b := range req.Body.Builds {

@@ -19,6 +19,7 @@ const (
 // Limits on what one record may hold. Text lengths match the columns.
 const (
 	maxDisplayNameLength   = 255
+	maxTriggeredByLength   = 255
 	maxPublishedNameLength = 512
 	maxPoolLength          = 255
 	maxLabelValueLength    = 63

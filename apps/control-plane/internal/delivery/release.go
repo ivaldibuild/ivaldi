@@ -8,6 +8,7 @@ import (
 
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
+	"github.com/ivaldibuild/ivaldi/pkg/email"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
 	"github.com/ivaldibuild/ivaldi/pkg/optional"
 	"github.com/ivaldibuild/ivaldi/pkg/release"
@@ -40,6 +41,8 @@ type Release struct {
 	source               ReleaseSource
 	createdByPrincipalID *string
 	publishDecisionID    *string
+	triggeredBy          *string
+	triggeredByEmail     *string
 	publishedAt          *time.Time
 	withdrawnAt          *time.Time
 	builds               []ReleaseBuildSnapshot
@@ -50,20 +53,25 @@ type Release struct {
 // ReleaseSnapshot is a Release's state, for repositories, audit records, and
 // events. Its JSON form is part of the Release events' contract.
 type ReleaseSnapshot struct {
-	ID                   string                 `json:"id"`
-	OrganizationID       string                 `json:"organization_id"`
-	ApplicationID        string                 `json:"application_id"`
-	ChannelID            string                 `json:"channel_id"`
-	Version              string                 `json:"version"`
-	Status               release.Status         `json:"status" enum:"draft,published,withdrawn"`
-	Source               ReleaseSource          `json:"source" enum:"created,observed"`
-	CreatedByPrincipalID *string                `json:"created_by_principal_id"`
-	PublishDecisionID    *string                `json:"publish_decision_id"`
-	PublishedAt          *time.Time             `json:"published_at"`
-	WithdrawnAt          *time.Time             `json:"withdrawn_at"`
-	Builds               []ReleaseBuildSnapshot `json:"builds"`
-	CreatedAt            time.Time              `json:"created_at"`
-	UpdatedAt            time.Time              `json:"updated_at"`
+	ID                   string         `json:"id"`
+	OrganizationID       string         `json:"organization_id"`
+	ApplicationID        string         `json:"application_id"`
+	ChannelID            string         `json:"channel_id"`
+	Version              string         `json:"version"`
+	Status               release.Status `json:"status" enum:"draft,published,withdrawn"`
+	Source               ReleaseSource  `json:"source" enum:"created,observed"`
+	CreatedByPrincipalID *string        `json:"created_by_principal_id"`
+	PublishDecisionID    *string        `json:"publish_decision_id"`
+	// TriggeredBy and TriggeredByEmail are who the caller says triggered the
+	// Release, such as the CI user who ran the pipeline. They are not
+	// verified; CreatedByPrincipalID is the authenticated creator.
+	TriggeredBy      *string                `json:"triggered_by"`
+	TriggeredByEmail *string                `json:"triggered_by_email"`
+	PublishedAt      *time.Time             `json:"published_at"`
+	WithdrawnAt      *time.Time             `json:"withdrawn_at"`
+	Builds           []ReleaseBuildSnapshot `json:"builds"`
+	CreatedAt        time.Time              `json:"created_at"`
+	UpdatedAt        time.Time              `json:"updated_at"`
 }
 
 // ReleaseBuildSnapshot is the Build a Release carries for one artifact.
@@ -88,6 +96,8 @@ type NewReleaseProps struct {
 	PublishDecisionID    *string
 	PublishedAt          *time.Time
 	WithdrawnAt          *time.Time
+	TriggeredBy          *string
+	TriggeredByEmail     *string
 	// Builds are the Release's Builds, at most one per artifact, and at least one.
 	Builds    []NewReleaseBuildProps
 	CreatedAt *time.Time
@@ -140,6 +150,14 @@ func NewRelease(props NewReleaseProps, releaseID *string) (*Release, error) {
 	if len(props.Builds) > maxReleaseBuilds {
 		return nil, NewErrInvalidInput(fmt.Sprintf("a release can carry at most %d builds", maxReleaseBuilds))
 	}
+	triggeredBy := optional.OfPtr(props.TriggeredBy)
+	if triggeredBy != nil && len(*triggeredBy) > maxTriggeredByLength {
+		return nil, NewErrInvalidInput(fmt.Sprintf("who triggered a release must be at most %d characters", maxTriggeredByLength))
+	}
+	triggeredByEmail := optional.OfPtr(props.TriggeredByEmail)
+	if triggeredByEmail != nil && !email.Valid(*triggeredByEmail) {
+		return nil, NewErrInvalidInput(fmt.Sprintf("%q is not an email address", *triggeredByEmail))
+	}
 
 	now := clock.Now()
 	r := &Release{
@@ -152,6 +170,8 @@ func NewRelease(props NewReleaseProps, releaseID *string) (*Release, error) {
 		source:               props.Source,
 		createdByPrincipalID: optional.OfPtr(props.CreatedByPrincipalID),
 		publishDecisionID:    optional.OfPtr(props.PublishDecisionID),
+		triggeredBy:          triggeredBy,
+		triggeredByEmail:     triggeredByEmail,
 		publishedAt:          clock.CopyTime(props.PublishedAt),
 		withdrawnAt:          clock.CopyTime(props.WithdrawnAt),
 		createdAt:            timeOr(props.CreatedAt, now),
@@ -181,6 +201,8 @@ func (r *Release) Version() string                { return r.version }
 func (r *Release) Status() release.Status         { return r.status }
 func (r *Release) Source() ReleaseSource          { return r.source }
 func (r *Release) PublishDecisionID() *string     { return copyString(r.publishDecisionID) }
+func (r *Release) TriggeredBy() *string           { return copyString(r.triggeredBy) }
+func (r *Release) TriggeredByEmail() *string      { return copyString(r.triggeredByEmail) }
 func (r *Release) PublishedAt() *time.Time        { return clock.CopyTime(r.publishedAt) }
 func (r *Release) WithdrawnAt() *time.Time        { return clock.CopyTime(r.withdrawnAt) }
 func (r *Release) CreatedAt() time.Time           { return r.createdAt }
@@ -207,6 +229,8 @@ func (r *Release) Snapshot() ReleaseSnapshot {
 		Source:               r.source,
 		CreatedByPrincipalID: copyString(r.createdByPrincipalID),
 		PublishDecisionID:    copyString(r.publishDecisionID),
+		TriggeredBy:          copyString(r.triggeredBy),
+		TriggeredByEmail:     copyString(r.triggeredByEmail),
 		PublishedAt:          clock.CopyTime(r.publishedAt),
 		WithdrawnAt:          clock.CopyTime(r.withdrawnAt),
 		Builds:               slices.Clone(r.builds),

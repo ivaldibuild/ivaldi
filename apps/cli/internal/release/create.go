@@ -15,15 +15,24 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/optional"
 )
 
-type createFlags struct {
-	app, version, channel, buildVersion string
-	commit, ref, ciProvider, ciRun      string
-	artifacts                           []string
-	publish                             bool
+type createCmdFlags struct {
+	app              string
+	version          string
+	channel          string
+	buildVersion     string
+	commit           string
+	ref              string
+	ciProvider       string
+	ciRun            string
+	artifacts        []string
+	triggeredBy      string
+	triggeredByEmail string
+	publish          bool
 }
 
 func createCommand(a *app.App) *cobra.Command {
-	var f createFlags
+	var flags createCmdFlags
+
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a Release from the Builds CI produced",
@@ -42,7 +51,7 @@ With --publish it is published at once, as a tag pipeline would.`,
   ivaldictl release create --app app_01H... --version 1.5.0-pr.42 --artifact api=sha256:9c1d...`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			body, err := f.body(ciinfo.Detect(a.Getenv))
+			body, err := flags.body(ciinfo.Detect(a.Getenv))
 			if err != nil {
 				return err
 			}
@@ -50,7 +59,7 @@ With --publish it is published at once, as a tag pipeline would.`,
 			if err != nil {
 				return err
 			}
-			resp, err := c.CreateReleaseWithResponse(cmd.Context(), f.app, body)
+			resp, err := c.CreateReleaseWithResponse(cmd.Context(), flags.app, body)
 			if err != nil {
 				return err
 			}
@@ -62,16 +71,18 @@ With --publish it is published at once, as a tag pipeline would.`,
 	}
 
 	fl := cmd.Flags()
-	fl.StringVar(&f.app, "app", "", "The Application's ID or slug (required)")
-	fl.StringVar(&f.version, "version", "", "The Release's version; defaults to the version a v-prefixed tag names")
-	fl.StringArrayVar(&f.artifacts, "artifact", nil, "An artifact's Build as name=digest, such as api=sha256:4f2a...; repeat for each artifact")
-	fl.StringVar(&f.channel, "channel", "", "The Channel's ID; by default the one whose rules the Release meets")
-	fl.BoolVar(&f.publish, "publish", false, "Publish the Release as soon as it is created")
-	fl.StringVar(&f.buildVersion, "build-version", "", "The version to record on each Build; defaults to the Release's version")
-	fl.StringVar(&f.commit, "commit", "", "The commit the Builds were built from; detected in CI")
-	fl.StringVar(&f.ref, "ref", "", "The full Git ref the Builds were built from, such as refs/tags/v1.4.0; detected in CI")
-	fl.StringVar(&f.ciProvider, "ci-provider", "", "The CI system, such as github_actions; detected in CI")
-	fl.StringVar(&f.ciRun, "ci-run", "", "The CI run's URL; detected in CI")
+	fl.StringVar(&flags.app, "app", "", "The Application's ID or slug (required)")
+	fl.StringVar(&flags.version, "version", "", "The Release's version; defaults to the version a v-prefixed tag names")
+	fl.StringArrayVar(&flags.artifacts, "artifact", nil, "An artifact's Build as name=digest, such as api=sha256:4f2a...; repeat for each artifact")
+	fl.StringVar(&flags.channel, "channel", "", "The Channel's ID; by default the one whose rules the Release meets")
+	fl.BoolVar(&flags.publish, "publish", false, "Publish the Release as soon as it is created")
+	fl.StringVar(&flags.buildVersion, "build-version", "", "The version to record on each Build; defaults to the Release's version")
+	fl.StringVar(&flags.commit, "commit", "", "The commit the Builds were built from; detected in CI")
+	fl.StringVar(&flags.ref, "ref", "", "The full Git ref the Builds were built from, such as refs/tags/v1.4.0; detected in CI")
+	fl.StringVar(&flags.ciProvider, "ci-provider", "", "The CI system, such as github_actions; detected in CI")
+	fl.StringVar(&flags.ciRun, "ci-run", "", "The CI run's URL; detected in CI")
+	fl.StringVar(&flags.triggeredBy, "triggered-by", "", "Who triggered the Release, such as the CI user who ran the pipeline; detected in CI")
+	fl.StringVar(&flags.triggeredByEmail, "triggered-by-email", "", "The email address of whoever triggered the Release; detected in GitLab CI. Giving either flag ignores what CI says about both")
 
 	_ = cmd.MarkFlagRequired("app")
 	_ = cmd.MarkFlagRequired("artifact")
@@ -80,30 +91,39 @@ With --publish it is published at once, as a tag pipeline would.`,
 }
 
 // body builds the request from the flags, filling in what CI says.
-func (f createFlags) body(ci ciinfo.Info) (apiclient.CreateReleaseJSONRequestBody, error) {
+func (flags createCmdFlags) body(ci ciinfo.Info) (apiclient.CreateReleaseJSONRequestBody, error) {
 	var body apiclient.CreateReleaseJSONRequestBody
 
-	ref := or(f.ref, ci.Ref)
+	ref := or(flags.ref, ci.Ref)
 	if ref != "" && !strings.HasPrefix(ref, "refs/") {
 		return body, fmt.Errorf("--ref %q must be a full Git ref, such as refs/heads/%s", ref, ref)
 	}
 
-	version := or(f.version, ciinfo.VersionFromRef(ref))
+	version := or(flags.version, ciinfo.VersionFromRef(ref))
 	if version == "" {
 		return body, errors.New("give --version: it can be read only from a version tag such as refs/tags/v1.4.0")
 	}
 
 	body.Version = version
-	body.ChannelId = optional.Of(f.channel)
+	body.ChannelId = optional.Of(flags.channel)
 
-	if f.publish {
-		body.Publish = &f.publish
+	if flags.publish {
+		body.Publish = &flags.publish
 	}
+
+	// The name and email describe one person, so they come from the flags or
+	// from CI, never one from each.
+	triggeredBy, triggeredByEmail := ci.TriggeredBy, ci.TriggeredByEmail
+	if flags.triggeredBy != "" || flags.triggeredByEmail != "" {
+		triggeredBy, triggeredByEmail = flags.triggeredBy, flags.triggeredByEmail
+	}
+	body.TriggeredBy = optional.Of(triggeredBy)
+	body.TriggeredByEmail = optional.Of(triggeredByEmail)
 
 	builds := []apiclient.BuildBody{}
 	seen := map[string]bool{}
 
-	for _, spec := range f.artifacts {
+	for _, spec := range flags.artifacts {
 		name, digest, ok := strings.Cut(spec, "=")
 		if !ok || name == "" || digest == "" {
 			return body, fmt.Errorf("--artifact %q must be name=digest, such as api=sha256:4f2a...", spec)
@@ -121,11 +141,11 @@ func (f createFlags) body(ci ciinfo.Info) (apiclient.CreateReleaseJSONRequestBod
 		builds = append(builds, apiclient.BuildBody{
 			Artifact:   name,
 			Digest:     optional.Of(digest),
-			Version:    optional.Of(or(f.buildVersion, version)),
-			CommitSha:  optional.Of(or(f.commit, ci.CommitSHA)),
+			Version:    optional.Of(or(flags.buildVersion, version)),
+			CommitSha:  optional.Of(or(flags.commit, ci.CommitSHA)),
 			SourceRef:  optional.Of(ref),
-			CiProvider: optional.Of(or(f.ciProvider, ci.Provider)),
-			CiRunRef:   optional.Of(or(f.ciRun, ci.RunURL)),
+			CiProvider: optional.Of(or(flags.ciProvider, ci.Provider)),
+			CiRunRef:   optional.Of(or(flags.ciRun, ci.RunURL)),
 		})
 	}
 

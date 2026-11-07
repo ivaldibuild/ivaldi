@@ -1302,6 +1302,16 @@
             "description": "Publish the Release as soon as it is created",
             "type": "boolean"
           },
+          "triggered_by": {
+            "description": "Who triggered the Release, such as the CI user who ran the pipeline; recorded as reported, not verified",
+            "maxLength": 255,
+            "type": "string"
+          },
+          "triggered_by_email": {
+            "description": "The email address of whoever triggered the Release; recorded as reported, not verified",
+            "maxLength": 320,
+            "type": "string"
+          },
           "version": {
             "description": "The Release's version, unique within the Application, such as 1.4.0",
             "maxLength": 255,
@@ -2965,6 +2975,14 @@
             ],
             "type": "string"
           },
+          "triggered_by": {
+            "nullable": true,
+            "type": "string"
+          },
+          "triggered_by_email": {
+            "nullable": true,
+            "type": "string"
+          },
           "updated_at": {
             "format": "date-time",
             "type": "string"
@@ -2989,6 +3007,8 @@
           "source",
           "created_by_principal_id",
           "publish_decision_id",
+          "triggered_by",
+          "triggered_by_email",
           "published_at",
           "withdrawn_at",
           "created_at",
@@ -3126,6 +3146,14 @@
             ],
             "type": "string"
           },
+          "triggered_by": {
+            "nullable": true,
+            "type": "string"
+          },
+          "triggered_by_email": {
+            "nullable": true,
+            "type": "string"
+          },
           "updated_at": {
             "format": "date-time",
             "type": "string"
@@ -3149,6 +3177,8 @@
           "source",
           "created_by_principal_id",
           "publish_decision_id",
+          "triggered_by",
+          "triggered_by_email",
           "published_at",
           "withdrawn_at",
           "builds",

@@ -1,0 +1,132 @@
+<div class="flex flex-col gap-8">
+  <app-page-header
+    heading="Teams"
+    [trail]="(user.organization()?.display_name ?? 'Organisation') + ' / Organisation settings'"
+  >
+    @if (user.canManageOrganization() && !creating()) {
+      <button pageActions hlmBtn type="button" (click)="creating.set(true)">
+        <ng-icon name="lucidePlus" aria-hidden="true" /> New Team
+      </button>
+    }
+  </app-page-header>
+
+  <p class="text-foreground max-w-205 text-base leading-relaxed">
+    Teams own Projects and Applications. Their people and Agents can be given roles together, so a
+    role granted to a Team applies to everyone in it.
+  </p>
+
+  @if (creating()) {
+    <form
+      class="border-border grid max-w-205 gap-4 border p-5 md:grid-cols-2"
+      novalidate
+      aria-labelledby="new-team-heading"
+      (submit)="create($event)"
+    >
+      <h2 id="new-team-heading" class="text-heading font-semibold md:col-span-2">New Team</h2>
+      @if (createStatus.error(); as message) {
+        <div hlmAlert variant="destructive" role="alert" class="md:col-span-2">
+          <p hlmAlertDescription>{{ message }}</p>
+        </div>
+      }
+      <div hlmField>
+        <label hlmFieldLabel for="team-name">Name</label>
+        <input
+          hlmInput
+          id="team-name"
+          placeholder="Payments"
+          [formField]="createForm.display_name"
+        />
+        @if (createForm.display_name().touched() && createForm.display_name().invalid()) {
+          <hlm-field-error forceShow>{{
+            createForm.display_name().errors()[0].message
+          }}</hlm-field-error>
+        }
+      </div>
+      <div hlmField>
+        <label hlmFieldLabel for="team-description">What it's responsible for (optional)</label>
+        <input
+          hlmInput
+          id="team-description"
+          placeholder="Checkout and billing"
+          [formField]="createForm.description"
+        />
+      </div>
+      <div class="flex flex-wrap gap-2 md:col-span-2">
+        <button hlmBtn type="submit" [disabled]="createStatus.saving()">
+          @if (createStatus.saving()) {
+            <hlm-spinner aria-hidden="true" /> Creating…
+          } @else {
+            Create Team
+          }
+        </button>
+        <button hlmBtn variant="outline" type="button" (click)="cancelCreate()">Cancel</button>
+      </div>
+    </form>
+  }
+
+  @if (status.error(); as message) {
+    <div hlmAlert variant="destructive" role="alert">
+      <h2 hlmAlertTitle>Teams didn't load</h2>
+      <p hlmAlertDescription>{{ message }}</p>
+    </div>
+  }
+
+  <label class="flex items-center gap-2 self-start text-sm">
+    <input
+      type="checkbox"
+      class="accent-primary size-4"
+      [checked]="showArchived()"
+      (change)="showArchived.set($any($event.target).checked)"
+    />
+    Show archived Teams
+  </label>
+
+  @if (status.loading()) {
+    <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+      <hlm-spinner aria-hidden="true" /> Loading Teams…
+    </p>
+  } @else if (teams().length === 0 && !status.error()) {
+    <p class="text-foreground text-sm">
+      No Teams yet.
+      @if (user.canManageOrganization()) {
+        Create one for each group that owns Projects and Applications.
+      }
+    </p>
+  } @else if (teams().length > 0) {
+    <div class="border-border relative overflow-x-auto border">
+      <table class="w-full min-w-170 border-collapse text-sm">
+        <thead>
+          <tr class="text-muted-foreground text-left">
+            <th scope="col" class="border-border border-b px-4 py-3 font-semibold">Team</th>
+            <th scope="col" class="border-border border-b px-4 py-3 font-semibold">Members</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (team of teams(); track team.id) {
+            <tr>
+              <th
+                scope="row"
+                class="border-border border-b px-4 py-3 text-left align-top font-normal"
+              >
+                <a
+                  class="text-heading font-semibold underline-offset-4 hover:underline"
+                  [routerLink]="['/settings/teams', team.id]"
+                  >{{ team.display_name }}</a
+                >
+                @if (team.archived_at) {
+                  <span hlmBadge variant="outline" class="ml-2">Archived</span>
+                }
+                @if (team.description) {
+                  <div class="text-muted-foreground text-[13px]">{{ team.description }}</div>
+                }
+              </th>
+              <td class="border-border text-muted-foreground border-b px-4 py-3 align-top">
+                {{ memberCount(team) }}
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</div>

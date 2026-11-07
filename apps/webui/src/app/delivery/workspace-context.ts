@@ -27,6 +27,13 @@ export class WorkspaceContext {
     return this.loading;
   }
 
+  /** Fetches the Workspaces again, such as after one is created, renamed or archived. */
+  reload(): Promise<void> {
+    const loading = this.api.workspaces().then((all) => this.workspaces.set(all));
+    this.loading = loading;
+    return loading;
+  }
+
   select(id: string): void {
     this.selectedId.set(id);
     try {

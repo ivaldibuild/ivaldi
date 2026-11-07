@@ -1,0 +1,360 @@
+@if (failure(); as message) {
+  <div hlmAlert variant="destructive" role="alert">
+    <h2 hlmAlertTitle>The Environment didn't load</h2>
+    <p hlmAlertDescription>{{ message }}</p>
+  </div>
+} @else if (!environment()) {
+  <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+    <hlm-spinner aria-hidden="true" /> Loading the Environment…
+  </p>
+} @else {
+  <div class="flex max-w-240 flex-col gap-10">
+    <app-page-header
+      [heading]="environment()!.display_name"
+      [crumbs]="[{ label: 'Environments', link: '/environments' }]"
+    >
+      <div pageMeta class="flex flex-wrap items-center gap-2">
+        <span hlmBadge variant="outline">{{ tierLabel(environment()!.tier) }}</span>
+        @if (archived()) {
+          <span hlmBadge variant="outline">Archived</span>
+        }
+        <span class="text-muted-foreground text-sm">
+          {{ environment()!.execution_enabled ? 'Ivaldi deploys here' : 'Tracked only' }}
+        </span>
+      </div>
+    </app-page-header>
+
+    @if (archived()) {
+      <div hlmAlert role="status">
+        <ng-icon name="lucideArchive" aria-hidden="true" />
+        <h2 hlmAlertTitle>This Environment is archived</h2>
+        <p hlmAlertDescription>
+          It can't be changed, get new Targets, or join a Lifecycle until it's restored. Restoring
+          needs its address to be free in the Workspace.
+        </p>
+        @if (canManage()) {
+          <div class="mt-3">
+            <button hlmBtn type="button" [disabled]="archiveStatus.saving()" (click)="restore()">
+              Restore Environment
+            </button>
+          </div>
+        }
+      </div>
+      @if (archiveStatus.error(); as message) {
+        <div hlmAlert variant="destructive" role="alert">
+          <h2 hlmAlertTitle>The Environment wasn't restored</h2>
+          <p hlmAlertDescription>{{ message }}</p>
+        </div>
+      }
+    }
+
+    @if (canManage() && !archived()) {
+      <section aria-labelledby="details-heading" class="flex flex-col gap-4">
+        <h2 id="details-heading" class="text-heading text-lg font-semibold">Details</h2>
+        @if (detailsStatus.error(); as message) {
+          <div hlmAlert variant="destructive" role="alert">
+            <h3 hlmAlertTitle>The changes weren't saved</h3>
+            <p hlmAlertDescription>{{ message }}</p>
+          </div>
+        }
+        <form class="grid gap-5 md:grid-cols-2" novalidate (submit)="saveDetails($event)">
+          <div hlmField>
+            <label hlmFieldLabel for="environment-name">Name</label>
+            <input hlmInput id="environment-name" [formField]="detailsForm.display_name" />
+            @if (detailsForm.display_name().touched() && detailsForm.display_name().invalid()) {
+              <hlm-field-error forceShow>{{
+                detailsForm.display_name().errors()[0].message
+              }}</hlm-field-error>
+            }
+          </div>
+          <div hlmField>
+            <label hlmFieldLabel for="environment-slug">Address</label>
+            <input hlmInput id="environment-slug" [formField]="detailsForm.slug" />
+            @if (detailsForm.slug().touched() && detailsForm.slug().invalid()) {
+              <hlm-field-error forceShow>{{
+                detailsForm.slug().errors()[0].message
+              }}</hlm-field-error>
+            }
+          </div>
+          <div hlmField>
+            <label hlmFieldLabel for="environment-tier">Tier</label>
+            <select
+              id="environment-tier"
+              class="border-input bg-background text-foreground h-9 border px-2"
+              [formField]="detailsForm.tier"
+            >
+              @for (tier of tierOptions; track tier.value) {
+                <option [value]="tier.value">{{ tier.label }}</option>
+              }
+            </select>
+          </div>
+          <label class="flex items-center gap-2 self-end pb-2 text-sm">
+            <input
+              type="checkbox"
+              class="accent-primary size-4"
+              [formField]="detailsForm.execution_enabled"
+            />
+            Ivaldi deploys here
+          </label>
+          <div class="flex flex-wrap items-center gap-3 md:col-span-2">
+            <button hlmBtn type="submit" [disabled]="detailsStatus.saving()">
+              @if (detailsStatus.saving()) {
+                <hlm-spinner aria-hidden="true" /> Saving…
+              } @else {
+                Save changes
+              }
+            </button>
+            <span class="text-muted-foreground text-sm" role="status">{{ detailsNote() }}</span>
+          </div>
+        </form>
+      </section>
+    }
+
+    <section aria-labelledby="targets-heading" class="flex flex-col gap-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <h2 id="targets-heading" class="text-heading text-lg font-semibold">Targets</h2>
+        @if (canManage() && !archived() && !addingTarget()) {
+          <button hlmBtn variant="outline" type="button" (click)="addingTarget.set(true)">
+            Add Target
+          </button>
+        }
+      </div>
+      <p class="text-foreground max-w-205 text-sm leading-relaxed">
+        A Target is a namespace in a Kubernetes cluster this Environment runs on. Its runtime agent
+        reports what's deployed there.
+      </p>
+
+      @if (addingTarget()) {
+        <form
+          class="border-border grid gap-4 border p-5 md:grid-cols-3"
+          novalidate
+          aria-label="Add a Target"
+          (submit)="addTarget($event)"
+        >
+          @if (targetStatus.error(); as message) {
+            <div hlmAlert variant="destructive" role="alert" class="md:col-span-3">
+              <p hlmAlertDescription>{{ message }}</p>
+            </div>
+          }
+          <div hlmField>
+            <label hlmFieldLabel for="target-name">Name</label>
+            <input
+              hlmInput
+              id="target-name"
+              placeholder="staging-eu-1"
+              [formField]="targetForm.display_name"
+            />
+            @if (targetForm.display_name().touched() && targetForm.display_name().invalid()) {
+              <hlm-field-error forceShow>{{
+                targetForm.display_name().errors()[0].message
+              }}</hlm-field-error>
+            }
+          </div>
+          <div hlmField>
+            <label hlmFieldLabel for="target-cluster">Cluster</label>
+            <input
+              hlmInput
+              id="target-cluster"
+              placeholder="eu-west-1"
+              [formField]="targetForm.cluster"
+            />
+            @if (targetForm.cluster().touched() && targetForm.cluster().invalid()) {
+              <hlm-field-error forceShow>{{
+                targetForm.cluster().errors()[0].message
+              }}</hlm-field-error>
+            }
+          </div>
+          <div hlmField>
+            <label hlmFieldLabel for="target-namespace">Namespace</label>
+            <input
+              hlmInput
+              id="target-namespace"
+              placeholder="payments"
+              [formField]="targetForm.namespace"
+            />
+            @if (targetForm.namespace().touched() && targetForm.namespace().invalid()) {
+              <hlm-field-error forceShow>{{
+                targetForm.namespace().errors()[0].message
+              }}</hlm-field-error>
+            }
+          </div>
+          <div class="flex flex-wrap gap-2 md:col-span-3">
+            <button hlmBtn type="submit" [disabled]="targetStatus.saving()">
+              @if (targetStatus.saving()) {
+                <hlm-spinner aria-hidden="true" /> Adding…
+              } @else {
+                Add Target
+              }
+            </button>
+            <button hlmBtn variant="outline" type="button" (click)="cancelTarget()">Cancel</button>
+          </div>
+        </form>
+      }
+
+      @if (targetChange.error(); as message) {
+        <div hlmAlert variant="destructive" role="alert">
+          <h3 hlmAlertTitle>The Target wasn't changed</h3>
+          <p hlmAlertDescription>{{ message }}</p>
+        </div>
+      }
+
+      @if (targets().length === 0) {
+        <p class="text-foreground text-sm">No Targets yet.</p>
+      } @else {
+        <ul class="border-border flex flex-col border">
+          @for (target of targets(); track target.id) {
+            <li class="border-border border-b px-4 py-3 text-sm last:border-b-0">
+              @if (editingTarget() === target.id) {
+                <form
+                  class="grid gap-4 md:grid-cols-3"
+                  novalidate
+                  [attr.aria-label]="'Change ' + target.display_name"
+                  (submit)="saveTarget($event, target)"
+                >
+                  <div hlmField>
+                    <label hlmFieldLabel for="edit-target-name">Name</label>
+                    <input hlmInput id="edit-target-name" [formField]="editForm.display_name" />
+                    @if (editForm.display_name().touched() && editForm.display_name().invalid()) {
+                      <hlm-field-error forceShow>{{
+                        editForm.display_name().errors()[0].message
+                      }}</hlm-field-error>
+                    }
+                  </div>
+                  <div hlmField>
+                    <label hlmFieldLabel for="edit-target-cluster">Cluster</label>
+                    <input hlmInput id="edit-target-cluster" [formField]="editForm.cluster" />
+                    @if (editForm.cluster().touched() && editForm.cluster().invalid()) {
+                      <hlm-field-error forceShow>{{
+                        editForm.cluster().errors()[0].message
+                      }}</hlm-field-error>
+                    }
+                  </div>
+                  <div hlmField>
+                    <label hlmFieldLabel for="edit-target-namespace">Namespace</label>
+                    <input hlmInput id="edit-target-namespace" [formField]="editForm.namespace" />
+                    @if (editForm.namespace().touched() && editForm.namespace().invalid()) {
+                      <hlm-field-error forceShow>{{
+                        editForm.namespace().errors()[0].message
+                      }}</hlm-field-error>
+                    }
+                  </div>
+                  <div class="flex flex-wrap gap-2 md:col-span-3">
+                    <button hlmBtn type="submit" size="sm" [disabled]="targetChange.saving()">
+                      Save Target
+                    </button>
+                    <button hlmBtn variant="outline" size="sm" type="button" (click)="cancelEdit()">
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              } @else {
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                  <span>
+                    <span class="text-heading font-semibold">{{ target.display_name }}</span>
+                    <span class="text-muted-foreground">
+                      · {{ target.locator['cluster'] }} / {{ target.locator['namespace'] }}
+                    </span>
+                    @if (target.deleted_at) {
+                      <span hlmBadge variant="outline" class="ml-2">Archived</span>
+                    }
+                    <span class="text-muted-foreground block text-[13px]">
+                      {{ target.agent_principal_id ? 'Agent assigned' : 'No agent yet' }}
+                    </span>
+                  </span>
+                  @if (canManage() && !archived()) {
+                    <span class="flex flex-wrap gap-2">
+                      @if (target.deleted_at) {
+                        <button
+                          hlmBtn
+                          variant="outline"
+                          size="sm"
+                          type="button"
+                          [attr.aria-label]="'Restore ' + target.display_name"
+                          [disabled]="changingTarget() !== null"
+                          (click)="restoreTarget(target)"
+                        >
+                          Restore
+                        </button>
+                      } @else {
+                        <button
+                          hlmBtn
+                          variant="outline"
+                          size="sm"
+                          type="button"
+                          [attr.aria-label]="'Change ' + target.display_name"
+                          [disabled]="changingTarget() !== null"
+                          (click)="editTarget(target)"
+                        >
+                          Change
+                        </button>
+                        <button
+                          hlmBtn
+                          variant="outline"
+                          size="sm"
+                          type="button"
+                          [attr.aria-label]="'Archive ' + target.display_name"
+                          [disabled]="changingTarget() !== null"
+                          (click)="archiveTarget(target)"
+                        >
+                          @if (changingTarget() === target.id) {
+                            <hlm-spinner aria-hidden="true" />
+                          }
+                          Archive
+                        </button>
+                      }
+                    </span>
+                  }
+                </div>
+              }
+            </li>
+          }
+        </ul>
+      }
+    </section>
+
+    @if (canManage() && !archived()) {
+      <section aria-labelledby="archive-heading" class="flex flex-col gap-4">
+        <h2 id="archive-heading" class="text-heading text-lg font-semibold">Archive</h2>
+        <p class="text-foreground max-w-205 text-sm leading-relaxed">
+          Archiving hides the Environment from new work. It can't be archived while it has active
+          Targets or is a phase of an active Lifecycle.
+        </p>
+        @if (archiveStatus.error(); as message) {
+          <div hlmAlert variant="destructive" role="alert">
+            <h3 hlmAlertTitle>The Environment wasn't archived</h3>
+            <p hlmAlertDescription>{{ message }}</p>
+          </div>
+        }
+        @if (confirmingArchive()) {
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="text-foreground text-sm">Archive {{ environment()!.display_name }}?</span>
+            <button
+              hlmBtn
+              variant="destructive"
+              type="button"
+              [disabled]="archiveStatus.saving()"
+              (click)="archive()"
+            >
+              Archive Environment
+            </button>
+            <button hlmBtn variant="outline" type="button" (click)="confirmingArchive.set(false)">
+              Cancel
+            </button>
+          </div>
+        } @else {
+          <button
+            hlmBtn
+            variant="outline"
+            type="button"
+            class="self-start"
+            (click)="confirmingArchive.set(true)"
+          >
+            Archive…
+          </button>
+        }
+      </section>
+    }
+
+    <a hlmBtn variant="outline" class="self-start" routerLink="/environments">All Environments</a>
+  </div>
+}

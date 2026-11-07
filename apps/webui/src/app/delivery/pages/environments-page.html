@@ -1,0 +1,155 @@
+<div class="flex flex-col gap-8">
+  <app-page-header
+    heading="Environments"
+    [trail]="(context.current()?.display_name ?? 'Workspace') + ' / Delivery'"
+  >
+    @if (canManage() && !creating()) {
+      <button pageActions hlmBtn type="button" (click)="creating.set(true)">
+        <ng-icon name="lucidePlus" aria-hidden="true" /> New Environment
+      </button>
+    }
+  </app-page-header>
+
+  @if (creating()) {
+    <form
+      class="border-border grid max-w-205 gap-4 border p-5 md:grid-cols-2"
+      novalidate
+      aria-labelledby="new-environment-heading"
+      (submit)="create($event)"
+    >
+      <h2 id="new-environment-heading" class="text-heading font-semibold md:col-span-2">
+        New Environment in {{ context.current()?.display_name }}
+      </h2>
+      @if (createStatus.error(); as message) {
+        <div hlmAlert variant="destructive" role="alert" class="md:col-span-2">
+          <p hlmAlertDescription>{{ message }}</p>
+        </div>
+      }
+      <div hlmField>
+        <label hlmFieldLabel for="environment-name">Name</label>
+        <input
+          hlmInput
+          id="environment-name"
+          placeholder="Staging"
+          [formField]="createForm.display_name"
+          (input)="nameChanged()"
+        />
+        @if (createForm.display_name().touched() && createForm.display_name().invalid()) {
+          <hlm-field-error forceShow>{{
+            createForm.display_name().errors()[0].message
+          }}</hlm-field-error>
+        }
+      </div>
+      <div hlmField>
+        <label hlmFieldLabel for="environment-slug">Address</label>
+        <input
+          hlmInput
+          id="environment-slug"
+          placeholder="staging"
+          [formField]="createForm.slug"
+          (input)="slugChanged()"
+        />
+        @if (createForm.slug().touched() && createForm.slug().invalid()) {
+          <hlm-field-error forceShow>{{ createForm.slug().errors()[0].message }}</hlm-field-error>
+        }
+      </div>
+      <div hlmField>
+        <label hlmFieldLabel for="environment-tier">Tier</label>
+        <select
+          id="environment-tier"
+          class="border-input bg-background text-foreground h-9 border px-2"
+          [formField]="createForm.tier"
+        >
+          @for (tier of tierOptions; track tier.value) {
+            <option [value]="tier.value">{{ tier.label }}</option>
+          }
+        </select>
+      </div>
+      <label class="flex items-center gap-2 self-end pb-2 text-sm">
+        <input
+          type="checkbox"
+          class="accent-primary size-4"
+          [formField]="createForm.execution_enabled"
+        />
+        Ivaldi deploys here
+      </label>
+      <div class="flex flex-wrap gap-2 md:col-span-2">
+        <button hlmBtn type="submit" [disabled]="createStatus.saving()">
+          @if (createStatus.saving()) {
+            <hlm-spinner aria-hidden="true" /> Adding…
+          } @else {
+            Add Environment
+          }
+        </button>
+        <button hlmBtn variant="outline" type="button" (click)="cancelCreate()">Cancel</button>
+      </div>
+    </form>
+  }
+
+  <label class="flex items-center gap-2 self-start text-sm">
+    <input
+      type="checkbox"
+      class="accent-primary size-4"
+      [checked]="showArchived()"
+      (change)="showArchived.set($any($event.target).checked)"
+    />
+    Show archived Environments
+  </label>
+
+  @if (failure(); as message) {
+    <div hlmAlert variant="destructive" role="alert">
+      <h2 hlmAlertTitle>Environments didn't load</h2>
+      <p hlmAlertDescription>{{ message }}</p>
+    </div>
+  } @else if (data.isLoading() && !data.hasValue()) {
+    <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+      <hlm-spinner aria-hidden="true" /> Loading Environments…
+    </p>
+  } @else if (environments().length === 0) {
+    <p class="text-foreground text-sm">This Workspace has no Environments yet.</p>
+  } @else {
+    <ul class="flex flex-col gap-4">
+      @for (item of environments(); track item.environment.id) {
+        <li class="border-border flex flex-col gap-4 border p-5">
+          <div class="flex flex-wrap items-center gap-3">
+            <h2 class="text-heading text-lg font-semibold">
+              <a
+                class="underline-offset-4 hover:underline"
+                [routerLink]="['/environments', item.environment.id]"
+                >{{ item.environment.display_name }}</a
+              >
+            </h2>
+            <span hlmBadge variant="outline">{{ tierLabel(item.environment.tier) }}</span>
+            @if (item.environment.deleted_at) {
+              <span hlmBadge variant="outline">Archived</span>
+            }
+            <span class="text-muted-foreground text-sm">
+              {{ item.environment.execution_enabled ? 'Ivaldi deploys here' : 'Tracked only' }}
+            </span>
+          </div>
+          @if (item.targets.length > 0) {
+            <ul class="border-border flex flex-col border">
+              @for (target of item.targets; track target.id) {
+                <li
+                  class="border-border flex flex-wrap justify-between gap-2 border-b px-4 py-3 text-sm last:border-b-0"
+                >
+                  <span>
+                    <span class="text-heading font-semibold">{{ target.display_name }}</span>
+                    <span class="text-muted-foreground">
+                      · {{ target.locator['cluster'] }} / {{ target.locator['namespace'] }}
+                    </span>
+                  </span>
+                  <span class="text-muted-foreground">
+                    {{ target.agent_principal_id ? 'Agent assigned' : 'No agent yet' }}
+                  </span>
+                </li>
+              }
+            </ul>
+          } @else {
+            <p class="text-muted-foreground text-sm">No Targets yet.</p>
+          }
+        </li>
+      }
+    </ul>
+  }
+</div>

@@ -79,6 +79,38 @@
                       <ng-icon [name]="item.icon" aria-hidden="true" />
                       <span>{{ item.label }}</span>
                     </a>
+                    @if (item.path === '/projects' && projects().length > 0) {
+                      <ul hlmSidebarMenuSub aria-label="Projects in this Workspace">
+                        @for (project of projects(); track project.id) {
+                          <li hlmSidebarMenuSubItem>
+                            <a
+                              hlmSidebarMenuSubButton
+                              class="data-[active=true]:text-heading no-underline"
+                              closeMobileSidebarOnClick
+                              [routerLink]="['/projects', project.id]"
+                              [isActive]="project.id === currentProjectId()"
+                              [attr.aria-current]="
+                                project.id === currentProjectId() ? 'page' : null
+                              "
+                            >
+                              <span>{{ project.display_name }}</span>
+                            </a>
+                          </li>
+                        }
+                        @if (moreProjects()) {
+                          <li hlmSidebarMenuSubItem>
+                            <a
+                              hlmSidebarMenuSubButton
+                              class="text-muted-foreground no-underline"
+                              closeMobileSidebarOnClick
+                              routerLink="/projects"
+                            >
+                              <span>All Projects…</span>
+                            </a>
+                          </li>
+                        }
+                      </ul>
+                    }
                   </li>
                 }
               </ul>
@@ -135,7 +167,7 @@
         hlmDropdownMenuItem
         type="button"
         [attr.aria-current]="workspace.id === context.current()?.id ? 'true' : null"
-        (triggered)="context.select(workspace.id)"
+        (triggered)="switchWorkspace(workspace.id)"
       >
         <span class="flex-1 text-left">{{ workspace.display_name }}</span>
         @if (workspace.id === context.current()?.id) {
@@ -143,6 +175,11 @@
         }
       </button>
     }
+    <hlm-dropdown-menu-separator class="bg-foreground/15" />
+    <a hlmDropdownMenuItem routerLink="/settings/workspaces">
+      <ng-icon name="lucideSettings" aria-hidden="true" />
+      {{ user.canManageOrganization() ? 'Create and manage Workspaces' : 'All Workspaces' }}
+    </a>
   </hlm-dropdown-menu>
 </ng-template>
 
@@ -161,13 +198,8 @@
     </div>
     <hlm-dropdown-menu-separator class="bg-foreground/15" />
     <hlm-dropdown-menu-group>
-      @if (user.canManageOrganization()) {
-        <a hlmDropdownMenuItem routerLink="/setup/organisation">
-          <ng-icon name="lucideBuilding2" aria-hidden="true" /> Organisation settings
-        </a>
-      }
-      <a hlmDropdownMenuItem routerLink="/people">
-        <ng-icon name="lucideUsers" aria-hidden="true" /> People &amp; access
+      <a hlmDropdownMenuItem routerLink="/settings">
+        <ng-icon name="lucideSettings" aria-hidden="true" /> Organisation settings
       </a>
       <button hlmDropdownMenuItem type="button" (triggered)="theme.toggle()">
         <ng-icon [name]="theme.dark() ? 'lucideSun' : 'lucideMoon'" aria-hidden="true" />

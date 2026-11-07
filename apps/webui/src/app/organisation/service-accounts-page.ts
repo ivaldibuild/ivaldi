@@ -78,7 +78,7 @@ export class ServiceAccountsPage {
       });
       if (ok && created) {
         // Its page is where it gets a role and a token, so go straight there.
-        await this.router.navigate(['/service-accounts', created.id]);
+        await this.router.navigate(['/settings/service-accounts', created.id]);
       }
       return undefined;
     });

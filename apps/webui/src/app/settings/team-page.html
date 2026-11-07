@@ -1,0 +1,286 @@
+<div class="flex flex-col gap-8">
+  @if (status.loading()) {
+    <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+      <hlm-spinner aria-hidden="true" /> Loading the Team…
+    </p>
+  } @else if (status.error(); as message) {
+    <div hlmAlert variant="destructive" role="alert">
+      <h2 hlmAlertTitle>The Team didn't load</h2>
+      <p hlmAlertDescription>{{ message }}</p>
+    </div>
+    <a hlmBtn variant="outline" class="self-start" routerLink="/settings/teams">All Teams</a>
+  } @else if (team(); as team) {
+    <app-page-header
+      [heading]="team.display_name"
+      [trail]="(user.organization()?.display_name ?? 'Organisation') + ' / Organisation settings'"
+    >
+      <div pageMeta class="flex flex-wrap items-center gap-2">
+        @if (team.archived_at) {
+          <span hlmBadge variant="outline">Archived</span>
+        }
+        @if (team.description) {
+          <span class="text-muted-foreground text-sm">{{ team.description }}</span>
+        }
+      </div>
+      @if (user.canManageOrganization()) {
+        <div pageActions>
+          @if (team.archived_at) {
+            <button hlmBtn type="button" [disabled]="archiveStatus.saving()" (click)="restore()">
+              Restore
+            </button>
+          } @else {
+            <button
+              hlmBtn
+              variant="outline"
+              type="button"
+              [disabled]="archiveStatus.saving()"
+              (click)="archive()"
+            >
+              Archive
+            </button>
+          }
+        </div>
+      }
+    </app-page-header>
+
+    @if (archiveStatus.error(); as message) {
+      <div hlmAlert variant="destructive" role="alert">
+        <h2 hlmAlertTitle>That didn't work</h2>
+        <p hlmAlertDescription>{{ message }}</p>
+      </div>
+    }
+    @if (team.archived_at) {
+      <p class="text-foreground max-w-205 text-sm">
+        An archived Team has no members, so the roles granted to it don't apply. Restore it to
+        change it again.
+      </p>
+    }
+
+    <!-- Details -->
+    @if (canEdit()) {
+      <section class="flex flex-col gap-4" aria-labelledby="details-heading">
+        <h2 id="details-heading" class="text-heading text-xl font-semibold">Details</h2>
+        <form
+          class="border-border grid max-w-205 gap-4 border p-5 md:grid-cols-2"
+          novalidate
+          (submit)="saveDetails($event)"
+        >
+          @if (detailsStatus.error(); as message) {
+            <div hlmAlert variant="destructive" role="alert" class="md:col-span-2">
+              <p hlmAlertDescription>{{ message }}</p>
+            </div>
+          }
+          <div hlmField>
+            <label hlmFieldLabel for="team-name">Name</label>
+            <input hlmInput id="team-name" [formField]="detailsForm.display_name" />
+            @if (detailsForm.display_name().touched() && detailsForm.display_name().invalid()) {
+              <hlm-field-error forceShow>{{
+                detailsForm.display_name().errors()[0].message
+              }}</hlm-field-error>
+            }
+          </div>
+          <div hlmField>
+            <label hlmFieldLabel for="team-description">What it's responsible for</label>
+            <input hlmInput id="team-description" [formField]="detailsForm.description" />
+          </div>
+          <div class="md:col-span-2">
+            <button hlmBtn type="submit" [disabled]="detailsStatus.saving() || !detailsChanged()">
+              @if (detailsStatus.saving()) {
+                <hlm-spinner aria-hidden="true" /> Saving…
+              } @else {
+                Save changes
+              }
+            </button>
+          </div>
+        </form>
+      </section>
+    }
+
+    <!-- Members -->
+    <section class="flex flex-col gap-4" aria-labelledby="members-heading">
+      <h2 id="members-heading" class="text-heading text-xl font-semibold">Members</h2>
+
+      @if (memberStatus.error(); as message) {
+        <div hlmAlert variant="destructive" role="alert">
+          <p hlmAlertDescription>{{ message }}</p>
+        </div>
+      }
+
+      @if (members().length === 0) {
+        <p class="text-foreground text-sm">No members yet.</p>
+      } @else {
+        <div class="border-border relative overflow-x-auto border">
+          <table class="w-full min-w-170 border-collapse text-sm">
+            <thead>
+              <tr class="text-muted-foreground text-left">
+                <th scope="col" class="border-border border-b px-4 py-3 font-semibold">Member</th>
+                <th scope="col" class="border-border border-b px-4 py-3 font-semibold">Role</th>
+                @if (canEdit()) {
+                  <th scope="col" class="border-border border-b px-4 py-3 font-semibold">
+                    <span class="sr-only">Actions</span>
+                  </th>
+                }
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of members(); track row.member.principal_id) {
+                <tr>
+                  <th
+                    scope="row"
+                    class="border-border border-b px-4 py-3 text-left align-top font-normal"
+                  >
+                    <span class="text-heading font-semibold">{{ row.name }}</span>
+                    <div class="text-muted-foreground text-[13px]">{{ row.detail }}</div>
+                  </th>
+                  <td class="border-border border-b px-4 py-3 align-top">
+                    @if (canEdit()) {
+                      <div class="flex items-center gap-2">
+                        <select
+                          class="border-input bg-background text-foreground h-9 border px-2"
+                          [attr.aria-label]="'Role of ' + row.name"
+                          [disabled]="changing() !== null"
+                          (change)="changeRole(row, $any($event.target).value)"
+                        >
+                          @for (role of teamRoles; track role) {
+                            <option [value]="role" [selected]="role === row.member.role">
+                              {{ roleLabels[role] }}
+                            </option>
+                          }
+                        </select>
+                        @if (changing() === row.member.principal_id) {
+                          <hlm-spinner aria-label="Changing the member" />
+                        }
+                      </div>
+                    } @else {
+                      {{ roleLabels[row.member.role] }}
+                    }
+                  </td>
+                  @if (canEdit()) {
+                    <td class="border-border border-b px-4 py-3 text-right align-top">
+                      <button
+                        hlmBtn
+                        variant="outline"
+                        size="sm"
+                        type="button"
+                        [attr.aria-label]="'Remove ' + row.name"
+                        [disabled]="changing() !== null"
+                        (click)="remove(row)"
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  }
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+
+      @if (canEdit()) {
+        <form
+          class="flex max-w-205 flex-wrap items-end gap-3"
+          aria-label="Add a person"
+          (submit)="addPerson($event)"
+        >
+          <div hlmField>
+            <label hlmFieldLabel for="person-to-add">Person</label>
+            <select
+              id="person-to-add"
+              class="border-input bg-background text-foreground h-9 min-w-60 border px-2"
+              (change)="personToAdd.set($any($event.target).value)"
+            >
+              <option value="" [selected]="personToAdd() === ''">Choose a person</option>
+              @for (person of candidates(); track person.id) {
+                <option [value]="person.id" [selected]="person.id === personToAdd()">
+                  {{ person.display_name }} ({{ person.email }})
+                </option>
+              }
+            </select>
+          </div>
+          <div hlmField>
+            <label hlmFieldLabel for="role-to-add">Role</label>
+            <select
+              id="role-to-add"
+              class="border-input bg-background text-foreground h-9 border px-2"
+              (change)="roleToAdd.set($any($event.target).value)"
+            >
+              @for (role of teamRoles; track role) {
+                <option [value]="role" [selected]="role === roleToAdd()">
+                  {{ roleLabels[role] }}
+                </option>
+              }
+            </select>
+          </div>
+          <button hlmBtn type="submit" [disabled]="memberStatus.saving()">
+            @if (memberStatus.saving()) {
+              <hlm-spinner aria-hidden="true" /> Adding…
+            } @else {
+              Add person
+            }
+          </button>
+          @if (!addingAgent()) {
+            <button hlmBtn variant="outline" type="button" (click)="addingAgent.set(true)">
+              Add an Agent
+            </button>
+          }
+        </form>
+      }
+
+      @if (addingAgent()) {
+        <form
+          class="border-border grid max-w-205 gap-4 border p-5 md:grid-cols-2"
+          novalidate
+          aria-labelledby="new-agent-heading"
+          (submit)="addAgent($event)"
+        >
+          <h3 id="new-agent-heading" class="text-heading font-semibold md:col-span-2">New Agent</h3>
+          <p class="text-muted-foreground text-sm md:col-span-2">
+            An Agent belongs to the Teams it's in, and acts with the roles granted to them.
+          </p>
+          @if (agentStatus.error(); as message) {
+            <div hlmAlert variant="destructive" role="alert" class="md:col-span-2">
+              <p hlmAlertDescription>{{ message }}</p>
+            </div>
+          }
+          <div hlmField>
+            <label hlmFieldLabel for="agent-name">Name</label>
+            <input
+              hlmInput
+              id="agent-name"
+              placeholder="Release helper"
+              [formField]="agentForm.display_name"
+            />
+            @if (agentForm.display_name().touched() && agentForm.display_name().invalid()) {
+              <hlm-field-error forceShow>{{
+                agentForm.display_name().errors()[0].message
+              }}</hlm-field-error>
+            }
+          </div>
+          <div hlmField>
+            <label hlmFieldLabel for="agent-role">Role</label>
+            <select
+              id="agent-role"
+              class="border-input bg-background text-foreground h-9 border px-2"
+              [formField]="agentForm.role"
+            >
+              @for (role of teamRoles; track role) {
+                <option [value]="role">{{ roleLabels[role] }}</option>
+              }
+            </select>
+          </div>
+          <div class="flex flex-wrap gap-2 md:col-span-2">
+            <button hlmBtn type="submit" [disabled]="agentStatus.saving()">
+              @if (agentStatus.saving()) {
+                <hlm-spinner aria-hidden="true" /> Adding…
+              } @else {
+                Add Agent
+              }
+            </button>
+            <button hlmBtn variant="outline" type="button" (click)="cancelAgent()">Cancel</button>
+          </div>
+        </form>
+      }
+    </section>
+  }
+</div>

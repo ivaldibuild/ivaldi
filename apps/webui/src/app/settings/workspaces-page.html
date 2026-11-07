@@ -1,0 +1,288 @@
+<div class="flex flex-col gap-8">
+  <app-page-header
+    heading="Workspaces"
+    [trail]="(user.organization()?.display_name ?? 'Organisation') + ' / Organisation settings'"
+  >
+    @if (user.canManageOrganization() && !creating()) {
+      <button pageActions hlmBtn type="button" (click)="creating.set(true)">
+        <ng-icon name="lucidePlus" aria-hidden="true" /> New Workspace
+      </button>
+    }
+  </app-page-header>
+
+  <p class="text-foreground max-w-205 text-base leading-relaxed">
+    Workspaces divide the Organisation's Projects, Environments and Lifecycles, such as one per
+    product or business unit. The default Workspace is where people start.
+  </p>
+
+  @if (creating()) {
+    <form
+      class="border-border grid max-w-205 gap-4 border p-5 md:grid-cols-2"
+      novalidate
+      aria-labelledby="new-workspace-heading"
+      (submit)="create($event)"
+    >
+      <h2 id="new-workspace-heading" class="text-heading font-semibold md:col-span-2">
+        New Workspace
+      </h2>
+      @if (createStatus.error(); as message) {
+        <div hlmAlert variant="destructive" role="alert" class="md:col-span-2">
+          <p hlmAlertDescription>{{ message }}</p>
+        </div>
+      }
+      <div hlmField>
+        <label hlmFieldLabel for="workspace-name">Name</label>
+        <input
+          hlmInput
+          id="workspace-name"
+          placeholder="Payments"
+          [formField]="createForm.display_name"
+          (input)="nameChanged()"
+        />
+        @if (createForm.display_name().touched() && createForm.display_name().invalid()) {
+          <hlm-field-error forceShow>{{
+            createForm.display_name().errors()[0].message
+          }}</hlm-field-error>
+        }
+      </div>
+      <div hlmField>
+        <label hlmFieldLabel for="workspace-slug">Address</label>
+        <input
+          hlmInput
+          id="workspace-slug"
+          class="font-mono"
+          placeholder="payments"
+          aria-describedby="workspace-slug-hint"
+          [formField]="createForm.slug"
+          (input)="slugChanged()"
+        />
+        <p id="workspace-slug-hint" class="text-muted-foreground text-[13px]">
+          Unique among the Organisation's active Workspaces.
+        </p>
+        @if (createForm.slug().touched() && createForm.slug().invalid()) {
+          <hlm-field-error forceShow>{{ createForm.slug().errors()[0].message }}</hlm-field-error>
+        }
+      </div>
+      <div hlmField class="md:col-span-2">
+        <label hlmFieldLabel for="workspace-description">What it's for (optional)</label>
+        <input
+          hlmInput
+          id="workspace-description"
+          placeholder="Payment services and their infrastructure"
+          [formField]="createForm.description"
+        />
+      </div>
+      <div class="flex flex-wrap gap-2 md:col-span-2">
+        <button hlmBtn type="submit" [disabled]="createStatus.saving()">
+          @if (createStatus.saving()) {
+            <hlm-spinner aria-hidden="true" /> Creating…
+          } @else {
+            Create Workspace
+          }
+        </button>
+        <button hlmBtn variant="outline" type="button" (click)="cancelCreate()">Cancel</button>
+      </div>
+    </form>
+  }
+
+  @if (actionStatus.error(); as message) {
+    <div hlmAlert variant="destructive" role="alert">
+      <h2 hlmAlertTitle>That didn't work</h2>
+      <p hlmAlertDescription>{{ message }}</p>
+    </div>
+  }
+
+  @if (status.error(); as message) {
+    <div hlmAlert variant="destructive" role="alert">
+      <h2 hlmAlertTitle>Workspaces didn't load</h2>
+      <p hlmAlertDescription>{{ message }}</p>
+    </div>
+  }
+
+  <label class="flex items-center gap-2 self-start text-sm">
+    <input
+      type="checkbox"
+      class="accent-primary size-4"
+      [checked]="showArchived()"
+      (change)="showArchived.set($any($event.target).checked)"
+    />
+    Show archived Workspaces
+  </label>
+
+  @if (status.loading()) {
+    <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+      <hlm-spinner aria-hidden="true" /> Loading Workspaces…
+    </p>
+  } @else if (workspaces().length === 0 && !status.error()) {
+    <p class="text-foreground text-sm">No Workspaces yet.</p>
+  } @else if (workspaces().length > 0) {
+    <div class="border-border relative overflow-x-auto border">
+      <table class="w-full min-w-170 border-collapse text-sm">
+        <thead>
+          <tr class="text-muted-foreground text-left">
+            <th scope="col" class="border-border border-b px-4 py-3 font-semibold">Workspace</th>
+            <th scope="col" class="border-border border-b px-4 py-3 font-semibold">Created</th>
+            @if (user.canManageOrganization()) {
+              <th scope="col" class="border-border border-b px-4 py-3 font-semibold">
+                <span class="sr-only">Actions</span>
+              </th>
+            }
+          </tr>
+        </thead>
+        <tbody>
+          @for (workspace of workspaces(); track workspace.id) {
+            <tr>
+              <th
+                scope="row"
+                class="border-border border-b px-4 py-3 text-left align-top font-normal"
+              >
+                <span class="text-heading font-semibold">{{ workspace.display_name }}</span>
+                @if (workspace.is_default) {
+                  <span hlmBadge variant="secondary" class="ml-2"> Default</span>
+                }
+                @if (workspace.archived_at) {
+                  <span hlmBadge variant="outline" class="ml-2"> Archived</span>
+                }
+                <div class="text-muted-foreground text-[13px]">
+                  <code>{{ workspace.slug }}</code>
+                  @if (workspace.description) {
+                    · {{ workspace.description }}
+                  }
+                </div>
+              </th>
+              <td class="border-border text-muted-foreground border-b px-4 py-3 align-top">
+                {{ formatDay(workspace.created_at) }}
+              </td>
+              @if (user.canManageOrganization()) {
+                <td class="border-border border-b px-4 py-3 align-top">
+                  <div class="flex flex-wrap justify-end gap-2">
+                    @if (acting() === workspace.id) {
+                      <hlm-spinner aria-label="Saving" />
+                    }
+                    @if (workspace.archived_at) {
+                      <button
+                        hlmBtn
+                        variant="outline"
+                        size="sm"
+                        type="button"
+                        [attr.aria-label]="'Restore ' + workspace.display_name"
+                        [disabled]="acting() !== null"
+                        (click)="restore(workspace)"
+                      >
+                        Restore
+                      </button>
+                    } @else {
+                      <button
+                        hlmBtn
+                        variant="outline"
+                        size="sm"
+                        type="button"
+                        [attr.aria-label]="'Edit ' + workspace.display_name"
+                        [disabled]="editing() === workspace.id"
+                        (click)="edit(workspace)"
+                      >
+                        Edit
+                      </button>
+                      @if (!workspace.is_default) {
+                        <button
+                          hlmBtn
+                          variant="outline"
+                          size="sm"
+                          type="button"
+                          [attr.aria-label]="'Make ' + workspace.display_name + ' the default'"
+                          [disabled]="acting() !== null"
+                          (click)="makeDefault(workspace)"
+                        >
+                          Make default
+                        </button>
+                        <button
+                          hlmBtn
+                          variant="outline"
+                          size="sm"
+                          type="button"
+                          [attr.aria-label]="'Archive ' + workspace.display_name"
+                          [disabled]="acting() !== null"
+                          (click)="archive(workspace)"
+                        >
+                          Archive
+                        </button>
+                      }
+                    }
+                  </div>
+                </td>
+              }
+            </tr>
+            @if (editing() === workspace.id) {
+              <tr>
+                <td
+                  [attr.colspan]="user.canManageOrganization() ? 3 : 2"
+                  class="border-border border-b p-4"
+                >
+                  <form
+                    class="grid gap-4 md:grid-cols-2"
+                    novalidate
+                    [attr.aria-label]="'Edit ' + workspace.display_name"
+                    (submit)="save($event, workspace)"
+                  >
+                    @if (editStatus.error(); as message) {
+                      <div hlmAlert variant="destructive" role="alert" class="md:col-span-2">
+                        <p hlmAlertDescription>{{ message }}</p>
+                      </div>
+                    }
+                    <div hlmField>
+                      <label hlmFieldLabel for="edit-workspace-name">Name</label>
+                      <input
+                        hlmInput
+                        id="edit-workspace-name"
+                        [formField]="editForm.display_name"
+                      />
+                      @if (editForm.display_name().touched() && editForm.display_name().invalid()) {
+                        <hlm-field-error forceShow>{{
+                          editForm.display_name().errors()[0].message
+                        }}</hlm-field-error>
+                      }
+                    </div>
+                    <div hlmField>
+                      <label hlmFieldLabel for="edit-workspace-slug">Address</label>
+                      <input
+                        hlmInput
+                        id="edit-workspace-slug"
+                        class="font-mono"
+                        [formField]="editForm.slug"
+                      />
+                      @if (editForm.slug().touched() && editForm.slug().invalid()) {
+                        <hlm-field-error forceShow>{{
+                          editForm.slug().errors()[0].message
+                        }}</hlm-field-error>
+                      }
+                    </div>
+                    <div hlmField class="md:col-span-2">
+                      <label hlmFieldLabel for="edit-workspace-description">What it's for</label>
+                      <input
+                        hlmInput
+                        id="edit-workspace-description"
+                        [formField]="editForm.description"
+                      />
+                    </div>
+                    <div class="flex flex-wrap gap-2 md:col-span-2">
+                      <button hlmBtn type="submit" [disabled]="editStatus.saving()">
+                        @if (editStatus.saving()) {
+                          <hlm-spinner aria-hidden="true" /> Saving…
+                        } @else {
+                          Save
+                        }
+                      </button>
+                      <button hlmBtn variant="outline" type="button" (click)="cancelEdit()">
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                </td>
+              </tr>
+            }
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</div>

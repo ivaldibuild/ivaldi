@@ -14,8 +14,25 @@ import {
   ReleaseStatus,
   Target,
   Team,
+  Tier,
   Workspace,
 } from '../api/models';
+
+/** What an Environment is made from; the slug is derived from the name when left out. */
+export interface EnvironmentFields {
+  display_name: string;
+  slug?: string;
+  tier: Tier;
+  /** Whether Ivaldi deploys there, rather than only tracking what runs there. */
+  execution_enabled: boolean;
+}
+
+/** A Kubernetes Target: its name, and the cluster and namespace it is. */
+export interface TargetFields {
+  display_name: string;
+  cluster: string;
+  namespace: string;
+}
 
 /** The delivery configuration operations: Applications and where they run. */
 @Service()
@@ -139,17 +156,67 @@ export class DeliveryApi {
     return this.api.send('POST', `/releases/${id}/withdraw`);
   }
 
-  environments(workspaceId: string): Promise<Environment[]> {
-    return this.api.list(`/workspaces/${workspaceId}/environments`);
+  /** The Workspace's active Environments, and archived ones too when `includeArchived` is set. */
+  environments(workspaceId: string, includeArchived = false): Promise<Environment[]> {
+    const query = includeArchived ? '?include_archived=true' : '';
+    return this.api.list(`/workspaces/${workspaceId}/environments${query}`);
   }
 
-  targets(environmentId: string): Promise<Target[]> {
-    return this.api.list(`/environments/${environmentId}/targets`);
+  environment(id: string): Promise<Environment> {
+    return this.api.get(`/environments/${id}`);
+  }
+
+  createEnvironment(workspaceId: string, environment: EnvironmentFields): Promise<Environment> {
+    return this.api.send('POST', `/workspaces/${workspaceId}/environments`, environment);
+  }
+
+  updateEnvironment(id: string, changes: Partial<EnvironmentFields>): Promise<Environment> {
+    return this.api.send('PATCH', `/environments/${id}`, changes);
+  }
+
+  /** Archives an Environment. The control plane refuses while Targets or Lifecycles use it. */
+  archiveEnvironment(id: string): Promise<Environment> {
+    return this.api.send('POST', `/environments/${id}/archive`);
+  }
+
+  restoreEnvironment(id: string): Promise<Environment> {
+    return this.api.send('POST', `/environments/${id}/restore`);
+  }
+
+  /** The Environment's active Targets, and archived ones too when `includeArchived` is set. */
+  targets(environmentId: string, includeArchived = false): Promise<Target[]> {
+    const query = includeArchived ? '?include_archived=true' : '';
+    return this.api.list(`/environments/${environmentId}/targets${query}`);
   }
 
   /** Every Target of the given Environments, one call each. */
   async targetsOf(environments: Environment[]): Promise<Target[]> {
     return (await Promise.all(environments.map((e) => this.targets(e.id)))).flat();
+  }
+
+  /** Creates a Kubernetes Target: a namespace in a cluster. */
+  createTarget(environmentId: string, target: TargetFields): Promise<Target> {
+    return this.api.send('POST', `/environments/${environmentId}/targets`, {
+      display_name: target.display_name,
+      runtime: 'kubernetes',
+      locator: { cluster: target.cluster, namespace: target.namespace },
+    });
+  }
+
+  /** Renames a Target and replaces its locator. */
+  updateTarget(id: string, target: TargetFields): Promise<Target> {
+    return this.api.send('PATCH', `/targets/${id}`, {
+      display_name: target.display_name,
+      locator: { cluster: target.cluster, namespace: target.namespace },
+    });
+  }
+
+  archiveTarget(id: string): Promise<Target> {
+    return this.api.send('POST', `/targets/${id}/archive`);
+  }
+
+  restoreTarget(id: string): Promise<Target> {
+    return this.api.send('POST', `/targets/${id}/restore`);
   }
 
   lifecycles(workspaceId: string): Promise<Lifecycle[]> {

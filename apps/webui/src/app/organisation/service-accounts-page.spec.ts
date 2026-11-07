@@ -76,7 +76,7 @@ describe('ServiceAccountsPage', () => {
 
     const link = el.querySelector<HTMLAnchorElement>('tbody a')!;
     expect(link.textContent?.trim()).toBe('GitHub Actions');
-    expect(link.getAttribute('href')).toBe('/service-accounts/prn_gha');
+    expect(link.getAttribute('href')).toBe('/settings/service-accounts/prn_gha');
     expect(el.textContent).toContain('Creates Releases from tags');
 
     const toggle = el.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
@@ -112,7 +112,7 @@ describe('ServiceAccountsPage', () => {
     create.flush(ok({ ...github, id: 'prn_glc', display_name: 'GitLab CI' }));
     await settle(fixture);
 
-    expect(navigate).toHaveBeenCalledWith(['/service-accounts', 'prn_glc']);
+    expect(navigate).toHaveBeenCalledWith(['/settings/service-accounts', 'prn_glc']);
   });
 
   it('asks for a name before creating one', async () => {

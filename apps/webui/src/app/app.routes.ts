@@ -116,22 +116,59 @@ export const routes: Routes = [
           import('./delivery/pages/environments-page').then((m) => m.EnvironmentsPage),
       },
       {
-        path: 'people',
-        title: 'People & access · Ivaldi',
-        loadComponent: () => import('./organisation/people-page').then((m) => m.PeoplePage),
+        path: 'environments/:id',
+        title: 'Environment · Ivaldi',
+        loadComponent: () =>
+          import('./delivery/pages/environment-page').then((m) => m.EnvironmentPage),
       },
       {
-        path: 'service-accounts',
-        title: 'Service accounts · Ivaldi',
-        loadComponent: () =>
-          import('./organisation/service-accounts-page').then((m) => m.ServiceAccountsPage),
+        path: 'settings',
+        loadComponent: () => import('./settings/settings-shell').then((m) => m.SettingsShell),
+        children: [
+          { path: '', pathMatch: 'full', redirectTo: 'general' },
+          {
+            path: 'general',
+            title: 'General · Organisation settings · Ivaldi',
+            loadComponent: () => import('./settings/general-page').then((m) => m.GeneralPage),
+          },
+          {
+            path: 'people',
+            title: 'People & access · Organisation settings · Ivaldi',
+            loadComponent: () => import('./organisation/people-page').then((m) => m.PeoplePage),
+          },
+          {
+            path: 'service-accounts',
+            title: 'Service accounts · Organisation settings · Ivaldi',
+            loadComponent: () =>
+              import('./organisation/service-accounts-page').then((m) => m.ServiceAccountsPage),
+          },
+          {
+            path: 'service-accounts/:id',
+            title: 'Service account · Organisation settings · Ivaldi',
+            loadComponent: () =>
+              import('./organisation/service-account-page').then((m) => m.ServiceAccountPage),
+          },
+          {
+            path: 'workspaces',
+            title: 'Workspaces · Organisation settings · Ivaldi',
+            loadComponent: () => import('./settings/workspaces-page').then((m) => m.WorkspacesPage),
+          },
+          {
+            path: 'teams',
+            title: 'Teams · Organisation settings · Ivaldi',
+            loadComponent: () => import('./settings/teams-page').then((m) => m.TeamsPage),
+          },
+          {
+            path: 'teams/:id',
+            title: 'Team · Organisation settings · Ivaldi',
+            loadComponent: () => import('./settings/team-page').then((m) => m.TeamPage),
+          },
+        ],
       },
-      {
-        path: 'service-accounts/:id',
-        title: 'Service account · Ivaldi',
-        loadComponent: () =>
-          import('./organisation/service-account-page').then((m) => m.ServiceAccountPage),
-      },
+      // Where these pages used to be.
+      { path: 'people', redirectTo: 'settings/people' },
+      { path: 'service-accounts', redirectTo: 'settings/service-accounts' },
+      { path: 'service-accounts/:id', redirectTo: 'settings/service-accounts/:id' },
       {
         path: 'lifecycles',
         title: 'Lifecycles · Ivaldi',

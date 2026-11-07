@@ -2296,6 +2296,10 @@ export interface components {
       channel_id?: string;
       /** @description Publish the Release as soon as it is created */
       publish?: boolean;
+      /** @description Who triggered the Release, such as the CI user who ran the pipeline; recorded as reported, not verified */
+      triggered_by?: string;
+      /** @description The email address of whoever triggered the Release; recorded as reported, not verified */
+      triggered_by_email?: string;
       /** @description The Release's version, unique within the Application, such as 1.4.0 */
       version: string;
     };
@@ -2883,6 +2887,8 @@ export interface components {
       source: 'created' | 'observed';
       /** @enum {string} */
       status: 'draft' | 'published' | 'withdrawn';
+      triggered_by: string | null;
+      triggered_by_email: string | null;
       /** Format: date-time */
       updated_at: string;
       version: string;
@@ -2923,6 +2929,8 @@ export interface components {
       source: 'created' | 'observed';
       /** @enum {string} */
       status: 'draft' | 'published' | 'withdrawn';
+      triggered_by: string | null;
+      triggered_by_email: string | null;
       /** Format: date-time */
       updated_at: string;
       version: string;

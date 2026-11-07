@@ -504,6 +504,11 @@ type CreateReleaseInput struct {
 	// Publish publishes the Release as soon as it is created, such as from
 	// a tag pipeline. It needs the permission to publish.
 	Publish bool
+	// TriggeredBy and TriggeredByEmail are who the caller says triggered
+	// the Release, such as the CI user who ran the pipeline. They are
+	// recorded as reported and not verified.
+	TriggeredBy      string
+	TriggeredByEmail string
 }
 
 // ReleaseDetail is a Release with the Builds it carries, in the order of

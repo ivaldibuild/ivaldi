@@ -2,7 +2,6 @@ package postgres
 
 import (
 	"context"
-	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -10,84 +9,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
 	"github.com/ivaldibuild/ivaldi/pkg/database"
 	"github.com/ivaldibuild/ivaldi/pkg/pagination"
-	"github.com/ivaldibuild/ivaldi/pkg/release"
 )
-
-type buildEntity struct {
-	ID             string             `gorm:"column:id;primaryKey"`
-	OrganizationID string             `gorm:"column:organization_id"`
-	ArtifactKind   string             `gorm:"column:artifact_kind"`
-	ArtifactName   string             `gorm:"column:artifact_name"`
-	Digest         string             `gorm:"column:digest"`
-	Version        *string            `gorm:"column:version"`
-	Provenance     string             `gorm:"column:provenance"`
-	SourceID       *string            `gorm:"column:source_id"`
-	CommitSHA      *string            `gorm:"column:commit_sha"`
-	SourceRef      *string            `gorm:"column:source_ref"`
-	CIProvider     *string            `gorm:"column:ci_provider"`
-	CIRunRef       *string            `gorm:"column:ci_run_ref"`
-	ReportedTags   database.TextArray `gorm:"column:reported_tags"`
-	BuiltAt        *time.Time         `gorm:"column:built_at"`
-	CreatedAt      time.Time          `gorm:"column:created_at;autoCreateTime:false"`
-	UpdatedAt      time.Time          `gorm:"column:updated_at;autoUpdateTime:false"`
-}
-
-func (buildEntity) TableName() string { return "delivery.builds" }
-
-type releaseEntity struct {
-	ID                   string     `gorm:"column:id;primaryKey"`
-	OrganizationID       string     `gorm:"column:organization_id"`
-	ApplicationID        string     `gorm:"column:application_id"`
-	ChannelID            string     `gorm:"column:channel_id"`
-	Version              string     `gorm:"column:version"`
-	Status               string     `gorm:"column:status"`
-	Source               string     `gorm:"column:source"`
-	CreatedByPrincipalID *string    `gorm:"column:created_by_principal_id"`
-	PublishDecisionID    *string    `gorm:"column:publish_decision_id"`
-	PublishedAt          *time.Time `gorm:"column:published_at"`
-	WithdrawnAt          *time.Time `gorm:"column:withdrawn_at"`
-	CreatedAt            time.Time  `gorm:"column:created_at;autoCreateTime:false"`
-	UpdatedAt            time.Time  `gorm:"column:updated_at;autoUpdateTime:false"`
-}
-
-func (releaseEntity) TableName() string { return "delivery.releases" }
-
-type releaseBuildEntity struct {
-	OrganizationID string    `gorm:"column:organization_id"`
-	ApplicationID  string    `gorm:"column:application_id"`
-	ReleaseID      string    `gorm:"column:release_id;primaryKey"`
-	ArtifactID     string    `gorm:"column:artifact_id;primaryKey"`
-	BuildID        string    `gorm:"column:build_id"`
-	CreatedAt      time.Time `gorm:"column:created_at;autoCreateTime:false"`
-}
-
-func (releaseBuildEntity) TableName() string { return "delivery.release_builds" }
-
-func buildToPersistence(b *delivery.Build) *buildEntity {
-	s := b.Snapshot()
-	return &buildEntity{
-		ID: s.ID, OrganizationID: s.OrganizationID, ArtifactKind: string(s.ArtifactKind), ArtifactName: s.ArtifactName,
-		Digest: s.Digest, Version: s.Version, Provenance: string(s.Provenance), SourceID: s.SourceID,
-		CommitSHA: s.CommitSHA, SourceRef: s.SourceRef, CIProvider: s.CIProvider, CIRunRef: s.CIRunRef,
-		ReportedTags: s.ReportedTags, BuiltAt: s.BuiltAt, CreatedAt: s.CreatedAt, UpdatedAt: s.UpdatedAt,
-	}
-}
-
-func buildToDomain(e *buildEntity) (*delivery.Build, error) {
-	return delivery.NewBuild(delivery.NewBuildProps{
-		OrganizationID: e.OrganizationID,
-		ArtifactKind:   delivery.ArtifactKind(e.ArtifactKind),
-		ArtifactName:   e.ArtifactName,
-		Digest:         e.Digest,
-		Provenance:     delivery.BuildProvenance(e.Provenance),
-		Details: delivery.BuildDetails{
-			Version: e.Version, SourceID: e.SourceID, CommitSHA: e.CommitSHA, SourceRef: e.SourceRef,
-			CIProvider: e.CIProvider, CIRunRef: e.CIRunRef, ReportedTags: e.ReportedTags, BuiltAt: utcPtr(e.BuiltAt),
-		},
-		CreatedAt: utc(e.CreatedAt),
-		UpdatedAt: utc(e.UpdatedAt),
-	}, &e.ID)
-}
 
 type buildRepository struct {
 	db *gorm.DB
@@ -180,38 +102,6 @@ func NewReleaseRepository(db *gorm.DB) delivery.ReleaseRepository {
 }
 
 func (r *releaseRepository) conn(ctx context.Context) *gorm.DB { return database.Conn(ctx, r.db) }
-
-func releaseToPersistence(rel *delivery.Release) (*releaseEntity, []releaseBuildEntity) {
-	s := rel.Snapshot()
-	e := &releaseEntity{
-		ID: s.ID, OrganizationID: s.OrganizationID, ApplicationID: s.ApplicationID, ChannelID: s.ChannelID,
-		Version: s.Version, Status: string(s.Status), Source: string(s.Source),
-		CreatedByPrincipalID: s.CreatedByPrincipalID, PublishDecisionID: s.PublishDecisionID,
-		PublishedAt: s.PublishedAt, WithdrawnAt: s.WithdrawnAt, CreatedAt: s.CreatedAt, UpdatedAt: s.UpdatedAt,
-	}
-	builds := make([]releaseBuildEntity, len(s.Builds))
-	for i, b := range s.Builds {
-		builds[i] = releaseBuildEntity{
-			OrganizationID: s.OrganizationID, ApplicationID: s.ApplicationID, ReleaseID: s.ID,
-			ArtifactID: b.ArtifactID, BuildID: b.BuildID, CreatedAt: b.CreatedAt,
-		}
-	}
-	return e, builds
-}
-
-func releaseToDomain(e *releaseEntity, builds []releaseBuildEntity) (*delivery.Release, error) {
-	props := delivery.NewReleaseProps{
-		OrganizationID: e.OrganizationID, ApplicationID: e.ApplicationID, ChannelID: e.ChannelID,
-		Version: e.Version, Status: release.Status(e.Status), Source: delivery.ReleaseSource(e.Source),
-		CreatedByPrincipalID: e.CreatedByPrincipalID, PublishDecisionID: e.PublishDecisionID,
-		PublishedAt: utcPtr(e.PublishedAt), WithdrawnAt: utcPtr(e.WithdrawnAt),
-		CreatedAt: utc(e.CreatedAt), UpdatedAt: utc(e.UpdatedAt),
-	}
-	for _, b := range builds {
-		props.Builds = append(props.Builds, delivery.NewReleaseBuildProps{ArtifactID: b.ArtifactID, BuildID: b.BuildID, CreatedAt: utc(b.CreatedAt)})
-	}
-	return delivery.NewRelease(props, &e.ID)
-}
 
 func (r *releaseRepository) CreateRelease(ctx context.Context, rel *delivery.Release) error {
 	e, builds := releaseToPersistence(rel)

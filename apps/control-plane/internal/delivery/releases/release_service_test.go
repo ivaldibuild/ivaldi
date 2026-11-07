@@ -134,6 +134,19 @@ func TestCreateReleaseJoinsTheChannelItMeets(t *testing.T) {
 	})
 }
 
+func TestCreateReleaseRecordsWhoTriggeredIt(t *testing.T) {
+	w := newWorld(t)
+	d, err := w.svc.CreateRelease(ctx, ada, delivery.CreateReleaseInput{
+		OrganizationID: org, ApplicationID: w.app.ID(), Version: "1.4.1", Builds: []delivery.BuildInput{apiBuild("d")},
+		TriggeredBy: "grace", TriggeredByEmail: "grace@example.com",
+	})
+	require.NoError(t, err)
+	s := d.Release.Snapshot()
+	assert.Equal(t, "grace", *s.TriggeredBy)
+	assert.Equal(t, "grace@example.com", *s.TriggeredByEmail)
+	assert.Equal(t, "prn_ada", *s.CreatedByPrincipalID, "the authenticated creator is recorded apart")
+}
+
 func TestCreateReleaseRefusals(t *testing.T) {
 	cases := map[string]struct {
 		in      delivery.CreateReleaseInput
@@ -141,6 +154,10 @@ func TestCreateReleaseRefusals(t *testing.T) {
 		message string
 	}{
 		"no builds": {in: delivery.CreateReleaseInput{Version: "1.0.0"}, want: delivery.ErrInvalid},
+		"a triggered_by_email that is not an address": {
+			in:   delivery.CreateReleaseInput{Version: "1.0.0", Builds: []delivery.BuildInput{apiBuild("a")}, TriggeredByEmail: "ada"},
+			want: delivery.ErrInvalid,
+		},
 		"two builds of one artifact": {
 			in:   delivery.CreateReleaseInput{Version: "1.0.0", Builds: []delivery.BuildInput{apiBuild("a"), apiBuild("b")}},
 			want: delivery.ErrInvalid,

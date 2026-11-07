@@ -17,12 +17,18 @@ func TestDetect(t *testing.T) {
 			want: Info{Provider: "github_actions", InCI: true, CommitSHA: "abc123", Ref: "refs/tags/v1.4.0", RunURL: "https://github.com/acme/api/actions/runs/77"},
 		},
 		"github actions on a pull request": {
-			vars: map[string]string{"GITHUB_ACTIONS": "true", "GITHUB_SHA": "def", "GITHUB_REF": "refs/pull/42/merge"},
-			want: Info{Provider: "github_actions", InCI: true, CommitSHA: "def", Ref: "refs/pull/42/merge"},
+			vars: map[string]string{"GITHUB_ACTIONS": "true", "GITHUB_SHA": "def", "GITHUB_REF": "refs/pull/42/merge", "GITHUB_ACTOR": "ada"},
+			want: Info{Provider: "github_actions", InCI: true, CommitSHA: "def", Ref: "refs/pull/42/merge", TriggeredBy: "ada"},
+		},
+		"github actions re-run by someone else": {
+			vars: map[string]string{"GITHUB_ACTIONS": "true", "GITHUB_ACTOR": "ada", "GITHUB_TRIGGERING_ACTOR": "grace"},
+			want: Info{Provider: "github_actions", InCI: true, TriggeredBy: "grace"},
 		},
 		"gitlab on a tag": {
-			vars: map[string]string{"GITLAB_CI": "true", "CI": "true", "CI_COMMIT_SHA": "abc", "CI_COMMIT_TAG": "v2.0.0", "CI_PIPELINE_URL": "https://gitlab.com/acme/api/-/pipelines/9"},
-			want: Info{Provider: "gitlab_ci", InCI: true, CommitSHA: "abc", Ref: "refs/tags/v2.0.0", RunURL: "https://gitlab.com/acme/api/-/pipelines/9"},
+			vars: map[string]string{"GITLAB_CI": "true", "CI": "true", "CI_COMMIT_SHA": "abc", "CI_COMMIT_TAG": "v2.0.0", "CI_PIPELINE_URL": "https://gitlab.com/acme/api/-/pipelines/9",
+				"GITLAB_USER_LOGIN": "ada", "GITLAB_USER_EMAIL": "ada@example.com"},
+			want: Info{Provider: "gitlab_ci", InCI: true, CommitSHA: "abc", Ref: "refs/tags/v2.0.0", RunURL: "https://gitlab.com/acme/api/-/pipelines/9",
+				TriggeredBy: "ada", TriggeredByEmail: "ada@example.com"},
 		},
 		"gitlab on a merge request": {
 			vars: map[string]string{"GITLAB_CI": "true", "CI_MERGE_REQUEST_IID": "7", "CI_COMMIT_BRANCH": "feature"},

@@ -1,7 +1,7 @@
 <div class="flex flex-col gap-8">
   <app-page-header
     heading="Projects"
-    [trail]="(context.current()?.display_name ?? 'Workspace') + ' / Projects'"
+    [crumbs]="[{ label: context.current()?.display_name ?? 'Workspace' }, { label: 'Projects' }]"
   >
     <ng-container pageActions>
       <a hlmBtn size="lg" routerLink="/projects/new">
@@ -113,6 +113,9 @@
             >
               Description
             </th>
+            <th scope="col" class="border-border w-24 border-b px-4 py-3">
+              <span class="sr-only">Actions</span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -140,6 +143,16 @@
               </td>
               <td class="border-border text-muted-foreground border-b px-4 py-4 align-top">
                 {{ project.description || '—' }}
+              </td>
+              <td class="border-border border-b px-4 py-3 text-right align-top">
+                <a
+                  hlmBtn
+                  variant="outline"
+                  size="sm"
+                  [routerLink]="['/projects', project.id, 'edit']"
+                  [attr.aria-label]="'Edit ' + project.display_name"
+                  >Edit</a
+                >
               </td>
             </tr>
           }

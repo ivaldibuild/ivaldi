@@ -99,6 +99,12 @@ export const routes: Routes = [
           import('./delivery/pages/new-project-page').then((m) => m.NewProjectPage),
       },
       {
+        path: 'projects/:id/edit',
+        title: 'Edit project · Ivaldi',
+        loadComponent: () =>
+          import('./delivery/pages/project-edit-page').then((m) => m.ProjectEditPage),
+      },
+      {
         path: 'projects/:id',
         title: 'Project · Ivaldi',
         loadComponent: () => import('./delivery/pages/project-page').then((m) => m.ProjectPage),

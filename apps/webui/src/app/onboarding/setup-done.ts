@@ -20,7 +20,7 @@ import { HlmButtonImports } from '@spartan-ng/helm/button';
         </p>
       </header>
       <div class="flex flex-wrap gap-3">
-        <a hlmBtn size="lg" routerLink="/applications">Go to Applications</a>
+        <a hlmBtn size="lg" routerLink="/projects">Go to Projects</a>
         <a hlmBtn size="lg" variant="outline" routerLink="/setup/organisation">Review setup</a>
       </div>
     </div>

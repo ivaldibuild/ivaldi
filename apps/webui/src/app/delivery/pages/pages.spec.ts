@@ -178,9 +178,15 @@ describe('delivery pages', () => {
     expect(headers).toEqual(['Application', 'Staging', 'Production']);
     const cells = [...el.querySelectorAll('tbody td')].map((td) => td.textContent?.trim());
     expect(cells).toEqual(['staging-eu-1', 'Not placed']);
-    expect(el.querySelector('tbody th')?.textContent?.replace(/\s+/g, ' ')).toContain(
-      'Payments · owned by Payments',
-    );
+    const group = el.querySelector('th[scope="rowgroup"]');
+    expect(group?.querySelector('a')?.textContent?.trim()).toBe('Payments');
+    expect(group?.querySelector('a')?.getAttribute('href')).toBe('/projects/prj_1');
+    expect(group?.textContent).toContain('Owned by Payments');
+    expect(
+      group?.querySelector('a[aria-label="New application in Payments"]')?.getAttribute('href'),
+    ).toBe('/applications/new?project=prj_1');
+    const row = el.querySelector('th[scope="row"]');
+    expect(row?.textContent?.trim()).toBe('payments-api');
   });
 
   it('starts from the Project it was opened from', async () => {
@@ -274,6 +280,11 @@ describe('delivery pages', () => {
     const { el } = await renderApplication();
 
     expect(el.querySelector('h1')?.textContent).toContain('payments-api');
+    const crumbs = [...el.querySelectorAll('nav[aria-label="Breadcrumb"] a')];
+    expect(crumbs.map((a) => [a.textContent?.trim(), a.getAttribute('href')])).toEqual([
+      ['Projects', '/projects'],
+      ['Payments', '/projects/prj_1'],
+    ]);
     expect(el.textContent).toContain('Follows Standard');
     const phases = [...el.querySelectorAll('ol li span.font-semibold')].map((s) =>
       s.textContent?.trim(),

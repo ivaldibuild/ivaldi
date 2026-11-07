@@ -1,7 +1,7 @@
 <div class="flex max-w-205 flex-col gap-8">
   <app-page-header
     heading="New project"
-    [trail]="(context.current()?.display_name ?? 'Workspace') + ' / Projects'"
+    [crumbs]="[{ label: 'Projects', link: '/projects' }, { label: 'New project' }]"
   />
 
   <p class="text-foreground text-base leading-relaxed">

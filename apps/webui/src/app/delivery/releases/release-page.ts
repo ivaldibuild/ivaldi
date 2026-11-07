@@ -1,5 +1,4 @@
 import { Component, computed, inject, input, resource, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
 import { HlmAlertImports } from '@spartan-ng/helm/alert';
 import { HlmBadgeImports } from '@spartan-ng/helm/badge';
 import { HlmButtonImports } from '@spartan-ng/helm/button';
@@ -15,14 +14,7 @@ import { channelName } from './release-labels';
 /** One Release: its Channel, its Builds in full, and publishing or withdrawing it. */
 @Component({
   selector: 'app-release-page',
-  imports: [
-    RouterLink,
-    PageHeader,
-    HlmAlertImports,
-    HlmBadgeImports,
-    HlmButtonImports,
-    HlmSpinnerImports,
-  ],
+  imports: [PageHeader, HlmAlertImports, HlmBadgeImports, HlmButtonImports, HlmSpinnerImports],
   templateUrl: './release-page.html',
 })
 export class ReleasePage {

@@ -57,7 +57,7 @@ export const routes: Routes = [
     canActivate: [requireSignIn],
     loadComponent: () => import('./delivery/app-shell').then((m) => m.AppShell),
     children: [
-      { path: '', pathMatch: 'full', redirectTo: 'applications' },
+      { path: '', pathMatch: 'full', redirectTo: 'projects' },
       {
         path: 'applications',
         title: 'Applications · Ivaldi',
@@ -97,6 +97,12 @@ export const routes: Routes = [
         title: 'New project · Ivaldi',
         loadComponent: () =>
           import('./delivery/pages/new-project-page').then((m) => m.NewProjectPage),
+      },
+      {
+        path: 'projects/:id/edit',
+        title: 'Edit project · Ivaldi',
+        loadComponent: () =>
+          import('./delivery/pages/project-edit-page').then((m) => m.ProjectEditPage),
       },
       {
         path: 'projects/:id',

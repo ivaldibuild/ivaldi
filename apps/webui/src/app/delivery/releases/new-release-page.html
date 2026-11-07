@@ -1,7 +1,10 @@
 <div class="flex max-w-205 flex-col gap-8">
   <app-page-header
     heading="Create Release"
-    [trail]="(application()?.display_name ?? 'Application') + ' / Releases'"
+    [crumbs]="[
+      { label: application()?.display_name ?? 'Application', link: ['/applications', id()] },
+      { label: 'Releases' },
+    ]"
   />
 
   <p class="text-foreground text-base leading-relaxed">

@@ -23,6 +23,8 @@ func httpError(ctx context.Context, err error) error {
 		return huma.Error422UnprocessableEntity("the request is invalid")
 	case errors.Is(err, delivery.ErrNotFound):
 		return huma.Error404NotFound("not found")
+	case errors.Is(err, delivery.ErrAmbiguous):
+		return huma.Error409Conflict("more than one active Application has that slug; use its ID")
 	case errors.Is(err, delivery.ErrSlugTaken):
 		return huma.Error409Conflict("the slug or name is already in use")
 	case errors.Is(err, delivery.ErrAlreadyExists),

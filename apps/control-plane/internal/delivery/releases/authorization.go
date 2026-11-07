@@ -17,7 +17,9 @@ import (
 // reading needs application.read, recording Builds, creating, and
 // withdrawing need release.manage, and publishing needs release.publish.
 // Finding the Project means reading the Application, and for a Release
-// reading it first; next reads them again in its transaction. The
+// reading it first; next reads them again in its transaction. An
+// Application named by its slug is resolved once here and next gets its ID,
+// so the decision and the change are about the same Application. The
 // authorizer refuses agent Sessions, which may not publish without a
 // human's approval (ADR 0007).
 type authorized struct {
@@ -29,24 +31,26 @@ type authorized struct {
 
 var _ delivery.ReleaseService = (*authorized)(nil)
 
-// decide asks about permission on the Application's Project.
-func (a *authorized) decide(ctx context.Context, actor identity.Actor, permission, action, organizationID, applicationID string, proposal any) (authorization.Decision, error) {
-	app, err := a.applications.GetApplication(ctx, organizationID, applicationID)
+// decide asks about permission on the Project of the Application an ID or
+// slug names, and returns the Application's ID.
+func (a *authorized) decide(ctx context.Context, actor identity.Actor, permission, action, organizationID, application string, proposal any) (authorization.Decision, string, error) {
+	app, err := a.applications.GetApplicationByIdentifier(ctx, organizationID, application)
 	if err != nil {
-		return authorization.Decision{}, err
+		return authorization.Decision{}, "", err
 	}
-	return authorization.Require(ctx, a.authz, authorization.Request{
+	d, err := authorization.Require(ctx, a.authz, authorization.Request{
 		Actor: actor, Permission: permission, OrganizationID: organizationID,
 		ResourceID: app.ProjectID(), Action: action, Proposal: proposal,
 	})
+	return d, app.ID(), err
 }
 
-func (a *authorized) allow(ctx context.Context, actor identity.Actor, permission, action, organizationID, applicationID string, proposal any) (context.Context, error) {
-	d, err := a.decide(ctx, actor, permission, action, organizationID, applicationID, proposal)
+func (a *authorized) allow(ctx context.Context, actor identity.Actor, permission, action, organizationID, application string, proposal any) (context.Context, string, error) {
+	d, id, err := a.decide(ctx, actor, permission, action, organizationID, application, proposal)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return authorization.WithDecision(ctx, "", d), nil
+	return authorization.WithDecision(ctx, "", d), id, nil
 }
 
 // onRelease asks about permission on a Release's Application.
@@ -55,26 +59,29 @@ func (a *authorized) onRelease(ctx context.Context, actor identity.Actor, permis
 	if err != nil {
 		return nil, err
 	}
-	return a.allow(ctx, actor, permission, action, organizationID, rel.ApplicationID(), rel.Snapshot())
+	ctx, _, err = a.allow(ctx, actor, permission, action, organizationID, rel.ApplicationID(), rel.Snapshot())
+	return ctx, err
 }
 
 func (a *authorized) ReportBuild(ctx context.Context, actor identity.Actor, in delivery.ReportBuildInput) (*delivery.Build, error) {
-	ctx, err := a.allow(ctx, actor, delivery.PermissionReleaseManage, delivery.ActionBuildReport, in.OrganizationID, in.ApplicationID, in)
+	ctx, id, err := a.allow(ctx, actor, delivery.PermissionReleaseManage, delivery.ActionBuildReport, in.OrganizationID, in.ApplicationID, in)
 	if err != nil {
 		return nil, err
 	}
+	in.ApplicationID = id
 	return a.next.ReportBuild(ctx, actor, in)
 }
 
 // CreateRelease also asks to publish when the call publishes, and files
 // that decision apart, so the published Release records it.
 func (a *authorized) CreateRelease(ctx context.Context, actor identity.Actor, in delivery.CreateReleaseInput) (*delivery.ReleaseDetail, error) {
-	ctx, err := a.allow(ctx, actor, delivery.PermissionReleaseManage, delivery.ActionReleaseCreate, in.OrganizationID, in.ApplicationID, in)
+	ctx, id, err := a.allow(ctx, actor, delivery.PermissionReleaseManage, delivery.ActionReleaseCreate, in.OrganizationID, in.ApplicationID, in)
 	if err != nil {
 		return nil, err
 	}
+	in.ApplicationID = id
 	if in.Publish {
-		d, err := a.decide(ctx, actor, delivery.PermissionReleasePublish, delivery.ActionReleasePublish, in.OrganizationID, in.ApplicationID, in)
+		d, _, err := a.decide(ctx, actor, delivery.PermissionReleasePublish, delivery.ActionReleasePublish, in.OrganizationID, id, in)
 		if err != nil {
 			return nil, err
 		}
@@ -91,9 +98,11 @@ func (a *authorized) GetRelease(ctx context.Context, actor identity.Actor, organ
 }
 
 func (a *authorized) ListReleases(ctx context.Context, actor identity.Actor, q delivery.ListReleasesQuery) (*pagination.Result[*delivery.ReleaseDetail], error) {
-	if _, err := a.decide(ctx, actor, delivery.PermissionApplicationRead, delivery.ActionReleaseList, q.OrganizationID, q.ApplicationID, nil); err != nil {
+	_, id, err := a.decide(ctx, actor, delivery.PermissionApplicationRead, delivery.ActionReleaseList, q.OrganizationID, q.ApplicationID, nil)
+	if err != nil {
 		return nil, err
 	}
+	q.ApplicationID = id
 	return a.next.ListReleases(ctx, actor, q)
 }
 

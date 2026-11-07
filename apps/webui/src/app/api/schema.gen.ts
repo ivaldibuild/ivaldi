@@ -21,7 +21,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/v1/applications/{application_id}': {
+  '/v1/applications/{application}': {
     parameters: {
       query?: never;
       header?: never;
@@ -39,7 +39,7 @@ export interface paths {
     patch: operations['update-application'];
     trace?: never;
   };
-  '/v1/applications/{application_id}/archive': {
+  '/v1/applications/{application}/archive': {
     parameters: {
       query?: never;
       header?: never;
@@ -56,7 +56,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/v1/applications/{application_id}/artifacts': {
+  '/v1/applications/{application}/artifacts': {
     parameters: {
       query?: never;
       header?: never;
@@ -74,7 +74,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/v1/applications/{application_id}/builds': {
+  '/v1/applications/{application}/builds': {
     parameters: {
       query?: never;
       header?: never;
@@ -91,7 +91,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/v1/applications/{application_id}/channels': {
+  '/v1/applications/{application}/channels': {
     parameters: {
       query?: never;
       header?: never;
@@ -109,7 +109,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/v1/applications/{application_id}/placements': {
+  '/v1/applications/{application}/placements': {
     parameters: {
       query?: never;
       header?: never;
@@ -127,7 +127,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/v1/applications/{application_id}/placements/{target_id}': {
+  '/v1/applications/{application}/placements/{target_id}': {
     parameters: {
       query?: never;
       header?: never;
@@ -145,7 +145,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/v1/applications/{application_id}/releases': {
+  '/v1/applications/{application}/releases': {
     parameters: {
       query?: never;
       header?: never;
@@ -163,7 +163,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/v1/applications/{application_id}/restore': {
+  '/v1/applications/{application}/restore': {
     parameters: {
       query?: never;
       header?: never;
@@ -180,7 +180,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/v1/applications/{application_id}/source': {
+  '/v1/applications/{application}/source': {
     parameters: {
       query?: never;
       header?: never;
@@ -197,7 +197,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/v1/applications/{application_id}/transfer': {
+  '/v1/applications/{application}/transfer': {
     parameters: {
       query?: never;
       header?: never;
@@ -3549,8 +3549,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description The Application's ID */
-        application_id: string;
+        /** @description The Application's ID, or the slug of an active Application */
+        application: string;
       };
       cookie?: never;
     };
@@ -3581,8 +3581,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description The Application's ID */
-        application_id: string;
+        /** @description The Application's ID, or the slug of an active Application */
+        application: string;
       };
       cookie?: never;
     };
@@ -3617,8 +3617,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description The Application's ID */
-        application_id: string;
+        /** @description The Application's ID, or the slug of an active Application */
+        application: string;
       };
       cookie?: never;
     };
@@ -3652,8 +3652,8 @@ export interface operations {
       };
       header?: never;
       path: {
-        /** @description The Application's ID */
-        application_id: string;
+        /** @description The Application's ID, or the slug of an active Application */
+        application: string;
       };
       cookie?: never;
     };
@@ -3684,8 +3684,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description The Application the artifact belongs to */
-        application_id: string;
+        /** @description The Application's ID, or the slug of an active Application */
+        application: string;
       };
       cookie?: never;
     };
@@ -3720,8 +3720,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description The Application */
-        application_id: string;
+        /** @description The Application's ID, or the slug of an active Application */
+        application: string;
       };
       cookie?: never;
     };
@@ -3759,8 +3759,8 @@ export interface operations {
       };
       header?: never;
       path: {
-        /** @description The Application's ID */
-        application_id: string;
+        /** @description The Application's ID, or the slug of an active Application */
+        application: string;
       };
       cookie?: never;
     };
@@ -3791,8 +3791,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description The Application the Channel belongs to */
-        application_id: string;
+        /** @description The Application's ID, or the slug of an active Application */
+        application: string;
       };
       cookie?: never;
     };
@@ -3827,8 +3827,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description The Application's ID */
-        application_id: string;
+        /** @description The Application's ID, or the slug of an active Application */
+        application: string;
       };
       cookie?: never;
     };
@@ -3859,8 +3859,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description The Application to place */
-        application_id: string;
+        /** @description The Application's ID, or the slug of an active Application */
+        application: string;
       };
       cookie?: never;
     };
@@ -3895,8 +3895,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description The Application's ID */
-        application_id: string;
+        /** @description The Application's ID, or the slug of an active Application */
+        application: string;
         /** @description The Target's ID */
         target_id: string;
       };
@@ -3933,8 +3933,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description The Application's ID */
-        application_id: string;
+        /** @description The Application's ID, or the slug of an active Application */
+        application: string;
         /** @description The Target's ID */
         target_id: string;
       };
@@ -3980,8 +3980,8 @@ export interface operations {
       };
       header?: never;
       path: {
-        /** @description The Application */
-        application_id: string;
+        /** @description The Application's ID, or the slug of an active Application */
+        application: string;
       };
       cookie?: never;
     };
@@ -4012,8 +4012,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description The Application */
-        application_id: string;
+        /** @description The Application's ID, or the slug of an active Application */
+        application: string;
       };
       cookie?: never;
     };
@@ -4048,8 +4048,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description The Application's ID */
-        application_id: string;
+        /** @description The Application's ID, or the slug of an active Application */
+        application: string;
       };
       cookie?: never;
     };
@@ -4080,8 +4080,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description The Application's ID */
-        application_id: string;
+        /** @description The Application's ID, or the slug of an active Application */
+        application: string;
       };
       cookie?: never;
     };
@@ -4116,8 +4116,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description The Application's ID */
-        application_id: string;
+        /** @description The Application's ID, or the slug of an active Application */
+        application: string;
       };
       cookie?: never;
     };

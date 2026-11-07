@@ -50,6 +50,26 @@ func (r *applicationRepository) GetApplicationBySlug(ctx context.Context, organi
 	return r.getApplication(r.conn(ctx).Where("organization_id = ? AND project_id = ? AND slug = ? AND archived_at IS NULL", organizationID, projectID, slug))
 }
 
+// GetApplicationByIdentifier matches the identifier against IDs and the
+// slugs of active Applications. A slug cannot be an ID (slugs have no
+// underscore), so two rows mean the slug is used in two Projects.
+func (r *applicationRepository) GetApplicationByIdentifier(ctx context.Context, organizationID, identifier string) (*delivery.Application, error) {
+	var entities []applicationEntity
+	err := r.conn(ctx).
+		Where("organization_id = ? AND (id = ? OR (slug = ? AND archived_at IS NULL))", organizationID, identifier, identifier).
+		Limit(2).Find(&entities).Error
+	if err != nil {
+		return nil, translate(err)
+	}
+	switch len(entities) {
+	case 0:
+		return nil, fmt.Errorf("application %q: %w", identifier, delivery.ErrNotFound)
+	case 1:
+		return r.mapper.ToDomain(&entities[0])
+	}
+	return nil, fmt.Errorf("application %q: %w", identifier, delivery.ErrAmbiguous)
+}
+
 func (r *applicationRepository) getApplication(q *gorm.DB) (*delivery.Application, error) {
 	var entity applicationEntity
 	if err := q.Take(&entity).Error; err != nil {

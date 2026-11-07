@@ -30,6 +30,7 @@ import (
 // delivery.ApplicationRepository provides it.
 type Applications interface {
 	GetApplication(ctx context.Context, organizationID, applicationID string) (*delivery.Application, error)
+	GetApplicationByIdentifier(ctx context.Context, organizationID, identifier string) (*delivery.Application, error)
 	ListArtifacts(ctx context.Context, organizationID, applicationID string, includeArchived bool) ([]*delivery.Artifact, error)
 	ListChannels(ctx context.Context, organizationID, applicationID string, includeArchived bool) ([]*delivery.Channel, error)
 }

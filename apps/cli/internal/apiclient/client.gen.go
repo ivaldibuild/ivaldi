@@ -514,22 +514,22 @@ type ClientInterface interface {
 
 	// ListReleases List an Application's Releases
 	//
-	// Corresponds with GET /v1/applications/{application_id}/releases (the `ListReleases` operationId).
-	ListReleases(ctx context.Context, applicationId string, params *ListReleasesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// Corresponds with GET /v1/applications/{application}/releases (the `ListReleases` operationId).
+	ListReleases(ctx context.Context, application string, params *ListReleasesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateReleaseWithBody Create a Release from its Builds, and publish it if asked
 	//
 	// Takes any type of body and a specified content type.
 	//
-	// Corresponds with POST /v1/applications/{application_id}/releases (the `CreateRelease` operationId).
-	CreateReleaseWithBody(ctx context.Context, applicationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// Corresponds with POST /v1/applications/{application}/releases (the `CreateRelease` operationId).
+	CreateReleaseWithBody(ctx context.Context, application string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateRelease Create a Release from its Builds, and publish it if asked
 	//
 	// Takes a body of the `application/json` content type.
 	//
-	// Corresponds with POST /v1/applications/{application_id}/releases (the `CreateRelease` operationId).
-	CreateRelease(ctx context.Context, applicationId string, body CreateReleaseJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// Corresponds with POST /v1/applications/{application}/releases (the `CreateRelease` operationId).
+	CreateRelease(ctx context.Context, application string, body CreateReleaseJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetMe Get the signed-in caller, their Organization, and their roles in it
 	//
@@ -554,9 +554,9 @@ type ClientInterface interface {
 
 // ListReleases List an Application's Releases
 //
-// Corresponds with GET /v1/applications/{application_id}/releases (the `ListReleases` operationId).
-func (c *Client) ListReleases(ctx context.Context, applicationId string, params *ListReleasesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListReleasesRequest(c.Server, applicationId, params)
+// Corresponds with GET /v1/applications/{application}/releases (the `ListReleases` operationId).
+func (c *Client) ListReleases(ctx context.Context, application string, params *ListReleasesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListReleasesRequest(c.Server, application, params)
 	if err != nil {
 		return nil, err
 	}
@@ -571,9 +571,9 @@ func (c *Client) ListReleases(ctx context.Context, applicationId string, params 
 //
 // Takes any type of body and a specified content type.
 //
-// Corresponds with POST /v1/applications/{application_id}/releases (the `CreateRelease` operationId).
-func (c *Client) CreateReleaseWithBody(ctx context.Context, applicationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCreateReleaseRequestWithBody(c.Server, applicationId, contentType, body)
+// Corresponds with POST /v1/applications/{application}/releases (the `CreateRelease` operationId).
+func (c *Client) CreateReleaseWithBody(ctx context.Context, application string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateReleaseRequestWithBody(c.Server, application, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -588,9 +588,9 @@ func (c *Client) CreateReleaseWithBody(ctx context.Context, applicationId string
 //
 // Takes a body of the `application/json` content type.
 //
-// Corresponds with POST /v1/applications/{application_id}/releases (the `CreateRelease` operationId).
-func (c *Client) CreateRelease(ctx context.Context, applicationId string, body CreateReleaseJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCreateReleaseRequest(c.Server, applicationId, body)
+// Corresponds with POST /v1/applications/{application}/releases (the `CreateRelease` operationId).
+func (c *Client) CreateRelease(ctx context.Context, application string, body CreateReleaseJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateReleaseRequest(c.Server, application, body)
 	if err != nil {
 		return nil, err
 	}
@@ -662,12 +662,12 @@ func (c *Client) WithdrawRelease(ctx context.Context, releaseId string, reqEdito
 }
 
 // NewListReleasesRequest constructs an http.Request for the ListReleases method
-func NewListReleasesRequest(server string, applicationId string, params *ListReleasesParams) (*http.Request, error) {
+func NewListReleasesRequest(server string, application string, params *ListReleasesParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "application_id", applicationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "application", application, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
 	if err != nil {
 		return nil, err
 	}
@@ -795,23 +795,23 @@ func NewListReleasesRequest(server string, applicationId string, params *ListRel
 }
 
 // NewCreateReleaseRequest calls the generic CreateRelease builder with application/json body
-func NewCreateReleaseRequest(server string, applicationId string, body CreateReleaseJSONRequestBody) (*http.Request, error) {
+func NewCreateReleaseRequest(server string, application string, body CreateReleaseJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewCreateReleaseRequestWithBody(server, applicationId, "application/json", bodyReader)
+	return NewCreateReleaseRequestWithBody(server, application, "application/json", bodyReader)
 }
 
 // NewCreateReleaseRequestWithBody constructs an http.Request for the CreateRelease method, with any body, and a specified content type
-func NewCreateReleaseRequestWithBody(server string, applicationId string, contentType string, body io.Reader) (*http.Request, error) {
+func NewCreateReleaseRequestWithBody(server string, application string, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "application_id", applicationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "application", application, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
 	if err != nil {
 		return nil, err
 	}
@@ -1018,22 +1018,22 @@ type ClientWithResponsesInterface interface {
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
-	// Corresponds with GET /v1/applications/{application_id}/releases (the `ListReleases` operationId).
-	ListReleasesWithResponse(ctx context.Context, applicationId string, params *ListReleasesParams, reqEditors ...RequestEditorFn) (*ListReleasesResponse, error)
+	// Corresponds with GET /v1/applications/{application}/releases (the `ListReleases` operationId).
+	ListReleasesWithResponse(ctx context.Context, application string, params *ListReleasesParams, reqEditors ...RequestEditorFn) (*ListReleasesResponse, error)
 
 	// CreateReleaseWithBodyWithResponse Create a Release from its Builds, and publish it if asked
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
-	// Corresponds with POST /v1/applications/{application_id}/releases (the `CreateRelease` operationId).
-	CreateReleaseWithBodyWithResponse(ctx context.Context, applicationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateReleaseResponse, error)
+	// Corresponds with POST /v1/applications/{application}/releases (the `CreateRelease` operationId).
+	CreateReleaseWithBodyWithResponse(ctx context.Context, application string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateReleaseResponse, error)
 
 	// CreateReleaseWithResponse Create a Release from its Builds, and publish it if asked
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
-	// Corresponds with POST /v1/applications/{application_id}/releases (the `CreateRelease` operationId).
-	CreateReleaseWithResponse(ctx context.Context, applicationId string, body CreateReleaseJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateReleaseResponse, error)
+	// Corresponds with POST /v1/applications/{application}/releases (the `CreateRelease` operationId).
+	CreateReleaseWithResponse(ctx context.Context, application string, body CreateReleaseJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateReleaseResponse, error)
 
 	// GetMeWithResponse Get the signed-in caller, their Organization, and their roles in it
 	//
@@ -1356,9 +1356,9 @@ func (r WithdrawReleaseResponse) ContentType() string {
 //
 // Returns a wrapper object for the known response body format(s).
 //
-// Corresponds with GET /v1/applications/{application_id}/releases (the `ListReleases` operationId).
-func (c *ClientWithResponses) ListReleasesWithResponse(ctx context.Context, applicationId string, params *ListReleasesParams, reqEditors ...RequestEditorFn) (*ListReleasesResponse, error) {
-	rsp, err := c.ListReleases(ctx, applicationId, params, reqEditors...)
+// Corresponds with GET /v1/applications/{application}/releases (the `ListReleases` operationId).
+func (c *ClientWithResponses) ListReleasesWithResponse(ctx context.Context, application string, params *ListReleasesParams, reqEditors ...RequestEditorFn) (*ListReleasesResponse, error) {
+	rsp, err := c.ListReleases(ctx, application, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -1369,9 +1369,9 @@ func (c *ClientWithResponses) ListReleasesWithResponse(ctx context.Context, appl
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
-// Corresponds with POST /v1/applications/{application_id}/releases (the `CreateRelease` operationId).
-func (c *ClientWithResponses) CreateReleaseWithBodyWithResponse(ctx context.Context, applicationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateReleaseResponse, error) {
-	rsp, err := c.CreateReleaseWithBody(ctx, applicationId, contentType, body, reqEditors...)
+// Corresponds with POST /v1/applications/{application}/releases (the `CreateRelease` operationId).
+func (c *ClientWithResponses) CreateReleaseWithBodyWithResponse(ctx context.Context, application string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateReleaseResponse, error) {
+	rsp, err := c.CreateReleaseWithBody(ctx, application, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -1382,9 +1382,9 @@ func (c *ClientWithResponses) CreateReleaseWithBodyWithResponse(ctx context.Cont
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
-// Corresponds with POST /v1/applications/{application_id}/releases (the `CreateRelease` operationId).
-func (c *ClientWithResponses) CreateReleaseWithResponse(ctx context.Context, applicationId string, body CreateReleaseJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateReleaseResponse, error) {
-	rsp, err := c.CreateRelease(ctx, applicationId, body, reqEditors...)
+// Corresponds with POST /v1/applications/{application}/releases (the `CreateRelease` operationId).
+func (c *ClientWithResponses) CreateReleaseWithResponse(ctx context.Context, application string, body CreateReleaseJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateReleaseResponse, error) {
+	rsp, err := c.CreateRelease(ctx, application, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}

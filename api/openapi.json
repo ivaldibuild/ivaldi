@@ -4961,17 +4961,17 @@
         ]
       }
     },
-    "/v1/applications/{application_id}": {
+    "/v1/applications/{application}": {
       "get": {
         "operationId": "get-application",
         "parameters": [
           {
-            "description": "The Application's ID",
+            "description": "The Application's ID, or the slug of an active Application",
             "in": "path",
-            "name": "application_id",
+            "name": "application",
             "required": true,
             "schema": {
-              "description": "The Application's ID",
+              "description": "The Application's ID, or the slug of an active Application",
               "type": "string"
             }
           }
@@ -5012,12 +5012,12 @@
         "operationId": "update-application",
         "parameters": [
           {
-            "description": "The Application's ID",
+            "description": "The Application's ID, or the slug of an active Application",
             "in": "path",
-            "name": "application_id",
+            "name": "application",
             "required": true,
             "schema": {
-              "description": "The Application's ID",
+              "description": "The Application's ID, or the slug of an active Application",
               "type": "string"
             }
           }
@@ -5065,17 +5065,17 @@
         ]
       }
     },
-    "/v1/applications/{application_id}/archive": {
+    "/v1/applications/{application}/archive": {
       "post": {
         "operationId": "archive-application",
         "parameters": [
           {
-            "description": "The Application's ID",
+            "description": "The Application's ID, or the slug of an active Application",
             "in": "path",
-            "name": "application_id",
+            "name": "application",
             "required": true,
             "schema": {
-              "description": "The Application's ID",
+              "description": "The Application's ID, or the slug of an active Application",
               "type": "string"
             }
           }
@@ -5113,17 +5113,17 @@
         ]
       }
     },
-    "/v1/applications/{application_id}/artifacts": {
+    "/v1/applications/{application}/artifacts": {
       "get": {
         "operationId": "list-artifacts",
         "parameters": [
           {
-            "description": "The Application's ID",
+            "description": "The Application's ID, or the slug of an active Application",
             "in": "path",
-            "name": "application_id",
+            "name": "application",
             "required": true,
             "schema": {
-              "description": "The Application's ID",
+              "description": "The Application's ID, or the slug of an active Application",
               "type": "string"
             }
           },
@@ -5174,12 +5174,12 @@
         "operationId": "create-artifact",
         "parameters": [
           {
-            "description": "The Application the artifact belongs to",
+            "description": "The Application's ID, or the slug of an active Application",
             "in": "path",
-            "name": "application_id",
+            "name": "application",
             "required": true,
             "schema": {
-              "description": "The Application the artifact belongs to",
+              "description": "The Application's ID, or the slug of an active Application",
               "type": "string"
             }
           }
@@ -5227,17 +5227,17 @@
         ]
       }
     },
-    "/v1/applications/{application_id}/builds": {
+    "/v1/applications/{application}/builds": {
       "post": {
         "operationId": "report-build",
         "parameters": [
           {
-            "description": "The Application",
+            "description": "The Application's ID, or the slug of an active Application",
             "in": "path",
-            "name": "application_id",
+            "name": "application",
             "required": true,
             "schema": {
-              "description": "The Application",
+              "description": "The Application's ID, or the slug of an active Application",
               "type": "string"
             }
           }
@@ -5285,17 +5285,17 @@
         ]
       }
     },
-    "/v1/applications/{application_id}/channels": {
+    "/v1/applications/{application}/channels": {
       "get": {
         "operationId": "list-channels",
         "parameters": [
           {
-            "description": "The Application's ID",
+            "description": "The Application's ID, or the slug of an active Application",
             "in": "path",
-            "name": "application_id",
+            "name": "application",
             "required": true,
             "schema": {
-              "description": "The Application's ID",
+              "description": "The Application's ID, or the slug of an active Application",
               "type": "string"
             }
           },
@@ -5346,12 +5346,12 @@
         "operationId": "create-channel",
         "parameters": [
           {
-            "description": "The Application the Channel belongs to",
+            "description": "The Application's ID, or the slug of an active Application",
             "in": "path",
-            "name": "application_id",
+            "name": "application",
             "required": true,
             "schema": {
-              "description": "The Application the Channel belongs to",
+              "description": "The Application's ID, or the slug of an active Application",
               "type": "string"
             }
           }
@@ -5399,17 +5399,17 @@
         ]
       }
     },
-    "/v1/applications/{application_id}/placements": {
+    "/v1/applications/{application}/placements": {
       "get": {
         "operationId": "list-placements",
         "parameters": [
           {
-            "description": "The Application's ID",
+            "description": "The Application's ID, or the slug of an active Application",
             "in": "path",
-            "name": "application_id",
+            "name": "application",
             "required": true,
             "schema": {
-              "description": "The Application's ID",
+              "description": "The Application's ID, or the slug of an active Application",
               "type": "string"
             }
           }
@@ -5450,12 +5450,12 @@
         "operationId": "create-placement",
         "parameters": [
           {
-            "description": "The Application to place",
+            "description": "The Application's ID, or the slug of an active Application",
             "in": "path",
-            "name": "application_id",
+            "name": "application",
             "required": true,
             "schema": {
-              "description": "The Application to place",
+              "description": "The Application's ID, or the slug of an active Application",
               "type": "string"
             }
           }
@@ -5503,17 +5503,17 @@
         ]
       }
     },
-    "/v1/applications/{application_id}/placements/{target_id}": {
+    "/v1/applications/{application}/placements/{target_id}": {
       "delete": {
         "operationId": "remove-placement",
         "parameters": [
           {
-            "description": "The Application's ID",
+            "description": "The Application's ID, or the slug of an active Application",
             "in": "path",
-            "name": "application_id",
+            "name": "application",
             "required": true,
             "schema": {
-              "description": "The Application's ID",
+              "description": "The Application's ID, or the slug of an active Application",
               "type": "string"
             }
           },
@@ -5557,12 +5557,12 @@
         "operationId": "configure-placement",
         "parameters": [
           {
-            "description": "The Application's ID",
+            "description": "The Application's ID, or the slug of an active Application",
             "in": "path",
-            "name": "application_id",
+            "name": "application",
             "required": true,
             "schema": {
-              "description": "The Application's ID",
+              "description": "The Application's ID, or the slug of an active Application",
               "type": "string"
             }
           },
@@ -5620,17 +5620,17 @@
         ]
       }
     },
-    "/v1/applications/{application_id}/releases": {
+    "/v1/applications/{application}/releases": {
       "get": {
         "operationId": "list-releases",
         "parameters": [
           {
-            "description": "The Application",
+            "description": "The Application's ID, or the slug of an active Application",
             "in": "path",
-            "name": "application_id",
+            "name": "application",
             "required": true,
             "schema": {
-              "description": "The Application",
+              "description": "The Application's ID, or the slug of an active Application",
               "type": "string"
             }
           },
@@ -5757,12 +5757,12 @@
         "operationId": "create-release",
         "parameters": [
           {
-            "description": "The Application",
+            "description": "The Application's ID, or the slug of an active Application",
             "in": "path",
-            "name": "application_id",
+            "name": "application",
             "required": true,
             "schema": {
-              "description": "The Application",
+              "description": "The Application's ID, or the slug of an active Application",
               "type": "string"
             }
           }
@@ -5810,17 +5810,17 @@
         ]
       }
     },
-    "/v1/applications/{application_id}/restore": {
+    "/v1/applications/{application}/restore": {
       "post": {
         "operationId": "restore-application",
         "parameters": [
           {
-            "description": "The Application's ID",
+            "description": "The Application's ID, or the slug of an active Application",
             "in": "path",
-            "name": "application_id",
+            "name": "application",
             "required": true,
             "schema": {
-              "description": "The Application's ID",
+              "description": "The Application's ID, or the slug of an active Application",
               "type": "string"
             }
           }
@@ -5858,17 +5858,17 @@
         ]
       }
     },
-    "/v1/applications/{application_id}/source": {
+    "/v1/applications/{application}/source": {
       "put": {
         "operationId": "link-application-source",
         "parameters": [
           {
-            "description": "The Application's ID",
+            "description": "The Application's ID, or the slug of an active Application",
             "in": "path",
-            "name": "application_id",
+            "name": "application",
             "required": true,
             "schema": {
-              "description": "The Application's ID",
+              "description": "The Application's ID, or the slug of an active Application",
               "type": "string"
             }
           }
@@ -5916,17 +5916,17 @@
         ]
       }
     },
-    "/v1/applications/{application_id}/transfer": {
+    "/v1/applications/{application}/transfer": {
       "post": {
         "operationId": "transfer-application",
         "parameters": [
           {
-            "description": "The Application's ID",
+            "description": "The Application's ID, or the slug of an active Application",
             "in": "path",
-            "name": "application_id",
+            "name": "application",
             "required": true,
             "schema": {
-              "description": "The Application's ID",
+              "description": "The Application's ID, or the slug of an active Application",
               "type": "string"
             }
           }

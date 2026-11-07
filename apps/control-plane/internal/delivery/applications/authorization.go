@@ -20,6 +20,10 @@ import (
 // an artifact or a Channel reading it first; next reads them again in its
 // transaction, so a decision is never applied to stale state. None of them
 // moves to another Application or Project.
+//
+// An Application may be named by its ID or by its slug. The wrapper resolves
+// it once, decides on that Application, and passes its ID to next, so a slug
+// that comes to name another Application meanwhile cannot redirect the change.
 type authorized struct {
 	next         delivery.ApplicationService
 	authz        authorization.Authorizer
@@ -37,25 +41,30 @@ func (a *authorized) allow(ctx context.Context, req authorization.Request) (cont
 	return authorization.WithDecision(ctx, "", d), nil
 }
 
-// onApplication checks a permission on the Application's Project.
-func (a *authorized) onApplication(ctx context.Context, actor identity.Actor, permission, action, organizationID, applicationID string, proposal any) (context.Context, error) {
-	app, err := a.applications.GetApplication(ctx, organizationID, applicationID)
+// onApplication checks a permission on the Project of the Application an ID
+// or slug names, and returns the Application's ID for next.
+func (a *authorized) onApplication(ctx context.Context, actor identity.Actor, permission, action, organizationID, application string, proposal any) (context.Context, string, error) {
+	app, err := a.applications.GetApplicationByIdentifier(ctx, organizationID, application)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return a.allow(ctx, authorization.Request{
+	ctx, err = a.allow(ctx, authorization.Request{
 		Actor: actor, Permission: permission, OrganizationID: organizationID,
 		ResourceID: app.ProjectID(), Action: action, Proposal: proposal,
 	})
+	if err != nil {
+		return nil, "", err
+	}
+	return ctx, app.ID(), nil
 }
 
-func (a *authorized) manage(ctx context.Context, actor identity.Actor, action, organizationID, applicationID string, proposal any) (context.Context, error) {
-	return a.onApplication(ctx, actor, delivery.PermissionApplicationManage, action, organizationID, applicationID, proposal)
+func (a *authorized) manage(ctx context.Context, actor identity.Actor, action, organizationID, application string, proposal any) (context.Context, string, error) {
+	return a.onApplication(ctx, actor, delivery.PermissionApplicationManage, action, organizationID, application, proposal)
 }
 
-func (a *authorized) read(ctx context.Context, actor identity.Actor, action, organizationID, applicationID string) error {
-	_, err := a.onApplication(ctx, actor, delivery.PermissionApplicationRead, action, organizationID, applicationID, nil)
-	return err
+func (a *authorized) read(ctx context.Context, actor identity.Actor, action, organizationID, application string) (string, error) {
+	_, id, err := a.onApplication(ctx, actor, delivery.PermissionApplicationRead, action, organizationID, application, nil)
+	return id, err
 }
 
 // manageArtifact checks a change to an artifact on its Application's Project.
@@ -64,7 +73,8 @@ func (a *authorized) manageArtifact(ctx context.Context, actor identity.Actor, a
 	if err != nil {
 		return nil, err
 	}
-	return a.manage(ctx, actor, action, organizationID, art.ApplicationID(), proposal)
+	ctx, _, err = a.manage(ctx, actor, action, organizationID, art.ApplicationID(), proposal)
+	return ctx, err
 }
 
 // manageChannel checks a change to a Channel on its Application's Project.
@@ -73,7 +83,8 @@ func (a *authorized) manageChannel(ctx context.Context, actor identity.Actor, ac
 	if err != nil {
 		return nil, err
 	}
-	return a.manage(ctx, actor, action, organizationID, c.ApplicationID(), proposal)
+	ctx, _, err = a.manage(ctx, actor, action, organizationID, c.ApplicationID(), proposal)
+	return ctx, err
 }
 
 // CreateApplication checks the input before asking, as nothing about it
@@ -92,18 +103,12 @@ func (a *authorized) CreateApplication(ctx context.Context, actor identity.Actor
 	return a.next.CreateApplication(ctx, actor, in)
 }
 
-func (a *authorized) GetApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID string) (*delivery.Application, error) {
-	app, err := a.next.GetApplication(ctx, actor, organizationID, applicationID)
+func (a *authorized) GetApplication(ctx context.Context, actor identity.Actor, organizationID, application string) (*delivery.Application, error) {
+	id, err := a.read(ctx, actor, delivery.ActionApplicationRead, organizationID, application)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := a.allow(ctx, authorization.Request{
-		Actor: actor, Permission: delivery.PermissionApplicationRead, OrganizationID: organizationID,
-		ResourceID: app.ProjectID(), Action: delivery.ActionApplicationRead,
-	}); err != nil {
-		return nil, err
-	}
-	return app, nil
+	return a.next.GetApplication(ctx, actor, organizationID, id)
 }
 
 // ListApplications is checked on the Project when one is given, or else on
@@ -125,59 +130,61 @@ func (a *authorized) ListApplications(ctx context.Context, actor identity.Actor,
 	return a.next.ListApplications(ctx, actor, query)
 }
 
-func (a *authorized) UpdateApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID string, props delivery.UpdateApplicationProps) (*delivery.Application, error) {
-	ctx, err := a.manage(ctx, actor, delivery.ActionApplicationUpdate, organizationID, applicationID, props)
+func (a *authorized) UpdateApplication(ctx context.Context, actor identity.Actor, organizationID, application string, props delivery.UpdateApplicationProps) (*delivery.Application, error) {
+	ctx, id, err := a.manage(ctx, actor, delivery.ActionApplicationUpdate, organizationID, application, props)
 	if err != nil {
 		return nil, err
 	}
-	return a.next.UpdateApplication(ctx, actor, organizationID, applicationID, props)
+	return a.next.UpdateApplication(ctx, actor, organizationID, id, props)
 }
 
-func (a *authorized) LinkApplicationSource(ctx context.Context, actor identity.Actor, organizationID, applicationID, sourceID string) (*delivery.Application, error) {
-	ctx, err := a.manage(ctx, actor, delivery.ActionApplicationLinkSource, organizationID, applicationID, sourceID)
+func (a *authorized) LinkApplicationSource(ctx context.Context, actor identity.Actor, organizationID, application, sourceID string) (*delivery.Application, error) {
+	ctx, id, err := a.manage(ctx, actor, delivery.ActionApplicationLinkSource, organizationID, application, sourceID)
 	if err != nil {
 		return nil, err
 	}
-	return a.next.LinkApplicationSource(ctx, actor, organizationID, applicationID, sourceID)
+	return a.next.LinkApplicationSource(ctx, actor, organizationID, id, sourceID)
 }
 
-func (a *authorized) TransferApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID, ownerTeamID string) (*delivery.Application, error) {
-	ctx, err := a.manage(ctx, actor, delivery.ActionApplicationTransfer, organizationID, applicationID, ownerTeamID)
+func (a *authorized) TransferApplication(ctx context.Context, actor identity.Actor, organizationID, application, ownerTeamID string) (*delivery.Application, error) {
+	ctx, id, err := a.manage(ctx, actor, delivery.ActionApplicationTransfer, organizationID, application, ownerTeamID)
 	if err != nil {
 		return nil, err
 	}
-	return a.next.TransferApplication(ctx, actor, organizationID, applicationID, ownerTeamID)
+	return a.next.TransferApplication(ctx, actor, organizationID, id, ownerTeamID)
 }
 
-func (a *authorized) ArchiveApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID string) (*delivery.Application, error) {
-	ctx, err := a.manage(ctx, actor, delivery.ActionApplicationArchive, organizationID, applicationID, nil)
+func (a *authorized) ArchiveApplication(ctx context.Context, actor identity.Actor, organizationID, application string) (*delivery.Application, error) {
+	ctx, id, err := a.manage(ctx, actor, delivery.ActionApplicationArchive, organizationID, application, nil)
 	if err != nil {
 		return nil, err
 	}
-	return a.next.ArchiveApplication(ctx, actor, organizationID, applicationID)
+	return a.next.ArchiveApplication(ctx, actor, organizationID, id)
 }
 
-func (a *authorized) RestoreApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID string) (*delivery.Application, error) {
-	ctx, err := a.manage(ctx, actor, delivery.ActionApplicationRestore, organizationID, applicationID, nil)
+func (a *authorized) RestoreApplication(ctx context.Context, actor identity.Actor, organizationID, application string) (*delivery.Application, error) {
+	ctx, id, err := a.manage(ctx, actor, delivery.ActionApplicationRestore, organizationID, application, nil)
 	if err != nil {
 		return nil, err
 	}
-	return a.next.RestoreApplication(ctx, actor, organizationID, applicationID)
+	return a.next.RestoreApplication(ctx, actor, organizationID, id)
 }
 
 func (a *authorized) CreateArtifact(ctx context.Context, actor identity.Actor, in delivery.CreateArtifactInput) (*delivery.Artifact, error) {
-	ctx, err := a.manage(ctx, actor, delivery.ActionArtifactCreate, in.OrganizationID, in.ApplicationID, in)
+	ctx, id, err := a.manage(ctx, actor, delivery.ActionArtifactCreate, in.OrganizationID, in.ApplicationID, in)
 	if err != nil {
 		return nil, err
 	}
+	in.ApplicationID = id
 	return a.next.CreateArtifact(ctx, actor, in)
 }
 
-func (a *authorized) ListArtifacts(ctx context.Context, actor identity.Actor, organizationID, applicationID string, includeArchived bool) ([]*delivery.Artifact, error) {
-	if err := a.read(ctx, actor, delivery.ActionArtifactList, organizationID, applicationID); err != nil {
+func (a *authorized) ListArtifacts(ctx context.Context, actor identity.Actor, organizationID, application string, includeArchived bool) ([]*delivery.Artifact, error) {
+	id, err := a.read(ctx, actor, delivery.ActionArtifactList, organizationID, application)
+	if err != nil {
 		return nil, err
 	}
-	return a.next.ListArtifacts(ctx, actor, organizationID, applicationID, includeArchived)
+	return a.next.ListArtifacts(ctx, actor, organizationID, id, includeArchived)
 }
 
 func (a *authorized) UpdateArtifact(ctx context.Context, actor identity.Actor, organizationID, artifactID string, props delivery.UpdateArtifactProps) (*delivery.Artifact, error) {
@@ -221,10 +228,11 @@ func (a *authorized) RestoreArtifact(ctx context.Context, actor identity.Actor, 
 }
 
 func (a *authorized) CreateChannel(ctx context.Context, actor identity.Actor, in delivery.CreateChannelInput) (*delivery.Channel, error) {
-	ctx, err := a.manage(ctx, actor, delivery.ActionChannelCreate, in.OrganizationID, in.ApplicationID, in)
+	ctx, id, err := a.manage(ctx, actor, delivery.ActionChannelCreate, in.OrganizationID, in.ApplicationID, in)
 	if err != nil {
 		return nil, err
 	}
+	in.ApplicationID = id
 	return a.next.CreateChannel(ctx, actor, in)
 }
 
@@ -233,17 +241,18 @@ func (a *authorized) GetChannel(ctx context.Context, actor identity.Actor, organ
 	if err != nil {
 		return nil, err
 	}
-	if err := a.read(ctx, actor, delivery.ActionChannelRead, organizationID, c.ApplicationID()); err != nil {
+	if _, err := a.read(ctx, actor, delivery.ActionChannelRead, organizationID, c.ApplicationID()); err != nil {
 		return nil, err
 	}
 	return c, nil
 }
 
-func (a *authorized) ListChannels(ctx context.Context, actor identity.Actor, organizationID, applicationID string, includeArchived bool) ([]*delivery.Channel, error) {
-	if err := a.read(ctx, actor, delivery.ActionChannelList, organizationID, applicationID); err != nil {
+func (a *authorized) ListChannels(ctx context.Context, actor identity.Actor, organizationID, application string, includeArchived bool) ([]*delivery.Channel, error) {
+	id, err := a.read(ctx, actor, delivery.ActionChannelList, organizationID, application)
+	if err != nil {
 		return nil, err
 	}
-	return a.next.ListChannels(ctx, actor, organizationID, applicationID, includeArchived)
+	return a.next.ListChannels(ctx, actor, organizationID, id, includeArchived)
 }
 
 func (a *authorized) UpdateChannel(ctx context.Context, actor identity.Actor, organizationID, channelID string, props delivery.UpdateChannelProps) (*delivery.Channel, error) {
@@ -311,39 +320,41 @@ func (a *authorized) RestoreChannel(ctx context.Context, actor identity.Actor, o
 }
 
 func (a *authorized) CreatePlacement(ctx context.Context, actor identity.Actor, in delivery.CreatePlacementInput) (*delivery.Placement, error) {
-	ctx, err := a.manage(ctx, actor, delivery.ActionPlacementCreate, in.OrganizationID, in.ApplicationID, in)
+	ctx, id, err := a.manage(ctx, actor, delivery.ActionPlacementCreate, in.OrganizationID, in.ApplicationID, in)
 	if err != nil {
 		return nil, err
 	}
+	in.ApplicationID = id
 	return a.next.CreatePlacement(ctx, actor, in)
 }
 
-func (a *authorized) ListPlacements(ctx context.Context, actor identity.Actor, organizationID, applicationID string) ([]*delivery.Placement, error) {
-	if err := a.read(ctx, actor, delivery.ActionPlacementList, organizationID, applicationID); err != nil {
+func (a *authorized) ListPlacements(ctx context.Context, actor identity.Actor, organizationID, application string) ([]*delivery.Placement, error) {
+	id, err := a.read(ctx, actor, delivery.ActionPlacementList, organizationID, application)
+	if err != nil {
 		return nil, err
 	}
-	return a.next.ListPlacements(ctx, actor, organizationID, applicationID)
+	return a.next.ListPlacements(ctx, actor, organizationID, id)
 }
 
 // ConfigurePlacement checks the config before asking, as nothing about it
 // depends on stored state.
-func (a *authorized) ConfigurePlacement(ctx context.Context, actor identity.Actor, organizationID, applicationID, targetID string, config *delivery.ApplyConfig) (*delivery.Placement, error) {
+func (a *authorized) ConfigurePlacement(ctx context.Context, actor identity.Actor, organizationID, application, targetID string, config *delivery.ApplyConfig) (*delivery.Placement, error) {
 	if config != nil {
 		if err := config.Validate(); err != nil {
 			return nil, err
 		}
 	}
-	ctx, err := a.manage(ctx, actor, delivery.ActionPlacementConfigure, organizationID, applicationID, config)
+	ctx, id, err := a.manage(ctx, actor, delivery.ActionPlacementConfigure, organizationID, application, config)
 	if err != nil {
 		return nil, err
 	}
-	return a.next.ConfigurePlacement(ctx, actor, organizationID, applicationID, targetID, config)
+	return a.next.ConfigurePlacement(ctx, actor, organizationID, id, targetID, config)
 }
 
-func (a *authorized) RemovePlacement(ctx context.Context, actor identity.Actor, organizationID, applicationID, targetID string) error {
-	ctx, err := a.manage(ctx, actor, delivery.ActionPlacementRemove, organizationID, applicationID, targetID)
+func (a *authorized) RemovePlacement(ctx context.Context, actor identity.Actor, organizationID, application, targetID string) error {
+	ctx, id, err := a.manage(ctx, actor, delivery.ActionPlacementRemove, organizationID, application, targetID)
 	if err != nil {
 		return err
 	}
-	return a.next.RemovePlacement(ctx, actor, organizationID, applicationID, targetID)
+	return a.next.RemovePlacement(ctx, actor, organizationID, id, targetID)
 }

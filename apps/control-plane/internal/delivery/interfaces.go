@@ -141,6 +141,10 @@ type ApplicationRepository interface {
 	// the transaction ends. It must be called inside a transaction.
 	GetApplicationForUpdate(ctx context.Context, organizationID, applicationID string) (*Application, error)
 	GetApplicationBySlug(ctx context.Context, organizationID, projectID, slug string) (*Application, error)
+	// GetApplicationByIdentifier finds an Application by its ID, archived or
+	// not, or by the slug of an active one. Slugs are unique only within a
+	// Project, so a slug two Projects use returns ErrAmbiguous.
+	GetApplicationByIdentifier(ctx context.Context, organizationID, identifier string) (*Application, error)
 	ListApplications(ctx context.Context, query ListApplicationsQuery) (*pagination.Result[*Application], error)
 	UpdateApplication(ctx context.Context, a *Application) error
 	CountActiveApplications(ctx context.Context, organizationID, projectID string) (int, error)
@@ -293,6 +297,11 @@ type CreateRegistryInput struct {
 
 // ApplicationService manages Applications, their artifacts, their Channels,
 // and their placements on Targets.
+//
+// An applicationID, as an argument or in an input, may also be the slug of
+// an active Application: the authorizing layer resolves it with
+// ApplicationRepository.GetApplicationByIdentifier and passes the ID on, so
+// the decision and the change are about the same Application.
 type ApplicationService interface {
 	// CreateApplication creates an Application with its default Channel.
 	CreateApplication(ctx context.Context, actor identity.Actor, in CreateApplicationInput) (*Application, *Channel, error)
@@ -496,7 +505,9 @@ type ReleaseDetail struct {
 // ReleaseService records Builds and creates, publishes, and withdraws
 // Releases. Reading follows the Application's read permission; recording
 // Builds, creating, and withdrawing need release.manage; publishing needs
-// release.publish. All are checked on the Application's Project.
+// release.publish. All are checked on the Application's Project. An input's
+// ApplicationID may also be an active Application's slug, which the
+// authorizing layer resolves to the ID, as for ApplicationService.
 type ReleaseService interface {
 	// ReportBuild records a Build of one of the Application's artifacts, or
 	// fills in an observed one. A report naming another commit for a

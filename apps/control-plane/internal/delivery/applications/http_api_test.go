@@ -333,3 +333,46 @@ func TestCreatingAnApplicationWithTheDefaultLifecycleSetting(t *testing.T) {
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 	assert.Equal(t, l.ID(), data(out)["default_channel"].(map[string]any)["lifecycle_id"], "the default channel follows the workspace's default lifecycle")
 }
+
+func TestAnApplicationIsNamedByItsIDOrSlug(t *testing.T) {
+	h := newHTTPWorld(t)
+	checkout, _ := h.app(t, prjActive, "api", h.lifecycle(t, wsActive, "mainline", false))
+
+	rec, out := h.call(t, http.MethodGet, "/applications/api", "ada", "")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, checkout.ID(), data(out)["id"])
+
+	h.authz.asked = nil
+	rec, out = h.call(t, http.MethodPost, "/applications/api/artifacts", "ada",
+		`{"name": "image", "artifact_kind": "container_image", "artifact_name": "ghcr.io/acme/api"}`)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	assert.Equal(t, checkout.ID(), data(out)["application_id"], "the service gets the ID the slug names")
+	require.Len(t, h.authz.asked, 1)
+	assert.Equal(t, prjActive, h.authz.asked[0].ResourceID, "the decision is on the Application's Project")
+
+	rec, out = h.call(t, http.MethodPatch, "/applications/api", "ada", `{"display_name": "API"}`)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, "API", data(out)["display_name"])
+
+	t.Run("a slug two Projects use is refused", func(t *testing.T) {
+		etl, _ := h.app(t, prjOther, "api", h.lifecycle(t, wsOther, "mainline", false))
+		rec, out := h.call(t, http.MethodGet, "/applications/api", "ada", "")
+		assert.Equal(t, http.StatusConflict, rec.Code, rec.Body.String())
+		assert.Contains(t, out["detail"], "use its ID")
+
+		rec, out = h.call(t, http.MethodGet, "/applications/"+checkout.ID(), "ada", "")
+		require.Equal(t, http.StatusOK, rec.Code, "the ID still works")
+		assert.Equal(t, checkout.ID(), data(out)["id"])
+
+		h.archiveApp(t, etl)
+		rec, out = h.call(t, http.MethodGet, "/applications/api", "ada", "")
+		require.Equal(t, http.StatusOK, rec.Code, "an archived Application's slug names nothing")
+		assert.Equal(t, checkout.ID(), data(out)["id"])
+
+		rec, _ = h.call(t, http.MethodPost, "/applications/"+etl.ID()+"/restore", "ada", "")
+		assert.Equal(t, http.StatusOK, rec.Code, "an archived Application is restored by its ID")
+	})
+
+	rec, _ = h.call(t, http.MethodGet, "/applications/nothing", "ada", "")
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}

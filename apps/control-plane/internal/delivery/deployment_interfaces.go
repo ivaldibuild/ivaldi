@@ -19,7 +19,9 @@ type ListDeploymentsQuery struct {
 	ReleaseID      string
 	TargetID       string
 	Status         release.DeploymentStatus
-	Page           pagination.Query
+	// Statuses, when set, keeps only Deployments in one of them.
+	Statuses []release.DeploymentStatus
+	Page     pagination.Query
 }
 
 // DeploymentRepository stores Deployments and their append-only events.

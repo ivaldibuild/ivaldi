@@ -68,6 +68,9 @@ type WorkloadRepository interface {
 	// principal ID is stored. It updates the principal's status and the
 	// workload's last-seen time.
 	Write(ctx context.Context, w *Workload) error
+	// UpdateLastSeen writes only the workload's last-seen time, so recording
+	// contact never overwrites a concurrent change to its status.
+	UpdateLastSeen(ctx context.Context, w *Workload) error
 }
 
 // WorkloadEnrollmentTokenRepository stores single-use enrolment tokens.

@@ -43,7 +43,7 @@ func (f fakeWorkloads) Get(_ context.Context, organizationID, principalID string
 	}
 	return f.w, nil
 }
-func (f fakeWorkloads) Write(context.Context, *iam.Workload) error { return nil }
+func (f fakeWorkloads) UpdateLastSeen(context.Context, *iam.Workload) error { return nil }
 
 type fakeNext struct{ called bool }
 

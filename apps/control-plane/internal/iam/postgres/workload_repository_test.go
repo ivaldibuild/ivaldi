@@ -31,6 +31,23 @@ func TestWorkloadRepository(t *testing.T) {
 	got, err = workloads.Get(f.ctx, org.ID(), w.ID())
 	require.NoError(t, err)
 	assert.Equal(t, w.Snapshot(), got.Snapshot())
+
+	t.Run("recording contact leaves a concurrent suspension in place", func(t *testing.T) {
+		stale, err := workloads.Get(f.ctx, org.ID(), w.ID())
+		require.NoError(t, err)
+		suspended, err := workloads.Get(f.ctx, org.ID(), w.ID())
+		require.NoError(t, err)
+		require.NoError(t, suspended.Suspend())
+		require.NoError(t, workloads.Write(f.ctx, suspended))
+
+		clock.Fix(t, t0.Add(2*time.Minute))
+		stale.Seen()
+		require.NoError(t, workloads.UpdateLastSeen(f.ctx, stale))
+		got, err := workloads.Get(f.ctx, org.ID(), w.ID())
+		require.NoError(t, err)
+		assert.Equal(t, iam.PrincipalSuspended, got.Status())
+		assert.Equal(t, stale.LastSeenAt(), got.LastSeenAt())
+	})
 }
 
 func TestWorkloadEnrollmentTokenRepository(t *testing.T) {

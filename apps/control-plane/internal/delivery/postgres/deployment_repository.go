@@ -80,6 +80,10 @@ func (r *deploymentRepository) conn(ctx context.Context) *gorm.DB { return datab
 
 func deploymentToPersistence(d *delivery.Deployment) (*deploymentEntity, error) {
 	s := d.Snapshot()
+	// The column must hold an array; a nil slice would marshal as null.
+	if s.Findings == nil {
+		s.Findings = []string{}
+	}
 	findings, err := json.Marshal(s.Findings)
 	if err != nil {
 		return nil, err
@@ -206,6 +210,13 @@ func (r *deploymentRepository) ListDeployments(ctx context.Context, query delive
 		}
 		if query.Status != "" {
 			q = q.Where("status = ?", string(query.Status))
+		}
+		if len(query.Statuses) > 0 {
+			statuses := make([]string, len(query.Statuses))
+			for i, status := range query.Statuses {
+				statuses[i] = string(status)
+			}
+			q = q.Where("status IN ?", statuses)
 		}
 		return q
 	}

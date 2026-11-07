@@ -62,6 +62,14 @@ func TestDeploymentRepository(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, page.Items, 1)
+	for statuses, want := range map[string]int{"applying": 1, "progressing": 0} {
+		page, err := deployments.ListDeployments(f.ctx, delivery.ListDeploymentsQuery{
+			OrganizationID: orgA, TargetID: target.ID(),
+			Statuses: []release.DeploymentStatus{release.DeploymentStatus(statuses), release.DeploymentHealthy},
+		})
+		require.NoError(t, err)
+		assert.Len(t, page.Items, want, "statuses %s", statuses)
+	}
 
 	eventStatus := release.DeploymentApplying
 	event := must(delivery.NewDeploymentEvent(delivery.NewDeploymentEventProps{

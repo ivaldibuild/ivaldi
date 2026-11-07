@@ -254,24 +254,33 @@ func (s *service) ListAssignments(ctx context.Context, actor identity.Actor, org
 	if target.AgentPrincipalID() == nil || *target.AgentPrincipalID() != actor.PrincipalID {
 		return nil, fmt.Errorf("%w: %s does not serve target %s", delivery.ErrNotDeploymentAgent, actor.PrincipalID, targetID)
 	}
-	page, err := s.deployments.ListDeployments(ctx, delivery.ListDeploymentsQuery{
-		OrganizationID: organizationID, TargetID: targetID, Page: pagination.Query{Limit: 100},
-	})
-	if err != nil {
-		return nil, err
+	// The statuses are filtered in the query, not after it, so a Target's
+	// finished history never pushes its in-flight work off the page. At most
+	// one Deployment per Application is in flight on a Target, but every page
+	// is read regardless.
+	query := delivery.ListDeploymentsQuery{
+		OrganizationID: organizationID, TargetID: targetID,
+		Statuses: []release.DeploymentStatus{release.DeploymentApplying, release.DeploymentProgressing},
+		Page:     pagination.Query{Limit: delivery.AssignmentPageSize},
 	}
 	var out []delivery.DeploymentAssignment
-	for _, d := range page.Items {
-		if d.Status() != release.DeploymentApplying && d.Status() != release.DeploymentProgressing {
-			continue
-		}
-		assignment, err := s.assignment(ctx, d)
+	for {
+		page, err := s.deployments.ListDeployments(ctx, query)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, *assignment)
+		for _, d := range page.Items {
+			assignment, err := s.assignment(ctx, d)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, *assignment)
+		}
+		if !page.HasNext || page.NextCursor == nil {
+			return out, nil
+		}
+		query.Page.NextCursor = page.NextCursor
 	}
-	return out, nil
 }
 
 func (s *service) ReportDeployment(ctx context.Context, actor identity.Actor, in delivery.ReportDeploymentInput) (*delivery.DeploymentDetail, error) {
@@ -281,7 +290,9 @@ func (s *service) ReportDeployment(ctx context.Context, actor identity.Actor, in
 		if err != nil {
 			return err
 		}
-		target, err := s.targets.GetTarget(ctx, in.OrganizationID, d.TargetID())
+		// The Target is locked because it is written back below: re-enrolment
+		// or an archive committed meanwhile must not be overwritten.
+		target, err := s.targets.GetTargetForUpdate(ctx, in.OrganizationID, d.TargetID())
 		if err != nil {
 			return err
 		}
@@ -337,7 +348,8 @@ func (s *service) ReportDeployment(ctx context.Context, actor identity.Actor, in
 
 func (s *service) RecordTargetHeartbeat(ctx context.Context, actor identity.Actor, organizationID, targetID string) error {
 	return s.writer.Tx.WithinTx(ctx, func(ctx context.Context) error {
-		t, err := s.targets.GetTarget(ctx, organizationID, targetID)
+		// Locked for the same reason as in ReportDeployment.
+		t, err := s.targets.GetTargetForUpdate(ctx, organizationID, targetID)
 		if err != nil {
 			return err
 		}

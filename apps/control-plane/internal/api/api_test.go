@@ -358,3 +358,25 @@ func TestServerVerifiesWorkloadCredentials(t *testing.T) {
 	call(true, true, false)
 	assert.Equal(t, "projected", v.credential, "an explicit bearer token wins over a client certificate")
 }
+
+func TestServerRefusesBearerTokensWithInternalCredentialPrefixes(t *testing.T) {
+	v := &recordingVerifier{}
+	s, err := New(testConfig(), "test", logging.NewMockLogger(), WithRoutes(fakeRoutes{}), WithVerifier(v))
+	require.NoError(t, err)
+	forged := map[string]string{
+		"mtls": identity.MTLSCredential("0011aabb", time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC)),
+		"k8s":  identity.KubernetesCredential("projected"),
+	}
+	for name, token := range forged {
+		t.Run(name, func(t *testing.T) {
+			v.credential = ""
+			req := httptest.NewRequest(http.MethodGet, "/v1/secret", nil)
+			req.Header.Set("Authorization", "Bearer "+token)
+			rec := httptest.NewRecorder()
+			s.Handler().ServeHTTP(rec, req)
+			assert.Equal(t, http.StatusUnauthorized, rec.Code)
+			assert.Contains(t, rec.Header().Get("WWW-Authenticate"), `error="invalid_token"`)
+			assert.Empty(t, v.credential, "the forged credential never reaches the verifier")
+		})
+	}
+}

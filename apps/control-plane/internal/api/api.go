@@ -237,9 +237,13 @@ func authenticate(api huma.API, v identity.Verifier, logger logging.Logger, meta
 			_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "authentication is not available")
 			return
 		}
-		credential, ok := requestCredential(ctx)
-		if !ok {
+		credential, err := requestCredential(ctx)
+		switch {
+		case errors.Is(err, errNoCredential):
 			refuse(ctx, challenge, "a credential is required")
+			return
+		case err != nil:
+			refuse(ctx, challenge+`, error="invalid_token"`, "the access token is not valid")
 			return
 		}
 		claims, err := v.Verify(ctx.Context(), credential)
@@ -259,20 +263,33 @@ func authenticate(api huma.API, v identity.Verifier, logger logging.Logger, meta
 	}
 }
 
+var (
+	errNoCredential       = errors.New("no credential")
+	errReservedCredential = errors.New("a bearer token uses a reserved credential prefix")
+)
+
 // requestCredential returns the credential the authenticator verifies: a
 // bearer token when present, otherwise a verified client certificate.
-func requestCredential(ctx huma.Context) (string, bool) {
+//
+// The verifier trusts the internal mTLS and Kubernetes encodings because only
+// this function builds them, so a bearer token that already carries one of
+// their prefixes is refused rather than passed on: otherwise a client could
+// claim any certificate fingerprint without presenting the certificate.
+func requestCredential(ctx huma.Context) (string, error) {
 	if token, ok := bearerToken(ctx.Header("Authorization")); ok {
-		if strings.EqualFold(ctx.Header("X-Ivaldi-Credential"), "kubernetes") {
-			return identity.KubernetesCredential(token), true
+		if identity.HasInternalCredentialPrefix(token) {
+			return "", errReservedCredential
 		}
-		return token, true
+		if strings.EqualFold(ctx.Header("X-Ivaldi-Credential"), "kubernetes") {
+			return identity.KubernetesCredential(token), nil
+		}
+		return token, nil
 	}
 	if cert := ClientCertificate(ctx.Context()); cert != nil {
 		sum := sha256.Sum256(cert.Raw)
-		return identity.MTLSCredential(hex.EncodeToString(sum[:]), cert.NotAfter), true
+		return identity.MTLSCredential(hex.EncodeToString(sum[:]), cert.NotAfter), nil
 	}
-	return "", false
+	return "", errNoCredential
 }
 
 // bearerToken returns the token from an Authorization header (RFC 6750).

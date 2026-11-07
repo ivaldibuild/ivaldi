@@ -112,7 +112,12 @@ func (a *authorized) CancelDeployment(ctx context.Context, actor identity.Actor,
 	if err != nil {
 		return nil, err
 	}
-	decision, err := a.decide(ctx, actor, delivery.PermissionDeploymentCreate, delivery.ActionDeploymentCancel, organizationID, target.EnvironmentID(), deploymentID)
+	// A cancellation runs at once, so a decision that needs approval is
+	// refused rather than treated as allowed; only a request can wait for one.
+	decision, err := authorization.Require(ctx, a.authz, authorization.Request{
+		Actor: actor, Permission: delivery.PermissionDeploymentCreate, OrganizationID: organizationID,
+		ResourceID: target.EnvironmentID(), Action: delivery.ActionDeploymentCancel, Proposal: deploymentID,
+	})
 	if err != nil {
 		return nil, err
 	}

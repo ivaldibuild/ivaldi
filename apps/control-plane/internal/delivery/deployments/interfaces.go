@@ -23,6 +23,9 @@ type Environments interface {
 
 type Targets interface {
 	GetTarget(ctx context.Context, organizationID, targetID string) (*delivery.Target, error)
+	// GetTargetForUpdate is GetTarget that also locks the row until the
+	// transaction ends.
+	GetTargetForUpdate(ctx context.Context, organizationID, targetID string) (*delivery.Target, error)
 	UpdateTarget(ctx context.Context, t *delivery.Target) error
 }
 

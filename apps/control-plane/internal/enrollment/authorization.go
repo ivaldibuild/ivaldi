@@ -24,7 +24,7 @@ func (a *authorized) Create(ctx context.Context, actor identity.Actor, in Create
 	}
 	d, err := authorization.Require(ctx, a.authz, authorization.Request{
 		Actor: actor, Permission: delivery.PermissionEnvironmentManage, OrganizationID: in.OrganizationID,
-		ResourceID: target.EnvironmentID(), Action: "target.enrol", Proposal: in,
+		ResourceID: target.EnvironmentID(), Action: ActionTargetEnrol, Proposal: in,
 	})
 	if err != nil {
 		return nil, err
@@ -39,7 +39,7 @@ func (a *authorized) Status(ctx context.Context, actor identity.Actor, organizat
 	}
 	if _, err := authorization.Require(ctx, a.authz, authorization.Request{
 		Actor: actor, Permission: delivery.PermissionEnvironmentRead, OrganizationID: organizationID,
-		ResourceID: target.EnvironmentID(), Action: "target.agent_status",
+		ResourceID: target.EnvironmentID(), Action: ActionTargetAgentStatus,
 	}); err != nil {
 		return nil, err
 	}

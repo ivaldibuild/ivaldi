@@ -13,6 +13,13 @@ const (
 	KubernetesCredentialPrefix = "k8s:"
 )
 
+// HasInternalCredentialPrefix reports whether s starts with one of the
+// internal credential prefixes. A credential received from a client, such as
+// a bearer token, must never carry one: the verifier trusts these encodings.
+func HasInternalCredentialPrefix(s string) bool {
+	return strings.HasPrefix(s, MTLSCredentialPrefix) || strings.HasPrefix(s, KubernetesCredentialPrefix)
+}
+
 // MTLSCredential encodes a verified client certificate as a credential
 // string, with its fingerprint and expiry.
 func MTLSCredential(fingerprint string, notAfter time.Time) string {

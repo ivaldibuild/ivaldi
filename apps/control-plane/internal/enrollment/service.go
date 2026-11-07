@@ -105,13 +105,13 @@ func NewService(opts ...ServiceOption) (Service, error) {
 		return nil, fmt.Errorf("enrollment: %w", err)
 	}
 	if o.enrolTTL <= 0 {
-		o.enrolTTL = time.Hour
+		o.enrolTTL = DefaultEnrollmentTokenTTL
 	}
 	if o.credentialTTL <= 0 {
-		o.credentialTTL = 24 * time.Hour
+		o.credentialTTL = DefaultCredentialTTL
 	}
 	if o.grace <= 0 {
-		o.grace = 5 * time.Minute
+		o.grace = DefaultGracePeriod
 	}
 	return &authorized{next: &service{options: o}, authz: o.authz, targets: o.targets, environments: o.environments}, nil
 }
@@ -175,8 +175,14 @@ func (s *service) Redeem(ctx context.Context, in RedeemInput) (*Redeemed, error)
 	if !iam.IsWorkloadEnrollmentToken(in.Token) {
 		return nil, delivery.NewErrInvalidInput("not an enrollment token")
 	}
+	// Verifying a Kubernetes token can fetch the issuer's keys over the
+	// network, so it happens before the transaction takes its row locks.
+	kube, err := s.verifyKubernetes(ctx, in)
+	if err != nil {
+		return nil, err
+	}
 	var out *Redeemed
-	err := s.writer.Tx.WithinTx(ctx, func(ctx context.Context) error {
+	err = s.writer.Tx.WithinTx(ctx, func(ctx context.Context) error {
 		token, err := s.tokens.GetByHashForUpdate(ctx, iam.HashWorkloadEnrollmentToken(in.Token))
 		if err != nil {
 			return err
@@ -212,7 +218,7 @@ func (s *service) Redeem(ctx context.Context, in RedeemInput) (*Redeemed, error)
 		if err != nil {
 			return err
 		}
-		credential, issued, err := s.newCredential(ctx, token, workload, in)
+		credential, issued, err := s.newCredential(token, workload, in, kube)
 		if err != nil {
 			return err
 		}
@@ -263,7 +269,26 @@ func (s *service) Redeem(ctx context.Context, in RedeemInput) (*Redeemed, error)
 	return out, nil
 }
 
-func (s *service) newCredential(ctx context.Context, token *iam.WorkloadEnrollmentToken, workload *iam.Workload, in RedeemInput) (*iam.WorkloadCredential, *iam.IssuedWorkloadToken, error) {
+// verifyKubernetes verifies the projected service-account token of a
+// Kubernetes enrolment. It returns nil for the other methods.
+func (s *service) verifyKubernetes(ctx context.Context, in RedeemInput) (*workloadauth.KubernetesIdentity, error) {
+	if in.Method != MethodKubernetes {
+		return nil, nil
+	}
+	if s.kubernetes == nil {
+		return nil, delivery.NewErrInvalidInput("kubernetes workload identity is not configured")
+	}
+	if in.KubernetesToken == "" {
+		return nil, delivery.NewErrInvalidInput("kubernetes enrolment needs a projected service-account token")
+	}
+	kube, err := s.kubernetes.Verify(ctx, in.KubernetesToken)
+	if err != nil {
+		return nil, err
+	}
+	return &kube, nil
+}
+
+func (s *service) newCredential(token *iam.WorkloadEnrollmentToken, workload *iam.Workload, in RedeemInput, kube *workloadauth.KubernetesIdentity) (*iam.WorkloadCredential, *iam.IssuedWorkloadToken, error) {
 	now := clock.Now()
 	switch in.Method {
 	case MethodBearer:
@@ -292,19 +317,12 @@ func (s *service) newCredential(ctx context.Context, token *iam.WorkloadEnrollme
 		}, nil)
 		return cred, nil, err
 	case MethodKubernetes:
-		if s.kubernetes == nil {
-			return nil, nil, delivery.NewErrInvalidInput("kubernetes workload identity is not configured")
-		}
-		if in.KubernetesToken == "" {
-			return nil, nil, delivery.NewErrInvalidInput("kubernetes enrolment needs a projected service-account token")
-		}
-		kube, err := s.kubernetes.Verify(ctx, in.KubernetesToken)
-		if err != nil {
-			return nil, nil, err
+		if kube == nil {
+			return nil, nil, delivery.NewErrInvalidInput("kubernetes enrolment needs a verified service-account token")
 		}
 		cred, err := iam.NewWorkloadCredential(iam.NewWorkloadCredentialProps{
 			OrganizationID: token.OrganizationID(), PrincipalID: workload.ID(),
-			Kind: iam.CredentialKubernetesServiceAccount, Identifier: workloadauth.KubernetesIdentifier(kube),
+			Kind: iam.CredentialKubernetesServiceAccount, Identifier: workloadauth.KubernetesIdentifier(*kube),
 			NotAfter: ptr(now.Add(s.credentialTTL)),
 		}, nil)
 		return cred, nil, err
@@ -328,6 +346,11 @@ func (s *service) Renew(ctx context.Context, caller identity.Caller) (*Renewed, 
 		if err := credential.CheckUsable(); err != nil {
 			return err
 		}
+		// A superseded credential is accepted only for its grace period so
+		// in-flight requests finish; it must not mint another successor.
+		if credential.ReplacedBy() != nil {
+			return fmt.Errorf("%w: workload credential %s was already renewed", iam.ErrStatus, credential.ID())
+		}
 		workload, err := s.workloads.Get(ctx, caller.OrganizationID, caller.Actor.PrincipalID)
 		if err != nil {
 			return err
@@ -343,6 +366,10 @@ func (s *service) Renew(ctx context.Context, caller identity.Caller) (*Renewed, 
 		}
 		previous := credential.NotAfter()
 		now := clock.Now()
+		// renewed is the credential the workload uses from now on. Its
+		// snapshot, not the response, is audited: the response carries the
+		// plaintext bearer token.
+		renewed := credential
 		switch credential.Kind() {
 		case iam.CredentialBearerToken:
 			issued, err := iam.NewWorkloadTokenSecret()
@@ -372,6 +399,7 @@ func (s *service) Renew(ctx context.Context, caller identity.Caller) (*Renewed, 
 			if err := s.writer.Events(ctx, iam.AggregateWorkloadCredential, credential.ID(), credential); err != nil {
 				return err
 			}
+			renewed = next
 			out = &Renewed{CredentialID: next.ID(), CredentialKind: next.Kind(), WorkloadToken: &issued.Secret,
 				ExpiresAt: next.NotAfter(), PreviousExpiresAt: previous}
 		case iam.CredentialMTLSCertificate:
@@ -406,7 +434,7 @@ func (s *service) Renew(ctx context.Context, caller identity.Caller) (*Renewed, 
 			return delivery.NewErrInvalidInput("this credential kind cannot be renewed")
 		}
 		return s.auditRecord(ctx, caller.Actor, iam.EventWorkloadCredentialRenewed,
-			caller.OrganizationID, out.CredentialID, out)
+			caller.OrganizationID, renewed.ID(), renewed.Snapshot())
 	})
 	if err != nil {
 		return nil, err

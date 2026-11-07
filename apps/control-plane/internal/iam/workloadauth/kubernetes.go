@@ -36,7 +36,7 @@ type KubernetesVerifier interface {
 
 // NewKubernetesVerifier returns a verifier that accepts tokens from the
 // configured issuers and audience. An empty issuer list disables this kind.
-func NewKubernetesVerifier(issuers []string, audience string, client *http.Client) (*KubernetesVerifierImpl, error) {
+func NewKubernetesVerifier(issuers []string, audience string, client *http.Client) (KubernetesVerifier, error) {
 	if audience == "" {
 		return nil, errors.New("kubernetes verifier: audience is required")
 	}
@@ -49,14 +49,14 @@ func NewKubernetesVerifier(issuers []string, audience string, client *http.Clien
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}
 	}
-	return &KubernetesVerifierImpl{
+	return &kubernetesVerifier{
 		issuers: slices.Clone(issuers), audience: audience, client: client,
 		keys: map[string]cachedKeys{},
 	}, nil
 }
 
-// KubernetesVerifierImpl verifies Kubernetes tokens through OIDC discovery.
-type KubernetesVerifierImpl struct {
+// kubernetesVerifier verifies Kubernetes tokens through OIDC discovery.
+type kubernetesVerifier struct {
 	issuers  []string
 	audience string
 	client   *http.Client
@@ -69,9 +69,17 @@ type cachedKeys struct {
 	fetched time.Time
 }
 
-const keyCacheTTL = time.Hour
+const (
+	// keyCacheTTL is how long an issuer's keys are used before they are
+	// fetched again.
+	keyCacheTTL = time.Hour
+	// keyRefreshInterval is the shortest time between fetches forced by a
+	// token signed with an unknown key, so a cluster's key rotation is
+	// picked up at once without letting forged key IDs flood the issuer.
+	keyRefreshInterval = time.Minute
+)
 
-func (v *KubernetesVerifierImpl) Verify(ctx context.Context, token string) (KubernetesIdentity, error) {
+func (v *kubernetesVerifier) Verify(ctx context.Context, token string) (KubernetesIdentity, error) {
 	jws, err := jose.ParseSigned(token, kubernetesAlgorithms)
 	if err != nil {
 		return KubernetesIdentity{}, fmt.Errorf("%w: parse kubernetes token: %v", identity.ErrInvalidToken, err)
@@ -98,18 +106,23 @@ func (v *KubernetesVerifierImpl) Verify(ctx context.Context, token string) (Kube
 	if claims.NotBefore > 0 && now.Add(time.Minute).Before(time.Unix(claims.NotBefore, 0)) {
 		return KubernetesIdentity{}, fmt.Errorf("%w: not valid yet", identity.ErrInvalidToken)
 	}
-	keys, err := v.keysFor(ctx, claims.Issuer)
-	if err != nil {
-		return KubernetesIdentity{}, err
-	}
 	if len(jws.Signatures) == 0 {
 		return KubernetesIdentity{}, fmt.Errorf("%w: kubernetes token has no signature", identity.ErrInvalidToken)
 	}
 	signature := jws.Signatures[0]
 	kid := signature.Protected.KeyID
-	candidates := keys.Key(kid)
-	if len(candidates) == 0 && kid == "" && len(keys.Keys) == 1 {
-		candidates = keys.Keys
+	keys, err := v.keysFor(ctx, claims.Issuer, keyCacheTTL)
+	if err != nil {
+		return KubernetesIdentity{}, err
+	}
+	candidates := keyCandidates(keys, kid)
+	if len(candidates) == 0 {
+		// The issuer may have rotated its signing key since the keys were
+		// cached.
+		if keys, err = v.keysFor(ctx, claims.Issuer, keyRefreshInterval); err != nil {
+			return KubernetesIdentity{}, err
+		}
+		candidates = keyCandidates(keys, kid)
 	}
 	if len(candidates) == 0 {
 		return KubernetesIdentity{}, fmt.Errorf("%w: unknown kubernetes key %q", identity.ErrInvalidToken, kid)
@@ -156,11 +169,23 @@ func (c kubernetesClaims) audience() ([]string, error) {
 	return many, nil
 }
 
-func (v *KubernetesVerifierImpl) keysFor(ctx context.Context, issuer string) (*jose.JSONWebKeySet, error) {
+// keyCandidates returns the keys that may have signed a token with the key
+// ID. A token without one may use an issuer's only key.
+func keyCandidates(keys *jose.JSONWebKeySet, kid string) []jose.JSONWebKey {
+	candidates := keys.Key(kid)
+	if len(candidates) == 0 && kid == "" && len(keys.Keys) == 1 {
+		candidates = keys.Keys
+	}
+	return candidates
+}
+
+// keysFor returns the issuer's keys, fetching them when the cached set is at
+// least maxAge old.
+func (v *kubernetesVerifier) keysFor(ctx context.Context, issuer string, maxAge time.Duration) (*jose.JSONWebKeySet, error) {
 	v.mu.Lock()
 	cached, ok := v.keys[issuer]
 	v.mu.Unlock()
-	if ok && clock.Now().Sub(cached.fetched) < keyCacheTTL {
+	if ok && clock.Now().Sub(cached.fetched) < maxAge {
 		return cached.set, nil
 	}
 	discoveryURL := strings.TrimRight(issuer, "/") + "/.well-known/openid-configuration"
@@ -183,7 +208,7 @@ func (v *KubernetesVerifierImpl) keysFor(ctx context.Context, issuer string) (*j
 	return &set, nil
 }
 
-func (v *KubernetesVerifierImpl) getJSON(ctx context.Context, url string, out any) error {
+func (v *kubernetesVerifier) getJSON(ctx context.Context, url string, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err

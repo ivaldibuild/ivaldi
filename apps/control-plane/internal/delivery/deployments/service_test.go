@@ -2,6 +2,7 @@ package deployments
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -46,6 +47,8 @@ type store struct {
 	events      []*delivery.DeploymentEvent
 	audit       []audit.Event
 	envelopes   []events.Envelope
+	// lockedTargets lists the Targets read for update, in order.
+	lockedTargets []string
 }
 
 func newStore() *store {
@@ -131,6 +134,7 @@ func (f fakeTargets) GetTarget(_ context.Context, organizationID, targetID strin
 }
 
 func (f fakeTargets) GetTargetForUpdate(ctx context.Context, organizationID, targetID string) (*delivery.Target, error) {
+	f.lockedTargets = append(f.lockedTargets, targetID)
 	return f.GetTarget(ctx, organizationID, targetID)
 }
 
@@ -213,6 +217,9 @@ func (f fakeDeployments) ListDeployments(_ context.Context, q delivery.ListDeplo
 			continue
 		}
 		if q.Status != "" && d.Status() != q.Status {
+			continue
+		}
+		if len(q.Statuses) > 0 && !slices.Contains(q.Statuses, d.Status()) {
 			continue
 		}
 		items = append(items, d)
@@ -430,6 +437,37 @@ func TestCancelDeployment(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, release.DeploymentCancelled, detail.Deployment.Status)
 	assert.Contains(t, w.auditTypes(), delivery.EventDeploymentCancelled)
+}
+
+func TestCancelDeploymentNeedingApprovalIsRefused(t *testing.T) {
+	w := newWorld(t)
+	d := mustDeployment(org, w.rel.ID(), w.app.ID(), envID, targetID, release.DeploymentApplying)
+	w.deployments[d.ID()] = d
+	w.authz.onCreate = authorization.OutcomeRequiresApproval
+	_, err := w.svc.CancelDeployment(ctx, ada, org, d.ID())
+	var approval *authorization.ApprovalRequiredError
+	assert.ErrorAs(t, err, &approval)
+	assert.Equal(t, release.DeploymentApplying, w.deployments[d.ID()].Status())
+	assert.NotContains(t, w.auditTypes(), delivery.EventDeploymentCancelled)
+}
+
+func TestAgentReportsLockTheTarget(t *testing.T) {
+	w := newWorld(t)
+	agent := identity.Actor{PrincipalID: agentID}
+	require.NoError(t, w.svc.RecordTargetHeartbeat(ctx, agent, org, targetID))
+	assert.Equal(t, []string{targetID}, w.lockedTargets)
+}
+
+func TestListAssignmentsAsksOnlyForInFlightDeployments(t *testing.T) {
+	w := newWorld(t)
+	finished := mustDeployment(org, w.rel.ID(), w.app.ID(), envID, targetID, release.DeploymentHealthy)
+	w.deployments[finished.ID()] = finished
+	applying := mustDeployment(org, w.rel.ID(), w.app.ID(), envID, targetID, release.DeploymentApplying)
+	w.deployments[applying.ID()] = applying
+	items, err := w.svc.ListAssignments(ctx, identity.Actor{PrincipalID: agentID}, org, targetID)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, applying.ID(), items[0].Deployment.ID)
 }
 
 func TestListAssignments(t *testing.T) {

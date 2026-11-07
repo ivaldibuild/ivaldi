@@ -36,7 +36,7 @@ type Credentials interface {
 // iam.WorkloadRepository provides it.
 type Workloads interface {
 	Get(ctx context.Context, organizationID, principalID string) (*iam.Workload, error)
-	Write(ctx context.Context, w *iam.Workload) error
+	UpdateLastSeen(ctx context.Context, w *iam.Workload) error
 }
 
 // NewVerifier returns a verifier for workload credentials, falling through
@@ -122,7 +122,10 @@ func (v *verifier) fromCredentialRecord(ctx context.Context, c *iam.WorkloadCred
 	now := clock.Now()
 	if w.LastSeenAt() == nil || now.Sub(*w.LastSeenAt()) >= lastSeenInterval {
 		w.Seen()
-		_ = v.workloads.Write(ctx, w)
+		// Contact is a convenience for people watching agents; failing to
+		// record it does not fail the request. Only the last-seen time is
+		// written, so a concurrent suspension is never undone.
+		_ = v.workloads.UpdateLastSeen(ctx, w)
 	}
 	// The claims expire when the credential that was presented does: the
 	// certificate for mTLS, and whichever of the token and the record ends

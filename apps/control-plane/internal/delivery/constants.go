@@ -30,6 +30,10 @@ const (
 	maxValuesRefLength     = 512
 )
 
+// AssignmentPageSize is how many in-flight Deployments are read per query
+// when listing a Target agent's assignments.
+const AssignmentPageSize = 100
+
 // Aggregate types name the domain objects that raise events. An envelope
 // carries the type and ID of the object whose change raised it.
 const (

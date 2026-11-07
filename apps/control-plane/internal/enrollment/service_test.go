@@ -2,6 +2,7 @@ package enrollment
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -39,6 +40,8 @@ type store struct {
 	envs        map[string]*delivery.Environment
 	audit       []audit.Event
 	envelopes   []events.Envelope
+	inTx        bool
+	verifiedTx  []bool
 }
 
 func newStore(t *testing.T) *store {
@@ -58,7 +61,11 @@ func newStore(t *testing.T) *store {
 	}
 }
 
-func (s *store) WithinTx(ctx context.Context, fn func(context.Context) error) error { return fn(ctx) }
+func (s *store) WithinTx(ctx context.Context, fn func(context.Context) error) error {
+	s.inTx = true
+	defer func() { s.inTx = false }()
+	return fn(ctx)
+}
 
 type fakeWorkloads struct{ *store }
 
@@ -73,6 +80,7 @@ func (f fakeWorkloads) Write(_ context.Context, w *iam.Workload) error {
 	f.workloads[w.ID()] = w
 	return nil
 }
+func (f fakeWorkloads) UpdateLastSeen(context.Context, *iam.Workload) error { return nil }
 
 type fakeTokens struct{ *store }
 
@@ -181,9 +189,11 @@ func (f fakeEnvs) GetEnvironment(_ context.Context, organizationID, id string) (
 	return e, nil
 }
 
-type fakeKubernetes struct{}
+// fakeKubernetes records whether each verification ran inside a transaction.
+type fakeKubernetes struct{ *store }
 
-func (fakeKubernetes) Verify(context.Context, string) (workloadauth.KubernetesIdentity, error) {
+func (f fakeKubernetes) Verify(context.Context, string) (workloadauth.KubernetesIdentity, error) {
+	f.verifiedTx = append(f.verifiedTx, f.inTx)
 	return workloadauth.KubernetesIdentity{
 		Issuer: "https://kubernetes.example", Subject: "system:serviceaccount:default:ivaldi-agent",
 		Audience: "ivaldi", ExpiresAt: t0.Add(time.Hour),
@@ -223,7 +233,7 @@ func newWorld(t *testing.T) *world {
 		WithWorkloadRepo(fakeWorkloads{s}), WithEnrollmentTokenRepo(fakeTokens{s}),
 		WithCredentialRepo(fakeCredentials{s}), WithPrincipalRepo(fakePrincipals{s}),
 		WithTargets(fakeTargets{s}), WithEnvironments(fakeEnvs{s}),
-		WithKubernetesVerifier(fakeKubernetes{}), WithAuthorizer(allow{}),
+		WithKubernetesVerifier(fakeKubernetes{s}), WithAuthorizer(allow{}),
 		WithTransactor(s), WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
 	)
 	require.NoError(t, err)
@@ -276,6 +286,7 @@ func TestRedeemMTLSAndKubernetes(t *testing.T) {
 		require.NoError(t, err)
 		assert.Nil(t, got.WorkloadToken)
 		assert.Equal(t, iam.CredentialKubernetesServiceAccount, got.CredentialKind)
+		assert.Equal(t, []bool{false}, w.verifiedTx, "the token is verified before the transaction takes its locks")
 	})
 }
 
@@ -309,6 +320,41 @@ func TestRenewBearer(t *testing.T) {
 	old := w.credentials[got.CredentialID]
 	assert.Equal(t, renewed.CredentialID, *old.ReplacedBy())
 	assert.Equal(t, t0.Add(5*time.Minute), *old.NotAfter())
+}
+
+func TestRenewAuditsTheCredentialWithoutItsToken(t *testing.T) {
+	w := newWorld(t)
+	got := mustRedeem(t, w, MethodBearer)
+	renewed, err := w.svc.Renew(ctx, bearerCaller(got))
+	require.NoError(t, err)
+
+	record := w.audit[len(w.audit)-1]
+	require.Equal(t, iam.EventWorkloadCredentialRenewed, record.Type)
+	assert.Equal(t, renewed.CredentialID, record.ResourceID)
+	body, err := json.Marshal(record.After)
+	require.NoError(t, err)
+	assert.NotContains(t, string(body), *renewed.WorkloadToken)
+}
+
+func TestRenewRefusesASupersededCredential(t *testing.T) {
+	w := newWorld(t)
+	got := mustRedeem(t, w, MethodBearer)
+	_, err := w.svc.Renew(ctx, bearerCaller(got))
+	require.NoError(t, err)
+	credentials := len(w.credentials)
+
+	// Within the grace period the old token still authenticates, but it must
+	// not mint a second successor.
+	_, err = w.svc.Renew(ctx, bearerCaller(got))
+	assert.ErrorIs(t, err, iam.ErrStatus)
+	assert.Len(t, w.credentials, credentials)
+}
+
+func bearerCaller(got *Redeemed) identity.Caller {
+	return identity.Caller{
+		Actor:          identity.Actor{PrincipalID: got.WorkloadPrincipalID, Kind: identity.ActorWorkload},
+		OrganizationID: org, CredentialID: got.CredentialID, CredentialExpiresAt: *got.ExpiresAt,
+	}
 }
 
 func TestRenewMTLSAndKubernetes(t *testing.T) {

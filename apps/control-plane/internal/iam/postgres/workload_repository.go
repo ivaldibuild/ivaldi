@@ -106,6 +106,13 @@ func (r *workloadRepository) Write(ctx context.Context, w *iam.Workload) error {
 	}))
 }
 
+func (r *workloadRepository) UpdateLastSeen(ctx context.Context, w *iam.Workload) error {
+	s := w.Snapshot()
+	return translate(r.conn(ctx).Model(&workloadEntity{}).
+		Where("organization_id = ? AND principal_id = ?", s.OrganizationID, s.ID).
+		Update("last_seen_at", s.LastSeenAt).Error)
+}
+
 func (r *workloadRepository) Get(ctx context.Context, organizationID, principalID string) (*iam.Workload, error) {
 	var row workloadRow
 	err := r.conn(ctx).Table("iam.principals p").

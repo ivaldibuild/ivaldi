@@ -7,8 +7,9 @@ import { HlmButtonImports } from '@spartan-ng/helm/button';
 import { HlmFieldImports } from '@spartan-ng/helm/field';
 import { HlmInputImports } from '@spartan-ng/helm/input';
 import { HlmSpinnerImports } from '@spartan-ng/helm/spinner';
+import { AgentsApi } from '../api/agents-api';
 import { CurrentUser } from '../api/current-user';
-import { Person, Team, TeamMember, TeamRole } from '../api/models';
+import { AgentSummary, Person, Team, TeamMember, TeamRole } from '../api/models';
 import { teamRoleLabels, TeamsApi } from '../api/teams-api';
 import { PageHeader } from '../delivery/page-header';
 import { RequestStatus } from '../shared/request-status';
@@ -18,6 +19,8 @@ interface MemberRow {
   name: string;
   /** A person's email, or what kind of member it is. */
   detail: string;
+  /** Where to read more, for an Agent. */
+  link: unknown[] | null;
 }
 
 const teamRoles: TeamRole[] = ['lead', 'member'];
@@ -45,13 +48,13 @@ export class TeamPage {
   readonly id = input.required<string>();
 
   private readonly api = inject(TeamsApi);
+  private readonly agentsApi = inject(AgentsApi);
   protected readonly user = inject(CurrentUser);
 
   protected readonly status = new RequestStatus();
   protected readonly team = signal<Team | null>(null);
   private readonly people = signal<Person[]>([]);
-  /** Names of Agents created here; the API has no other way to name an Agent yet. */
-  private readonly agentNames = signal<ReadonlyMap<string, string>>(new Map());
+  private readonly agents = signal<AgentSummary[]>([]);
 
   protected readonly teamRoles = teamRoles;
   protected readonly roleLabels = teamRoleLabels;
@@ -63,13 +66,14 @@ export class TeamPage {
 
   protected readonly members = computed<MemberRow[]>(() => {
     const people = new Map(this.people().map((p) => [p.id, p]));
-    const agents = this.agentNames();
+    const agents = new Map(this.agents().map((a) => [a.id, a]));
     return (this.team()?.members ?? []).map((member) => {
       if (member.principal_kind === 'agent') {
         return {
           member,
-          name: agents.get(member.principal_id) ?? member.principal_id,
+          name: agents.get(member.principal_id)?.display_name ?? member.principal_id,
           detail: 'Agent',
+          link: ['/settings/agents', member.principal_id],
         };
       }
       const person = people.get(member.principal_id);
@@ -77,6 +81,7 @@ export class TeamPage {
         member,
         name: person?.display_name ?? member.principal_id,
         detail: person?.email ?? 'Person',
+        link: null,
       };
     });
   });
@@ -196,10 +201,8 @@ export class TeamPage {
           display_name: display_name.trim(),
           role,
         });
-        this.agentNames.update((names) =>
-          new Map(names).set(created.agent.id, created.agent.display_name),
-        );
         this.team.set(created.team);
+        await this.loadAgents();
       });
       if (ok) {
         this.cancelAgent();
@@ -222,10 +225,19 @@ export class TeamPage {
     });
   }
 
+  private async loadAgents(): Promise<void> {
+    this.agents.set(await this.agentsApi.list(true));
+  }
+
   private async load(id: string): Promise<void> {
     await this.status.run(async () => {
-      const [team, people] = await Promise.all([this.api.get(id), this.api.people()]);
+      const [team, people, agents] = await Promise.all([
+        this.api.get(id),
+        this.api.people(),
+        this.agentsApi.list(true),
+      ]);
       this.people.set(people);
+      this.agents.set(agents);
       this.show(team);
     }, 'loading');
   }

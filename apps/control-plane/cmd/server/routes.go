@@ -16,6 +16,8 @@ import (
 	peopleapi "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/people"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/profile"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/serviceaccounts"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/orchestration"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/orchestration/agents"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/policy"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/policy/locks"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/team"
@@ -44,6 +46,7 @@ type services struct {
 	grants          iam.GrantService
 	serviceAccounts iam.ServiceAccountService
 	teams           team.TeamService
+	agents          orchestration.AgentService
 	settingLocks    policy.SettingLockService
 	workspaces      workspace.WorkspaceService
 	projects        workspace.ProjectService
@@ -65,6 +68,7 @@ func (s services) routes(describe bool) []api.Routes {
 		grants.NewGrantController(s.grants),
 		serviceaccounts.NewController(s.serviceAccounts),
 		teams.NewTeamController(s.teams),
+		agents.NewController(s.agents),
 		locks.NewSettingLockController(s.settingLocks),
 		workspaces.NewWorkspaceController(s.workspaces),
 		projects.NewProjectController(s.projects),

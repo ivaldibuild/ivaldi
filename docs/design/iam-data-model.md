@@ -88,7 +88,7 @@ Every actor is a row in **principals**, the common parent table that grants and 
 | `service_account` | **service_accounts** | A non-human integration that uses API tokens, e.g. CI or SCIM provisioning. |
 | `agent_session` | **agent_sessions** | The identity of one orchestrated Session. Links to the Session and Work Item, the delegating principal, an expiry, and a revocation time. |
 | `workload` | **workloads** | An enrolled data-plane component (worker, indexer, gateway, runtime agent) with its pool and last-seen time. |
-| `agent` | **agents** | A durable agent identity, such as `release-agent`, that can belong to Teams and hold grants. Every agent Session runs as one Agent. How the Agent runs (harness, model, instructions) belongs to orchestration, not IAM. *Added by [ADR 0007](../adr/0007-teams-and-agent-identity.md). An Agent is created through a Team, which keeps it in at least one Team; Sessions do not run as Agents yet.* |
+| `agent` | **agents** | A durable agent identity, such as `release-agent`, that can belong to Teams and hold grants. Every agent Session runs as one Agent. How the Agent runs (harness, model, instructions) belongs to orchestration, not IAM; today its system prompt lives in `orchestration.agent_configs`, keyed by the Agent's principal ID. *Added by [ADR 0007](../adr/0007-teams-and-agent-identity.md). An Agent is created through a Team, which keeps it in at least one Team; Sessions do not run as Agents yet.* |
 
 **Principals are never hard-deleted.** Audit and provenance records refer to them, so they are suspended or deactivated instead.
 

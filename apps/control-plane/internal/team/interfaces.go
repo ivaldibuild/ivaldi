@@ -42,6 +42,9 @@ type TeamRepository interface {
 	// CountActiveTeamsWithMember counts the Organization's active Teams the
 	// principal is a member of.
 	CountActiveTeamsWithMember(ctx context.Context, organizationID, principalID string) (int, error)
+	// ListTeamsForMembers returns each principal's Team memberships, keyed by
+	// principal ID. It includes archived Teams, flagged in the result.
+	ListTeamsForMembers(ctx context.Context, organizationID string, principalIDs []string) (map[string][]Membership, error)
 }
 
 // Principals finds the principals that may become members: active users and

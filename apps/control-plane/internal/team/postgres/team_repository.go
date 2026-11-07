@@ -4,6 +4,7 @@ package postgres
 
 import (
 	"context"
+	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -126,6 +127,42 @@ func (r *teamRepository) CountActiveTeamsWithMember(ctx context.Context, organiz
 		WHERE m.organization_id = ? AND m.principal_id = ? AND t.archived_at IS NULL`,
 		organizationID, principalID).Scan(&n).Error
 	return int(n), translate(err)
+}
+
+type membershipRow struct {
+	PrincipalID string     `gorm:"column:principal_id"`
+	TeamID      string     `gorm:"column:team_id"`
+	Slug        string     `gorm:"column:slug"`
+	DisplayName string     `gorm:"column:display_name"`
+	Role        string     `gorm:"column:role"`
+	ArchivedAt  *time.Time `gorm:"column:archived_at"`
+}
+
+func (r *teamRepository) ListTeamsForMembers(ctx context.Context, organizationID string, principalIDs []string) (map[string][]team.Membership, error) {
+	out := map[string][]team.Membership{}
+	if len(principalIDs) == 0 {
+		return out, nil
+	}
+	var rows []membershipRow
+	err := r.conn(ctx).Table("team.team_members m").
+		Select("m.principal_id, t.id AS team_id, t.slug, t.display_name, m.role, t.archived_at").
+		Joins("JOIN team.teams t ON t.organization_id = m.organization_id AND t.id = m.team_id").
+		Where("m.organization_id = ? AND m.principal_id IN ?", organizationID, principalIDs).
+		Order("t.display_name, t.id").
+		Find(&rows).Error
+	if err != nil {
+		return nil, translate(err)
+	}
+	for _, row := range rows {
+		out[row.PrincipalID] = append(out[row.PrincipalID], team.Membership{
+			TeamID:      row.TeamID,
+			Slug:        row.Slug,
+			DisplayName: row.DisplayName,
+			Role:        team.Role(row.Role),
+			ArchivedAt:  utcPtr(row.ArchivedAt),
+		})
+	}
+	return out, nil
 }
 
 // UpdateTeam writes the Team's row and replaces its members: kept members

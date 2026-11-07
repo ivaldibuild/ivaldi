@@ -20,6 +20,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/audit"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/outbox"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/team"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/events"
@@ -356,6 +357,10 @@ func (s *Store) RestoreResource(_ context.Context, organizationID, resourceID st
 // IsActiveTeam implements team.Directory.
 func (s *Store) IsActiveTeam(_ context.Context, organizationID, teamID string) (bool, error) {
 	return s.Teams[organizationID+"/"+teamID], nil
+}
+
+func (s *Store) ListTeamsForMembers(context.Context, string, []string) (map[string][]team.Membership, error) {
+	return map[string][]team.Membership{}, nil
 }
 
 // Recorders.

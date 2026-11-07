@@ -94,6 +94,21 @@ func TestTeamRepository(t *testing.T) {
 		assert.ErrorIs(t, f.teams.CreateTeam(ctx, dup), team.ErrConflict)
 	})
 
+	t.Run("lists a principal's teams with roles", func(t *testing.T) {
+		agent := id.New("prn")
+		platform := f.createTeam(t, orgA, "platform-memberships", agentMember(agent, team.RoleLead))
+		other := f.createTeam(t, orgA, "other-memberships", agentMember(agent, team.RoleMember))
+		f.createTeam(t, orgA, "not-a-member")
+
+		got, err := f.teams.ListTeamsForMembers(ctx, orgA, []string{agent})
+		require.NoError(t, err)
+		require.Len(t, got[agent], 2)
+		assert.Equal(t, other.ID(), got[agent][0].TeamID)
+		assert.Equal(t, team.RoleMember, got[agent][0].Role)
+		assert.Equal(t, platform.ID(), got[agent][1].TeamID)
+		assert.Equal(t, team.RoleLead, got[agent][1].Role)
+	})
+
 	t.Run("update missing", func(t *testing.T) {
 		assert.ErrorIs(t, f.teams.UpdateTeam(ctx, newTeam(orgA, "never-stored", member(carol, team.RoleLead))), team.ErrNotFound)
 		assert.Zero(t, f.count(t, "SELECT count(*) FROM team.team_members WHERE principal_id = ?", carol))

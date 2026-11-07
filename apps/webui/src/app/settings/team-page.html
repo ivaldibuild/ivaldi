@@ -129,7 +129,15 @@
                     scope="row"
                     class="border-border border-b px-4 py-3 text-left align-top font-normal"
                   >
-                    <span class="text-heading font-semibold">{{ row.name }}</span>
+                    @if (row.link) {
+                      <a
+                        class="text-heading font-semibold underline-offset-4 hover:underline"
+                        [routerLink]="row.link"
+                        >{{ row.name }}</a
+                      >
+                    } @else {
+                      <span class="text-heading font-semibold">{{ row.name }}</span>
+                    }
                     <div class="text-muted-foreground text-[13px]">{{ row.detail }}</div>
                   </th>
                   <td class="border-border border-b px-4 py-3 align-top">

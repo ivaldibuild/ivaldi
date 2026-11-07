@@ -183,6 +183,26 @@ func (s *store) CountActiveTeamsWithMember(_ context.Context, organizationID, pr
 	return n, nil
 }
 
+func (s *store) ListTeamsForMembers(_ context.Context, organizationID string, principalIDs []string) (map[string][]team.Membership, error) {
+	out := map[string][]team.Membership{}
+	for _, principalID := range principalIDs {
+		for _, snap := range s.teams {
+			if snap.OrganizationID != organizationID {
+				continue
+			}
+			for _, m := range snap.Members {
+				if m.PrincipalID == principalID {
+					out[principalID] = append(out[principalID], team.Membership{
+						TeamID: snap.ID, Slug: snap.Slug, DisplayName: snap.DisplayName,
+						Role: m.Role, ArchivedAt: snap.ArchivedAt,
+					})
+				}
+			}
+		}
+	}
+	return out, nil
+}
+
 // Principals and Agents.
 
 func (s *store) Get(_ context.Context, organizationID, principalID string) (iam.PrincipalSnapshot, error) {

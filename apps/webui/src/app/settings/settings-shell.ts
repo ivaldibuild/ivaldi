@@ -52,6 +52,7 @@ export class SettingsShell {
     { path: '/settings/general', label: 'General' },
     { path: '/settings/people', label: 'People & access' },
     { path: '/settings/service-accounts', label: 'Service accounts' },
+    { path: '/settings/agents', label: 'Agents' },
     { path: '/settings/workspaces', label: 'Workspaces' },
     { path: '/settings/teams', label: 'Teams' },
   ];

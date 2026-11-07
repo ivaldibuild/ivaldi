@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam"
+	"github.com/ivaldibuild/ivaldi/pkg/pagination"
 )
 
 func newAgent(orgID, slug string) *iam.Agent {
@@ -87,6 +88,35 @@ func TestAgentRepository(t *testing.T) {
 	t.Run("an organization that does not exist", func(t *testing.T) {
 		assert.ErrorIs(t, agents.Write(ctx, newAgent(newOrg("ghost").ID(), "ghost")), iam.ErrNotFound)
 	})
+}
+
+func TestAgentRepositoryList(t *testing.T) {
+	f := newFixture(t)
+	ctx := f.ctx
+	agents := NewAgentRepository(f.db)
+	org := f.writeOrg(t, "acme")
+	other := f.writeOrg(t, "other")
+
+	release := newAgent(org.ID(), "release-agent")
+	release.Rename("Release helper")
+	triage := newAgent(org.ID(), "triage-agent")
+	require.NoError(t, agents.Write(ctx, release))
+	require.NoError(t, agents.Write(ctx, triage))
+	require.NoError(t, agents.Write(ctx, newAgent(other.ID(), "release-agent")))
+
+	page, err := agents.List(ctx, iam.ListAgentsQuery{OrganizationID: org.ID()})
+	require.NoError(t, err)
+	require.Len(t, page.Items, 2)
+	assert.Equal(t, "Release helper", page.Items[0].DisplayName(), "sorted by display name")
+	assert.Equal(t, 2, page.TotalCount)
+
+	page, err = agents.List(ctx, iam.ListAgentsQuery{OrganizationID: org.ID(), Search: "triage"})
+	require.NoError(t, err)
+	require.Len(t, page.Items, 1)
+	assert.Equal(t, "triage-agent", page.Items[0].Slug())
+
+	_, err = agents.List(ctx, iam.ListAgentsQuery{OrganizationID: org.ID(), Page: pagination.Query{SortBy: "nope"}})
+	assert.ErrorIs(t, err, iam.ErrInvalid, "an unknown sort is invalid")
 }
 
 func TestPrincipalRepository(t *testing.T) {

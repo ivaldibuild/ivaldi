@@ -15,6 +15,7 @@ import (
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/audit"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/team"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/events"
@@ -588,6 +589,10 @@ func (s *store) setDefaultLifecycle(resourceID, lifecycleID string) {
 
 func (s *store) IsActiveTeam(_ context.Context, _, teamID string) (bool, error) {
 	return s.teams[teamID], nil
+}
+
+func (s *store) ListTeamsForMembers(context.Context, string, []string) (map[string][]team.Membership, error) {
+	return map[string][]team.Membership{}, nil
 }
 
 type auditLog struct{ s *store }

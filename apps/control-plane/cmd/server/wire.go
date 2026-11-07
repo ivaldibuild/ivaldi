@@ -26,6 +26,8 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/serviceaccounts"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/signin"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/token"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/orchestration/agents"
+	orchestrationpg "github.com/ivaldibuild/ivaldi-control-plane/internal/orchestration/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/outbox"
 	outboxpg "github.com/ivaldibuild/ivaldi-control-plane/internal/outbox/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/team"
@@ -211,6 +213,9 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 	if err := a.wireTeams(); err != nil {
 		return nil, nil, err
 	}
+	if err := a.wireAgents(); err != nil {
+		return nil, nil, err
+	}
 	if err := a.wireDelivery(); err != nil {
 		return nil, nil, err
 	}
@@ -303,6 +308,26 @@ func (a *app) wireAccessAPI() error {
 		return err
 	}
 	a.services.people, a.services.grants = people, grantSvc
+	return nil
+}
+
+// wireAgents serves /v1/agents: Agent identity, Team memberships, and the
+// orchestration-owned system prompt.
+func (a *app) wireAgents() error {
+	svc, err := agents.NewService(
+		agents.WithAgentRepo(iampg.NewAgentRepository(a.db)),
+		agents.WithConfigRepo(orchestrationpg.NewAgentConfigRepository(a.db)),
+		agents.WithTeams(a.services.teams),
+		agents.WithTeamDirectory(a.teams),
+		agents.WithAuthorizer(a.authz),
+		agents.WithTransactor(a.tx),
+		agents.WithOutboxRecorder(a.outbox),
+		agents.WithAuditRecorder(a.audit),
+	)
+	if err != nil {
+		return err
+	}
+	a.services.agents = svc
 	return nil
 }
 

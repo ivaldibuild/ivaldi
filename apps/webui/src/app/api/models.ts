@@ -22,6 +22,10 @@ export type TeamMember = Schemas['TeamMemberSnapshot'];
 export type TeamRole = TeamMember['role'];
 export type Team = Schemas['TeamSnapshot'];
 export type Agent = Schemas['AgentSnapshot'];
+/** An Agent as a list shows it, with its Teams but not the full prompt. */
+export type AgentSummary = Schemas['AgentSummary'];
+/** One Agent with its system prompt and Teams. */
+export type AgentDetail = Schemas['AgentDetail'];
 
 export type Environment = Schemas['EnvironmentSnapshot'];
 export type Tier = Environment['tier'];

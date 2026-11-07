@@ -1,0 +1,211 @@
+<div class="flex flex-col gap-8">
+  <app-page-header
+    heading="Agents"
+    [trail]="(user.organization()?.display_name ?? 'Organisation') + ' / Organisation settings'"
+  >
+    @if (user.canManageOrganization() && !creating()) {
+      <button pageActions hlmBtn type="button" (click)="creating.set(true)">
+        <ng-icon name="lucidePlus" aria-hidden="true" /> New Agent
+      </button>
+    }
+  </app-page-header>
+
+  <p class="text-foreground max-w-205 text-base leading-relaxed">
+    Agents are lasting identities for the work Ivaldi runs. Each belongs to at least one Team and
+    acts with the roles granted to them. A system prompt tells every Session how the Agent should
+    work.
+  </p>
+
+  @if (creating()) {
+    <form
+      class="border-border grid max-w-205 gap-4 border p-5 md:grid-cols-2"
+      novalidate
+      aria-labelledby="new-agent-heading"
+      (submit)="create($event)"
+    >
+      <h2 id="new-agent-heading" class="text-heading font-semibold md:col-span-2">New Agent</h2>
+      @if (createStatus.error(); as message) {
+        <div hlmAlert variant="destructive" role="alert" class="md:col-span-2">
+          <p hlmAlertDescription>{{ message }}</p>
+        </div>
+      }
+      @if (activeTeams().length === 0) {
+        <div hlmAlert class="md:col-span-2" role="status">
+          <p hlmAlertDescription>
+            An Agent must join a Team. Create one first from
+            <a class="underline underline-offset-4" routerLink="/settings/teams">Teams</a>.
+          </p>
+        </div>
+      }
+      <div hlmField>
+        <label hlmFieldLabel for="agent-name">Name</label>
+        <input
+          hlmInput
+          id="agent-name"
+          placeholder="Release helper"
+          [formField]="createForm.display_name"
+        />
+        @if (createForm.display_name().touched() && createForm.display_name().invalid()) {
+          <hlm-field-error forceShow>{{
+            createForm.display_name().errors()[0].message
+          }}</hlm-field-error>
+        }
+      </div>
+      <div hlmField>
+        <label hlmFieldLabel for="agent-slug">Slug (optional)</label>
+        <input
+          hlmInput
+          id="agent-slug"
+          placeholder="release-helper"
+          [formField]="createForm.slug"
+        />
+      </div>
+      <div hlmField>
+        <label hlmFieldLabel for="agent-team">Team</label>
+        <select
+          id="agent-team"
+          class="border-input bg-background text-foreground h-9 border px-2"
+          [formField]="createForm.team_id"
+        >
+          <option value="" disabled>Choose a Team</option>
+          @for (team of activeTeams(); track team.id) {
+            <option [value]="team.id">{{ team.display_name }}</option>
+          }
+        </select>
+        @if (createForm.team_id().touched() && createForm.team_id().invalid()) {
+          <hlm-field-error forceShow>{{ createForm.team_id().errors()[0].message }}</hlm-field-error>
+        }
+      </div>
+      <div hlmField>
+        <label hlmFieldLabel for="agent-role">Role on the Team</label>
+        <select
+          id="agent-role"
+          class="border-input bg-background text-foreground h-9 border px-2"
+          [formField]="createForm.role"
+        >
+          @for (role of teamRoles; track role) {
+            <option [value]="role">{{ roleLabels[role] }}</option>
+          }
+        </select>
+      </div>
+      <div hlmField class="md:col-span-2">
+        <label hlmFieldLabel for="agent-prompt">System prompt (optional)</label>
+        <textarea
+          id="agent-prompt"
+          rows="5"
+          class="border-input bg-background text-foreground w-full border px-3 py-2 font-mono text-sm"
+          placeholder="You are the release helper. Check the evidence before you ship."
+          [formField]="createForm.system_prompt"
+        ></textarea>
+        <p class="text-muted-foreground text-sm">
+          These instructions are given to the Agent at the start of every Session. You can change
+          them later.
+        </p>
+      </div>
+      <div class="flex flex-wrap gap-2 md:col-span-2">
+        <button
+          hlmBtn
+          type="submit"
+          [disabled]="createStatus.saving() || activeTeams().length === 0"
+        >
+          @if (createStatus.saving()) {
+            <hlm-spinner aria-hidden="true" /> Creating…
+          } @else {
+            Create Agent
+          }
+        </button>
+        <button hlmBtn variant="outline" type="button" (click)="cancelCreate()">Cancel</button>
+      </div>
+    </form>
+  }
+
+  @if (status.error(); as message) {
+    <div hlmAlert variant="destructive" role="alert">
+      <h2 hlmAlertTitle>Agents didn't load</h2>
+      <p hlmAlertDescription>{{ message }}</p>
+    </div>
+  }
+
+  <label class="flex items-center gap-2 self-start text-sm">
+    <input
+      type="checkbox"
+      class="accent-primary size-4"
+      [checked]="showSuspended()"
+      (change)="showSuspended.set($any($event.target).checked)"
+    />
+    Show suspended Agents
+  </label>
+
+  @if (status.loading()) {
+    <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+      <hlm-spinner aria-hidden="true" /> Loading Agents…
+    </p>
+  } @else if (agents().length === 0 && !status.error()) {
+    <p class="text-foreground text-sm">
+      No Agents yet.
+      @if (user.canManageOrganization()) {
+        Create one for each kind of work you want Ivaldi to run.
+      }
+    </p>
+  } @else if (agents().length > 0) {
+    <div class="border-border relative overflow-x-auto border">
+      <table class="w-full min-w-170 border-collapse text-sm">
+        <thead>
+          <tr class="text-muted-foreground text-left">
+            <th scope="col" class="border-border border-b px-4 py-3 font-semibold">Agent</th>
+            <th scope="col" class="border-border border-b px-4 py-3 font-semibold">Teams</th>
+            <th scope="col" class="border-border border-b px-4 py-3 font-semibold">Status</th>
+            <th scope="col" class="border-border border-b px-4 py-3 font-semibold">Prompt</th>
+            <th scope="col" class="border-border border-b px-4 py-3 font-semibold">Created</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (agent of agents(); track agent.id) {
+            <tr>
+              <th
+                scope="row"
+                class="border-border border-b px-4 py-3 text-left align-top font-normal"
+              >
+                <a
+                  class="text-heading font-semibold underline-offset-4 hover:underline"
+                  [routerLink]="['/settings/agents', agent.id]"
+                  >{{ agent.display_name }}</a
+                >
+                <div class="text-muted-foreground text-[13px]">
+                  <code>{{ agent.slug }}</code>
+                </div>
+              </th>
+              <td class="border-border border-b px-4 py-3 align-top">
+                @if (agent.teams.length === 0) {
+                  <span class="text-muted-foreground">No Teams</span>
+                } @else {
+                  @for (team of agent.teams; track team.team_id; let last = $last) {
+                    <a
+                      class="underline-offset-4 hover:underline"
+                      [routerLink]="['/settings/teams', team.team_id]"
+                      >{{ team.display_name }}</a
+                    >@if (!last) {<span>, </span>}
+                  }
+                }
+              </td>
+              <td class="border-border border-b px-4 py-3 align-top">
+                <span
+                  hlmBadge
+                  class="capitalize"
+                  [variant]="agent.status === 'active' ? 'secondary' : 'outline'"
+                  >{{ agent.status }}</span
+                >
+              </td>
+              <td class="border-border text-muted-foreground border-b px-4 py-3 align-top">
+                {{ agent.has_system_prompt ? 'Set' : 'Not set' }}
+              </td>
+              <td class="border-border text-muted-foreground border-b px-4 py-3 align-top">
+                {{ formatDay(agent.created_at) }}
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</div>

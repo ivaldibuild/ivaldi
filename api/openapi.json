@@ -52,6 +52,66 @@
         ],
         "type": "object"
       },
+      "AgentDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "organization_id": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "system_prompt": {
+            "type": "string"
+          },
+          "teams": {
+            "items": {
+              "$ref": "#/components/schemas/Membership"
+            },
+            "type": "array"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "kind",
+          "display_name",
+          "status",
+          "metadata",
+          "created_at",
+          "updated_at",
+          "slug",
+          "system_prompt",
+          "teams"
+        ],
+        "type": "object"
+      },
       "AgentInTeam": {
         "additionalProperties": false,
         "properties": {
@@ -114,6 +174,66 @@
           "metadata",
           "created_at",
           "updated_at"
+        ],
+        "type": "object"
+      },
+      "AgentSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "has_system_prompt": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "organization_id": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "teams": {
+            "items": {
+              "$ref": "#/components/schemas/Membership"
+            },
+            "type": "array"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "kind",
+          "display_name",
+          "status",
+          "metadata",
+          "created_at",
+          "updated_at",
+          "slug",
+          "teams",
+          "has_system_prompt"
         ],
         "type": "object"
       },
@@ -614,6 +734,50 @@
             "description": "How Releases are applied there; omitting it makes Deployments there tracked only"
           }
         },
+        "type": "object"
+      },
+      "CreateAgentAPIRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/CreateAgentAPIRequestBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "display_name": {
+            "description": "The display name for the Agent",
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "role": {
+            "description": "The Agent's role on the Team; member when omitted",
+            "enum": [
+              "lead",
+              "member"
+            ],
+            "type": "string"
+          },
+          "slug": {
+            "description": "Slug for the Agent, unique among the Organization's Agents; derived from the display name when omitted",
+            "type": "string"
+          },
+          "system_prompt": {
+            "description": "Instructions given to the Agent for every Session",
+            "maxLength": 65536,
+            "type": "string"
+          },
+          "team_id": {
+            "description": "The active Team the Agent joins first",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_name",
+          "team_id"
+        ],
         "type": "object"
       },
       "CreateAgentRequestBody": {
@@ -1725,6 +1889,40 @@
         ],
         "type": "object"
       },
+      "Membership": {
+        "additionalProperties": false,
+        "properties": {
+          "archived_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "lead",
+              "member"
+            ],
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "team_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "team_id",
+          "slug",
+          "display_name",
+          "role",
+          "archived_at"
+        ],
+        "type": "object"
+      },
       "MoveLifecyclePhaseRequestBody": {
         "additionalProperties": false,
         "properties": {
@@ -2374,6 +2572,35 @@
           },
           "data": {
             "$ref": "#/components/schemas/APITokenSnapshot",
+            "description": "Response payload, always present: an empty list is [], not omitted"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ResponseAgentDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseAgentDetail.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AgentDetail",
             "description": "Response payload, always present: an empty list is [], not omitted"
           },
           "message": {
@@ -3172,6 +3399,35 @@
         ],
         "type": "object"
       },
+      "ResponseResultAgentSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseResultAgentSummary.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ResultAgentSummary",
+            "description": "Response payload, always present: an empty list is [], not omitted"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
       "ResponseResultApplicationSnapshot": {
         "additionalProperties": false,
         "properties": {
@@ -3633,6 +3889,44 @@
         "required": [
           "status",
           "data"
+        ],
+        "type": "object"
+      },
+      "ResultAgentSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "has_next": {
+            "type": "boolean"
+          },
+          "has_previous": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgentSummary"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "nullable": true,
+            "type": "string"
+          },
+          "previous_cursor": {
+            "nullable": true,
+            "type": "string"
+          },
+          "total_count": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total_count",
+          "has_next",
+          "has_previous",
+          "next_cursor",
+          "previous_cursor"
         ],
         "type": "object"
       },
@@ -4541,6 +4835,30 @@
         ],
         "type": "object"
       },
+      "UpdateAgentRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/UpdateAgentRequestBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "display_name": {
+            "description": "New display name",
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "system_prompt": {
+            "description": "New system prompt; an empty string clears it",
+            "maxLength": 65536,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "UpdateApplicationRequestBody": {
         "additionalProperties": false,
         "properties": {
@@ -4913,6 +5231,371 @@
   },
   "openapi": "3.0.3",
   "paths": {
+    "/v1/agents": {
+      "get": {
+        "operationId": "list-agents",
+        "parameters": [
+          {
+            "description": "Keep Agents whose name or slug contains this, ignoring case",
+            "explode": false,
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "description": "Keep Agents whose name or slug contains this, ignoring case",
+              "maxLength": 255,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Also list suspended and deactivated Agents",
+            "explode": false,
+            "in": "query",
+            "name": "include_inactive",
+            "schema": {
+              "description": "Also list suspended and deactivated Agents",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Most items to return",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "Most items to return",
+              "format": "int64",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Field to sort by: display_name (the default), slug, or created_at",
+            "explode": false,
+            "in": "query",
+            "name": "sort_by",
+            "schema": {
+              "description": "Field to sort by: display_name (the default), slug, or created_at",
+              "enum": [
+                "display_name",
+                "slug",
+                "created_at"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Sort direction",
+            "explode": false,
+            "in": "query",
+            "name": "sort_order",
+            "schema": {
+              "description": "Sort direction",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Cursor from a previous page's next_cursor",
+            "explode": false,
+            "in": "query",
+            "name": "next_cursor",
+            "schema": {
+              "description": "Cursor from a previous page's next_cursor",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Cursor from a previous page's previous_cursor",
+            "explode": false,
+            "in": "query",
+            "name": "previous_cursor",
+            "schema": {
+              "description": "Cursor from a previous page's previous_cursor",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseResultAgentSummary"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the Organization's Agents",
+        "tags": [
+          "agents"
+        ]
+      },
+      "post": {
+        "operationId": "create-agent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgentAPIRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseAgentDetail"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create an Agent as a member of a Team",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/v1/agents/{agent_id}": {
+      "get": {
+        "operationId": "get-agent",
+        "parameters": [
+          {
+            "description": "The Agent's principal ID",
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "description": "The Agent's principal ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseAgentDetail"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get an Agent with its Team memberships and system prompt",
+        "tags": [
+          "agents"
+        ]
+      },
+      "patch": {
+        "operationId": "update-agent",
+        "parameters": [
+          {
+            "description": "The Agent's principal ID",
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "description": "The Agent's principal ID",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAgentRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseAgentDetail"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Change an Agent's name or system prompt",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/v1/agents/{agent_id}/reactivate": {
+      "post": {
+        "operationId": "reactivate-agent",
+        "parameters": [
+          {
+            "description": "The Agent's principal ID",
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "description": "The Agent's principal ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseAgentDetail"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Reactivate an Agent",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/v1/agents/{agent_id}/suspend": {
+      "post": {
+        "operationId": "suspend-agent",
+        "parameters": [
+          {
+            "description": "The Agent's principal ID",
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "description": "The Agent's principal ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseAgentDetail"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Suspend an Agent",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
     "/v1/api-tokens/{api_token_id}/revoke": {
       "post": {
         "operationId": "revoke-api-token",

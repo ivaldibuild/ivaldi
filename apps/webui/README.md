@@ -31,6 +31,12 @@ Signed in, the web app opens on the delivery screens, for the Workspace chosen i
 
 The control plane doesn't serve Builds, Releases or Deployments yet, so these screens show configuration, not which version runs where.
 
+## Organisation settings
+
+Owners and admins manage the Organisation's people, service accounts, Teams, Workspaces, and
+Agents under `/settings`. An Agent's page holds its Team memberships and the system prompt given
+to every Session; Agents are created there or from a Team's page.
+
 ## Development server
 
 To start a local development server, run:

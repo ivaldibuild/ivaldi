@@ -4,6 +4,76 @@
  */
 
 export interface paths {
+  '/v1/agents': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List the Organization's Agents */
+    get: operations['list-agents'];
+    put?: never;
+    /** Create an Agent as a member of a Team */
+    post: operations['create-agent'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/agents/{agent_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get an Agent with its Team memberships and system prompt */
+    get: operations['get-agent'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Change an Agent's name or system prompt */
+    patch: operations['update-agent'];
+    trace?: never;
+  };
+  '/v1/agents/{agent_id}/reactivate': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Reactivate an Agent */
+    post: operations['reactivate-agent'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/agents/{agent_id}/suspend': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Suspend an Agent */
+    post: operations['suspend-agent'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/api-tokens/{api_token_id}/revoke': {
     parameters: {
       query?: never;
@@ -1565,6 +1635,23 @@ export interface components {
       revoked_at: string | null;
       token_prefix: string;
     };
+    AgentDetail: {
+      /** Format: date-time */
+      created_at: string;
+      display_name: string;
+      id: string;
+      kind: string;
+      metadata: {
+        [key: string]: string;
+      };
+      organization_id: string;
+      slug: string;
+      status: string;
+      system_prompt: string;
+      teams: components['schemas']['Membership'][];
+      /** Format: date-time */
+      updated_at: string;
+    };
     AgentInTeam: {
       agent: components['schemas']['AgentSnapshot'];
       team: components['schemas']['TeamSnapshot'];
@@ -1581,6 +1668,23 @@ export interface components {
       organization_id: string;
       slug: string;
       status: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    AgentSummary: {
+      /** Format: date-time */
+      created_at: string;
+      display_name: string;
+      has_system_prompt: boolean;
+      id: string;
+      kind: string;
+      metadata: {
+        [key: string]: string;
+      };
+      organization_id: string;
+      slug: string;
+      status: string;
+      teams: components['schemas']['Membership'][];
       /** Format: date-time */
       updated_at: string;
     };
@@ -1752,6 +1856,27 @@ export interface components {
       readonly $schema?: string;
       /** @description How Releases are applied there; omitting it makes Deployments there tracked only */
       apply_config?: components['schemas']['ApplyConfigBody'];
+    };
+    CreateAgentAPIRequestBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/CreateAgentAPIRequestBody.json
+       */
+      readonly $schema?: string;
+      /** @description The display name for the Agent */
+      display_name: string;
+      /**
+       * @description The Agent's role on the Team; member when omitted
+       * @enum {string}
+       */
+      role?: 'lead' | 'member';
+      /** @description Slug for the Agent, unique among the Organization's Agents; derived from the display name when omitted */
+      slug?: string;
+      /** @description Instructions given to the Agent for every Session */
+      system_prompt?: string;
+      /** @description The active Team the Agent joins first */
+      team_id: string;
     };
     CreateAgentRequestBody: {
       /**
@@ -2221,6 +2346,15 @@ export interface components {
       role: string;
       role_id: string;
     };
+    Membership: {
+      /** Format: date-time */
+      archived_at: string | null;
+      display_name: string;
+      /** @enum {string} */
+      role: 'lead' | 'member';
+      slug: string;
+      team_id: string;
+    };
     MoveLifecyclePhaseRequestBody: {
       /**
        * Format: uri
@@ -2446,6 +2580,20 @@ export interface components {
       readonly $schema?: string;
       /** @description Response payload, always present: an empty list is [], not omitted */
       data: components['schemas']['APITokenSnapshot'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
+    ResponseAgentDetail: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseAgentDetail.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['AgentDetail'];
       /** @description Human-readable message */
       message?: string;
       /** @description Request status */
@@ -2815,6 +2963,20 @@ export interface components {
       /** @description Request status */
       status: string;
     };
+    ResponseResultAgentSummary: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseResultAgentSummary.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['ResultAgentSummary'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
     ResponseResultApplicationSnapshot: {
       /**
        * Format: uri
@@ -3038,6 +3200,15 @@ export interface components {
       message?: string;
       /** @description Request status */
       status: string;
+    };
+    ResultAgentSummary: {
+      has_next: boolean;
+      has_previous: boolean;
+      items: components['schemas']['AgentSummary'][];
+      next_cursor: string | null;
+      previous_cursor: string | null;
+      /** Format: int64 */
+      total_count: number;
     };
     ResultApplicationSnapshot: {
       has_next: boolean;
@@ -3326,6 +3497,18 @@ export interface components {
       /** @description The Team to hand the Project to */
       owner_team_id: string;
     };
+    UpdateAgentRequestBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/UpdateAgentRequestBody.json
+       */
+      readonly $schema?: string;
+      /** @description New display name */
+      display_name?: string;
+      /** @description New system prompt; an empty string clears it */
+      system_prompt?: string;
+    };
     UpdateApplicationRequestBody: {
       /**
        * Format: uri
@@ -3512,6 +3695,215 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  'list-agents': {
+    parameters: {
+      query?: {
+        /** @description Keep Agents whose name or slug contains this, ignoring case */
+        q?: string;
+        /** @description Also list suspended and deactivated Agents */
+        include_inactive?: boolean;
+        /** @description Most items to return */
+        limit?: number;
+        /** @description Field to sort by: display_name (the default), slug, or created_at */
+        sort_by?: 'display_name' | 'slug' | 'created_at';
+        /** @description Sort direction */
+        sort_order?: 'asc' | 'desc';
+        /** @description Cursor from a previous page's next_cursor */
+        next_cursor?: string;
+        /** @description Cursor from a previous page's previous_cursor */
+        previous_cursor?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseResultAgentSummary'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'create-agent': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateAgentAPIRequestBody'];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseAgentDetail'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'get-agent': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Agent's principal ID */
+        agent_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseAgentDetail'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'update-agent': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Agent's principal ID */
+        agent_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateAgentRequestBody'];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseAgentDetail'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'reactivate-agent': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Agent's principal ID */
+        agent_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseAgentDetail'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'suspend-agent': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Agent's principal ID */
+        agent_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseAgentDetail'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
   'revoke-api-token': {
     parameters: {
       query?: never;

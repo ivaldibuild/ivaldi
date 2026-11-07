@@ -149,6 +149,16 @@ export const routes: Routes = [
               import('./organisation/service-account-page').then((m) => m.ServiceAccountPage),
           },
           {
+            path: 'agents',
+            title: 'Agents · Organisation settings · Ivaldi',
+            loadComponent: () => import('./settings/agents-page').then((m) => m.AgentsPage),
+          },
+          {
+            path: 'agents/:id',
+            title: 'Agent · Organisation settings · Ivaldi',
+            loadComponent: () => import('./settings/agent-page').then((m) => m.AgentPage),
+          },
+          {
             path: 'workspaces',
             title: 'Workspaces · Organisation settings · Ivaldi',
             loadComponent: () => import('./settings/workspaces-page').then((m) => m.WorkspacesPage),

@@ -44,6 +44,27 @@ const people = [
   person('prn_kofi', 'Kofi Boateng'),
   person('prn_gone', 'Lea Gone', 'suspended'),
 ];
+const agentSummary = (id: string, name: string) => ({
+  id,
+  organization_id: 'org_1',
+  kind: 'agent',
+  display_name: name,
+  status: 'active',
+  metadata: {},
+  created_at: '2026-11-01T10:00:00Z',
+  updated_at: '2026-11-01T10:00:00Z',
+  slug: 'release-helper',
+  teams: [
+    {
+      team_id: 'tem_pay',
+      slug: 'payments',
+      display_name: 'Payments',
+      role: 'member',
+      archived_at: null,
+    },
+  ],
+  has_system_prompt: false,
+});
 
 describe('TeamPage', () => {
   let http: HttpTestingController;
@@ -75,6 +96,7 @@ describe('TeamPage', () => {
     await settle(fixture);
     http.expectOne(`${v1}/teams/tem_pay`).flush(ok(team));
     http.expectOne(`${v1}/people?limit=100&include_inactive=true`).flush(page(people));
+    http.expectOne(`${v1}/agents?limit=100&include_inactive=true`).flush(page([]));
     await settle(fixture);
     return { fixture, el: fixture.nativeElement as HTMLElement };
   }
@@ -187,9 +209,13 @@ describe('TeamPage', () => {
       }),
     );
     await settle(fixture);
+    http
+      .expectOne(`${v1}/agents?limit=100&include_inactive=true`)
+      .flush(page([agentSummary('prn_bot', 'Release helper')]));
+    await settle(fixture);
 
     const agent = el.querySelectorAll('tbody tr')[2];
-    expect(text(agent.querySelector('th span'))).toBe('Release helper');
+    expect(text(agent.querySelector('th a'))).toBe('Release helper');
     expect(text(agent.querySelector('th div'))).toBe('Agent');
     expect(agent.querySelector<HTMLSelectElement>('select')!.value).toBe('member');
     expect(el.querySelector('#agent-name')).toBeNull();

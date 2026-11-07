@@ -228,10 +228,22 @@ type PrincipalRepository interface {
 	Get(ctx context.Context, organizationID, principalID string) (PrincipalSnapshot, error)
 }
 
+// ListAgentsQuery lists an Organization's Agents. It sorts by display_name
+// (the default), slug, or created_at, with the ID breaking ties.
+type ListAgentsQuery struct {
+	OrganizationID  string
+	Search          string
+	IncludeInactive bool
+	Page            pagination.Query
+}
+
 type AgentRepository interface {
 	Get(ctx context.Context, organizationID, principalID string) (*Agent, error)
 	// GetBySlug returns the Organization's Agent with the slug.
 	GetBySlug(ctx context.Context, organizationID, slug string) (*Agent, error)
+	// List returns the Organization's Agents, filtered and paged as the
+	// query asks. An invalid sort or cursor fails with ErrInvalid.
+	List(ctx context.Context, query ListAgentsQuery) (*pagination.Result[*Agent], error)
 	// Write inserts the Agent's principal and agent rows together, or
 	// updates the principal when its ID is stored. A slug another of the
 	// Organization's Agents holds is ErrAlreadyExists.

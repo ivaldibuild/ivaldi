@@ -1,5 +1,7 @@
 package team
 
+import "github.com/ivaldibuild/ivaldi-control-plane/internal/iam"
+
 // Limits on what one record may hold. Text lengths match the columns.
 const (
 	maxDisplayNameLength = 255
@@ -18,7 +20,7 @@ const (
 	PermissionTeamManage = "team.manage"
 	// PermissionAgentManage creates Agents, which are IAM principals that
 	// can hold grants, so it is separate from managing Teams.
-	PermissionAgentManage = "agent.manage"
+	PermissionAgentManage = iam.PermissionAgentManage
 )
 
 // Actions name what an actor asks the authorizer to allow. Policy rules

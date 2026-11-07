@@ -15,6 +15,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam"
 	outboxmigrations "github.com/ivaldibuild/ivaldi-control-plane/internal/outbox/migrations"
 	outboxpg "github.com/ivaldibuild/ivaldi-control-plane/internal/outbox/postgres"
+	teamapi "github.com/ivaldibuild/ivaldi-control-plane/internal/team"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace/migrations"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace/postgres"
@@ -64,6 +65,10 @@ type teams struct{}
 
 func (teams) IsActiveTeam(_ context.Context, _, teamID string) (bool, error) {
 	return teamID == team || teamID == "tem_other", nil
+}
+
+func (teams) ListTeamsForMembers(context.Context, string, []string) (map[string][]teamapi.Membership, error) {
+	return map[string][]teamapi.Membership{}, nil
 }
 
 // stack is the workspace capability wired to PostgreSQL, as the control

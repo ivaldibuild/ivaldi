@@ -56,6 +56,12 @@ const (
 	// their API tokens, and suspends them.
 	PermissionServiceAccountRead   = "service_account.read"
 	PermissionServiceAccountManage = "service_account.manage"
+	// PermissionAgentRead lists Agents; PermissionAgentManage creates them,
+	// changes their identity, and suspends or reactivates them. Agents are
+	// IAM principals that can hold grants, so this is separate from
+	// managing Teams.
+	PermissionAgentRead   = "agent.read"
+	PermissionAgentManage = "agent.manage"
 )
 
 // Actions name what an actor asks the authorizer to allow. Policy rules and
@@ -89,4 +95,8 @@ const (
 	EventServiceAccountReactivated = "service_account.reactivated"
 	EventAPITokenCreated           = "api_token.created"
 	EventAPITokenRevoked           = "api_token.revoked"
+
+	EventAgentUpdated     = "agent.updated"
+	EventAgentSuspended   = "agent.suspended"
+	EventAgentReactivated = "agent.reactivated"
 )

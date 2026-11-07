@@ -11,15 +11,26 @@ import {
   lucideSettings,
   lucideUsers,
 } from '@ng-icons/lucide';
-import { HlmButtonImports } from '@spartan-ng/helm/button';
+import { HlmSidebarImports } from '@spartan-ng/helm/sidebar';
 import { Session } from '../auth/session';
 import { OrganisationBadge, UserBadge } from '../shared/identity';
 import { WorkspaceContext } from './workspace-context';
 
-/** The signed-in app: the sidebar with the Workspace switcher beside the current page. */
+interface NavItem {
+  path: string;
+  label: string;
+  icon: string;
+  within?: string[];
+}
+
+/**
+ * The signed-in app: Spartan's collapsible sidebar, with the Organisation, the Workspace switcher
+ * and the signed-in person, beside the current page. It folds to icons on wide screens and opens
+ * as a sheet on narrow ones.
+ */
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet, RouterLink, NgIcon, HlmButtonImports, OrganisationBadge, UserBadge],
+  imports: [RouterOutlet, RouterLink, NgIcon, HlmSidebarImports, OrganisationBadge, UserBadge],
   providers: [
     provideIcons({
       lucideFolder,
@@ -47,20 +58,27 @@ export class AppShell {
   );
 
   /** `within`: other pages that sit under the item, such as a Project's Applications. */
-  protected readonly delivery: { path: string; label: string; icon: string; within?: string[] }[] =
-    [
-      {
-        path: '/projects',
-        label: 'Projects',
-        icon: 'lucideFolder',
-        within: ['/applications', '/releases'],
-      },
-      { path: '/environments', label: 'Environments', icon: 'lucideLayers' },
-      { path: '/lifecycles', label: 'Lifecycles', icon: 'lucideGitBranch' },
-    ];
-
-  protected readonly organisation = [
-    { path: '/people', label: 'People & access', icon: 'lucideUsers' },
+  protected readonly groups: { label: string; items: NavItem[] }[] = [
+    {
+      label: 'Delivery',
+      items: [
+        {
+          path: '/projects',
+          label: 'Projects',
+          icon: 'lucideFolder',
+          within: ['/applications', '/releases'],
+        },
+        { path: '/environments', label: 'Environments', icon: 'lucideLayers' },
+        { path: '/lifecycles', label: 'Lifecycles', icon: 'lucideGitBranch' },
+      ],
+    },
+    {
+      label: 'Organisation',
+      items: [
+        { path: '/people', label: 'People & access', icon: 'lucideUsers' },
+        { path: '/setup', label: 'Setup', icon: 'lucideSettings' },
+      ],
+    },
   ];
 
   constructor() {
@@ -71,7 +89,7 @@ export class AppShell {
    * Whether a sidebar item is the current page or one of the pages under it. Worked out here
    * rather than by RouterLinkActive, which removes the aria-current this sets.
    */
-  protected isActive(item: { path: string; within?: string[] }): boolean {
+  protected isActive(item: NavItem): boolean {
     const url = this.url().split(/[?#]/)[0];
     return [item.path, ...(item.within ?? [])].some((p) => url === p || url.startsWith(p + '/'));
   }

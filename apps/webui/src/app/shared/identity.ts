@@ -14,7 +14,7 @@ import { CurrentUser } from '../api/current-user';
         >
           {{ user.initials() }}
         </span>
-        <span class="flex min-w-0 flex-col">
+        <span class="flex min-w-0 flex-col group-data-[collapsible=icon]:hidden">
           <span class="text-heading truncate text-sm">{{ user.displayName() }}</span>
           <span class="text-muted-foreground truncate text-xs">
             {{ user.roleLabel() || user.email() }}
@@ -51,7 +51,10 @@ export class UserBadge {
             {{ initial() }}
           </span>
         }
-        <span class="text-heading truncate text-sm font-semibold">{{ org.display_name }}</span>
+        <span
+          class="text-heading truncate text-sm font-semibold group-data-[collapsible=icon]:hidden"
+          >{{ org.display_name }}</span
+        >
       </div>
     }
   `,

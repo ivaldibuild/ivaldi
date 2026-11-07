@@ -77,4 +77,21 @@ describe('AppShell', () => {
     const current = [...el.querySelectorAll('nav[aria-label="Primary"] a[aria-current="page"]')];
     expect(current.map((a) => a.textContent?.trim())).toEqual(['People & access']);
   });
+
+  it('folds the sidebar to icons and back from the trigger', async () => {
+    const el = await renderAt('/projects');
+    const sidebar = el.querySelector('hlm-sidebar')!;
+    const trigger = el.querySelector<HTMLButtonElement>('button[data-sidebar="trigger"]')!;
+    expect(trigger.textContent).toContain('Collapse or expand the sidebar');
+    expect(sidebar.getAttribute('data-state')).toBe('expanded');
+
+    trigger.click();
+    TestBed.tick();
+    expect(sidebar.getAttribute('data-state')).toBe('collapsed');
+    expect(sidebar.getAttribute('data-collapsible')).toBe('icon');
+
+    trigger.click();
+    TestBed.tick();
+    expect(sidebar.getAttribute('data-state')).toBe('expanded');
+  });
 });

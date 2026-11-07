@@ -1,103 +1,81 @@
-<div class="bg-background text-foreground flex min-h-dvh flex-wrap">
-  <nav
-    aria-label="Primary"
-    class="border-sidebar-border bg-sidebar text-sidebar-foreground flex w-full flex-col gap-6 border-b px-3 py-5 md:min-h-dvh md:w-64 md:border-r md:border-b-0"
+<div hlmSidebarWrapper class="bg-background text-foreground">
+  <hlm-sidebar
+    collapsible="icon"
+    srOnlySheetTitle="Navigation"
+    srOnlySheetDescription="Where to go in Ivaldi."
   >
-    <div class="px-2"><app-organisation-badge /></div>
-
-    <div class="flex flex-col gap-1.5 px-2">
-      <label for="workspace-switcher" class="text-muted-foreground text-xs">Workspace</label>
-      <select
-        id="workspace-switcher"
-        class="border-input bg-background text-foreground h-9 border px-2 text-sm"
-        (change)="selectWorkspace($event)"
-      >
-        @for (workspace of context.workspaces(); track workspace.id) {
-          <option [value]="workspace.id" [selected]="workspace.id === context.current()?.id">
-            {{ workspace.display_name }}
-          </option>
-        }
-      </select>
-    </div>
-
-    <div class="flex flex-col gap-0.5">
-      <span
-        class="text-muted-foreground px-3 pb-2 text-[11px] font-semibold tracking-[0.24em] uppercase"
-      >
-        Delivery
-      </span>
-      @for (item of delivery; track item.path) {
-        <a
-          [routerLink]="item.path"
-          [attr.aria-current]="isActive(item) ? 'page' : null"
-          class="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex h-9 items-center gap-3 border-l-2 px-3 text-sm no-underline"
-          [class.border-sidebar-primary]="isActive(item)"
-          [class.border-transparent]="!isActive(item)"
-          [class.text-heading]="isActive(item)"
-          [class.font-semibold]="isActive(item)"
+    <div hlmSidebarHeader class="gap-4 pt-4">
+      <div class="px-1 group-data-[collapsible=icon]:px-0"><app-organisation-badge /></div>
+      <div class="flex flex-col gap-1.5 px-1 group-data-[collapsible=icon]:hidden">
+        <label for="workspace-switcher" class="text-muted-foreground text-xs">Workspace</label>
+        <select
+          id="workspace-switcher"
+          class="border-input bg-background text-foreground h-9 border px-2 text-sm"
+          (change)="selectWorkspace($event)"
         >
-          <ng-icon
-            [name]="item.icon"
-            aria-hidden="true"
-            [class.text-primary-text]="isActive(item)"
-            [class.text-muted-foreground]="!isActive(item)"
-          />
-          {{ item.label }}
-        </a>
+          @for (workspace of context.workspaces(); track workspace.id) {
+            <option [value]="workspace.id" [selected]="workspace.id === context.current()?.id">
+              {{ workspace.display_name }}
+            </option>
+          }
+        </select>
+      </div>
+    </div>
+
+    <nav hlmSidebarContent aria-label="Primary">
+      @for (group of groups; track group.label) {
+        <div hlmSidebarGroup>
+          <div
+            hlmSidebarGroupLabel
+            class="text-muted-foreground text-[11px] font-semibold tracking-[0.24em] uppercase"
+          >
+            {{ group.label }}
+          </div>
+          <ul hlmSidebarMenu>
+            @for (item of group.items; track item.path) {
+              <li hlmSidebarMenuItem>
+                <a
+                  hlmSidebarMenuButton
+                  class="data-[active=true]:text-heading data-[active=true]:[&_ng-icon]:text-primary-text no-underline"
+                  closeMobileSidebarOnClick
+                  [routerLink]="item.path"
+                  [isActive]="isActive(item)"
+                  [tooltip]="item.label"
+                  [attr.aria-current]="isActive(item) ? 'page' : null"
+                >
+                  <ng-icon [name]="item.icon" aria-hidden="true" />
+                  <span>{{ item.label }}</span>
+                </a>
+              </li>
+            }
+          </ul>
+        </div>
       }
+    </nav>
+
+    <div hlmSidebarFooter class="border-sidebar-border border-t">
+      <ul hlmSidebarMenu>
+        <li hlmSidebarMenuItem class="px-1 py-1 group-data-[collapsible=icon]:px-0">
+          <app-user-badge />
+        </li>
+        <li hlmSidebarMenuItem>
+          <button hlmSidebarMenuButton type="button" tooltip="Sign out" (click)="signOut()">
+            <ng-icon name="lucideLogOut" aria-hidden="true" />
+            <span>Sign out</span>
+          </button>
+        </li>
+      </ul>
     </div>
 
-    <div class="flex flex-col gap-0.5">
-      <span
-        class="text-muted-foreground px-3 pb-2 text-[11px] font-semibold tracking-[0.24em] uppercase"
-      >
-        Organisation
-      </span>
-      @for (item of organisation; track item.path) {
-        <a
-          [routerLink]="item.path"
-          [attr.aria-current]="isActive(item) ? 'page' : null"
-          class="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex h-9 items-center gap-3 border-l-2 px-3 text-sm no-underline"
-          [class.border-sidebar-primary]="isActive(item)"
-          [class.border-transparent]="!isActive(item)"
-          [class.text-heading]="isActive(item)"
-          [class.font-semibold]="isActive(item)"
-        >
-          <ng-icon
-            [name]="item.icon"
-            aria-hidden="true"
-            [class.text-primary-text]="isActive(item)"
-            [class.text-muted-foreground]="!isActive(item)"
-          />
-          {{ item.label }}
-        </a>
-      }
-      <a
-        routerLink="/setup"
-        class="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex h-9 items-center gap-3 border-l-2 border-transparent px-3 text-sm no-underline"
-      >
-        <ng-icon name="lucideSettings" class="text-muted-foreground" aria-hidden="true" />
-        Setup
-      </a>
-    </div>
+    <button hlmSidebarRail aria-label="Collapse or expand the sidebar"></button>
+  </hlm-sidebar>
 
-    <div class="border-sidebar-border mt-auto flex items-center gap-2 border-t px-2 pt-4">
-      <div class="min-w-0 flex-1"><app-user-badge /></div>
-      <button
-        hlmBtn
-        variant="ghost"
-        size="icon"
-        type="button"
-        aria-label="Sign out"
-        title="Sign out"
-        (click)="signOut()"
-      >
-        <ng-icon name="lucideLogOut" aria-hidden="true" />
-      </button>
+  <main hlmSidebarInset class="min-w-0">
+    <div class="flex h-12 items-center px-2 md:px-4">
+      <button hlmSidebarTrigger srOnlyText="Collapse or expand the sidebar"></button>
     </div>
-  </nav>
-
-  <main class="min-w-0 flex-[999_1_560px] px-4 py-8 md:px-12">
-    <router-outlet />
+    <div class="px-4 pb-8 md:px-12">
+      <router-outlet />
+    </div>
   </main>
 </div>

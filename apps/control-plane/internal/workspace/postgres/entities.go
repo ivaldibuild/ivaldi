@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
+
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 )
 
 // Rows of the workspace schema. They carry GORM's mapping so the domain types
@@ -64,9 +66,9 @@ func toWorkspaceEntity(w *workspace.Workspace) *workspaceEntity {
 		OrganizationID:       d.OrganizationID,
 		Slug:                 d.Slug,
 		DisplayName:          d.DisplayName,
-		Description:          nullable(d.Description),
+		Description:          optional.Of(d.Description),
 		IsDefault:            d.IsDefault,
-		CreatedByPrincipalID: nullable(d.CreatedByPrincipalID),
+		CreatedByPrincipalID: optional.Of(d.CreatedByPrincipalID),
 		CreatedAt:            d.CreatedAt,
 		UpdatedAt:            d.UpdatedAt,
 		ArchivedAt:           d.ArchivedAt,
@@ -96,8 +98,8 @@ func toProjectEntity(p *workspace.Project) *projectEntity {
 		OwnerTeamID:          d.OwnerTeamID,
 		Slug:                 d.Slug,
 		DisplayName:          d.DisplayName,
-		Description:          nullable(d.Description),
-		CreatedByPrincipalID: nullable(d.CreatedByPrincipalID),
+		Description:          optional.Of(d.Description),
+		CreatedByPrincipalID: optional.Of(d.CreatedByPrincipalID),
 		CreatedAt:            d.CreatedAt,
 		UpdatedAt:            d.UpdatedAt,
 		ArchivedAt:           d.ArchivedAt,
@@ -123,13 +125,13 @@ func toSettingEntity(s *workspace.Setting) *settingEntity {
 	d := s.Snapshot()
 	return &settingEntity{
 		OrganizationID:       d.Scope.OrganizationID,
-		WorkspaceID:          nullable(d.Scope.WorkspaceID),
-		ProjectID:            nullable(d.Scope.ProjectID),
+		WorkspaceID:          optional.Of(d.Scope.WorkspaceID),
+		ProjectID:            optional.Of(d.Scope.ProjectID),
 		Key:                  d.Key,
 		Value:                d.Value,
 		Version:              d.Version,
-		UpdatedByPrincipalID: nullable(d.UpdatedByPrincipalID),
-		PolicyDecisionID:     nullable(d.PolicyDecisionID),
+		UpdatedByPrincipalID: optional.Of(d.UpdatedByPrincipalID),
+		PolicyDecisionID:     optional.Of(d.PolicyDecisionID),
 		CreatedAt:            d.CreatedAt,
 		UpdatedAt:            d.UpdatedAt,
 	}
@@ -150,14 +152,6 @@ func (e *settingEntity) toDomain() (*workspace.Setting, error) {
 		CreatedAt:            utcTime(e.CreatedAt),
 		UpdatedAt:            utcTime(e.UpdatedAt),
 	})
-}
-
-// nullable maps an empty string to SQL NULL.
-func nullable(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
 }
 
 func value(s *string) string {

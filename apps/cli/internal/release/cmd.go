@@ -44,11 +44,3 @@ func or(a, b string) string {
 	}
 	return b
 }
-
-// optional returns nil for "", so an empty flag is left out of a request.
-func optional(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
-}

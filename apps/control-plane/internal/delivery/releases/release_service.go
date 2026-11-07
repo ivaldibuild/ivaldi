@@ -21,6 +21,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/outbox"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 	"github.com/ivaldibuild/ivaldi/pkg/pagination"
 	"github.com/ivaldibuild/ivaldi/pkg/release"
 	"github.com/ivaldibuild/ivaldi/pkg/transaction"
@@ -295,7 +296,7 @@ func (s *service) CreateRelease(ctx context.Context, actor identity.Actor, in de
 		byArtifact := map[string]*delivery.Build{}
 		props := delivery.NewReleaseProps{
 			OrganizationID: in.OrganizationID, ApplicationID: in.ApplicationID, Version: in.Version,
-			CreatedByPrincipalID: optional(actor.PrincipalID),
+			CreatedByPrincipalID: optional.Of(actor.PrincipalID),
 		}
 		for _, bi := range in.Builds {
 			artifact := findArtifact(artifacts, bi.Artifact)
@@ -592,11 +593,4 @@ func detail(rel *delivery.Release, byArtifact map[string]*delivery.Build) *deliv
 		d.Builds = append(d.Builds, byArtifact[rb.ArtifactID])
 	}
 	return d
-}
-
-func optional(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 	"github.com/ivaldibuild/ivaldi/pkg/pagination"
 	"github.com/ivaldibuild/ivaldi/pkg/release"
 )
@@ -76,8 +77,8 @@ func (b BuildBody) input() delivery.BuildInput {
 	return delivery.BuildInput{
 		Artifact: b.Artifact, Digest: b.Digest, Tag: b.Tag,
 		Details: delivery.BuildDetails{
-			Version: optional(b.Version), SourceID: optional(b.SourceID), CommitSHA: optional(b.CommitSHA),
-			SourceRef: optional(b.SourceRef), CIProvider: optional(b.CIProvider), CIRunRef: optional(b.CIRunRef),
+			Version: optional.Of(b.Version), SourceID: optional.Of(b.SourceID), CommitSHA: optional.Of(b.CommitSHA),
+			SourceRef: optional.Of(b.SourceRef), CIProvider: optional.Of(b.CIProvider), CIRunRef: optional.Of(b.CIRunRef),
 			ReportedTags: b.Tags, BuiltAt: b.BuiltAt,
 		},
 	}

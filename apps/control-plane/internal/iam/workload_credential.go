@@ -7,6 +7,7 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 )
 
 // WorkloadCredentialKind is how an enrolled Workload proves who it is.
@@ -120,7 +121,7 @@ func NewWorkloadCredential(props NewWorkloadCredentialProps, credentialID *strin
 		secretHash:     copyBytes(props.SecretHash),
 		notAfter:       clock.CopyTime(props.NotAfter),
 		revokedAt:      clock.CopyTime(props.RevokedAt),
-		replacedBy:     optionalString(props.ReplacedBy),
+		replacedBy:     optional.OfPtr(props.ReplacedBy),
 		createdAt:      createdAt,
 	}
 	if c.IsNew() {

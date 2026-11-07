@@ -8,6 +8,7 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 )
 
 // Lifecycle is an ordered path through a Workspace's Environments. It owns
@@ -141,7 +142,7 @@ func NewLifecycle(props NewLifecycleProps, lifecycleID *string) (*Lifecycle, err
 		workspaceID:    props.WorkspaceID,
 		slug:           s,
 		displayName:    props.DisplayName,
-		description:    optionalString(props.Description),
+		description:    optional.OfPtr(props.Description),
 		createdAt:      timeOr(props.CreatedAt, now),
 		updatedAt:      timeOr(props.UpdatedAt, now),
 		deletedAt:      clock.CopyTime(props.DeletedAt),

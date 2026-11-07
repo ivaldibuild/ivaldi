@@ -11,6 +11,8 @@ import (
 	"github.com/ivaldibuild/ivaldi-cli/internal/app"
 	"github.com/ivaldibuild/ivaldi-cli/internal/ciinfo"
 	"github.com/ivaldibuild/ivaldi-cli/internal/client"
+
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 )
 
 type createFlags struct {
@@ -92,7 +94,7 @@ func (f createFlags) body(ci ciinfo.Info) (apiclient.CreateReleaseJSONRequestBod
 	}
 
 	body.Version = version
-	body.ChannelId = optional(f.channel)
+	body.ChannelId = optional.Of(f.channel)
 
 	if f.publish {
 		body.Publish = &f.publish
@@ -118,12 +120,12 @@ func (f createFlags) body(ci ciinfo.Info) (apiclient.CreateReleaseJSONRequestBod
 		seen[name] = true
 		builds = append(builds, apiclient.BuildBody{
 			Artifact:   name,
-			Digest:     optional(digest),
-			Version:    optional(or(f.buildVersion, version)),
-			CommitSha:  optional(or(f.commit, ci.CommitSHA)),
-			SourceRef:  optional(ref),
-			CiProvider: optional(or(f.ciProvider, ci.Provider)),
-			CiRunRef:   optional(or(f.ciRun, ci.RunURL)),
+			Digest:     optional.Of(digest),
+			Version:    optional.Of(or(f.buildVersion, version)),
+			CommitSha:  optional.Of(or(f.commit, ci.CommitSHA)),
+			SourceRef:  optional.Of(ref),
+			CiProvider: optional.Of(or(f.ciProvider, ci.Provider)),
+			CiRunRef:   optional.Of(or(f.ciRun, ci.RunURL)),
 		})
 	}
 

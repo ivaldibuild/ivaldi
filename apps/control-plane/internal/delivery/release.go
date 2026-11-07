@@ -9,6 +9,7 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 	"github.com/ivaldibuild/ivaldi/pkg/release"
 )
 
@@ -149,8 +150,8 @@ func NewRelease(props NewReleaseProps, releaseID *string) (*Release, error) {
 		version:              props.Version,
 		status:               props.Status,
 		source:               props.Source,
-		createdByPrincipalID: optionalString(props.CreatedByPrincipalID),
-		publishDecisionID:    optionalString(props.PublishDecisionID),
+		createdByPrincipalID: optional.OfPtr(props.CreatedByPrincipalID),
+		publishDecisionID:    optional.OfPtr(props.PublishDecisionID),
 		publishedAt:          clock.CopyTime(props.PublishedAt),
 		withdrawnAt:          clock.CopyTime(props.WithdrawnAt),
 		createdAt:            timeOr(props.CreatedAt, now),

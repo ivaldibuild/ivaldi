@@ -13,6 +13,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 	"github.com/ivaldibuild/ivaldi/pkg/pagination"
 	"github.com/ivaldibuild/ivaldi/pkg/release"
 )
@@ -150,7 +151,7 @@ func (c *Controller) RequestDeployments(ctx context.Context, req *RequestDeploym
 	}
 	items, err := c.service.RequestDeployments(ctx, who.Actor, delivery.RequestDeploymentsInput{
 		OrganizationID: who.OrganizationID, ReleaseID: req.ReleaseID, TargetIDs: req.Body.TargetIDs,
-		SessionID: optional(who.Actor.SessionID),
+		SessionID: optional.Of(who.Actor.SessionID),
 	})
 	if err != nil {
 		return nil, translateToHttpError(ctx, err)

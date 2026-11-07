@@ -9,6 +9,8 @@ import (
 	"github.com/ivaldibuild/ivaldi-cli/internal/apiclient"
 	"github.com/ivaldibuild/ivaldi-cli/internal/app"
 	"github.com/ivaldibuild/ivaldi-cli/internal/client"
+
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 )
 
 func listCommand(a *app.App) *cobra.Command {
@@ -19,7 +21,7 @@ func listCommand(a *app.App) *cobra.Command {
 		Short: "List an Application's Releases, newest first",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			params := &apiclient.ListReleasesParams{Limit: &limit, ChannelId: optional(channel)}
+			params := &apiclient.ListReleasesParams{Limit: &limit, ChannelId: optional.Of(channel)}
 			desc := apiclient.ListReleasesParamsSortOrderDesc
 			params.SortOrder = &desc
 			if status != "" {

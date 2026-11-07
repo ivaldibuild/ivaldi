@@ -17,6 +17,7 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 	"github.com/ivaldibuild/ivaldi/pkg/pagination"
 	"github.com/ivaldibuild/ivaldi/pkg/release"
 	"github.com/ivaldibuild/ivaldi/pkg/transaction"
@@ -154,8 +155,8 @@ func (s *service) RequestDeployments(ctx context.Context, actor identity.Actor, 
 				ReleaseID: rel.ID(), EnvironmentID: plan.target.EnvironmentID(), TargetID: targetID,
 				Source: delivery.DeploymentExecuted, Reason: delivery.DeploymentRollout, Status: status,
 				PreviousDeploymentID:   plan.placement.CurrentDeploymentID(),
-				InitiatedByPrincipalID: optional(actor.PrincipalID), SessionID: in.SessionID,
-				WorkItemID: in.WorkItemID, PolicyDecisionID: optional(decision.ID),
+				InitiatedByPrincipalID: optional.Of(actor.PrincipalID), SessionID: in.SessionID,
+				WorkItemID: in.WorkItemID, PolicyDecisionID: optional.Of(decision.ID),
 				RequestedAt: &now,
 			}
 			if status == release.DeploymentApplying {
@@ -301,7 +302,7 @@ func (s *service) ReportDeployment(ctx context.Context, actor identity.Actor, in
 		}
 		event, err := delivery.NewDeploymentEvent(delivery.NewDeploymentEventProps{
 			OrganizationID: in.OrganizationID, DeploymentID: d.ID(), Kind: in.Kind, Status: in.Status,
-			Detail: in.Detail, ReportID: &in.ReportID, ReportedByPrincipalID: optional(actor.PrincipalID),
+			Detail: in.Detail, ReportID: &in.ReportID, ReportedByPrincipalID: optional.Of(actor.PrincipalID),
 			OccurredAt: in.OccurredAt,
 		}, nil)
 		if err != nil {
@@ -684,11 +685,4 @@ func (s *service) detail(ctx context.Context, d *delivery.Deployment) (*delivery
 		snapshots[i] = e.Snapshot()
 	}
 	return &delivery.DeploymentDetail{Deployment: d.Snapshot(), Events: snapshots}, nil
-}
-
-func optional(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 )
 
 // OAuthRefreshToken is a rotating refresh token. Every use replaces it with
@@ -101,7 +102,7 @@ func NewOAuthRefreshToken(props NewOAuthRefreshTokenProps, tokenID *string) (*OA
 	if err := validateExpiry(props.ExpiresAt, createdAt); err != nil {
 		return nil, err
 	}
-	replacedBy := optionalString(props.ReplacedBy)
+	replacedBy := optional.OfPtr(props.ReplacedBy)
 	if replacedBy != nil {
 		if err := validateID("replacement", prefix, *replacedBy); err != nil {
 			return nil, err

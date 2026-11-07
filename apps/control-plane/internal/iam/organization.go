@@ -7,6 +7,7 @@ import (
 
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 	"github.com/ivaldibuild/ivaldi/pkg/slug"
 )
 
@@ -99,7 +100,7 @@ func NewOrganization(props NewOrganizationProps, organizationID *string) (*Organ
 	if err := validateSlug(props.Slug); err != nil {
 		return nil, err
 	}
-	logo := optionalString(props.LogoURL)
+	logo := optional.OfPtr(props.LogoURL)
 	if logo != nil {
 		if err := validateHTTPSURL("logo URL", *logo); err != nil {
 			return nil, err
@@ -204,7 +205,7 @@ func (o *Organization) Update(props UpdateOrganizationProps) error {
 			return err
 		}
 	}
-	logo := optionalString(props.LogoURL)
+	logo := optional.OfPtr(props.LogoURL)
 	if logo != nil {
 		if err := validateHTTPSURL("logo URL", *logo); err != nil {
 			return err

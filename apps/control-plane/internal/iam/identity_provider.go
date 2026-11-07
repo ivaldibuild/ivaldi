@@ -8,6 +8,7 @@ import (
 
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 )
 
 // IdentityProtocol is how an identity provider signs people in.
@@ -148,7 +149,7 @@ func NewIdentityProvider(props NewIdentityProviderProps, identityProviderID *str
 	if err := validateProviderConfig(props.Protocol, props.Config); err != nil {
 		return nil, err
 	}
-	secretRef := optionalString(props.SecretRef)
+	secretRef := optional.OfPtr(props.SecretRef)
 	if props.Protocol == ProtocolBuiltin && secretRef != nil {
 		return nil, NewErrInvalidInput("the builtin identity provider has no secret")
 	}
@@ -326,7 +327,7 @@ func (p *IdentityProvider) update(props UpdateIdentityProviderProps) (bool, erro
 			return false, err
 		}
 	}
-	secretRef := optionalString(props.SecretRef)
+	secretRef := optional.OfPtr(props.SecretRef)
 	if p.protocol == ProtocolBuiltin && secretRef != nil {
 		return false, NewErrInvalidInput("the builtin identity provider has no secret")
 	}

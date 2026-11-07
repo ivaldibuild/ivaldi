@@ -8,6 +8,7 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 )
 
 // PlacementSource says whether someone placed an Application on a Target or
@@ -126,8 +127,8 @@ func NewPlacement(props NewPlacementProps) (*Placement, error) {
 		applicationID:       props.ApplicationID,
 		targetID:            props.TargetID,
 		source:              props.Source,
-		currentDeploymentID: optionalString(props.CurrentDeploymentID),
-		currentReleaseID:    optionalString(props.CurrentReleaseID),
+		currentDeploymentID: optional.OfPtr(props.CurrentDeploymentID),
+		currentReleaseID:    optional.OfPtr(props.CurrentReleaseID),
 	}
 	if props.ApplyConfig != nil {
 		if err := props.ApplyConfig.Validate(); err != nil {

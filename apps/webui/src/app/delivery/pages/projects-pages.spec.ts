@@ -10,6 +10,7 @@ import { provideRouter, Router } from '@angular/router';
 import { API_BASE_URL } from '../../api-base-url';
 import { WorkspaceContext } from '../workspace-context';
 import { NewProjectPage } from './new-project-page';
+import { ProjectEditPage } from './project-edit-page';
 import { ProjectPage } from './project-page';
 import { ProjectsPage } from './projects-page';
 
@@ -142,8 +143,10 @@ describe('project pages', () => {
       const rows = [...el.querySelectorAll('tbody tr')].map((tr) =>
         tr.textContent?.replace(/\s+/g, ' ').trim(),
       );
-      expect(rows).toEqual(['Payments payments Payments Taking money']);
+      expect(rows).toEqual(['Payments payments Payments Taking money Edit']);
       expect(el.querySelector('tbody a')?.getAttribute('href')).toBe('/projects/prj_1');
+      const edit = el.querySelector('a[aria-label="Edit Payments"]');
+      expect(edit?.getAttribute('href')).toBe('/projects/prj_1/edit');
       expect(el.querySelector('[role="status"]')?.textContent).toContain('Showing 1 of 1');
     });
 
@@ -256,6 +259,92 @@ describe('project pages', () => {
   });
 
   describe('the Project page', () => {
+    const environments = [
+      { id: 'env_stg', slug: 'staging', display_name: 'Staging', tier: 'staging' },
+    ];
+
+    async function renderProject(project: typeof payments | typeof legacy = payments) {
+      const rendered = render(ProjectPage, { id: 'prj_1' });
+      await settle(rendered.fixture);
+      expect1('/projects/prj_1').flush(ok({ ...project, id: 'prj_1' }));
+      await settle(rendered.fixture);
+      expect1('/teams').flush(page(teams));
+      expect1('/projects/prj_1/applications?limit=100').flush(page([application]));
+      expect1('/workspaces/wsp_1/environments').flush(page(environments));
+      await settle(rendered.fixture);
+      expect1('/environments/env_stg/targets').flush(
+        page([{ id: 'tgt_1', environment_id: 'env_stg', display_name: 'staging-eu-1' }]),
+      );
+      expect1('/applications/app_1/placements').flush(
+        ok([{ application_id: 'app_1', target_id: 'tgt_1', source: 'configured' }]),
+      );
+      await settle(rendered.fixture);
+      return rendered;
+    }
+
+    it('shows the Project and where each of its Applications is placed', async () => {
+      const { el } = await renderProject();
+      expect(el.querySelector('h1')?.textContent).toContain('Payments');
+      expect(el.textContent).toContain('Owned by Payments');
+      expect(el.textContent).toContain('Taking money');
+      const row = el.querySelector('tbody tr');
+      expect(row?.textContent?.replace(/\s+/g, ' ')).toContain('payments-api Owned by Core');
+      expect(row?.querySelector('td')?.textContent).toContain('staging-eu-1');
+      expect(el.querySelector('th[scope="rowgroup"]')).toBeNull();
+      const edit = [...el.querySelectorAll('a')].find((a) =>
+        a.textContent?.includes('Edit project'),
+      );
+      expect(edit?.getAttribute('href')).toBe('/projects/prj_1/edit');
+    });
+
+    it('opens a new Application in this Project', async () => {
+      const { el } = await renderProject();
+      click(el, 'New application');
+      expect(navigate).toHaveBeenCalledWith(['/applications/new'], {
+        queryParams: { project: 'prj_1' },
+      });
+    });
+
+    it('offers to restore an archived Project', async () => {
+      const { fixture, el } = await renderProject(legacy);
+      expect(el.textContent).toContain('This Project is archived');
+      expect(
+        [...el.querySelectorAll('button')].some((b) => b.textContent?.includes('New application')),
+      ).toBe(false);
+      click(el, 'Restore project');
+      await settle(fixture);
+      expect1('/projects/prj_1/restore', 'POST').flush(ok(payments));
+      await renderReload(fixture);
+      expect(el.textContent).not.toContain('This Project is archived');
+    });
+
+    async function renderReload(fixture: ComponentFixture<unknown>) {
+      await settle(fixture);
+      expect1('/projects/prj_1').flush(ok(payments));
+      await settle(fixture);
+      expect1('/teams').flush(page(teams));
+      expect1('/projects/prj_1/applications?limit=100').flush(page([application]));
+      expect1('/workspaces/wsp_1/environments').flush(page(environments));
+      await settle(fixture);
+      expect1('/environments/env_stg/targets').flush(page([]));
+      expect1('/applications/app_1/placements').flush(ok([]));
+      await settle(fixture);
+    }
+
+    it('says when the Project did not load', async () => {
+      const { fixture, el } = render(ProjectPage, { id: 'prj_1' });
+      await settle(fixture);
+      expect1('/projects/prj_1').flush(
+        { detail: 'not found' },
+        { status: 404, statusText: 'Not Found' },
+      );
+      await settle(fixture);
+      expect(el.querySelector('[role="alert"]')?.textContent).toContain("The Project didn't load");
+      expect(el.textContent).not.toContain('Loading the Project');
+    });
+  });
+
+  describe('the Edit project page', () => {
     async function renderProject(
       project: typeof payments | typeof legacy = payments,
       resolved: object = {
@@ -267,12 +356,11 @@ describe('project pages', () => {
       },
       stored: object[] = [],
     ) {
-      const rendered = render(ProjectPage, { id: 'prj_1' });
+      const rendered = render(ProjectEditPage, { id: 'prj_1' });
       await settle(rendered.fixture);
       expect1('/projects/prj_1').flush(ok({ ...project, id: 'prj_1' }));
       await settle(rendered.fixture);
       expect1('/teams').flush(page(teams));
-      expect1('/projects/prj_1/applications?limit=100').flush(page([application]));
       expect1('/workspaces/wsp_1/lifecycles').flush(page(lifecycles));
       expect1(`/settings/delivery.default_lifecycle/resolved?${scope}`).flush(ok(resolved));
       expect1(`/settings?${scope}`).flush(ok(stored));
@@ -286,7 +374,6 @@ describe('project pages', () => {
       expect1('/projects/prj_1').flush(ok(project));
       await settle(fixture);
       expect1('/teams').flush(page(teams));
-      expect1('/projects/prj_1/applications?limit=100').flush(page([application]));
       expect1('/workspaces/wsp_1/lifecycles').flush(page(lifecycles));
       expect1(`/settings/delivery.default_lifecycle/resolved?${scope}`).flush(
         ok({
@@ -301,13 +388,15 @@ describe('project pages', () => {
       await settle(fixture);
     }
 
-    it('shows the Project, its Applications, and where its default Lifecycle comes from', async () => {
+    it('shows the details to edit, and where the default Lifecycle comes from', async () => {
       const { el } = await renderProject();
-      expect(el.querySelector('h1')?.textContent).toContain('Payments');
-      expect(el.textContent).toContain('Owned by Payments');
-      expect(el.textContent).toContain('Taking money');
-      const app = el.querySelector('section[aria-labelledby="applications-heading"] li');
-      expect(app?.textContent?.replace(/\s+/g, ' ')).toContain('payments-api Owned by Core');
+      expect(el.querySelector('h1')?.textContent).toContain('Edit project');
+      const crumbs = [...el.querySelectorAll('nav[aria-label="Breadcrumb"] a')];
+      expect(crumbs.map((a) => a.getAttribute('href'))).toEqual(['/projects', '/projects/prj_1']);
+      expect(el.querySelector<HTMLInputElement>('#details-name')?.value).toBe('Payments');
+      expect(el.querySelector<HTMLTextAreaElement>('#details-description')?.value).toBe(
+        'Taking money',
+      );
       expect(el.textContent?.replace(/\s+/g, ' ')).toContain(
         'follow Standard. Set on the Workspace.',
       );
@@ -417,7 +506,7 @@ describe('project pages', () => {
     });
 
     it('says when the Project did not load', async () => {
-      const { fixture, el } = render(ProjectPage, { id: 'prj_1' });
+      const { fixture, el } = render(ProjectEditPage, { id: 'prj_1' });
       await settle(fixture);
       expect1('/projects/prj_1').flush(
         { detail: 'not found' },
@@ -426,14 +515,6 @@ describe('project pages', () => {
       await settle(fixture);
       expect(el.querySelector('[role="alert"]')?.textContent).toContain("The Project didn't load");
       expect(el.textContent).not.toContain('Loading the Project');
-    });
-
-    it('opens a new Application in this Project', async () => {
-      const { el } = await renderProject();
-      click(el, 'New application');
-      expect(navigate).toHaveBeenCalledWith(['/applications/new'], {
-        queryParams: { project: 'prj_1' },
-      });
     });
   });
 });

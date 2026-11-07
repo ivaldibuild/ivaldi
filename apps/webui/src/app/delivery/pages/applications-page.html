@@ -10,14 +10,10 @@
     </ng-container>
   </app-page-header>
 
-  <div hlmAlert role="note">
-    <ng-icon name="lucideInfo" aria-hidden="true" />
-    <h2 hlmAlertTitle>Placements, not versions yet</h2>
-    <p hlmAlertDescription>
-      Each cell lists the Targets an Application is placed on. Ivaldi records Releases but not
-      Deployments yet, so it can't say which version runs there.
-    </p>
-  </div>
+  <p class="text-foreground max-w-205 text-base leading-relaxed">
+    Each cell shows the version deployed to each Target an Application is placed on, by Environment.
+    An Application's page has the status of each Deployment.
+  </p>
 
   @if (failure(); as message) {
     <div hlmAlert variant="destructive" role="alert">

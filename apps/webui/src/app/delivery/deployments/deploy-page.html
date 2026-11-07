@@ -1,0 +1,245 @@
+@if (failure(); as message) {
+  <div hlmAlert variant="destructive" role="alert">
+    <h2 hlmAlertTitle>The Release didn't load</h2>
+    <p hlmAlertDescription>{{ message }}</p>
+  </div>
+} @else if (!release()) {
+  <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+    <hlm-spinner aria-hidden="true" /> Loading the Release…
+  </p>
+} @else {
+  <div class="flex flex-col gap-8">
+    <app-page-header
+      [heading]="'Deploy ' + release()!.version"
+      [crumbs]="[
+        { label: 'Projects', link: '/projects' },
+        {
+          label: project()?.display_name ?? 'Project',
+          link: ['/projects', application()!.project_id],
+        },
+        { label: application()!.display_name, link: ['/applications', application()!.id] },
+        { label: release()!.version, link: ['/releases', release()!.id] },
+      ]"
+    />
+
+    @if (deployed().length > 0) {
+      <div hlmAlert role="status">
+        <ng-icon name="lucideRocket" aria-hidden="true" />
+        <h2 hlmAlertTitle>
+          {{ release()!.version }} is on its way to {{ deployed().length }} Targets
+        </h2>
+        <div hlmAlertDescription>
+          <ul class="mt-2 flex flex-col gap-2">
+            @for (deployment of deployed(); track deployment.id) {
+              <li class="flex flex-wrap items-center gap-3">
+                <a [routerLink]="['/deployments', deployment.id]">{{
+                  targetName(deployment.target_id)
+                }}</a>
+                <app-deployment-status [status]="deployment.status" />
+              </li>
+            }
+          </ul>
+        </div>
+      </div>
+    }
+
+    @if (!published()) {
+      <div hlmAlert variant="destructive" role="alert">
+        <h2 hlmAlertTitle>Only a published Release can be deployed</h2>
+        <p hlmAlertDescription>
+          {{ release()!.version }} is {{ release()!.status }}.
+          <a [routerLink]="['/releases', release()!.id]">Go to the Release</a>
+        </p>
+      </div>
+    } @else if (groups().length === 0) {
+      <section class="border-border flex flex-col items-start gap-3 border p-6">
+        <h2 class="text-heading text-lg font-semibold">Not placed on any Target</h2>
+        <p class="text-muted-foreground text-sm">
+          A Release deploys to the Targets its Application is placed on.
+        </p>
+        <a hlmBtn [routerLink]="['/applications', application()!.id]">Place the Application</a>
+      </section>
+    } @else {
+      <div class="grid items-start gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+        <fieldset class="flex flex-col gap-5">
+          <legend class="text-heading mb-4 text-lg font-semibold">Where to deploy</legend>
+          @for (group of groups(); track group.environment.id) {
+            <div class="flex flex-col gap-2">
+              <div class="flex flex-wrap items-baseline gap-x-2">
+                <span class="text-heading font-semibold">{{ group.environment.display_name }}</span>
+                @if (!group.environment.execution_enabled) {
+                  <span class="text-muted-foreground text-[13px]">Doesn't run Deployments</span>
+                } @else if (!group.inLifecycle) {
+                  <span class="text-muted-foreground text-[13px]"
+                    >Not in this Release’s Lifecycle</span
+                  >
+                }
+              </div>
+              <ul class="border-border flex flex-col border">
+                @for (item of group.targets; track item.target.id) {
+                  <li class="border-border border-b last:border-b-0">
+                    <label
+                      class="hover:bg-muted/40 flex cursor-pointer items-start gap-3 px-4 py-3"
+                    >
+                      <input
+                        type="checkbox"
+                        class="accent-primary mt-1 size-4"
+                        [checked]="isSelected(item.target.id)"
+                        (change)="toggle(item.target, $event)"
+                      />
+                      <span class="flex min-w-0 flex-col">
+                        <span class="text-heading font-semibold">{{
+                          item.target.display_name
+                        }}</span>
+                        <span class="text-muted-foreground text-[13px]">
+                          @if (item.current) {
+                            Runs {{ item.current }}
+                          } @else {
+                            Nothing deployed yet
+                          }
+                          @if (!item.target.agent_principal_id) {
+                            · no runtime agent
+                          }
+                        </span>
+                      </span>
+                    </label>
+                  </li>
+                }
+              </ul>
+            </div>
+          }
+        </fieldset>
+
+        <section aria-labelledby="preview-heading" class="flex flex-col gap-4">
+          <h2 id="preview-heading" class="text-heading text-lg font-semibold">What will change</h2>
+          @if (chosen().length === 0) {
+            <p class="text-muted-foreground border-border border border-dashed p-6 text-sm">
+              Choose a Target to see what {{ release()!.version }} changes there and whether it can
+              deploy.
+            </p>
+          }
+          @for (item of chosen(); track item.target.id) {
+            <article
+              class="border-border flex flex-col gap-4 border p-5"
+              [attr.aria-label]="item.target.display_name"
+            >
+              <h3 class="text-heading font-semibold">{{ item.target.display_name }}</h3>
+              @switch (item.preview.state) {
+                @case ('loading') {
+                  <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+                    <hlm-spinner aria-hidden="true" /> Checking…
+                  </p>
+                }
+                @case ('error') {
+                  @if (item.preview.state === 'error') {
+                    <p class="text-destructive-text text-sm" role="alert">
+                      {{ item.preview.message }}
+                    </p>
+                  }
+                }
+                @case ('ready') {
+                  @if (item.preview.state === 'ready') {
+                    <table class="w-full border-collapse text-sm">
+                      <thead>
+                        <tr class="text-muted-foreground text-left">
+                          <th scope="col" class="border-border border-b py-2 pr-4 font-semibold">
+                            Artifact
+                          </th>
+                          <th scope="col" class="border-border border-b py-2 pr-4 font-semibold">
+                            Now
+                          </th>
+                          <th scope="col" class="border-border border-b py-2 font-semibold">
+                            After
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (change of item.preview.changes.artifacts; track change.artifact_id) {
+                          <tr>
+                            <th scope="row" class="border-border border-b py-2 pr-4 text-left">
+                              {{ change.artifact_name }}
+                            </th>
+                            <td class="border-border text-muted-foreground border-b py-2 pr-4">
+                              <code>{{ buildLabel(change.previous) }}</code>
+                            </td>
+                            <td class="border-border border-b py-2">
+                              <code class="text-heading">{{ buildLabel(change.next) }}</code>
+                              @if (sameBuild(change)) {
+                                <span class="text-muted-foreground"> · unchanged</span>
+                              }
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                    <ul class="flex flex-col gap-1.5 text-sm" aria-label="Checks">
+                      @for (check of item.preview.changes.checks; track check.name) {
+                        <li class="flex items-start gap-2">
+                          @if (check.ok) {
+                            <ng-icon
+                              name="lucideCheck"
+                              class="mt-0.5 shrink-0"
+                              aria-hidden="true"
+                            />
+                            <span>{{ checkLabel(check) }}</span>
+                          } @else {
+                            <ng-icon
+                              name="lucideX"
+                              class="text-destructive-text mt-0.5 shrink-0"
+                              aria-hidden="true"
+                            />
+                            <span>
+                              <span class="sr-only">Failed: </span>{{ checkLabel(check) }}
+                              <span class="text-muted-foreground block text-[13px]">{{
+                                check.reason
+                              }}</span>
+                            </span>
+                          }
+                        </li>
+                      }
+                    </ul>
+                  }
+                }
+              }
+            </article>
+          }
+        </section>
+      </div>
+
+      @if (status.error(); as message) {
+        <div hlmAlert variant="destructive" role="alert">
+          <h2 hlmAlertTitle>Nothing was deployed</h2>
+          <p hlmAlertDescription>{{ message }}</p>
+        </div>
+      }
+
+      <div class="border-border flex flex-wrap items-center gap-4 border-t pt-6">
+        <button
+          hlmBtn
+          size="lg"
+          type="button"
+          [disabled]="selected().length === 0 || blocked() || status.saving()"
+          (click)="deploy()"
+        >
+          @if (status.saving()) {
+            <hlm-spinner aria-hidden="true" /> Deploying…
+          } @else {
+            <ng-icon name="lucideRocket" aria-hidden="true" />
+            {{
+              selected().length > 1
+                ? 'Deploy to ' + selected().length + ' Targets'
+                : 'Deploy ' + release()!.version
+            }}
+          }
+        </button>
+        <p class="text-muted-foreground text-sm">
+          @if (blocked() && selected().length > 0) {
+            Every chosen Target must pass its checks.
+          } @else {
+            Policy can make a Deployment wait for a person’s approval, such as to production.
+          }
+        </p>
+      </div>
+    }
+  </div>
+}

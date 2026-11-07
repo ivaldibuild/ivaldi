@@ -67,6 +67,16 @@
                     [routerLink]="['/releases', release.id]"
                     >{{ release.version }}</a
                   >
+                  @if (release.status === 'published') {
+                    <a
+                      hlmBtn
+                      variant="outline"
+                      size="sm"
+                      [routerLink]="['/releases', release.id, 'deploy']"
+                      [attr.aria-label]="'Deploy ' + release.version"
+                      >Deploy</a
+                    >
+                  }
                   @if (release.status === 'draft') {
                     <span hlmBadge variant="outline" class="border-dashed">Draft</span>
                   } @else if (release.status === 'withdrawn') {

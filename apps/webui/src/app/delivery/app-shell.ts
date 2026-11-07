@@ -92,7 +92,7 @@ export class AppShell {
           path: '/projects',
           label: 'Projects',
           icon: 'lucideFolder',
-          within: ['/applications', '/releases'],
+          within: ['/applications', '/releases', '/deployments'],
         },
         { path: '/environments', label: 'Environments', icon: 'lucideLayers' },
         { path: '/lifecycles', label: 'Lifecycles', icon: 'lucideGitBranch' },

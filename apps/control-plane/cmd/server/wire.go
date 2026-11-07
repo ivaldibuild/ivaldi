@@ -10,6 +10,8 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/api"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/audit"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/config"
+	deliverypg "github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/postgres"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/enrollment"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/hasher"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/apitokens"
@@ -26,6 +28,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/serviceaccounts"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/signin"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/token"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/workloadauth"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/orchestration/agents"
 	orchestrationpg "github.com/ivaldibuild/ivaldi-control-plane/internal/orchestration/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/outbox"
@@ -64,6 +67,8 @@ type app struct {
 	provisioner iam.OrganizationProvisioner
 	keys        token.KeyRing
 	verifier    identity.Verifier
+	// kubernetes verifies projected service-account tokens for workloads.
+	kubernetes workloadauth.KubernetesVerifier
 	// services serve the API's operations; root.go builds its routes from them.
 	services services
 	handlers []api.Handlers
@@ -138,7 +143,17 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 	// API tokens, which service accounts such as CI use, are checked against
 	// the database; every other bearer token is an access token, verified
 	// offline.
-	a.verifier, err = apitokens.NewVerifier(iampg.NewAPITokenRepository(db), iampg.NewPrincipalRepository(db), accessTokens)
+	apiTokensVerifier, err := apitokens.NewVerifier(iampg.NewAPITokenRepository(db), iampg.NewPrincipalRepository(db), accessTokens)
+	if err != nil {
+		return nil, nil, err
+	}
+	a.kubernetes, err = workloadauth.NewKubernetesVerifier(
+		cfg.Runners.KubernetesIssuers, cfg.Runners.KubernetesAudience, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	a.verifier, err = workloadauth.NewVerifier(
+		iampg.NewWorkloadCredentialRepository(db), iampg.NewWorkloadRepository(db), a.kubernetes, apiTokensVerifier)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -232,6 +247,9 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 		return nil, nil, err
 	}
 	if err := a.wireServiceAccounts(); err != nil {
+		return nil, nil, err
+	}
+	if err := a.wireEnrollment(cfg.Runners); err != nil {
 		return nil, nil, err
 	}
 
@@ -345,6 +363,30 @@ func (a *app) wireServiceAccounts() error {
 		return err
 	}
 	a.services.serviceAccounts = svc
+	return nil
+}
+
+// wireEnrollment serves Target enrolment and workload credential renewal.
+func (a *app) wireEnrollment(runners config.Runners) error {
+	svc, err := enrollment.NewService(
+		enrollment.WithWorkloadRepo(iampg.NewWorkloadRepository(a.db)),
+		enrollment.WithEnrollmentTokenRepo(iampg.NewWorkloadEnrollmentTokenRepository(a.db)),
+		enrollment.WithCredentialRepo(iampg.NewWorkloadCredentialRepository(a.db)),
+		enrollment.WithPrincipalRepo(iampg.NewPrincipalRepository(a.db)),
+		enrollment.WithTargets(deliverypg.NewTargetRepository(a.db)),
+		enrollment.WithEnvironments(deliverypg.NewEnvironmentRepository(a.db)),
+		enrollment.WithKubernetesVerifier(a.kubernetes),
+		enrollment.WithAuthorizer(a.authz),
+		enrollment.WithTransactor(a.tx),
+		enrollment.WithOutboxRecorder(a.outbox),
+		enrollment.WithAuditRecorder(a.audit),
+		enrollment.WithEnrollmentTokenTTL(runners.EnrollmentTokenTTL),
+		enrollment.WithCredentialTTL(runners.WorkloadCredentialTTL),
+	)
+	if err != nil {
+		return err
+	}
+	a.services.enrollment = svc
 	return nil
 }
 

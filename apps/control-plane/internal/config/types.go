@@ -82,10 +82,12 @@ type Persistence struct {
 	MigrateOnStart bool `yaml:"migrate_on_start" env:"IVALDI_DATABASE_MIGRATE_ON_START" envDefault:"false"`
 }
 
-// TLS is a certificate and key for a listener, as PEM files.
+// TLS is a certificate and key for a listener, as PEM files. ClientCAFile
+// enables optional client-certificate authentication for workloads.
 type TLS struct {
-	CertFile string `yaml:"cert_file" env:"IVALDI_TLS_CERT_FILE"`
-	KeyFile  string `yaml:"key_file" env:"IVALDI_TLS_KEY_FILE"`
+	CertFile     string `yaml:"cert_file" env:"IVALDI_TLS_CERT_FILE"`
+	KeyFile      string `yaml:"key_file" env:"IVALDI_TLS_KEY_FILE"`
+	ClientCAFile string `yaml:"client_ca_file" env:"IVALDI_TLS_CLIENT_CA_FILE"`
 }
 
 // Runners configures the endpoint data-plane runners (workers, indexers,
@@ -110,6 +112,11 @@ type Runners struct {
 	// HeartbeatInterval is how often a connected runner must report in;
 	// one silent for three intervals is treated as offline.
 	HeartbeatInterval time.Duration `yaml:"heartbeat_interval" env:"IVALDI_RUNNER_HEARTBEAT_INTERVAL" envDefault:"30s"`
+	// KubernetesIssuers are the OIDC issuers whose projected service-account
+	// tokens Ivaldi accepts. Empty disables that credential kind.
+	KubernetesIssuers []string `yaml:"kubernetes_issuers" env:"IVALDI_RUNNER_KUBERNETES_ISSUERS"`
+	// KubernetesAudience is the audience a projected token must contain.
+	KubernetesAudience string `yaml:"kubernetes_audience" env:"IVALDI_RUNNER_KUBERNETES_AUDIENCE" envDefault:"ivaldi"`
 }
 
 // Auth configures the control plane as the OAuth 2.1 authorization server

@@ -7,11 +7,16 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -102,6 +107,20 @@ func New(cfg *config.Config, version string, logger logging.Logger, opts ...Opti
 	if (cfg.TLS.CertFile == "") != (cfg.TLS.KeyFile == "") {
 		return nil, errors.New("api: TLS needs both a certificate and a key file")
 	}
+	var clientCAs *x509.CertPool
+	if cfg.TLS.ClientCAFile != "" {
+		if cfg.TLS.CertFile == "" {
+			return nil, errors.New("api: a client CA needs TLS on the listener")
+		}
+		pem, err := os.ReadFile(cfg.TLS.ClientCAFile)
+		if err != nil {
+			return nil, fmt.Errorf("api: read client CA: %w", err)
+		}
+		clientCAs = x509.NewCertPool()
+		if !clientCAs.AppendCertsFromPEM(pem) {
+			return nil, errors.New("api: client CA file has no PEM certificates")
+		}
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -140,17 +159,25 @@ func New(cfg *config.Config, version string, logger logging.Logger, opts ...Opti
 		return nil, fmt.Errorf("api: operations must require an access token or be marked api.Public: %s", strings.Join(open, ", "))
 	}
 
-	return &Server{
+	srv := &Server{
 		http: &http.Server{
 			Addr:              net.JoinHostPort(cfg.Host, strconv.Itoa(*cfg.Port)),
-			Handler:           recoverPanics(logger, cors(cfg.AllowedOrigins, mux)),
+			Handler:           recoverPanics(logger, cors(cfg.AllowedOrigins, withClientCertificate(mux))),
 			ReadHeaderTimeout: 10 * time.Second,
 		},
 		openapi: hapi.OpenAPI(),
 		logger:  logger,
 		tls:     cfg.TLS,
 		timeout: cfg.ShutdownTimeout,
-	}, nil
+	}
+	if clientCAs != nil {
+		srv.http.TLSConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			ClientAuth: tls.VerifyClientCertIfGiven,
+			ClientCAs:  clientCAs,
+		}
+	}
+	return srv, nil
 }
 
 // OpenAPI returns the API's description.
@@ -210,12 +237,12 @@ func authenticate(api huma.API, v identity.Verifier, logger logging.Logger, meta
 			_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "authentication is not available")
 			return
 		}
-		token, ok := bearerToken(ctx.Header("Authorization"))
+		credential, ok := requestCredential(ctx)
 		if !ok {
-			refuse(ctx, challenge, "an access token is required")
+			refuse(ctx, challenge, "a credential is required")
 			return
 		}
-		claims, err := v.Verify(ctx.Context(), token)
+		claims, err := v.Verify(ctx.Context(), credential)
 		switch {
 		case errors.Is(err, identity.ErrTokenExpired):
 			refuse(ctx, challenge+`, error="invalid_token", error_description="the access token expired"`, "the access token expired")
@@ -230,6 +257,22 @@ func authenticate(api huma.API, v identity.Verifier, logger logging.Logger, meta
 		}
 		next(huma.WithContext(ctx, identity.WithCaller(ctx.Context(), identity.CallerOf(claims))))
 	}
+}
+
+// requestCredential returns the credential the authenticator verifies: a
+// bearer token when present, otherwise a verified client certificate.
+func requestCredential(ctx huma.Context) (string, bool) {
+	if token, ok := bearerToken(ctx.Header("Authorization")); ok {
+		if strings.EqualFold(ctx.Header("X-Ivaldi-Credential"), "kubernetes") {
+			return identity.KubernetesCredential(token), true
+		}
+		return token, true
+	}
+	if cert := ClientCertificate(ctx.Context()); cert != nil {
+		sum := sha256.Sum256(cert.Raw)
+		return identity.MTLSCredential(hex.EncodeToString(sum[:]), cert.NotAfter), true
+	}
+	return "", false
 }
 
 // bearerToken returns the token from an Authorization header (RFC 6750).

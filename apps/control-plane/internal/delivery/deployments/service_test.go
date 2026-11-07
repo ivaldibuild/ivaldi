@@ -130,6 +130,19 @@ func (f fakeTargets) GetTarget(_ context.Context, organizationID, targetID strin
 	return t, nil
 }
 
+func (f fakeTargets) GetTargetForUpdate(ctx context.Context, organizationID, targetID string) (*delivery.Target, error) {
+	return f.GetTarget(ctx, organizationID, targetID)
+}
+
+func (f fakeTargets) GetTargetByAgentPrincipalID(_ context.Context, organizationID, principalID string) (*delivery.Target, error) {
+	for _, t := range f.targets {
+		if t.OrganizationID() == organizationID && t.AgentPrincipalID() != nil && *t.AgentPrincipalID() == principalID && !t.Archived() {
+			return t, nil
+		}
+	}
+	return nil, delivery.ErrNotFound
+}
+
 func (f fakeTargets) UpdateTarget(_ context.Context, t *delivery.Target) error {
 	f.targets[t.ID()] = t
 	return nil

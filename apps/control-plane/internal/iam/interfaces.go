@@ -61,6 +61,39 @@ type APITokenRepository interface {
 	ListByPrincipal(ctx context.Context, organizationID, principalID string) ([]*APIToken, error)
 }
 
+// WorkloadRepository stores enrolled data-plane workloads.
+type WorkloadRepository interface {
+	Get(ctx context.Context, organizationID, principalID string) (*Workload, error)
+	// Write inserts the workload and its principal, or updates them when the
+	// principal ID is stored. It updates the principal's status and the
+	// workload's last-seen time.
+	Write(ctx context.Context, w *Workload) error
+}
+
+// WorkloadEnrollmentTokenRepository stores single-use enrolment tokens.
+type WorkloadEnrollmentTokenRepository interface {
+	Write(ctx context.Context, t *WorkloadEnrollmentToken) error
+	// GetByHashForUpdate locks the token until the transaction ends.
+	GetByHashForUpdate(ctx context.Context, hash []byte) (*WorkloadEnrollmentToken, error)
+}
+
+// WorkloadCredentialRepository stores how enrolled workloads authenticate.
+type WorkloadCredentialRepository interface {
+	Write(ctx context.Context, c *WorkloadCredential) error
+	Get(ctx context.Context, organizationID, credentialID string) (*WorkloadCredential, error)
+	// GetBySecretHash finds a bearer credential by the hash of its token, in
+	// any Organization: authenticating a request is how the Organization is
+	// learned.
+	GetBySecretHash(ctx context.Context, hash []byte) (*WorkloadCredential, error)
+	// GetByKindAndIdentifier finds the live certificate or
+	// Kubernetes-service-account credential with the identifier.
+	GetByKindAndIdentifier(ctx context.Context, kind WorkloadCredentialKind, identifier string) (*WorkloadCredential, error)
+	// ListActiveByIdentity returns the Organization's credentials of a kind
+	// whose identifier matches and that are not revoked.
+	ListActiveByIdentity(ctx context.Context, organizationID string, kind WorkloadCredentialKind, identifier string) ([]*WorkloadCredential, error)
+	ListByPrincipal(ctx context.Context, organizationID, principalID string) ([]*WorkloadCredential, error)
+}
+
 // ServiceAccountService manages service accounts, the non-human principals
 // CI and other integrations act as, and their API tokens. Roles are granted
 // to service accounts like to anyone, through the GrantService. Admins and

@@ -1,20 +1,36 @@
 package identity
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Caller is who made a request, as its verified token says: the Actor, the
-// Organization it acts in, and the client and scopes the token was issued
-// for. Authentication middleware puts it in the request's context.
+// Organization it acts in, the client and scopes the token was issued for,
+// and, for a workload credential, the credential and its expiry.
+// Authentication middleware puts it in the request's context.
 type Caller struct {
 	Actor          Actor
 	OrganizationID string
 	ClientID       string
 	Scopes         []string
+	// CredentialID names the credential that authenticated a workload.
+	CredentialID string
+	// CredentialExpiresAt is when that credential stops being valid.
+	CredentialExpiresAt time.Time
 }
 
-// CallerOf returns the Caller a token's claims describe.
+// CallerOf returns the Caller a token's claims describe. Only a workload's
+// caller carries a workload credential ID and expiry.
 func CallerOf(c *Claims) Caller {
-	return Caller{Actor: c.Actor(), OrganizationID: c.OrganizationID, ClientID: c.ClientID, Scopes: c.Scopes}
+	caller := Caller{
+		Actor: c.Actor(), OrganizationID: c.OrganizationID, ClientID: c.ClientID, Scopes: c.Scopes,
+	}
+	if caller.Actor.Kind == ActorWorkload {
+		caller.CredentialID = c.ID
+		caller.CredentialExpiresAt = c.ExpiresAt
+	}
+	return caller
 }
 
 type callerKey struct{}

@@ -2,6 +2,10 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -312,4 +316,45 @@ func TestInternalErrorLogsAndHidesTheCause(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 	assert.NotContains(t, rec.Body.String(), "secret_table")
 	logger.AssertExpectations(t)
+}
+
+type recordingVerifier struct{ credential string }
+
+func (v *recordingVerifier) Verify(_ context.Context, credential string) (*identity.Claims, error) {
+	v.credential = credential
+	return &identity.Claims{Subject: "prn_agent", OrganizationID: "org_acme", Kind: identity.ActorWorkload}, nil
+}
+
+func TestServerVerifiesWorkloadCredentials(t *testing.T) {
+	expiry := time.Date(2026, 11, 7, 18, 0, 0, 0, time.UTC)
+	cert := &x509.Certificate{Raw: []byte("certificate"), NotAfter: expiry}
+	sum := sha256.Sum256(cert.Raw)
+
+	v := &recordingVerifier{}
+	s, err := New(testConfig(), "test", logging.NewMockLogger(), WithRoutes(fakeRoutes{}), WithVerifier(v))
+	require.NoError(t, err)
+	call := func(withCert, withBearer, kubernetes bool) {
+		req := httptest.NewRequest(http.MethodGet, "/v1/secret", nil)
+		if withCert {
+			req.TLS = &tls.ConnectionState{PeerCertificates: []*x509.Certificate{cert}}
+		}
+		if withBearer {
+			req.Header.Set("Authorization", "Bearer projected")
+		}
+		if kubernetes {
+			req.Header.Set("X-Ivaldi-Credential", "kubernetes")
+		}
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	call(true, false, false)
+	assert.Equal(t, identity.MTLSCredential(hex.EncodeToString(sum[:]), expiry), v.credential)
+
+	call(false, true, true)
+	assert.Equal(t, identity.KubernetesCredential("projected"), v.credential)
+
+	call(true, true, false)
+	assert.Equal(t, "projected", v.credential, "an explicit bearer token wins over a client certificate")
 }

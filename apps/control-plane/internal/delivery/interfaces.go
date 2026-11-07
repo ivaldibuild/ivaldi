@@ -94,6 +94,12 @@ type ListTargetsQuery struct {
 type TargetRepository interface {
 	CreateTarget(ctx context.Context, t *Target) error
 	GetTarget(ctx context.Context, organizationID, targetID string) (*Target, error)
+	// GetTargetForUpdate is GetTarget that also locks the row until the
+	// transaction ends.
+	GetTargetForUpdate(ctx context.Context, organizationID, targetID string) (*Target, error)
+	// GetTargetByAgentPrincipalID returns the active Target the workload
+	// principal serves.
+	GetTargetByAgentPrincipalID(ctx context.Context, organizationID, principalID string) (*Target, error)
 	GetTargetBySlug(ctx context.Context, organizationID, environmentID, slug string) (*Target, error)
 	ListTargets(ctx context.Context, query ListTargetsQuery) (*pagination.Result[*Target], error)
 	UpdateTarget(ctx context.Context, t *Target) error

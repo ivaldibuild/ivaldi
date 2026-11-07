@@ -187,6 +187,19 @@ func (s *store) GetTarget(_ context.Context, organizationID, id string) (*delive
 	return rebuildTarget(snap), nil
 }
 
+func (s *store) GetTargetForUpdate(ctx context.Context, organizationID, id string) (*delivery.Target, error) {
+	return s.GetTarget(ctx, organizationID, id)
+}
+
+func (s *store) GetTargetByAgentPrincipalID(_ context.Context, organizationID, principalID string) (*delivery.Target, error) {
+	for _, snap := range s.targets {
+		if snap.OrganizationID == organizationID && snap.AgentPrincipalID != nil && *snap.AgentPrincipalID == principalID && snap.DeletedAt == nil {
+			return rebuildTarget(snap), nil
+		}
+	}
+	return nil, delivery.ErrNotFound
+}
+
 func (s *store) GetTargetBySlug(_ context.Context, organizationID, environmentID, slug string) (*delivery.Target, error) {
 	for _, snap := range s.targets {
 		if snap.OrganizationID == organizationID && snap.EnvironmentID == environmentID && snap.Slug == slug && snap.DeletedAt == nil {

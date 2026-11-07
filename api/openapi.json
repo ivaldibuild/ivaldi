@@ -177,6 +177,44 @@
         ],
         "type": "object"
       },
+      "AgentStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_principal_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "component": {
+            "type": "string"
+          },
+          "credential_expires_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "credential_kind": {
+            "nullable": true,
+            "type": "string"
+          },
+          "last_seen_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_principal_id",
+          "component",
+          "credential_kind",
+          "credential_expires_at",
+          "status",
+          "last_seen_at"
+        ],
+        "type": "object"
+      },
       "AgentSummary": {
         "additionalProperties": false,
         "properties": {
@@ -1303,6 +1341,31 @@
         ],
         "type": "object"
       },
+      "CreateRequestBody1": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/CreateRequestBody1.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "method": {
+            "description": "How the agent will authenticate",
+            "enum": [
+              "bearer",
+              "mtls",
+              "kubernetes"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "method"
+        ],
+        "type": "object"
+      },
       "CreateTargetRequestBody": {
         "additionalProperties": false,
         "properties": {
@@ -1915,6 +1978,35 @@
           "name",
           "source",
           "team_id"
+        ],
+        "type": "object"
+      },
+      "IssuedEnrolment": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "pool": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_id",
+          "method",
+          "token",
+          "pool",
+          "expires_at"
         ],
         "type": "object"
       },
@@ -2690,6 +2782,70 @@
         ],
         "type": "object"
       },
+      "RedeemRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/RedeemRequestBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "kubernetes_token": {
+            "description": "The projected service-account token, for kubernetes",
+            "type": "string"
+          },
+          "method": {
+            "description": "How the agent will authenticate",
+            "enum": [
+              "bearer",
+              "mtls",
+              "kubernetes"
+            ],
+            "type": "string"
+          },
+          "token": {
+            "description": "The single-use enrolment token",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "method"
+        ],
+        "type": "object"
+      },
+      "Redeemed": {
+        "additionalProperties": false,
+        "properties": {
+          "credential_id": {
+            "type": "string"
+          },
+          "credential_kind": {
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "workload_principal_id": {
+            "type": "string"
+          },
+          "workload_token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "workload_principal_id",
+          "credential_id",
+          "credential_kind",
+          "expires_at"
+        ],
+        "type": "object"
+      },
       "RegistrySnapshot": {
         "additionalProperties": false,
         "properties": {
@@ -3001,6 +3157,50 @@
         ],
         "type": "object"
       },
+      "RenewRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/RenewRequestBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Renewed": {
+        "additionalProperties": false,
+        "properties": {
+          "credential_id": {
+            "type": "string"
+          },
+          "credential_kind": {
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "previous_expires_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "workload_token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "credential_id",
+          "credential_kind",
+          "expires_at",
+          "previous_expires_at"
+        ],
+        "type": "object"
+      },
       "ReportDeploymentRequestBody": {
         "additionalProperties": false,
         "properties": {
@@ -3182,6 +3382,35 @@
           },
           "data": {
             "$ref": "#/components/schemas/AgentInTeam",
+            "description": "Response payload, always present: an empty list is [], not omitted"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ResponseAgentStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseAgentStatus.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AgentStatus",
             "description": "Response payload, always present: an empty list is [], not omitted"
           },
           "message": {
@@ -3414,6 +3643,35 @@
           },
           "data": {
             "$ref": "#/components/schemas/Grant",
+            "description": "Response payload, always present: an empty list is [], not omitted"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ResponseIssuedEnrolment": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseIssuedEnrolment.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/IssuedEnrolment",
             "description": "Response payload, always present: an empty list is [], not omitted"
           },
           "message": {
@@ -3957,6 +4215,35 @@
         ],
         "type": "object"
       },
+      "ResponseRedeemed": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseRedeemed.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Redeemed",
+            "description": "Response payload, always present: an empty list is [], not omitted"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
       "ResponseRegistrySnapshot": {
         "additionalProperties": false,
         "properties": {
@@ -4027,6 +4314,35 @@
           },
           "data": {
             "$ref": "#/components/schemas/ReleaseChanges",
+            "description": "Response payload, always present: an empty list is [], not omitted"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ResponseRenewed": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseRenewed.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Renewed",
             "description": "Response payload, always present: an empty list is [], not omitted"
           },
           "message": {
@@ -5972,6 +6288,93 @@
   },
   "openapi": "3.0.3",
   "paths": {
+    "/v1/agent/credentials/renew": {
+      "post": {
+        "operationId": "renew-workload-credential",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenewRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseRenewed"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Renew the credential that authenticated the workload",
+        "tags": [
+          "enrolment"
+        ]
+      }
+    },
+    "/v1/agent/enrolments/redeem": {
+      "post": {
+        "operationId": "redeem-target-enrolment",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RedeemRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseRedeemed"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Redeem a Target enrolment token for a workload credential",
+        "tags": [
+          "enrolment"
+        ]
+      }
+    },
     "/v1/agents": {
       "get": {
         "operationId": "list-agents",
@@ -11817,6 +12220,52 @@
       }
     },
     "/v1/targets/{target_id}/agent": {
+      "get": {
+        "operationId": "get-target-agent",
+        "parameters": [
+          {
+            "description": "The Target",
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "description": "The Target",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseAgentStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get the Target's assigned agent and credential status",
+        "tags": [
+          "enrolment"
+        ]
+      },
       "put": {
         "operationId": "assign-target-agent",
         "parameters": [
@@ -11967,6 +12416,64 @@
         "summary": "List the active Deployment assignments for the Target's agent",
         "tags": [
           "deployments"
+        ]
+      }
+    },
+    "/v1/targets/{target_id}/enrolments": {
+      "post": {
+        "operationId": "create-target-enrolment",
+        "parameters": [
+          {
+            "description": "The Target the agent will serve",
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "description": "The Target the agent will serve",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRequestBody1"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseIssuedEnrolment"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a single-use enrolment token for a Target's runtime agent",
+        "tags": [
+          "enrolment"
         ]
       }
     },

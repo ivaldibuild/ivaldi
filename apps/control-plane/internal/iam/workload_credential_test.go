@@ -162,6 +162,19 @@ func TestWorkloadCredentialGettersReturnCopies(t *testing.T) {
 	assert.Equal(t, t1, *c.RevokedAt())
 }
 
+func TestWorkloadCredentialBearerSnapshotKeepsSecret(t *testing.T) {
+	clock.Fix(t, t0)
+	props := wcrProps()
+	props.Kind = CredentialBearerToken
+	props.Identifier = "iwt_display"
+	props.SecretHash = testHash("iwt-secret")
+	c := wcrNew(t, props)
+
+	snap := c.Snapshot()
+	assert.Equal(t, testHash("iwt-secret"), snap.SecretHash)
+	assert.Nil(t, snap.ReplacedBy)
+}
+
 func TestWorkloadCredentialSnapshot(t *testing.T) {
 	clock.Fix(t, t0)
 	c := wcrNew(t, wcrProps())

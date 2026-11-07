@@ -11,6 +11,8 @@ const (
 	ActorUser           ActorKind = "user"
 	ActorServiceAccount ActorKind = "service_account"
 	ActorAgentSession   ActorKind = "agent_session"
+	// ActorWorkload is an enrolled data-plane component, such as a runtime agent.
+	ActorWorkload ActorKind = "workload"
 	// ActorSystem is Ivaldi itself, such as when provisioning a new Organization.
 	ActorSystem ActorKind = "system"
 )
@@ -33,3 +35,6 @@ func (a Actor) IsUser() bool { return a.Kind == ActorUser }
 
 // IsServiceAccount reports whether the actor is a service account.
 func (a Actor) IsServiceAccount() bool { return a.Kind == ActorServiceAccount }
+
+// IsWorkload reports whether the actor is an enrolled data-plane workload.
+func (a Actor) IsWorkload() bool { return a.Kind == ActorWorkload }

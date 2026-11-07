@@ -6,6 +6,7 @@ import (
 
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
+	"github.com/ivaldibuild/ivaldi/pkg/id"
 )
 
 // WorkloadEnrollmentToken lets one data-plane component enroll as a
@@ -16,6 +17,8 @@ type WorkloadEnrollmentToken struct {
 	organizationID       string
 	tokenHash            []byte
 	pool                 string
+	targetID             *string
+	credentialKind       WorkloadCredentialKind
 	createdByPrincipalID string
 	expiresAt            time.Time
 	usedAt               *time.Time
@@ -28,15 +31,17 @@ type WorkloadEnrollmentToken struct {
 // WorkloadEnrollmentToken events' contract. Its hash is left out of JSON, so
 // it never reaches an event.
 type WorkloadEnrollmentTokenSnapshot struct {
-	ID                   string     `json:"id"`
-	OrganizationID       string     `json:"organization_id"`
-	TokenHash            []byte     `json:"-"`
-	Pool                 string     `json:"pool"`
-	CreatedByPrincipalID string     `json:"created_by_principal_id"`
-	ExpiresAt            time.Time  `json:"expires_at"`
-	UsedAt               *time.Time `json:"used_at"`
-	UsedByPrincipalID    *string    `json:"used_by_principal_id"`
-	CreatedAt            time.Time  `json:"created_at"`
+	ID                   string                 `json:"id"`
+	OrganizationID       string                 `json:"organization_id"`
+	TokenHash            []byte                 `json:"-"`
+	Pool                 string                 `json:"pool"`
+	TargetID             *string                `json:"target_id"`
+	CredentialKind       WorkloadCredentialKind `json:"credential_kind"`
+	CreatedByPrincipalID string                 `json:"created_by_principal_id"`
+	ExpiresAt            time.Time              `json:"expires_at"`
+	UsedAt               *time.Time             `json:"used_at"`
+	UsedByPrincipalID    *string                `json:"used_by_principal_id"`
+	CreatedAt            time.Time              `json:"created_at"`
 }
 
 // NewWorkloadEnrollmentTokenProps describes a WorkloadEnrollmentToken. A
@@ -47,7 +52,11 @@ type NewWorkloadEnrollmentTokenProps struct {
 	// TokenHash is the SHA-256 hash of the token.
 	TokenHash []byte
 	// Pool is the pool the enrolled Workload joins.
-	Pool                 string
+	Pool string
+	// TargetID is the Target a runtime agent serves, when the token is for one.
+	TargetID *string
+	// CredentialKind is the credential the enrolled Workload will use.
+	CredentialKind       WorkloadCredentialKind
 	CreatedByPrincipalID string
 	ExpiresAt            time.Time
 	UsedAt               *time.Time
@@ -71,6 +80,17 @@ func NewWorkloadEnrollmentToken(props NewWorkloadEnrollmentTokenProps, tokenID *
 	if err := validateName("pool", props.Pool, maxPoolLength); err != nil {
 		return nil, err
 	}
+	if props.TargetID != nil && !id.Valid("tgt", *props.TargetID) {
+		return nil, NewErrInvalidInput(fmt.Sprintf("%q is not a target ID", *props.TargetID))
+	}
+	if props.CredentialKind == "" {
+		props.CredentialKind = CredentialBearerToken
+	}
+	switch props.CredentialKind {
+	case CredentialBearerToken, CredentialMTLSCertificate, CredentialKubernetesServiceAccount:
+	default:
+		return nil, NewErrInvalidInput(fmt.Sprintf("credential kind %q must be bearer_token, mtls_certificate, or kubernetes_service_account", props.CredentialKind))
+	}
 	if err := validateID("creator", principalPrefix, props.CreatedByPrincipalID); err != nil {
 		return nil, err
 	}
@@ -93,6 +113,8 @@ func NewWorkloadEnrollmentToken(props NewWorkloadEnrollmentTokenProps, tokenID *
 		organizationID:       props.OrganizationID,
 		tokenHash:            copyBytes(props.TokenHash),
 		pool:                 props.Pool,
+		targetID:             optionalString(props.TargetID),
+		credentialKind:       props.CredentialKind,
 		createdByPrincipalID: props.CreatedByPrincipalID,
 		expiresAt:            props.ExpiresAt,
 		usedAt:               clock.CopyTime(props.UsedAt),
@@ -105,10 +127,14 @@ func NewWorkloadEnrollmentToken(props NewWorkloadEnrollmentTokenProps, tokenID *
 	return t, nil
 }
 
-func (WorkloadEnrollmentToken) Prefix() string                  { return "wet" }
-func (t *WorkloadEnrollmentToken) OrganizationID() string       { return t.organizationID }
-func (t *WorkloadEnrollmentToken) TokenHash() []byte            { return copyBytes(t.tokenHash) }
-func (t *WorkloadEnrollmentToken) Pool() string                 { return t.pool }
+func (WorkloadEnrollmentToken) Prefix() string            { return "wet" }
+func (t *WorkloadEnrollmentToken) OrganizationID() string { return t.organizationID }
+func (t *WorkloadEnrollmentToken) TokenHash() []byte      { return copyBytes(t.tokenHash) }
+func (t *WorkloadEnrollmentToken) Pool() string           { return t.pool }
+func (t *WorkloadEnrollmentToken) TargetID() *string      { return copyString(t.targetID) }
+func (t *WorkloadEnrollmentToken) CredentialKind() WorkloadCredentialKind {
+	return t.credentialKind
+}
 func (t *WorkloadEnrollmentToken) CreatedByPrincipalID() string { return t.createdByPrincipalID }
 func (t *WorkloadEnrollmentToken) ExpiresAt() time.Time         { return t.expiresAt }
 func (t *WorkloadEnrollmentToken) UsedAt() *time.Time           { return clock.CopyTime(t.usedAt) }
@@ -124,6 +150,8 @@ func (t *WorkloadEnrollmentToken) Snapshot() WorkloadEnrollmentTokenSnapshot {
 		OrganizationID:       t.organizationID,
 		TokenHash:            copyBytes(t.tokenHash),
 		Pool:                 t.pool,
+		TargetID:             copyString(t.targetID),
+		CredentialKind:       t.credentialKind,
 		CreatedByPrincipalID: t.createdByPrincipalID,
 		ExpiresAt:            t.expiresAt,
 		UsedAt:               clock.CopyTime(t.usedAt),

@@ -22,20 +22,23 @@ const (
 // Aggregate types name the domain objects that raise events. An envelope
 // carries the type and ID of the object whose change raised it.
 const (
-	AggregateOrganization       = "iam.Organization"
-	AggregateAccount            = "iam.Account"
-	AggregatePasswordCredential = "iam.PasswordCredential"
-	AggregateUser               = "iam.User"
-	AggregateAgent              = "iam.Agent"
-	AggregateServiceAccount     = "iam.ServiceAccount"
-	AggregateAPIToken           = "iam.APIToken"
-	AggregateIdentityProvider   = "iam.IdentityProvider"
-	AggregateExternalIdentity   = "iam.ExternalIdentity"
-	AggregateAccountIdentity    = "iam.AccountIdentity"
-	AggregateGrant              = "iam.Grant"
-	AggregateOAuthClient        = "iam.OAuthClient"
-	AggregateAuthorizationCode  = "iam.OAuthAuthorizationCode"
-	AggregateRefreshToken       = "iam.OAuthRefreshToken"
+	AggregateOrganization            = "iam.Organization"
+	AggregateAccount                 = "iam.Account"
+	AggregatePasswordCredential      = "iam.PasswordCredential"
+	AggregateUser                    = "iam.User"
+	AggregateAgent                   = "iam.Agent"
+	AggregateServiceAccount          = "iam.ServiceAccount"
+	AggregateAPIToken                = "iam.APIToken"
+	AggregateIdentityProvider        = "iam.IdentityProvider"
+	AggregateExternalIdentity        = "iam.ExternalIdentity"
+	AggregateAccountIdentity         = "iam.AccountIdentity"
+	AggregateGrant                   = "iam.Grant"
+	AggregateWorkload                = "iam.Workload"
+	AggregateWorkloadCredential      = "iam.WorkloadCredential"
+	AggregateWorkloadEnrollmentToken = "iam.WorkloadEnrollmentToken"
+	AggregateOAuthClient             = "iam.OAuthClient"
+	AggregateAuthorizationCode       = "iam.OAuthAuthorizationCode"
+	AggregateRefreshToken            = "iam.OAuthRefreshToken"
 )
 
 // Permissions IAM asks the authorizer about for the Organization itself,
@@ -96,7 +99,10 @@ const (
 	EventAPITokenCreated           = "api_token.created"
 	EventAPITokenRevoked           = "api_token.revoked"
 
-	EventAgentUpdated     = "agent.updated"
-	EventAgentSuspended   = "agent.suspended"
-	EventAgentReactivated = "agent.reactivated"
+	EventWorkloadEnrollmentCreated  = "workload_enrollment.created"
+	EventWorkloadEnrollmentRedeemed = "workload_enrollment.redeemed"
+	EventWorkloadCredentialRenewed  = "workload_credential.renewed"
+	EventAgentUpdated               = "agent.updated"
+	EventAgentSuspended             = "agent.suspended"
+	EventAgentReactivated           = "agent.reactivated"
 )

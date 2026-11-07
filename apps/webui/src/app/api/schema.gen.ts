@@ -4,6 +4,40 @@
  */
 
 export interface paths {
+  '/v1/agent/credentials/renew': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Renew the credential that authenticated the workload */
+    post: operations['renew-workload-credential'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/agent/enrolments/redeem': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Redeem a Target enrolment token for a workload credential */
+    post: operations['redeem-target-enrolment'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/agents': {
     parameters: {
       query?: never;
@@ -1376,7 +1410,8 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    get?: never;
+    /** Get the Target's assigned agent and credential status */
+    get: operations['get-target-agent'];
     /** Assign or unassign a Target's runtime agent */
     put: operations['assign-target-agent'];
     post?: never;
@@ -1414,6 +1449,23 @@ export interface paths {
     get: operations['list-target-assignments'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/targets/{target_id}/enrolments': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create a single-use enrolment token for a Target's runtime agent */
+    post: operations['create-target-enrolment'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1806,6 +1858,16 @@ export interface components {
       status: string;
       /** Format: date-time */
       updated_at: string;
+    };
+    AgentStatus: {
+      agent_principal_id: string | null;
+      component: string;
+      /** Format: date-time */
+      credential_expires_at: string | null;
+      credential_kind: string | null;
+      /** Format: date-time */
+      last_seen_at: string | null;
+      status: string;
     };
     AgentSummary: {
       /** Format: date-time */
@@ -2249,6 +2311,19 @@ export interface components {
       /** @description Its name, such as GitHub Actions */
       display_name: string;
     };
+    CreateRequestBody1: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/CreateRequestBody1.json
+       */
+      readonly $schema?: string;
+      /**
+       * @description How the agent will authenticate
+       * @enum {string}
+       */
+      method: 'bearer' | 'mtls' | 'kubernetes';
+    };
     CreateTargetRequestBody: {
       /**
        * Format: uri
@@ -2478,6 +2553,14 @@ export interface components {
       name: string;
       source: string;
       team_id: string | null;
+    };
+    IssuedEnrolment: {
+      /** Format: date-time */
+      expires_at: string;
+      method: string;
+      pool: string;
+      target_id: string;
+      token: string;
     };
     IssuedToken: {
       /** @description The token itself. Store it now: Ivaldi keeps only its hash. */
@@ -2741,6 +2824,31 @@ export interface components {
       /** @description Where to send the browser to sign in with the provider */
       start_url: string;
     };
+    RedeemRequestBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/RedeemRequestBody.json
+       */
+      readonly $schema?: string;
+      /** @description The projected service-account token, for kubernetes */
+      kubernetes_token?: string;
+      /**
+       * @description How the agent will authenticate
+       * @enum {string}
+       */
+      method: 'bearer' | 'mtls' | 'kubernetes';
+      /** @description The single-use enrolment token */
+      token: string;
+    };
+    Redeemed: {
+      credential_id: string;
+      credential_kind: string;
+      /** Format: date-time */
+      expires_at: string | null;
+      workload_principal_id: string;
+      workload_token?: string;
+    };
     RegistrySnapshot: {
       /** Format: date-time */
       created_at: string;
@@ -2820,6 +2928,23 @@ export interface components {
       version: string;
       /** Format: date-time */
       withdrawn_at: string | null;
+    };
+    RenewRequestBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/RenewRequestBody.json
+       */
+      readonly $schema?: string;
+    };
+    Renewed: {
+      credential_id: string;
+      credential_kind: string;
+      /** Format: date-time */
+      expires_at: string | null;
+      /** Format: date-time */
+      previous_expires_at: string | null;
+      workload_token?: string;
     };
     ReportDeploymentRequestBody: {
       /**
@@ -2910,6 +3035,20 @@ export interface components {
       readonly $schema?: string;
       /** @description Response payload, always present: an empty list is [], not omitted */
       data: components['schemas']['AgentInTeam'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
+    ResponseAgentStatus: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseAgentStatus.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['AgentStatus'];
       /** @description Human-readable message */
       message?: string;
       /** @description Request status */
@@ -3022,6 +3161,20 @@ export interface components {
       readonly $schema?: string;
       /** @description Response payload, always present: an empty list is [], not omitted */
       data: components['schemas']['Grant'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
+    ResponseIssuedEnrolment: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseIssuedEnrolment.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['IssuedEnrolment'];
       /** @description Human-readable message */
       message?: string;
       /** @description Request status */
@@ -3265,6 +3418,20 @@ export interface components {
       /** @description Request status */
       status: string;
     };
+    ResponseRedeemed: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseRedeemed.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['Redeemed'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
     ResponseRegistrySnapshot: {
       /**
        * Format: uri
@@ -3302,6 +3469,20 @@ export interface components {
       readonly $schema?: string;
       /** @description Response payload, always present: an empty list is [], not omitted */
       data: components['schemas']['ReleaseChanges'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
+    ResponseRenewed: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseRenewed.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['Renewed'];
       /** @description Human-readable message */
       message?: string;
       /** @description Request status */
@@ -4076,6 +4257,72 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  'renew-workload-credential': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RenewRequestBody'];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseRenewed'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'redeem-target-enrolment': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RedeemRequestBody'];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseRedeemed'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
   'list-agents': {
     parameters: {
       query?: {
@@ -7620,6 +7867,38 @@ export interface operations {
       };
     };
   };
+  'get-target-agent': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Target */
+        target_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseAgentStatus'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
   'assign-target-agent': {
     parameters: {
       query?: never;
@@ -7707,6 +7986,42 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ResponseListDeploymentAssignment'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'create-target-enrolment': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Target the agent will serve */
+        target_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateRequestBody1'];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseIssuedEnrolment'];
         };
       };
       /** @description Error */

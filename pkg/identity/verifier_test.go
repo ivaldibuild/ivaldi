@@ -223,4 +223,16 @@ func TestCallerContext(t *testing.T) {
 		ClientID:       "ivaldictl",
 		Scopes:         []string{"read", "write"},
 	}, got)
+
+	workload := c
+	workload.Kind = ActorWorkload
+	workload.ID = "wcr_01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	assert.Equal(t, Caller{
+		Actor:               Actor{PrincipalID: workload.Subject, Kind: ActorWorkload},
+		OrganizationID:      workload.OrganizationID,
+		ClientID:            "ivaldictl",
+		Scopes:              []string{"read", "write"},
+		CredentialID:        workload.ID,
+		CredentialExpiresAt: workload.ExpiresAt,
+	}, CallerOf(&workload))
 }

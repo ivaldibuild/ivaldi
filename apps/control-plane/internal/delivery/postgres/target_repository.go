@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
 	"github.com/ivaldibuild/ivaldi/pkg/database"
@@ -31,6 +32,16 @@ func (r *targetRepository) CreateTarget(ctx context.Context, t *delivery.Target)
 		return err
 	}
 	return translate(r.conn(ctx).Create(e).Error)
+}
+
+func (r *targetRepository) GetTargetForUpdate(ctx context.Context, organizationID, targetID string) (*delivery.Target, error) {
+	return r.get(r.conn(ctx).Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate}).
+		Where("organization_id = ? AND id = ?", organizationID, targetID))
+}
+
+func (r *targetRepository) GetTargetByAgentPrincipalID(ctx context.Context, organizationID, principalID string) (*delivery.Target, error) {
+	return r.get(r.conn(ctx).Where(
+		"organization_id = ? AND agent_principal_id = ? AND deleted_at IS NULL", organizationID, principalID))
 }
 
 func (r *targetRepository) GetTarget(ctx context.Context, organizationID, targetID string) (*delivery.Target, error) {

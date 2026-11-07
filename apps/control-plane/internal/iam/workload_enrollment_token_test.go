@@ -17,6 +17,7 @@ func wetProps() NewWorkloadEnrollmentTokenProps {
 		OrganizationID:       testOrg,
 		TokenHash:            testHash("wet-secret"),
 		Pool:                 "eu-west",
+		CredentialKind:       CredentialBearerToken,
 		CreatedByPrincipalID: testCreator,
 		ExpiresAt:            t1,
 	}
@@ -195,6 +196,7 @@ func TestWorkloadEnrollmentTokenSnapshot(t *testing.T) {
 		OrganizationID:       testOrg,
 		TokenHash:            testHash("wet-secret"),
 		Pool:                 "eu-west",
+		CredentialKind:       CredentialBearerToken,
 		CreatedByPrincipalID: testCreator,
 		ExpiresAt:            t1,
 		CreatedAt:            t0,

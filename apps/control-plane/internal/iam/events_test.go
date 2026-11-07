@@ -668,8 +668,8 @@ func TestSnapshotJSONKeys(t *testing.T) {
 		{PasswordCredentialSnapshot{}, []string{"account_id", "updated_at"}},
 		{RoleSnapshot{}, []string{"id", "organization_id", "key", "name", "created_at"}},
 		{SigningKeySnapshot{}, []string{"kid", "organization_id", "algorithm", "public_jwk", "private_key_ref", "status", "created_at", "not_after"}},
-		{WorkloadCredentialSnapshot{}, []string{"id", "organization_id", "principal_id", "kind", "identifier", "not_after", "revoked_at", "created_at"}},
-		{WorkloadEnrollmentTokenSnapshot{}, []string{"id", "organization_id", "pool", "created_by_principal_id", "expires_at", "used_at", "used_by_principal_id", "created_at"}},
+		{WorkloadCredentialSnapshot{}, []string{"id", "organization_id", "principal_id", "kind", "identifier", "not_after", "revoked_at", "replaced_by", "created_at"}},
+		{WorkloadEnrollmentTokenSnapshot{}, []string{"id", "organization_id", "pool", "target_id", "credential_kind", "created_by_principal_id", "expires_at", "used_at", "used_by_principal_id", "created_at"}},
 	}
 	for _, tt := range tests {
 		b, err := json.Marshal(tt.snapshot)

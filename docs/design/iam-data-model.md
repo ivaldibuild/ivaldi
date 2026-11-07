@@ -107,7 +107,7 @@ Every actor is a row in **principals**, the common parent table that grants and 
 - **account_identities** — links an account to a platform provider's subject (`google` or `github`), so a person can sign up for and sign in to the managed cloud before belonging to any Organization. Unlike `external_identities`, it authenticates the account, and the person then chooses an Organization. The pair (provider, subject) is unique.
 - **password_credentials** — argon2id password hashes for the built-in provider. One per account (platform-scoped), so a person has one password across all their Organizations.
 - **api_tokens** — long-lived tokens for users (CLI, API) and service accounts. Only a hash and a short display prefix are stored. A token acts with its owner's grants.
-- **workload_credentials** and **workload_enrollment_tokens** — a workload enrolls once with a single-use token, then authenticates with an mTLS certificate or a Kubernetes service-account identity. `(kind, identifier)` is unique.
+- **workload_credentials** and **workload_enrollment_tokens** — a workload enrolls once with a single-use token, then authenticates with a bearer token, an mTLS certificate, or a Kubernetes service-account identity. `(kind, identifier)` is unique, and bearer credentials keep only a SHA-256 hash. Enrolment tokens may be bound to a Target.
 
 ### OAuth authorization server
 
@@ -200,3 +200,5 @@ The schema is implemented as golang-migrate migrations in [`apps/control-plane/i
 | 000027 | `agents` | tenant |
 | 000028 | a unique index on team-managed `groups` (`source = 'team'`, one per Team) | tenant |
 | 000029 | `users.last_signed_in_at`, set when the user redeems an authorization code | tenant |
+| 000030 | `workload_enrollment_tokens.target_id` and `.credential_kind`, binding enrollment to a Target and method | tenant |
+| 000031 | `workload_credentials.secret_hash` and `.replaced_by`, for bearer credentials and renewal lineage | tenant |

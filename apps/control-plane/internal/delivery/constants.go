@@ -43,6 +43,7 @@ const (
 	AggregatePlacement   = "delivery.Placement"
 	AggregateBuild       = "delivery.Build"
 	AggregateRelease     = "delivery.Release"
+	AggregateDeployment  = "delivery.Deployment"
 )
 
 // Permissions this capability asks the authorizer about. The full catalog,
@@ -64,6 +65,11 @@ const (
 	// PermissionApplicationRead.
 	PermissionReleaseManage  = "release.manage"
 	PermissionReleasePublish = "release.publish"
+	// PermissionDeploymentCreate requests an executed Deployment and cancels
+	// one before it is applied; PermissionDeploymentRead lists and reads
+	// Deployments. Both follow the Application or the Target's Environment.
+	PermissionDeploymentRead   = "deployment.read"
+	PermissionDeploymentCreate = "deployment.create"
 )
 
 // Actions name what an actor asks the authorizer to allow. Policy rules
@@ -83,6 +89,14 @@ const (
 	ActionReleasePublish        = "release.publish"
 	ActionReleaseRead           = "release.read"
 	ActionReleaseWithdraw       = "release.withdraw"
+	ActionDeploymentAssignments = "deployment.assignments"
+	ActionDeploymentCancel      = "deployment.cancel"
+	ActionDeploymentCreate      = "deployment.create"
+	ActionDeploymentList        = "deployment.list"
+	ActionDeploymentRead        = "deployment.read"
+	ActionDeploymentReport      = "deployment.report"
+	ActionDeploymentChanges     = "deployment.changes"
+	ActionTargetReport          = "target.report"
 	ActionArtifactArchive       = "artifact.archive"
 	ActionArtifactCreate        = "artifact.create"
 	ActionArtifactDeclare       = "artifact.declare"
@@ -192,4 +206,11 @@ const (
 	EventReleaseCreated   = "release.created"
 	EventReleasePublished = "release.published"
 	EventReleaseWithdrawn = "release.withdrawn"
+
+	EventDeploymentRequested     = "deployment.requested"
+	EventDeploymentCancelled     = "deployment.cancelled"
+	EventDeploymentFinished      = "deployment.finished"
+	EventDeploymentFailed        = "deployment.failed"
+	EventDeploymentSuperseded    = "deployment.superseded"
+	EventDeploymentStatusChanged = "deployment.status_changed"
 )

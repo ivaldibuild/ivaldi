@@ -368,6 +368,19 @@ func (r *applicationRepository) UpdatePlacement(ctx context.Context, p *delivery
 		}))
 }
 
+// UpdatePlacementCurrent writes only what is running now, so a configuration
+// change made at the same time cannot overwrite it.
+func (r *applicationRepository) UpdatePlacementCurrent(ctx context.Context, p *delivery.Placement) error {
+	s := p.Snapshot()
+	return updated(r.conn(ctx).Model(&placementEntity{}).
+		Where("organization_id = ? AND application_id = ? AND target_id = ?", s.OrganizationID, s.ApplicationID, s.TargetID).
+		Updates(map[string]any{
+			"current_deployment_id": s.CurrentDeploymentID,
+			"current_release_id":    s.CurrentReleaseID,
+			"updated_at":            s.UpdatedAt,
+		}))
+}
+
 func (r *applicationRepository) DeletePlacement(ctx context.Context, organizationID, applicationID, targetID string) error {
 	res := r.conn(ctx).Where("organization_id = ? AND application_id = ? AND target_id = ?", organizationID, applicationID, targetID).Delete(&placementEntity{})
 	if _, ok := database.ForeignKeyViolation(res.Error); ok {

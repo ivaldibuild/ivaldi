@@ -213,3 +213,19 @@ func (p *Placement) ClearApplyConfig() {
 func (p *Placement) Remove() {
 	p.RecordEvent(PlacementRemoved{p.Snapshot()})
 }
+
+// SetCurrent records the Deployment and Release now running on the Target.
+// Deployments record their own events; this does not raise a Placement
+// event.
+func (p *Placement) SetCurrent(deploymentID, releaseID string) error {
+	if !id.Valid(Deployment{}.Prefix(), deploymentID) {
+		return NewErrInvalidInput(fmt.Sprintf("%q is not a deployment ID", deploymentID))
+	}
+	if !id.Valid(Release{}.Prefix(), releaseID) {
+		return NewErrInvalidInput(fmt.Sprintf("%q is not a release ID", releaseID))
+	}
+	p.currentDeploymentID = &deploymentID
+	p.currentReleaseID = &releaseID
+	p.updatedAt = clock.Now()
+	return nil
+}

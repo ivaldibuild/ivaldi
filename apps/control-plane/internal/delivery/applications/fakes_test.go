@@ -484,6 +484,15 @@ func (s *store) UpdatePlacement(_ context.Context, p *delivery.Placement) error 
 	return nil
 }
 
+func (s *store) UpdatePlacementCurrent(_ context.Context, p *delivery.Placement) error {
+	k := placementKey(p.ApplicationID(), p.TargetID())
+	if _, ok := s.placements[k]; !ok {
+		return delivery.ErrNotFound
+	}
+	s.placements[k] = p.Snapshot()
+	return nil
+}
+
 func (s *store) DeletePlacement(_ context.Context, organizationID, applicationID, targetID string) error {
 	k := placementKey(applicationID, targetID)
 	if o, ok := s.placements[k]; !ok || o.OrganizationID != organizationID {

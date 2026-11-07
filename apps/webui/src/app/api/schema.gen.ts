@@ -179,6 +179,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/applications/{application}/deployments': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List an Application's Deployments */
+    get: operations['list-deployments'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/applications/{application}/placements': {
     parameters: {
       query?: never;
@@ -553,6 +570,57 @@ export interface paths {
     post?: never;
     /** Remove a Channel rule */
     delete: operations['remove-channel-rule'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/deployments/{deployment_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get a Deployment with its event timeline */
+    get: operations['get-deployment'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/deployments/{deployment_id}/cancel': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Cancel a Deployment before it is applied */
+    post: operations['cancel-deployment'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/deployments/{deployment_id}/events': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Report a Deployment's progress or health as its Target's agent */
+    post: operations['report-deployment'];
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -1041,6 +1109,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/releases/{release_id}/changes': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Show what a Release would change on a Target, and its pre-flight checks */
+    get: operations['release-changes'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/releases/{release_id}/deployments': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Request execution of a published Release on one or more Targets */
+    post: operations['request-deployments'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/releases/{release_id}/publish': {
     parameters: {
       query?: never;
@@ -1295,6 +1397,40 @@ export interface paths {
     put?: never;
     /** Archive a Target */
     post: operations['archive-target'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/targets/{target_id}/assignments': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List the active Deployment assignments for the Target's agent */
+    get: operations['list-target-assignments'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/targets/{target_id}/reports': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Note that the Target's agent is in contact */
+    post: operations['report-target-heartbeat'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1717,6 +1853,12 @@ export interface components {
       /** @description References to Target-specific values, never the values */
       values_refs?: string[];
     };
+    ArtifactChange: {
+      artifact_id: string;
+      artifact_name: string;
+      next: components['schemas']['BuildSnapshot'];
+      previous: components['schemas']['BuildSnapshot'];
+    };
     ArtifactSnapshot: {
       application_id: string;
       /** Format: date-time */
@@ -1745,6 +1887,15 @@ export interface components {
       readonly $schema?: string;
       /** @description The runtime agent's principal ID; empty unassigns the agent */
       agent_principal_id: string;
+    };
+    AssignmentArtifact: {
+      artifact_id: string;
+      artifact_name: string;
+      build_id: string;
+      digest: string;
+      /** @enum {string} */
+      kind: 'container_image' | 'helm_chart' | 'archive';
+      published_as: string;
     };
     BuildBody: {
       /**
@@ -2168,6 +2319,84 @@ export interface components {
       application: components['schemas']['ApplicationSnapshot'];
       default_channel: components['schemas']['ChannelSnapshot'];
     };
+    DeploymentAssignment: {
+      apply_config: components['schemas']['ApplyConfig'];
+      artifacts: components['schemas']['AssignmentArtifact'][];
+      deployment: components['schemas']['DeploymentSnapshot'];
+      environment: components['schemas']['EnvironmentSnapshot'];
+      helm_release_name: string;
+      release: components['schemas']['ReleaseSnapshot'];
+      target: components['schemas']['TargetSnapshot'];
+    };
+    DeploymentCheck: {
+      name: string;
+      ok: boolean;
+      reason: string;
+    };
+    DeploymentDetail: {
+      deployment: components['schemas']['DeploymentSnapshot'];
+      events: components['schemas']['DeploymentEventSnapshot'][];
+    };
+    DeploymentEventSnapshot: {
+      deployment_id: string;
+      detail: unknown;
+      id: string;
+      /** @enum {string} */
+      kind: 'status_changed' | 'progress' | 'health';
+      /** Format: date-time */
+      occurred_at: string;
+      organization_id: string;
+      /** Format: date-time */
+      recorded_at: string;
+      report_id: string | null;
+      reported_by_principal_id: string | null;
+      status: string | null;
+    };
+    DeploymentSnapshot: {
+      application_id: string;
+      /** Format: date-time */
+      created_at: string;
+      environment_id: string;
+      external_ref: unknown;
+      findings: string[];
+      /** Format: date-time */
+      finished_at: string | null;
+      id: string;
+      initiated_by_principal_id: string | null;
+      organization_id: string;
+      policy_decision_id: string | null;
+      previous_deployment_id: string | null;
+      /** @enum {string} */
+      reason: 'rollout' | 'rollback' | 'redeploy';
+      release_id: string;
+      /** Format: date-time */
+      requested_at: string;
+      session_id: string | null;
+      /** @enum {string} */
+      source: 'executed' | 'observed';
+      /** Format: date-time */
+      started_at: string | null;
+      /** @enum {string} */
+      status:
+        | 'pending'
+        | 'awaiting_approval'
+        | 'rejected'
+        | 'cancelled'
+        | 'applying'
+        | 'progressing'
+        | 'healthy'
+        | 'degraded'
+        | 'failed'
+        | 'superseded';
+      /** Format: date-time */
+      status_changed_at: string;
+      /** Format: date-time */
+      succeeded_at: string | null;
+      target_id: string;
+      /** Format: date-time */
+      updated_at: string;
+      work_item_id: string | null;
+    };
     EnvironmentSnapshot: {
       /** Format: date-time */
       created_at: string;
@@ -2556,6 +2785,79 @@ export interface components {
       artifact_id: string;
       build: components['schemas']['BuildSnapshot'];
     };
+    ReleaseBuildSnapshot: {
+      artifact_id: string;
+      build_id: string;
+      /** Format: date-time */
+      created_at: string;
+    };
+    ReleaseChanges: {
+      artifacts: components['schemas']['ArtifactChange'][];
+      changes: unknown[];
+      checks: components['schemas']['DeploymentCheck'][];
+      current_release_id: string | null;
+      release_id: string;
+      target_id: string;
+    };
+    ReleaseSnapshot: {
+      application_id: string;
+      builds: components['schemas']['ReleaseBuildSnapshot'][];
+      channel_id: string;
+      /** Format: date-time */
+      created_at: string;
+      created_by_principal_id: string | null;
+      id: string;
+      organization_id: string;
+      publish_decision_id: string | null;
+      /** Format: date-time */
+      published_at: string | null;
+      /** @enum {string} */
+      source: 'created' | 'observed';
+      /** @enum {string} */
+      status: 'draft' | 'published' | 'withdrawn';
+      /** Format: date-time */
+      updated_at: string;
+      version: string;
+      /** Format: date-time */
+      withdrawn_at: string | null;
+    };
+    ReportDeploymentRequestBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ReportDeploymentRequestBody.json
+       */
+      readonly $schema?: string;
+      /** @description Runtime-specific detail */
+      detail?: unknown;
+      /**
+       * @description What the report describes
+       * @enum {string}
+       */
+      kind: 'status_changed' | 'progress' | 'health';
+      /**
+       * Format: date-time
+       * @description When it happened, by the agent's clock
+       */
+      occurred_at?: string;
+      /** @description The agent's idempotent report ID */
+      report_id: string;
+      /**
+       * @description The Deployment status to move to, when the report changes it
+       * @enum {string}
+       */
+      status?: 'progressing' | 'healthy' | 'degraded' | 'failed';
+    };
+    RequestDeploymentsRequestBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/RequestDeploymentsRequestBody.json
+       */
+      readonly $schema?: string;
+      /** @description The Targets to deploy the Release to */
+      target_ids: string[];
+    };
     Resolved: {
       /** @description Whether the value is the setting's default */
       from_default: boolean;
@@ -2683,6 +2985,20 @@ export interface components {
       /** @description Request status */
       status: string;
     };
+    ResponseDeploymentDetail: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseDeploymentDetail.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['DeploymentDetail'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
     ResponseEnvironmentSnapshot: {
       /**
        * Format: uri
@@ -2776,6 +3092,34 @@ export interface components {
       readonly $schema?: string;
       /** @description Response payload, always present: an empty list is [], not omitted */
       data: components['schemas']['ChannelSnapshot'][];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
+    ResponseListDeploymentAssignment: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseListDeploymentAssignment.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['DeploymentAssignment'][];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
+    ResponseListDeploymentSnapshot: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseListDeploymentSnapshot.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['DeploymentSnapshot'][];
       /** @description Human-readable message */
       message?: string;
       /** @description Request status */
@@ -2949,6 +3293,20 @@ export interface components {
       /** @description Request status */
       status: string;
     };
+    ResponseReleaseChanges: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseReleaseChanges.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['ReleaseChanges'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
     ResponseResolved: {
       /**
        * Format: uri
@@ -2986,6 +3344,20 @@ export interface components {
       readonly $schema?: string;
       /** @description Response payload, always present: an empty list is [], not omitted */
       data: components['schemas']['ResultApplicationSnapshot'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
+    ResponseResultDeploymentSnapshot: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseResultDeploymentSnapshot.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['ResultDeploymentSnapshot'];
       /** @description Human-readable message */
       message?: string;
       /** @description Request status */
@@ -3214,6 +3586,15 @@ export interface components {
       has_next: boolean;
       has_previous: boolean;
       items: components['schemas']['ApplicationSnapshot'][];
+      next_cursor: string | null;
+      previous_cursor: string | null;
+      /** Format: int64 */
+      total_count: number;
+    };
+    ResultDeploymentSnapshot: {
+      has_next: boolean;
+      has_previous: boolean;
+      items: components['schemas']['DeploymentSnapshot'][];
       next_cursor: string | null;
       previous_cursor: string | null;
       /** Format: int64 */
@@ -4214,6 +4595,65 @@ export interface operations {
       };
     };
   };
+  'list-deployments': {
+    parameters: {
+      query?: {
+        /** @description Only Deployments of this Release */
+        release_id?: string;
+        /** @description Only Deployments to this Target */
+        target_id?: string;
+        /** @description Only Deployments with this status */
+        status?:
+          | 'pending'
+          | 'awaiting_approval'
+          | 'rejected'
+          | 'cancelled'
+          | 'applying'
+          | 'progressing'
+          | 'healthy'
+          | 'degraded'
+          | 'failed'
+          | 'superseded';
+        /** @description Most items to return */
+        limit?: number;
+        /** @description Field to sort by: requested_at (the default) or status */
+        sort_by?: 'requested_at' | 'status';
+        /** @description Sort direction */
+        sort_order?: 'asc' | 'desc';
+        /** @description Cursor from a previous page's next_cursor */
+        next_cursor?: string;
+        /** @description Cursor from a previous page's previous_cursor */
+        previous_cursor?: string;
+      };
+      header?: never;
+      path: {
+        /** @description The Application's ID or slug */
+        application: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseResultDeploymentSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
   'list-placements': {
     parameters: {
       query?: never;
@@ -5133,6 +5573,106 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ResponseChannelSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'get-deployment': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Deployment */
+        deployment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseDeploymentDetail'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'cancel-deployment': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Deployment */
+        deployment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseDeploymentDetail'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'report-deployment': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Deployment */
+        deployment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ReportDeploymentRequestBody'];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseDeploymentDetail'];
         };
       };
       /** @description Error */
@@ -6397,6 +6937,77 @@ export interface operations {
       };
     };
   };
+  'release-changes': {
+    parameters: {
+      query: {
+        /** @description The Target to compare against */
+        target_id: string;
+      };
+      header?: never;
+      path: {
+        /** @description The Release */
+        release_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseReleaseChanges'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'request-deployments': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Release to deploy */
+        release_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RequestDeploymentsRequestBody'];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseListDeploymentSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
   'publish-release': {
     parameters: {
       query?: never;
@@ -7065,6 +7676,68 @@ export interface operations {
         content: {
           'application/json': components['schemas']['ResponseTargetSnapshot'];
         };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'list-target-assignments': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Target */
+        target_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseListDeploymentAssignment'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'report-target-heartbeat': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Target */
+        target_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description No Content */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       /** @description Error */
       default: {

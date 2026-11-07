@@ -36,8 +36,10 @@ func translate(err error) error {
 		case slugIndexes[c]:
 			return fmt.Errorf("%w: %w", delivery.ErrSlugTaken, err)
 		case c == "application_targets_pkey" || c == "idx_application_targets_organization",
-			c == "idx_releases_version", c == "idx_builds_digest":
+			c == "idx_releases_version", c == "idx_builds_digest", c == "idx_deployments_organization":
 			return fmt.Errorf("%w: %w", delivery.ErrAlreadyExists, err)
+		case c == "idx_deployments_in_flight":
+			return fmt.Errorf("%w: %w", delivery.ErrDeploymentInFlight, err)
 		default:
 			return fmt.Errorf("%w: %w", delivery.ErrConflict, err)
 		}

@@ -4,7 +4,7 @@
 //
 // So far it covers the configuration side: Environments and their Targets,
 // Lifecycles, Registries, and Applications with their artifacts, Channels,
-// and placements on Targets. Builds, Releases, and Deployments follow.
+// and placements on Targets, with Builds, Releases, and Deployments.
 package delivery
 
 import "github.com/ivaldibuild/ivaldi/pkg/id"
@@ -21,4 +21,6 @@ func init() {
 	id.MustRegister(ChannelRule{}.Prefix(), "delivery.ChannelRule")
 	id.MustRegister(Build{}.Prefix(), "delivery.Build")
 	id.MustRegister(Release{}.Prefix(), "delivery.Release")
+	id.MustRegister(Deployment{}.Prefix(), "delivery.Deployment")
+	id.MustRegister(DeploymentEvent{}.Prefix(), "delivery.DeploymentEvent")
 }

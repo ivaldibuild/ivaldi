@@ -36,6 +36,13 @@ var (
 	// ErrReleaseStatus means the Release's status does not allow the change,
 	// such as publishing a Release that is already published.
 	ErrReleaseStatus = errors.New("not allowed in the release's status")
+	// ErrDeploymentStatus means the Deployment's status does not allow the change.
+	ErrDeploymentStatus = errors.New("not allowed in the deployment's status")
+	// ErrDeploymentInFlight means another Deployment of the Application to
+	// the Target is still in flight.
+	ErrDeploymentInFlight = errors.New("another deployment is in flight")
+	// ErrNotDeploymentAgent means the caller is not the Target's assigned agent.
+	ErrNotDeploymentAgent = errors.New("not the deployment target's agent")
 	// ErrBuildConflict means a report gives a Build a commit other than the
 	// one it was built from.
 	ErrBuildConflict = errors.New("conflicts with the recorded build")

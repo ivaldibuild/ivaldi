@@ -4,6 +4,7 @@ import (
 	auditpg "github.com/ivaldibuild/ivaldi-control-plane/internal/audit/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/applications"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/deployments"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/environments"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/lifecycles"
 	deliverypg "github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/postgres"
@@ -151,7 +152,25 @@ func (a *app) wireDelivery() error {
 		return err
 	}
 
+	deps, err := deployments.NewService(
+		deployments.WithDeploymentRepo(deliverypg.NewDeploymentRepository(a.db)),
+		deployments.WithReleaseRepo(deliverypg.NewReleaseRepository(a.db)),
+		deployments.WithBuildRepo(deliverypg.NewBuildRepository(a.db)),
+		deployments.WithApplications(applicationRepo),
+		deployments.WithEnvironments(envRepo),
+		deployments.WithTargets(targetRepo),
+		deployments.WithLifecycles(lifecycleRepo),
+		deployments.WithAuthorizer(a.authz),
+		deployments.WithTransactor(a.tx),
+		deployments.WithOutboxRecorder(a.outbox),
+		deployments.WithAuditRecorder(a.audit),
+	)
+	if err != nil {
+		return err
+	}
+
 	a.services.environments, a.services.registries, a.services.lifecycles = envs, regs, lifecycleSvc
 	a.services.applications, a.services.releases = apps, rels
+	a.services.deployments = deps
 	return nil
 }

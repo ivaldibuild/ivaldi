@@ -4,6 +4,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/api"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/applications"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/deployments"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/environments"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/lifecycles"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/registries"
@@ -56,6 +57,7 @@ type services struct {
 	lifecycles      delivery.LifecycleService
 	applications    delivery.ApplicationService
 	releases        delivery.ReleaseService
+	deployments     delivery.DeploymentService
 }
 
 // routes returns a controller for every /v1 operation. Onboarding is served
@@ -78,6 +80,7 @@ func (s services) routes(describe bool) []api.Routes {
 		lifecycles.NewLifecycleController(s.lifecycles),
 		applications.NewApplicationController(s.applications),
 		releases.NewReleaseController(s.releases),
+		deployments.NewController(s.deployments),
 	}
 	if s.onboarding != nil || describe {
 		out = append(out, iamhttp.NewOnboardingController(s.onboarding))

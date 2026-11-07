@@ -173,7 +173,12 @@ type ApplicationRepository interface {
 	CreatePlacement(ctx context.Context, p *Placement) error
 	GetPlacement(ctx context.Context, organizationID, applicationID, targetID string) (*Placement, error)
 	ListPlacements(ctx context.Context, organizationID, applicationID string) ([]*Placement, error)
+	// UpdatePlacement writes the placement's configuration. It leaves the
+	// current Deployment and Release alone.
 	UpdatePlacement(ctx context.Context, p *Placement) error
+	// UpdatePlacementCurrent writes the Deployment and Release now running on
+	// the Target, and the placement's updated time.
+	UpdatePlacementCurrent(ctx context.Context, p *Placement) error
 	// DeletePlacement returns ErrInUse if Deployments refer to the placement.
 	DeletePlacement(ctx context.Context, organizationID, applicationID, targetID string) error
 }

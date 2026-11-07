@@ -34,3 +34,5 @@ profile.cov
 
 # Docker volumes
 volumes/
+
+plans/

@@ -4,6 +4,5 @@
 //
 // It holds version parsing and comparison, version ranges, the
 // configuration of Channel rules and matching Releases against them, and
-// Release status values and their transitions. Deployment status values and
-// transitions follow with Deployments.
+// Release and Deployment status values and their transitions.
 package release

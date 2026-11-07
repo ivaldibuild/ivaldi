@@ -9,6 +9,7 @@ import (
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/api"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/applications"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/deployments"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/environments"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/lifecycles"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/registries"
@@ -25,6 +26,7 @@ func TestControllersFitTogether(t *testing.T) {
 		registries.NewRegistryController(nil),
 		applications.NewApplicationController(nil),
 		releases.NewReleaseController(nil),
+		deployments.NewController(nil),
 	} {
 		r.RegisterRoutes(h)
 	}
@@ -45,5 +47,5 @@ func TestControllersFitTogether(t *testing.T) {
 			assert.NotEmpty(t, op.Security, "%s needs a token", where)
 		}
 	}
-	assert.Len(t, ids, 13+10+8+31+6)
+	assert.Len(t, ids, 13+10+8+31+6+8)
 }

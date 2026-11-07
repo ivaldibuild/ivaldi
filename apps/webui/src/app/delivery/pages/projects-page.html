@@ -4,6 +4,9 @@
     [crumbs]="[{ label: context.current()?.display_name ?? 'Workspace' }, { label: 'Projects' }]"
   >
     <ng-container pageActions>
+      <a hlmBtn size="lg" variant="outline" routerLink="/applications">
+        <ng-icon name="lucideLayoutGrid" aria-hidden="true" /> What's running where
+      </a>
       <a hlmBtn size="lg" routerLink="/projects/new">
         <ng-icon name="lucidePlus" aria-hidden="true" /> New project
       </a>

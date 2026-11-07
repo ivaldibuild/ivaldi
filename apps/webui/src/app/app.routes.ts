@@ -57,7 +57,7 @@ export const routes: Routes = [
     canActivate: [requireSignIn],
     loadComponent: () => import('./delivery/app-shell').then((m) => m.AppShell),
     children: [
-      { path: '', pathMatch: 'full', redirectTo: 'applications' },
+      { path: '', pathMatch: 'full', redirectTo: 'projects' },
       {
         path: 'applications',
         title: 'Applications · Ivaldi',

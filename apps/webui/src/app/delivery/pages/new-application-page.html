@@ -1,7 +1,7 @@
 <div class="flex max-w-205 flex-col gap-8">
   <app-page-header
     heading="New application"
-    [crumbs]="[{ label: 'Applications', link: '/applications' }, { label: 'New application' }]"
+    [crumbs]="[{ label: 'Projects', link: '/projects' }, { label: 'New application' }]"
   />
 
   <p class="text-foreground text-base leading-relaxed">
@@ -125,6 +125,12 @@
         Create application
       }
     </button>
-    <a hlmBtn size="lg" variant="outline" routerLink="/applications">Cancel</a>
+    <a
+      hlmBtn
+      size="lg"
+      variant="outline"
+      [routerLink]="project() ? ['/projects', project()] : '/projects'"
+      >Cancel</a
+    >
   </div>
 </div>

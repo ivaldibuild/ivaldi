@@ -1,10 +1,7 @@
 <div class="flex flex-col gap-8">
   <app-page-header
     heading="What's running where"
-    [crumbs]="[
-      { label: context.current()?.display_name ?? 'Workspace' },
-      { label: 'Applications' },
-    ]"
+    [crumbs]="[{ label: 'Projects', link: '/projects' }, { label: 'What\'s running where' }]"
   >
     <ng-container pageActions>
       <a hlmBtn size="lg" routerLink="/applications/new">

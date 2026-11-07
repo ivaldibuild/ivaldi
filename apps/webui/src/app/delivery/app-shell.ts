@@ -1,8 +1,9 @@
 import { Component, inject } from '@angular/core';
-import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
+import { filter, map } from 'rxjs';
 import { NgIcon, provideIcons } from '@ng-icons/core';
 import {
-  lucideBox,
   lucideFolder,
   lucideGitBranch,
   lucideLayers,
@@ -18,18 +19,9 @@ import { WorkspaceContext } from './workspace-context';
 /** The signed-in app: the sidebar with the Workspace switcher beside the current page. */
 @Component({
   selector: 'app-shell',
-  imports: [
-    RouterOutlet,
-    RouterLink,
-    RouterLinkActive,
-    NgIcon,
-    HlmButtonImports,
-    OrganisationBadge,
-    UserBadge,
-  ],
+  imports: [RouterOutlet, RouterLink, NgIcon, HlmButtonImports, OrganisationBadge, UserBadge],
   providers: [
     provideIcons({
-      lucideBox,
       lucideFolder,
       lucideGitBranch,
       lucideLayers,
@@ -43,13 +35,29 @@ import { WorkspaceContext } from './workspace-context';
 export class AppShell {
   private readonly session = inject(Session);
   protected readonly context = inject(WorkspaceContext);
+  private readonly router = inject(Router);
 
-  protected readonly delivery = [
-    { path: '/applications', label: 'Applications', icon: 'lucideBox' },
-    { path: '/projects', label: 'Projects', icon: 'lucideFolder' },
-    { path: '/environments', label: 'Environments', icon: 'lucideLayers' },
-    { path: '/lifecycles', label: 'Lifecycles', icon: 'lucideGitBranch' },
-  ];
+  /** The current URL, for the items that also cover pages outside their own path. */
+  private readonly url = toSignal(
+    this.router.events.pipe(
+      filter((e) => e instanceof NavigationEnd),
+      map(() => this.router.url),
+    ),
+    { initialValue: this.router.url },
+  );
+
+  /** `within`: other pages that sit under the item, such as a Project's Applications. */
+  protected readonly delivery: { path: string; label: string; icon: string; within?: string[] }[] =
+    [
+      {
+        path: '/projects',
+        label: 'Projects',
+        icon: 'lucideFolder',
+        within: ['/applications', '/releases'],
+      },
+      { path: '/environments', label: 'Environments', icon: 'lucideLayers' },
+      { path: '/lifecycles', label: 'Lifecycles', icon: 'lucideGitBranch' },
+    ];
 
   protected readonly organisation = [
     { path: '/people', label: 'People & access', icon: 'lucideUsers' },
@@ -57,6 +65,15 @@ export class AppShell {
 
   constructor() {
     void this.context.load().catch(() => undefined);
+  }
+
+  /**
+   * Whether a sidebar item is the current page or one of the pages under it. Worked out here
+   * rather than by RouterLinkActive, which removes the aria-current this sets.
+   */
+  protected isActive(item: { path: string; within?: string[] }): boolean {
+    const url = this.url().split(/[?#]/)[0];
+    return [item.path, ...(item.within ?? [])].some((p) => url === p || url.startsWith(p + '/'));
   }
 
   protected selectWorkspace(event: Event): void {

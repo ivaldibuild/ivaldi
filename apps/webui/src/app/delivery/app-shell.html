@@ -29,20 +29,18 @@
       @for (item of delivery; track item.path) {
         <a
           [routerLink]="item.path"
-          routerLinkActive
-          #active="routerLinkActive"
-          [attr.aria-current]="active.isActive ? 'page' : null"
+          [attr.aria-current]="isActive(item) ? 'page' : null"
           class="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex h-9 items-center gap-3 border-l-2 px-3 text-sm no-underline"
-          [class.border-sidebar-primary]="active.isActive"
-          [class.border-transparent]="!active.isActive"
-          [class.text-heading]="active.isActive"
-          [class.font-semibold]="active.isActive"
+          [class.border-sidebar-primary]="isActive(item)"
+          [class.border-transparent]="!isActive(item)"
+          [class.text-heading]="isActive(item)"
+          [class.font-semibold]="isActive(item)"
         >
           <ng-icon
             [name]="item.icon"
             aria-hidden="true"
-            [class.text-primary-text]="active.isActive"
-            [class.text-muted-foreground]="!active.isActive"
+            [class.text-primary-text]="isActive(item)"
+            [class.text-muted-foreground]="!isActive(item)"
           />
           {{ item.label }}
         </a>
@@ -58,20 +56,18 @@
       @for (item of organisation; track item.path) {
         <a
           [routerLink]="item.path"
-          routerLinkActive
-          #orgActive="routerLinkActive"
-          [attr.aria-current]="orgActive.isActive ? 'page' : null"
+          [attr.aria-current]="isActive(item) ? 'page' : null"
           class="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex h-9 items-center gap-3 border-l-2 px-3 text-sm no-underline"
-          [class.border-sidebar-primary]="orgActive.isActive"
-          [class.border-transparent]="!orgActive.isActive"
-          [class.text-heading]="orgActive.isActive"
-          [class.font-semibold]="orgActive.isActive"
+          [class.border-sidebar-primary]="isActive(item)"
+          [class.border-transparent]="!isActive(item)"
+          [class.text-heading]="isActive(item)"
+          [class.font-semibold]="isActive(item)"
         >
           <ng-icon
             [name]="item.icon"
             aria-hidden="true"
-            [class.text-primary-text]="orgActive.isActive"
-            [class.text-muted-foreground]="!orgActive.isActive"
+            [class.text-primary-text]="isActive(item)"
+            [class.text-muted-foreground]="!isActive(item)"
           />
           {{ item.label }}
         </a>

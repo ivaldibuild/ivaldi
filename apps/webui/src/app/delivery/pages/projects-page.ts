@@ -1,7 +1,7 @@
 import { Component, computed, inject, linkedSignal, resource, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { NgIcon, provideIcons } from '@ng-icons/core';
-import { lucidePlus, lucideSearch } from '@ng-icons/lucide';
+import { lucideLayoutGrid, lucidePlus, lucideSearch } from '@ng-icons/lucide';
 import { HlmAlertImports } from '@spartan-ng/helm/alert';
 import { HlmBadgeImports } from '@spartan-ng/helm/badge';
 import { HlmButtonImports } from '@spartan-ng/helm/button';
@@ -28,7 +28,7 @@ import { WorkspaceContext } from '../workspace-context';
     HlmInputImports,
     HlmSpinnerImports,
   ],
-  providers: [provideIcons({ lucidePlus, lucideSearch })],
+  providers: [provideIcons({ lucideLayoutGrid, lucidePlus, lucideSearch })],
   templateUrl: './projects-page.html',
 })
 export class ProjectsPage {

@@ -4,64 +4,111 @@
     srOnlySheetTitle="Navigation"
     srOnlySheetDescription="Where to go in Ivaldi."
   >
-    <div hlmSidebarHeader class="gap-4 pt-4">
-      <div class="px-1 group-data-[collapsible=icon]:px-0"><app-organisation-badge /></div>
-      <div class="flex flex-col gap-1.5 px-1 group-data-[collapsible=icon]:hidden">
-        <label for="workspace-switcher" class="text-muted-foreground text-xs">Workspace</label>
-        <select
-          id="workspace-switcher"
-          class="border-input bg-background text-foreground h-9 border px-2 text-sm"
-          (change)="selectWorkspace($event)"
-        >
-          @for (workspace of context.workspaces(); track workspace.id) {
-            <option [value]="workspace.id" [selected]="workspace.id === context.current()?.id">
-              {{ workspace.display_name }}
-            </option>
-          }
-        </select>
-      </div>
+    <!-- The Organisation and the Workspace being worked in, switched from a menu. -->
+    <div hlmSidebarHeader>
+      <ul hlmSidebarMenu>
+        <li hlmSidebarMenuItem>
+          <button
+            hlmSidebarMenuButton
+            size="lg"
+            type="button"
+            class="data-open:bg-sidebar-accent"
+            side="right"
+            align="start"
+            [hlmDropdownMenuTrigger]="workspaceMenu"
+            [tooltip]="workspaceLabel()"
+            [attr.aria-label]="'Workspace: ' + workspaceLabel() + '. Switch Workspace'"
+          >
+            <span
+              aria-hidden="true"
+              class="bg-primary text-primary-foreground inline-flex size-8 shrink-0 items-center justify-center rounded-[19.5%] text-[13px] font-bold"
+            >
+              {{ organisationInitial() }}
+            </span>
+            <span class="grid min-w-0 flex-1 text-left leading-tight">
+              <span class="text-heading truncate text-sm font-semibold">{{
+                user.organization()?.display_name
+              }}</span>
+              <span class="text-muted-foreground truncate text-xs">{{ workspaceLabel() }}</span>
+            </span>
+            <ng-icon
+              name="lucideChevronsUpDown"
+              class="ms-auto group-data-[collapsible=icon]:hidden"
+              aria-hidden="true"
+            />
+          </button>
+        </li>
+      </ul>
     </div>
 
     <nav hlmSidebarContent aria-label="Primary">
       @for (group of groups; track group.label) {
-        <div hlmSidebarGroup>
-          <div
+        <div
+          hlmSidebarGroup
+          hlmCollapsible
+          class="group/collapsible"
+          [expanded]="isOpen(group.label)"
+          (expandedChange)="setOpen(group.label, $event)"
+        >
+          <button
             hlmSidebarGroupLabel
-            class="text-muted-foreground text-[11px] font-semibold tracking-[0.24em] uppercase"
+            hlmCollapsibleTrigger
+            class="text-muted-foreground hover:text-sidebar-foreground w-full text-[11px] font-semibold tracking-[0.24em] uppercase"
           >
             {{ group.label }}
+            <ng-icon
+              name="lucideChevronDown"
+              aria-hidden="true"
+              class="ms-auto transition-transform group-data-[state=closed]/collapsible:-rotate-90"
+            />
+          </button>
+          <div hlmCollapsibleContent>
+            <div hlmSidebarGroupContent>
+              <ul hlmSidebarMenu>
+                @for (item of group.items; track item.path) {
+                  <li hlmSidebarMenuItem>
+                    <a
+                      hlmSidebarMenuButton
+                      class="data-[active=true]:text-heading data-[active=true]:[&_ng-icon]:text-primary-text no-underline"
+                      closeMobileSidebarOnClick
+                      [routerLink]="item.path"
+                      [isActive]="isActive(item)"
+                      [tooltip]="item.label"
+                      [attr.aria-current]="isActive(item) ? 'page' : null"
+                    >
+                      <ng-icon [name]="item.icon" aria-hidden="true" />
+                      <span>{{ item.label }}</span>
+                    </a>
+                  </li>
+                }
+              </ul>
+            </div>
           </div>
-          <ul hlmSidebarMenu>
-            @for (item of group.items; track item.path) {
-              <li hlmSidebarMenuItem>
-                <a
-                  hlmSidebarMenuButton
-                  class="data-[active=true]:text-heading data-[active=true]:[&_ng-icon]:text-primary-text no-underline"
-                  closeMobileSidebarOnClick
-                  [routerLink]="item.path"
-                  [isActive]="isActive(item)"
-                  [tooltip]="item.label"
-                  [attr.aria-current]="isActive(item) ? 'page' : null"
-                >
-                  <ng-icon [name]="item.icon" aria-hidden="true" />
-                  <span>{{ item.label }}</span>
-                </a>
-              </li>
-            }
-          </ul>
         </div>
       }
     </nav>
 
-    <div hlmSidebarFooter class="border-sidebar-border border-t">
+    <!-- The signed-in person, with what they can do about their own session. -->
+    <div hlmSidebarFooter>
       <ul hlmSidebarMenu>
-        <li hlmSidebarMenuItem class="px-1 py-1 group-data-[collapsible=icon]:px-0">
-          <app-user-badge />
-        </li>
         <li hlmSidebarMenuItem>
-          <button hlmSidebarMenuButton type="button" tooltip="Sign out" (click)="signOut()">
-            <ng-icon name="lucideLogOut" aria-hidden="true" />
-            <span>Sign out</span>
+          <button
+            hlmSidebarMenuButton
+            size="lg"
+            type="button"
+            class="data-open:bg-sidebar-accent"
+            side="right"
+            align="end"
+            [hlmDropdownMenuTrigger]="userMenu"
+            [tooltip]="user.displayName()"
+            [attr.aria-label]="user.displayName() + ', account menu'"
+          >
+            <app-user-badge class="min-w-0 flex-1" />
+            <ng-icon
+              name="lucideChevronsUpDown"
+              class="ms-auto group-data-[collapsible=icon]:hidden"
+              aria-hidden="true"
+            />
           </button>
         </li>
       </ul>
@@ -79,3 +126,57 @@
     </div>
   </main>
 </div>
+
+<ng-template #workspaceMenu>
+  <hlm-dropdown-menu class="min-w-60">
+    <div hlmDropdownMenuLabel>Workspaces in {{ user.organization()?.display_name }}</div>
+    @for (workspace of context.workspaces(); track workspace.id) {
+      <button
+        hlmDropdownMenuItem
+        type="button"
+        [attr.aria-current]="workspace.id === context.current()?.id ? 'true' : null"
+        (triggered)="context.select(workspace.id)"
+      >
+        <span class="flex-1 text-left">{{ workspace.display_name }}</span>
+        @if (workspace.id === context.current()?.id) {
+          <ng-icon name="lucideCheck" aria-hidden="true" />
+        }
+      </button>
+    }
+  </hlm-dropdown-menu>
+</ng-template>
+
+<ng-template #userMenu>
+  <hlm-dropdown-menu class="min-w-60">
+    <div hlmDropdownMenuLabel class="text-foreground flex flex-col gap-0.5 font-normal">
+      <span class="text-heading text-sm font-semibold">{{ user.displayName() }}</span>
+      @if (user.email()) {
+        <span class="text-muted-foreground text-xs">{{ user.email() }}</span>
+      }
+      @if (user.roleLabel()) {
+        <span class="text-muted-foreground text-xs"
+          >{{ user.roleLabel() }} of {{ user.organization()?.display_name }}</span
+        >
+      }
+    </div>
+    <hlm-dropdown-menu-separator class="bg-foreground/15" />
+    <hlm-dropdown-menu-group>
+      @if (user.canManageOrganization()) {
+        <a hlmDropdownMenuItem routerLink="/setup/organisation">
+          <ng-icon name="lucideBuilding2" aria-hidden="true" /> Organisation settings
+        </a>
+      }
+      <a hlmDropdownMenuItem routerLink="/people">
+        <ng-icon name="lucideUsers" aria-hidden="true" /> People &amp; access
+      </a>
+      <button hlmDropdownMenuItem type="button" (triggered)="theme.toggle()">
+        <ng-icon [name]="theme.dark() ? 'lucideSun' : 'lucideMoon'" aria-hidden="true" />
+        {{ theme.dark() ? 'Use the light theme' : 'Use the dark theme' }}
+      </button>
+    </hlm-dropdown-menu-group>
+    <hlm-dropdown-menu-separator class="bg-foreground/15" />
+    <button hlmDropdownMenuItem type="button" (triggered)="signOut()">
+      <ng-icon name="lucideLogOut" aria-hidden="true" /> Sign out
+    </button>
+  </hlm-dropdown-menu>
+</ng-template>

@@ -1,19 +1,29 @@
-import { Component, inject } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { filter, map } from 'rxjs';
 import { NgIcon, provideIcons } from '@ng-icons/core';
 import {
+  lucideBuilding2,
+  lucideCheck,
+  lucideChevronDown,
+  lucideChevronsUpDown,
   lucideFolder,
   lucideGitBranch,
   lucideLayers,
   lucideLogOut,
+  lucideMoon,
   lucideSettings,
+  lucideSun,
   lucideUsers,
 } from '@ng-icons/lucide';
-import { HlmSidebarImports } from '@spartan-ng/helm/sidebar';
+import { HlmCollapsibleImports } from '@spartan-ng/helm/collapsible';
+import { HlmDropdownMenuImports } from '@spartan-ng/helm/dropdown-menu';
+import { HlmSidebarImports, HlmSidebarService } from '@spartan-ng/helm/sidebar';
+import { CurrentUser } from '../api/current-user';
 import { Session } from '../auth/session';
-import { OrganisationBadge, UserBadge } from '../shared/identity';
+import { UserBadge } from '../shared/identity';
+import { Theme } from '../shared/theme';
 import { WorkspaceContext } from './workspace-context';
 
 interface NavItem {
@@ -30,14 +40,28 @@ interface NavItem {
  */
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet, RouterLink, NgIcon, HlmSidebarImports, OrganisationBadge, UserBadge],
+  imports: [
+    RouterOutlet,
+    RouterLink,
+    NgIcon,
+    HlmCollapsibleImports,
+    HlmDropdownMenuImports,
+    HlmSidebarImports,
+    UserBadge,
+  ],
   providers: [
     provideIcons({
+      lucideBuilding2,
+      lucideCheck,
+      lucideChevronDown,
+      lucideChevronsUpDown,
       lucideFolder,
       lucideGitBranch,
       lucideLayers,
       lucideLogOut,
+      lucideMoon,
       lucideSettings,
+      lucideSun,
       lucideUsers,
     }),
   ],
@@ -46,6 +70,9 @@ interface NavItem {
 export class AppShell {
   private readonly session = inject(Session);
   protected readonly context = inject(WorkspaceContext);
+  protected readonly user = inject(CurrentUser);
+  protected readonly theme = inject(Theme);
+  private readonly sidebar = inject(HlmSidebarService);
   private readonly router = inject(Router);
 
   /** The current URL, for the items that also cover pages outside their own path. */
@@ -81,6 +108,32 @@ export class AppShell {
     },
   ];
 
+  protected readonly workspaceLabel = computed(
+    () => `${this.context.current()?.display_name ?? 'No'} Workspace`,
+  );
+  protected readonly organisationInitial = computed(
+    () => this.user.organization()?.display_name.trim().charAt(0).toUpperCase() ?? '',
+  );
+
+  /** The groups folded away; folded to icons, the sidebar shows every group's items. */
+  private readonly closedGroups = signal<ReadonlySet<string>>(new Set());
+
+  protected isOpen(label: string): boolean {
+    return this.sidebar.state() === 'collapsed' || !this.closedGroups().has(label);
+  }
+
+  protected setOpen(label: string, open: boolean): void {
+    this.closedGroups.update((closed) => {
+      const next = new Set(closed);
+      if (open) {
+        next.delete(label);
+      } else {
+        next.add(label);
+      }
+      return next;
+    });
+  }
+
   constructor() {
     void this.context.load().catch(() => undefined);
   }
@@ -92,10 +145,6 @@ export class AppShell {
   protected isActive(item: NavItem): boolean {
     const url = this.url().split(/[?#]/)[0];
     return [item.path, ...(item.within ?? [])].some((p) => url === p || url.startsWith(p + '/'));
-  }
-
-  protected selectWorkspace(event: Event): void {
-    this.context.select((event.target as HTMLSelectElement).value);
   }
 
   protected signOut(): void {

@@ -36,6 +36,12 @@ export type ChannelRule = Schemas['ChannelRuleSnapshot'];
 export type Channel = Schemas['ChannelSnapshot'];
 export type Placement = Schemas['PlacementSnapshot'];
 
+/** A Release with each of its Builds in full, from `GET /v1/releases/{id}`. */
+export type Release = Schemas['Release'];
+export type ReleaseStatus = Release['status'];
+export type ReleaseBuild = Schemas['ReleaseBuild'];
+export type Build = Schemas['BuildSnapshot'];
+
 /** The caller's Organisation as `GET /v1/organization` returns it. */
 export type Organization = Schemas['Organization'];
 

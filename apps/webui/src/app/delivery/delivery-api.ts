@@ -7,8 +7,11 @@ import {
   Channel,
   Environment,
   Lifecycle,
+  CursorPage,
   Placement,
   Project,
+  Release,
+  ReleaseStatus,
   Target,
   Team,
   Workspace,
@@ -87,6 +90,53 @@ export class DeliveryApi {
     return this.api.send('POST', `/applications/${applicationId}/placements`, {
       target_id: targetId,
     });
+  }
+
+  /** A page of an Application's Releases, newest first. */
+  releases(
+    applicationId: string,
+    options: { status?: ReleaseStatus; cursor?: string | null; limit?: number } = {},
+  ): Promise<CursorPage<Release>> {
+    const query = new URLSearchParams({
+      limit: String(options.limit ?? 20),
+      sort_by: 'created_at',
+      sort_order: 'desc',
+    });
+    if (options.status) {
+      query.set('status', options.status);
+    }
+    if (options.cursor) {
+      query.set('next_cursor', options.cursor);
+    }
+    return this.api.get(`/applications/${applicationId}/releases?${query}`);
+  }
+
+  release(id: string): Promise<Release> {
+    return this.api.get(`/releases/${id}`);
+  }
+
+  /**
+   * Creates a Release from one Build per artifact, given by digest. Without a Channel, the
+   * Release joins the one Channel whose rules it meets.
+   */
+  createRelease(
+    applicationId: string,
+    release: {
+      version: string;
+      channel_id?: string;
+      builds: { artifact: string; digest: string }[];
+      publish: boolean;
+    },
+  ): Promise<Release> {
+    return this.api.send('POST', `/applications/${applicationId}/releases`, release);
+  }
+
+  publishRelease(id: string): Promise<Release> {
+    return this.api.send('POST', `/releases/${id}/publish`);
+  }
+
+  withdrawRelease(id: string): Promise<Release> {
+    return this.api.send('POST', `/releases/${id}/withdraw`);
   }
 
   environments(workspaceId: string): Promise<Environment[]> {

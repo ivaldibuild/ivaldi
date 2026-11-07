@@ -1,0 +1,128 @@
+<div class="flex max-w-205 flex-col gap-8">
+  <app-page-header
+    heading="Create Release"
+    [trail]="(application()?.display_name ?? 'Application') + ' / Releases'"
+  />
+
+  <p class="text-foreground text-base leading-relaxed">
+    A Release is one version of the Application: one Build of each artifact, by digest. CI usually
+    creates Releases with <code>ivaldictl release create</code>; use this when you have the digests
+    yourself.
+  </p>
+
+  @if (status.error(); as message) {
+    <div hlmAlert variant="destructive" role="alert">
+      <h2 hlmAlertTitle>The Release wasn't created</h2>
+      <p hlmAlertDescription>{{ message }}</p>
+    </div>
+  }
+
+  @if (details.error()) {
+    <div hlmAlert variant="destructive" role="alert">
+      <h2 hlmAlertTitle>The Application didn't load</h2>
+      <p hlmAlertDescription>Go back and try again.</p>
+    </div>
+  } @else if (!details.hasValue()) {
+    <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+      <hlm-spinner aria-hidden="true" /> Loading the Application…
+    </p>
+  } @else if (releaseForm.builds.length === 0) {
+    <section class="border-border flex flex-col items-start gap-3 border p-6">
+      <h2 class="text-heading text-lg font-semibold">Declare an artifact first</h2>
+      <p class="text-muted-foreground text-sm">
+        A Release carries one Build of each of the Application's artifacts, such as its container
+        image.
+      </p>
+      <a hlmBtn [routerLink]="['/applications', id()]">Go to the Application</a>
+    </section>
+  } @else {
+    <form id="release-form" class="flex flex-col gap-6" novalidate (submit)="create($event)">
+      <div class="grid gap-5 md:grid-cols-2">
+        <div hlmField>
+          <label hlmFieldLabel for="release-version">Version</label>
+          <input
+            hlmInput
+            id="release-version"
+            class="h-10"
+            placeholder="1.4.0"
+            [formField]="releaseForm.version"
+          />
+          @if (releaseForm.version().touched() && releaseForm.version().invalid()) {
+            <hlm-field-error forceShow>{{
+              releaseForm.version().errors()[0].message
+            }}</hlm-field-error>
+          }
+        </div>
+        <div hlmField>
+          <label hlmFieldLabel for="release-channel">Channel</label>
+          <select
+            id="release-channel"
+            class="border-input bg-background text-foreground h-10 border px-2"
+            [formField]="releaseForm.channel_id"
+          >
+            <option [value]="anyChannel">The one whose rules it meets</option>
+            @for (channel of channels(); track channel.id) {
+              <option [value]="channel.id">{{ channel.display_name }}</option>
+            }
+          </select>
+        </div>
+      </div>
+
+      <fieldset class="border-border flex flex-col gap-4 border p-5">
+        <legend class="text-heading px-1 text-base font-semibold">Builds</legend>
+        @for (build of releaseForm.builds; track $index; let i = $index) {
+          <div hlmField>
+            <label hlmFieldLabel [for]="'release-digest-' + i">
+              {{ build.artifact().value() }}
+              <span class="text-muted-foreground font-normal">
+                · {{ build.required().value() ? 'required' : 'optional' }}
+              </span>
+            </label>
+            <input
+              hlmInput
+              class="font-mono text-[13px]"
+              placeholder="sha256:…"
+              [id]="'release-digest-' + i"
+              [attr.aria-describedby]="'release-published-' + i"
+              [formField]="build.digest"
+            />
+            <p [id]="'release-published-' + i" class="text-muted-foreground text-[13px]">
+              Published as <code>{{ build.published_as().value() }}</code>
+            </p>
+            @if (build.digest().touched() && build.digest().invalid()) {
+              <hlm-field-error forceShow>{{ build.digest().errors()[0].message }}</hlm-field-error>
+            }
+          </div>
+        }
+        @if (noBuilds()) {
+          <p class="text-destructive-text text-sm" role="alert">Give at least one Build.</p>
+        }
+      </fieldset>
+
+      <label class="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          class="accent-primary mt-0.5 size-4"
+          [formField]="releaseForm.publish"
+        />
+        <span>
+          Publish it now
+          <span class="text-muted-foreground block">
+            A published Release can be deployed. Leave this off to keep it as a draft.
+          </span>
+        </span>
+      </label>
+
+      <div class="flex flex-wrap gap-2">
+        <button hlmBtn type="submit" [disabled]="status.saving()">
+          @if (status.saving()) {
+            <hlm-spinner aria-hidden="true" /> Creating…
+          } @else {
+            Create Release
+          }
+        </button>
+        <a hlmBtn variant="outline" [routerLink]="['/applications', id()]">Cancel</a>
+      </div>
+    </form>
+  }
+</div>

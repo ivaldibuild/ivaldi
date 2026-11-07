@@ -2,7 +2,7 @@ import { Component, computed, inject, input, resource, signal } from '@angular/c
 import { form, FormField, required, submit } from '@angular/forms/signals';
 import { RouterLink } from '@angular/router';
 import { NgIcon, provideIcons } from '@ng-icons/core';
-import { lucideArrowRight, lucideInfo, lucidePlus } from '@ng-icons/lucide';
+import { lucideArrowRight, lucidePlus } from '@ng-icons/lucide';
 import { HlmAlertImports } from '@spartan-ng/helm/alert';
 import { HlmBadgeImports } from '@spartan-ng/helm/badge';
 import { HlmButtonImports } from '@spartan-ng/helm/button';
@@ -14,6 +14,7 @@ import { ArtifactKind } from '../../api/models';
 import { RequestStatus } from '../../shared/request-status';
 import { DeliveryApi } from '../delivery-api';
 import { PageHeader } from '../page-header';
+import { ReleaseList } from '../releases/release-list';
 
 const kinds: { value: ArtifactKind; label: string }[] = [
   { value: 'container_image', label: 'Container image' },
@@ -22,8 +23,8 @@ const kinds: { value: ArtifactKind; label: string }[] = [
 ];
 
 /**
- * One Application: its Channels and the Lifecycles they follow, the artifacts it's made of, and
- * the Targets it's placed on. Releases aren't tracked yet.
+ * One Application: its Channels and the Lifecycles they follow, its Releases, the artifacts it's
+ * made of, and the Targets it's placed on.
  */
 @Component({
   selector: 'app-application-page',
@@ -32,6 +33,7 @@ const kinds: { value: ArtifactKind; label: string }[] = [
     NgIcon,
     RouterLink,
     PageHeader,
+    ReleaseList,
     HlmAlertImports,
     HlmBadgeImports,
     HlmButtonImports,
@@ -39,7 +41,7 @@ const kinds: { value: ArtifactKind; label: string }[] = [
     HlmInputImports,
     HlmSpinnerImports,
   ],
-  providers: [provideIcons({ lucideArrowRight, lucideInfo, lucidePlus })],
+  providers: [provideIcons({ lucideArrowRight, lucidePlus })],
   templateUrl: './application-page.html',
 })
 export class ApplicationPage {

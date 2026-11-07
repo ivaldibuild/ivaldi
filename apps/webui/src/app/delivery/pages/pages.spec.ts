@@ -78,6 +78,8 @@ const standard = {
   ],
 };
 
+const releasesUrl = '/applications/app_1/releases?limit=20&sort_by=created_at&sort_order=desc';
+
 describe('delivery pages', () => {
   let http: HttpTestingController;
   let navigate: ReturnType<typeof vi.spyOn>;
@@ -142,6 +144,7 @@ describe('delivery pages', () => {
           '/workspaces/wsp_1/environments': page(environments),
           '/environments/env_stg/targets': page(targets.env_stg),
           '/environments/env_prd/targets': page(targets.env_prd),
+          [releasesUrl]: page([]),
         };
         req.flush(body[url] ?? ok([]));
       }
@@ -261,6 +264,8 @@ describe('delivery pages', () => {
     http.expectOne(`${v1}/workspaces/wsp_1/environments`).flush(page(environments));
     await settle(fixture);
     flushTargets();
+    await settle(fixture);
+    http.expectOne(`${v1}${releasesUrl}`).flush(page([]));
     await settle(fixture);
     return { fixture, el };
   }

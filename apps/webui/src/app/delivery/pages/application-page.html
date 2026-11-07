@@ -64,15 +64,17 @@
     </section>
 
     <section aria-labelledby="releases-heading" class="flex flex-col gap-4">
-      <h2 id="releases-heading" class="text-heading text-lg font-semibold">Releases</h2>
-      <div hlmAlert role="note">
-        <ng-icon name="lucideInfo" aria-hidden="true" />
-        <h3 hlmAlertTitle>Not tracked yet</h3>
-        <p hlmAlertDescription>
-          Once the control plane records Builds, Releases and Deployments, this shows each Release
-          and how far it has moved through its Channel's Lifecycle.
-        </p>
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <h2 id="releases-heading" class="text-heading text-lg font-semibold">Releases</h2>
+        <a hlmBtn variant="outline" [routerLink]="['/applications', id(), 'releases', 'new']">
+          <ng-icon name="lucidePlus" aria-hidden="true" /> Create Release
+        </a>
       </div>
+      <app-release-list
+        [applicationId]="id()"
+        [channels]="details.value()!.channels"
+        [artifacts]="artifacts()"
+      />
     </section>
 
     <section aria-labelledby="artifacts-heading" class="flex flex-col gap-4">

@@ -11,6 +11,7 @@ import { CurrentUser } from '../api/current-user';
 import { BuiltInRole, Grant, Person } from '../api/models';
 import { PeopleApi, roleLabels, strongestRole } from '../api/people-api';
 import { PageHeader } from '../delivery/page-header';
+import { formatDay } from '../shared/dates';
 
 interface Row {
   person: Person;
@@ -131,11 +132,7 @@ export class PeoplePage {
     if (!person.last_signed_in_at) {
       return 'Never';
     }
-    return new Intl.DateTimeFormat('en-GB', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    }).format(new Date(person.last_signed_in_at));
+    return formatDay(person.last_signed_in_at);
   }
 
   private async load(reset: boolean): Promise<void> {

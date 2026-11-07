@@ -1,0 +1,180 @@
+@if (failure(); as message) {
+  <div hlmAlert variant="destructive" role="alert">
+    <h2 hlmAlertTitle>The Release didn't load</h2>
+    <p hlmAlertDescription>{{ message }}</p>
+  </div>
+} @else if (!release()) {
+  <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+    <hlm-spinner aria-hidden="true" /> Loading the Release…
+  </p>
+} @else {
+  <div class="flex flex-col gap-10">
+    <app-page-header
+      [heading]="release()!.version"
+      [trail]="(application()?.display_name ?? '') + ' / Releases'"
+    >
+      <p pageMeta class="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+        @switch (release()!.status) {
+          @case ('draft') {
+            <span hlmBadge variant="outline" class="border-dashed">Draft</span>
+          }
+          @case ('published') {
+            <span hlmBadge>Published</span>
+          }
+          @case ('withdrawn') {
+            <span hlmBadge variant="destructive">Withdrawn</span>
+          }
+        }
+        <span
+          >In <span class="text-foreground">{{ channel() }}</span></span
+        >
+        @if (release()!.source === 'observed') {
+          <span>Observed on a Target</span>
+        }
+        <a [routerLink]="['/applications', release()!.application_id]">{{
+          application()?.display_name
+        }}</a>
+      </p>
+      <div pageActions class="flex flex-wrap gap-2">
+        @if (release()!.status === 'draft') {
+          <button hlmBtn type="button" [disabled]="action.saving()" (click)="publish()">
+            @if (action.saving()) {
+              <hlm-spinner aria-hidden="true" /> Publishing…
+            } @else {
+              Publish
+            }
+          </button>
+        } @else if (release()!.status === 'published' && !confirmingWithdraw()) {
+          <button hlmBtn variant="outline" type="button" (click)="confirmingWithdraw.set(true)">
+            Withdraw
+          </button>
+        }
+      </div>
+    </app-page-header>
+
+    @if (confirmingWithdraw()) {
+      <div hlmAlert role="alertdialog" aria-labelledby="withdraw-heading">
+        <h2 id="withdraw-heading" hlmAlertTitle>Withdraw {{ release()!.version }}?</h2>
+        <div hlmAlertDescription class="flex flex-col gap-3">
+          <p>
+            It won't be deployed again. Targets running it keep running it until another Release is
+            deployed. This can't be undone.
+          </p>
+          <div class="flex flex-wrap gap-2">
+            <button
+              hlmBtn
+              variant="destructive"
+              type="button"
+              [disabled]="action.saving()"
+              (click)="withdraw()"
+            >
+              @if (action.saving()) {
+                <hlm-spinner aria-hidden="true" /> Withdrawing…
+              } @else {
+                Withdraw {{ release()!.version }}
+              }
+            </button>
+            <button hlmBtn variant="outline" type="button" (click)="confirmingWithdraw.set(false)">
+              Keep it published
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
+    @if (action.error(); as message) {
+      <div hlmAlert variant="destructive" role="alert">
+        <h2 hlmAlertTitle>That didn't work</h2>
+        <p hlmAlertDescription>{{ message }}</p>
+      </div>
+    }
+
+    @if (release()!.status === 'draft') {
+      <p class="text-foreground max-w-205 text-base leading-relaxed">
+        A draft can't be deployed. Publishing checks the Release against its Channel's rules and
+        that it has a Build of every required artifact.
+      </p>
+    }
+
+    <section aria-labelledby="builds-heading" class="flex flex-col gap-4">
+      <h2 id="builds-heading" class="text-heading text-lg font-semibold">Builds</h2>
+      <div class="border-border relative overflow-x-auto border">
+        <table class="w-full min-w-215 border-collapse text-sm">
+          <thead>
+            <tr class="text-muted-foreground text-left">
+              <th scope="col" class="border-border border-b px-4 py-3 font-semibold">Artifact</th>
+              <th scope="col" class="border-border border-b px-4 py-3 font-semibold">Digest</th>
+              <th scope="col" class="border-border border-b px-4 py-3 font-semibold">Source</th>
+              <th scope="col" class="border-border border-b px-4 py-3 font-semibold">Built</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (item of builds(); track item.build.id) {
+              <tr>
+                <th
+                  scope="row"
+                  class="border-border border-b px-4 py-3 text-left align-top font-normal"
+                >
+                  <span class="text-heading font-semibold">{{ item.artifact }}</span>
+                  @if (item.build.version) {
+                    <span class="text-muted-foreground"> · {{ item.build.version }}</span>
+                  }
+                  <code class="text-muted-foreground block text-[13px]">{{
+                    item.build.artifact_name
+                  }}</code>
+                </th>
+                <td class="border-border border-b px-4 py-3 align-top">
+                  <code class="text-[13px] break-all">{{ item.build.digest }}</code>
+                </td>
+                <td class="border-border border-b px-4 py-3 align-top">
+                  @if (item.build.commit_sha) {
+                    <code [title]="item.build.commit_sha">{{ shortCommit(item.build) }}</code>
+                  }
+                  @if (item.build.source_ref) {
+                    <code class="text-muted-foreground block text-[13px]">{{
+                      item.build.source_ref
+                    }}</code>
+                  }
+                  @if (!item.build.commit_sha && !item.build.source_ref) {
+                    <span class="text-muted-foreground">Not reported</span>
+                  }
+                </td>
+                <td class="border-border border-b px-4 py-3 align-top">
+                  <span class="block">{{ builtAt(item.build) }}</span>
+                  @if (ciRunLink(item.build); as link) {
+                    <a class="text-[13px]" [href]="link" target="_blank" rel="noopener"
+                      >{{ item.build.ci_provider ?? 'CI' }} run</a
+                    >
+                  } @else if (item.build.provenance === 'observed') {
+                    <span class="text-muted-foreground text-[13px]">Observed</span>
+                  } @else if (item.build.ci_provider) {
+                    <span class="text-muted-foreground text-[13px]">{{
+                      item.build.ci_provider
+                    }}</span>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section aria-labelledby="history-heading" class="flex flex-col gap-4">
+      <h2 id="history-heading" class="text-heading text-lg font-semibold">History</h2>
+      <ol class="border-border flex flex-col border">
+        @for (event of history(); track event.label) {
+          <li
+            class="border-border flex flex-wrap justify-between gap-2 border-b px-4 py-3 text-sm last:border-b-0"
+          >
+            <span class="text-heading font-semibold">{{ event.label }}</span>
+            <span class="text-muted-foreground">{{ event.at }}</span>
+          </li>
+        }
+      </ol>
+      <p class="text-muted-foreground text-sm">
+        Deployments of this Release will show here once the control plane records them.
+      </p>
+    </section>
+  </div>
+}

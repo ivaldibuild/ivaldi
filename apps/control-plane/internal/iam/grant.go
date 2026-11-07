@@ -5,6 +5,7 @@ import (
 
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 )
 
 // Grant gives a Role to exactly one principal or one Group, on one
@@ -77,8 +78,8 @@ func NewGrant(props NewGrantProps, grantID *string) (*Grant, error) {
 	if err != nil {
 		return nil, err
 	}
-	principalID := optionalString(props.PrincipalID)
-	groupID := optionalString(props.GroupID)
+	principalID := optional.OfPtr(props.PrincipalID)
+	groupID := optional.OfPtr(props.GroupID)
 	switch {
 	case (principalID == nil) == (groupID == nil):
 		return nil, NewErrInvalidInput("a grant needs exactly one grantee: a principal or a group")

@@ -3,7 +3,6 @@ package iam
 // Limits on what one record may hold. Text lengths match the columns.
 const (
 	maxNameLength         = 255
-	maxEmailLength        = 320
 	maxDomainLength       = 253
 	maxSubjectLength      = 512
 	maxTokenPrefixLength  = 16

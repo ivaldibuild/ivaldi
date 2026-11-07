@@ -2,12 +2,12 @@ package iam
 
 import (
 	"fmt"
-	"net/mail"
 	"strings"
 	"time"
 
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
+	emailaddr "github.com/ivaldibuild/ivaldi/pkg/email"
 )
 
 // AccountStatus is where an account is in its life. Accounts are never
@@ -96,8 +96,7 @@ func NewAccount(props NewAccountProps, accountID *string) (*Account, error) {
 // validateEmail accepts a bare address such as ada@example.com, without a
 // display name or angle brackets.
 func validateEmail(email string) error {
-	addr, err := mail.ParseAddress(email)
-	if err != nil || addr.Address != email || addr.Name != "" || len(email) > maxEmailLength {
+	if !emailaddr.Valid(email) {
 		return NewErrInvalidInput(fmt.Sprintf("%q is not an email address", email))
 	}
 	return nil

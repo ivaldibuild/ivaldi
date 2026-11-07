@@ -8,6 +8,7 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 	"github.com/ivaldibuild/ivaldi/pkg/slug"
 )
 
@@ -115,7 +116,7 @@ func NewArtifact(props NewArtifactProps, artifactID *string) (*Artifact, error) 
 	if err := validatePublishedName(props.ArtifactName); err != nil {
 		return nil, err
 	}
-	registry := optionalString(props.RegistryID)
+	registry := optional.OfPtr(props.RegistryID)
 	if registry != nil && !id.Valid(Registry{}.Prefix(), *registry) {
 		return nil, NewErrInvalidInput(fmt.Sprintf("%q is not a registry ID", *registry))
 	}

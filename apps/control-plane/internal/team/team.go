@@ -26,6 +26,7 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 )
 
 // Domain types whose IDs carry a prefix register it, so a prefix used twice
@@ -173,7 +174,7 @@ func NewTeam(props NewTeamProps, teamID *string) (*Team, error) {
 		organizationID: props.OrganizationID,
 		slug:           s,
 		displayName:    props.DisplayName,
-		description:    optionalString(props.Description),
+		description:    optional.OfPtr(props.Description),
 		createdAt:      timeOr(props.CreatedAt, now),
 		updatedAt:      timeOr(props.UpdatedAt, now),
 		archivedAt:     clock.CopyTime(props.ArchivedAt),

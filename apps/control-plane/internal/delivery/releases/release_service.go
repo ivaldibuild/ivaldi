@@ -21,6 +21,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/outbox"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 	"github.com/ivaldibuild/ivaldi/pkg/pagination"
 	"github.com/ivaldibuild/ivaldi/pkg/release"
 	"github.com/ivaldibuild/ivaldi/pkg/transaction"
@@ -285,18 +286,26 @@ func (s *service) CreateRelease(ctx context.Context, actor identity.Actor, in de
 	if len(in.Builds) == 0 {
 		return nil, delivery.NewErrInvalidInput("a release carries at least one build")
 	}
+
 	var out *delivery.ReleaseDetail
 	var refused *conflict
+
 	err := s.writer.Tx.WithinTx(ctx, func(ctx context.Context) error {
 		artifacts, err := s.activeArtifacts(ctx, in.OrganizationID, in.ApplicationID)
 		if err != nil {
 			return err
 		}
+
 		byArtifact := map[string]*delivery.Build{}
 		props := delivery.NewReleaseProps{
-			OrganizationID: in.OrganizationID, ApplicationID: in.ApplicationID, Version: in.Version,
-			CreatedByPrincipalID: optional(actor.PrincipalID),
+			OrganizationID:       in.OrganizationID,
+			ApplicationID:        in.ApplicationID,
+			Version:              in.Version,
+			CreatedByPrincipalID: optional.Of(actor.PrincipalID),
+			TriggeredBy:          optional.Of(in.TriggeredBy),
+			TriggeredByEmail:     optional.Of(in.TriggeredByEmail),
 		}
+
 		for _, bi := range in.Builds {
 			artifact := findArtifact(artifacts, bi.Artifact)
 			if artifact != nil && byArtifact[artifact.ID()] != nil {
@@ -315,10 +324,12 @@ func (s *service) CreateRelease(ctx context.Context, actor identity.Actor, in de
 		if err != nil {
 			return err
 		}
+
 		channel, err := chooseChannel(channels, in.ChannelID, candidate(in.Version, artifacts, byArtifact))
 		if err != nil {
 			return err
 		}
+
 		props.ChannelID = channel.ID()
 		rel, err := delivery.NewRelease(props, nil)
 		if err != nil {
@@ -330,14 +341,17 @@ func (s *service) CreateRelease(ctx context.Context, actor identity.Actor, in de
 			}
 			return err
 		}
+
 		if err := s.writer.Events(ctx, delivery.AggregateRelease, rel.ID(), rel); err != nil {
 			return err
 		}
+
 		if err := s.writer.AuditRecord(ctx, audit.Event{
 			Type: delivery.EventReleaseCreated, OrganizationID: in.OrganizationID, ResourceID: rel.ID(), Actor: actor, After: rel.Snapshot(),
 		}); err != nil {
 			return err
 		}
+
 		if in.Publish {
 			// The publish decision is filed apart from the one to create.
 			d, ok := authorization.DecisionFor(ctx, publishSubject)
@@ -348,7 +362,9 @@ func (s *service) CreateRelease(ctx context.Context, actor identity.Actor, in de
 				return err
 			}
 		}
+
 		out = detail(rel, byArtifact)
+
 		return nil
 	})
 	if refused != nil {
@@ -592,11 +608,4 @@ func detail(rel *delivery.Release, byArtifact map[string]*delivery.Build) *deliv
 		d.Builds = append(d.Builds, byArtifact[rb.ArtifactID])
 	}
 	return d
-}
-
-func optional(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
 }

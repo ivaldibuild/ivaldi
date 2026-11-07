@@ -77,6 +77,34 @@ func TestBuildRepository(t *testing.T) {
 	})
 }
 
+func TestReleaseRepositoryStoresWhoTriggeredIt(t *testing.T) {
+	f := newFixture(t)
+	builds := NewBuildRepository(f.db)
+	releases := NewReleaseRepository(f.db)
+	at(t, 0)
+
+	env := f.createEnv(t, orgA, wsA, "prod")
+	lc := f.createLifecycle(t, orgA, wsA, "standard", phase("Prod", env.ID()))
+	app := f.createApp(t, orgA, wsA, projA, "api")
+	api := f.createArtifact(t, orgA, app.ID(), "api")
+	main := f.createChannel(t, orgA, app.ID(), lc.ID(), "main", true)
+	b := newBuild(orgA, "ghcr.io/acme/api", digest("1"), delivery.BuildDetails{}, delivery.BuildCIReported)
+	_, err := builds.CreateBuild(f.ctx, b)
+	require.NoError(t, err)
+
+	r := must(delivery.NewRelease(delivery.NewReleaseProps{
+		OrganizationID: orgA, ApplicationID: app.ID(), ChannelID: main.ID(), Version: "1.0.0",
+		TriggeredBy: new("ada"), TriggeredByEmail: new("ada@example.com"),
+		Builds: []delivery.NewReleaseBuildProps{{ArtifactID: api.ID(), BuildID: b.ID()}},
+	}, nil))
+	require.NoError(t, releases.CreateRelease(f.ctx, r))
+	got, err := releases.GetRelease(f.ctx, orgA, r.ID())
+	require.NoError(t, err)
+	assert.Equal(t, r.Snapshot(), got.Snapshot())
+	assert.Equal(t, "ada", *got.TriggeredBy())
+	assert.Equal(t, "ada@example.com", *got.TriggeredByEmail())
+}
+
 func TestReleaseRepository(t *testing.T) {
 	f := newFixture(t)
 	builds := NewBuildRepository(f.db)

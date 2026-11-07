@@ -111,7 +111,7 @@ func githubTag() map[string]string {
 	return map[string]string{
 		"CI": "true", "GITHUB_ACTIONS": "true", "GITHUB_SHA": strings.Repeat("a", 40), "GITHUB_REF": "refs/tags/v1.4.0",
 		"GITHUB_SERVER_URL": "https://github.com", "GITHUB_REPOSITORY": "acme/api", "GITHUB_RUN_ID": "77",
-		"IVALDI_API_TOKEN": "ivt_from_env",
+		"GITHUB_ACTOR": "ada", "IVALDI_API_TOKEN": "ivt_from_env",
 	}
 }
 
@@ -134,6 +134,12 @@ func TestReleaseCreateFromATagInCI(t *testing.T) {
 	if body["version"] != "1.4.0" || body["publish"] != true {
 		t.Errorf("the version comes from the tag: %v", body)
 	}
+	if body["triggered_by"] != "ada" {
+		t.Errorf("who triggered it comes from CI: %v", body["triggered_by"])
+	}
+	if _, ok := body["triggered_by_email"]; ok {
+		t.Errorf("GitHub Actions exposes no email, so none is sent: %v", body["triggered_by_email"])
+	}
 	build := body["builds"].([]any)[0].(map[string]any)
 	want := map[string]any{
 		"artifact": "api", "digest": "sha256:aa", "version": "1.4.0", "commit_sha": strings.Repeat("a", 40),
@@ -146,6 +152,22 @@ func TestReleaseCreateFromATagInCI(t *testing.T) {
 	}
 	if !strings.Contains(out, "Release 1.4.0 (rel_1) is published") || !strings.Contains(out, "ghcr.io/acme/api@sha256:aa") {
 		t.Errorf("text output %q", out)
+	}
+}
+
+func TestReleaseCreateTriggeredByFlagsWinOverCI(t *testing.T) {
+	cp := newControlPlane(t)
+	_, err := run(t, cp, githubTag(), memoryStore{}, "release", "create", "--app", "app_1", "--artifact", "api=sha256:aa",
+		"--triggered-by-email", "grace@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := cp.bodies[0]
+	if body["triggered_by_email"] != "grace@example.com" {
+		t.Errorf("triggered_by_email = %v", body["triggered_by_email"])
+	}
+	if _, ok := body["triggered_by"]; ok {
+		t.Errorf("a flag replaces both of CI's values, so CI's name is not paired with another email: %v", body["triggered_by"])
 	}
 }
 

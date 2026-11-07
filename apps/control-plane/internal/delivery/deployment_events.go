@@ -8,6 +8,7 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 	"github.com/ivaldibuild/ivaldi/pkg/release"
 )
 
@@ -108,8 +109,8 @@ func NewDeploymentEvent(props NewDeploymentEventProps, eventID *string) (*Deploy
 		kind:           props.Kind,
 		status:         copyDeploymentStatus(props.Status),
 		detail:         append(json.RawMessage(nil), props.Detail...),
-		reportID:       optionalString(props.ReportID),
-		reportedBy:     optionalString(props.ReportedByPrincipalID),
+		reportID:       optional.OfPtr(props.ReportID),
+		reportedBy:     optional.OfPtr(props.ReportedByPrincipalID),
 		occurredAt:     timeOr(props.OccurredAt, now),
 		recordedAt:     timeOr(props.RecordedAt, now),
 	}

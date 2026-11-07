@@ -9,6 +9,7 @@ import (
 
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 )
 
 // BuildProvenance says where a Build's record came from.
@@ -184,12 +185,12 @@ func ValidateTag(tag string) error {
 // normalize checks the details and drops empty values.
 func (d BuildDetails) normalize() (BuildDetails, error) {
 	out := BuildDetails{
-		Version:    optionalString(d.Version),
-		SourceID:   optionalString(d.SourceID),
-		CommitSHA:  optionalString(d.CommitSHA),
-		SourceRef:  optionalString(d.SourceRef),
-		CIProvider: optionalString(d.CIProvider),
-		CIRunRef:   optionalString(d.CIRunRef),
+		Version:    optional.OfPtr(d.Version),
+		SourceID:   optional.OfPtr(d.SourceID),
+		CommitSHA:  optional.OfPtr(d.CommitSHA),
+		SourceRef:  optional.OfPtr(d.SourceRef),
+		CIProvider: optional.OfPtr(d.CIProvider),
+		CIRunRef:   optional.OfPtr(d.CIRunRef),
 		BuiltAt:    clock.CopyTime(d.BuiltAt),
 	}
 	if v := out.Version; v != nil {

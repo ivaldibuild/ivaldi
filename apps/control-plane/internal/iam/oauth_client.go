@@ -10,6 +10,7 @@ import (
 
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 )
 
 // ClientRegistration is how an OAuth client became known.
@@ -85,7 +86,7 @@ func NewOAuthClient(props NewOAuthClientProps, clientID *string) (*OAuthClient, 
 	if err := validateRedirectURIs(props.RedirectURIs); err != nil {
 		return nil, err
 	}
-	metadataURL := optionalString(props.MetadataURL)
+	metadataURL := optional.OfPtr(props.MetadataURL)
 	switch props.Registration {
 	case RegistrationDynamic:
 		if metadataURL != nil {

@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 	"github.com/ivaldibuild/ivaldi/pkg/slug"
 )
 
@@ -53,15 +54,6 @@ func newRoot(prefix string, storedID *string) (aggregate.Root, error) {
 	return r, nil
 }
 
-// optionalString returns a copy of s, with "" meaning none.
-func optionalString(s *string) *string {
-	if s == nil || *s == "" {
-		return nil
-	}
-	c := *s
-	return &c
-}
-
 func copyString(s *string) *string {
 	if s == nil {
 		return nil
@@ -85,7 +77,7 @@ func setOptional(dst **string, v *string) bool {
 	if v == nil {
 		return false
 	}
-	next := optionalString(v)
+	next := optional.OfPtr(v)
 	if equalPtr(*dst, next) {
 		return false
 	}

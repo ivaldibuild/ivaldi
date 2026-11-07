@@ -14,6 +14,7 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/database"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 )
 
 // recordPrefix starts every audit record's ID.
@@ -73,11 +74,11 @@ func (r *recorder) Record(ctx context.Context, e audit.Event) error {
 		OrganizationID:        e.OrganizationID,
 		Type:                  e.Type,
 		ResourceID:            e.ResourceID,
-		ActorPrincipalID:      optional(e.Actor.PrincipalID),
+		ActorPrincipalID:      optional.Of(e.Actor.PrincipalID),
 		ActorKind:             string(e.Actor.Kind),
-		ActorSessionID:        optional(e.Actor.SessionID),
-		DecisionID:            optional(e.DecisionID),
-		ApprovedByPrincipalID: optional(e.ApprovedByPrincipalID),
+		ActorSessionID:        optional.Of(e.Actor.SessionID),
+		DecisionID:            optional.Of(e.DecisionID),
+		ApprovedByPrincipalID: optional.Of(e.ApprovedByPrincipalID),
 		Before:                before,
 		After:                 after,
 		OccurredAt:            occurred.UTC(),
@@ -117,11 +118,4 @@ func snapshot(v any) ([]byte, error) {
 		return nil, nil
 	}
 	return json.Marshal(v)
-}
-
-func optional(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
 }

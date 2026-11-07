@@ -7,6 +7,7 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 )
 
 // WorkloadEnrollmentToken lets one data-plane component enroll as a
@@ -98,7 +99,7 @@ func NewWorkloadEnrollmentToken(props NewWorkloadEnrollmentTokenProps, tokenID *
 	if err := validateExpiry(props.ExpiresAt, createdAt); err != nil {
 		return nil, err
 	}
-	usedBy := optionalString(props.UsedByPrincipalID)
+	usedBy := optional.OfPtr(props.UsedByPrincipalID)
 	if (props.UsedAt == nil) != (usedBy == nil) {
 		return nil, NewErrInvalidInput("a used enrollment token needs both when and by whom it was used")
 	}
@@ -113,7 +114,7 @@ func NewWorkloadEnrollmentToken(props NewWorkloadEnrollmentTokenProps, tokenID *
 		organizationID:       props.OrganizationID,
 		tokenHash:            copyBytes(props.TokenHash),
 		pool:                 props.Pool,
-		targetID:             optionalString(props.TargetID),
+		targetID:             optional.OfPtr(props.TargetID),
 		credentialKind:       props.CredentialKind,
 		createdByPrincipalID: props.CreatedByPrincipalID,
 		expiresAt:            props.ExpiresAt,

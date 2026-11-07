@@ -10,6 +10,7 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 	"github.com/ivaldibuild/ivaldi/pkg/release"
 )
 
@@ -152,7 +153,7 @@ func NewChannel(props NewChannelProps, channelID *string) (*Channel, error) {
 		lifecycleID:    props.LifecycleID,
 		slug:           s,
 		displayName:    props.DisplayName,
-		description:    optionalString(props.Description),
+		description:    optional.OfPtr(props.Description),
 		isDefault:      props.IsDefault,
 		createdAt:      timeOr(props.CreatedAt, now),
 		updatedAt:      timeOr(props.UpdatedAt, now),
@@ -197,7 +198,7 @@ func newChannelRule(p NewChannelRuleProps, now time.Time) (*ChannelRule, error) 
 // normalize checks a rule and returns it with its configuration in
 // canonical form, so equal rules store equal JSON.
 func (p ChannelRuleProps) normalize() (ChannelRuleProps, error) {
-	artifact := optionalString(p.ArtifactID)
+	artifact := optional.OfPtr(p.ArtifactID)
 	if artifact != nil && !id.Valid(Artifact{}.Prefix(), *artifact) {
 		return ChannelRuleProps{}, NewErrInvalidInput(fmt.Sprintf("%q is not an artifact ID", *artifact))
 	}

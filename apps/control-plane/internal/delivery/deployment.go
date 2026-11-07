@@ -9,6 +9,7 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 	"github.com/ivaldibuild/ivaldi/pkg/release"
 )
 
@@ -213,12 +214,12 @@ func NewDeployment(props NewDeploymentProps, deploymentID *string) (*Deployment,
 		source:               props.Source,
 		reason:               props.Reason,
 		status:               props.Status,
-		previousDeploymentID: optionalString(props.PreviousDeploymentID),
-		initiatedBy:          optionalString(props.InitiatedByPrincipalID),
-		sessionID:            optionalString(props.SessionID),
-		workItemID:           optionalString(props.WorkItemID),
+		previousDeploymentID: optional.OfPtr(props.PreviousDeploymentID),
+		initiatedBy:          optional.OfPtr(props.InitiatedByPrincipalID),
+		sessionID:            optional.OfPtr(props.SessionID),
+		workItemID:           optional.OfPtr(props.WorkItemID),
 		externalRef:          append(json.RawMessage(nil), props.ExternalRef...),
-		policyDecisionID:     optionalString(props.PolicyDecisionID),
+		policyDecisionID:     optional.OfPtr(props.PolicyDecisionID),
 		findings:             findings,
 		requestedAt:          timeOr(props.RequestedAt, now),
 		startedAt:            clock.CopyTime(props.StartedAt),

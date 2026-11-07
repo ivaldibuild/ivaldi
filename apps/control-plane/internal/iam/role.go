@@ -7,6 +7,7 @@ import (
 
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 )
 
 // Keys of the built-in roles, which every installation has.
@@ -89,7 +90,7 @@ func NewRole(props NewRoleProps, roleID *string) (*Role, error) {
 	if err != nil {
 		return nil, err
 	}
-	org := optionalString(props.OrganizationID)
+	org := optional.OfPtr(props.OrganizationID)
 	builtIn, isBuiltInKey := builtInRoles[props.Key]
 	if org == nil {
 		if !isBuiltInKey {

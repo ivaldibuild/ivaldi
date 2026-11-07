@@ -6,6 +6,7 @@ import (
 
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 )
 
 // GroupSource says who manages a group's membership.
@@ -75,7 +76,7 @@ func NewGroup(props NewGroupProps, groupID *string) (*Group, error) {
 	if err := validateName("name", props.Name, maxNameLength); err != nil {
 		return nil, err
 	}
-	externalID := optionalString(props.ExternalID)
+	externalID := optional.OfPtr(props.ExternalID)
 	switch props.Source {
 	case GroupManual:
 		if externalID != nil {

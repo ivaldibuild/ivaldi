@@ -1,6 +1,10 @@
 package postgres
 
-import "time"
+import (
+	"time"
+
+	"github.com/ivaldibuild/ivaldi/pkg/database"
+)
 
 // Rows of the delivery schema. They carry GORM's mapping so the domain types
 // do not. IDs and timestamps are set by the domain, never by GORM. JSON
@@ -174,6 +178,58 @@ type placementEntity struct {
 }
 
 func (placementEntity) TableName() string { return "delivery.application_targets" }
+
+type buildEntity struct {
+	ID             string             `gorm:"column:id;primaryKey"`
+	OrganizationID string             `gorm:"column:organization_id"`
+	ArtifactKind   string             `gorm:"column:artifact_kind"`
+	ArtifactName   string             `gorm:"column:artifact_name"`
+	Digest         string             `gorm:"column:digest"`
+	Version        *string            `gorm:"column:version"`
+	Provenance     string             `gorm:"column:provenance"`
+	SourceID       *string            `gorm:"column:source_id"`
+	CommitSHA      *string            `gorm:"column:commit_sha"`
+	SourceRef      *string            `gorm:"column:source_ref"`
+	CIProvider     *string            `gorm:"column:ci_provider"`
+	CIRunRef       *string            `gorm:"column:ci_run_ref"`
+	ReportedTags   database.TextArray `gorm:"column:reported_tags"`
+	BuiltAt        *time.Time         `gorm:"column:built_at"`
+	CreatedAt      time.Time          `gorm:"column:created_at;autoCreateTime:false"`
+	UpdatedAt      time.Time          `gorm:"column:updated_at;autoUpdateTime:false"`
+}
+
+func (buildEntity) TableName() string { return "delivery.builds" }
+
+type releaseEntity struct {
+	ID                   string     `gorm:"column:id;primaryKey"`
+	OrganizationID       string     `gorm:"column:organization_id"`
+	ApplicationID        string     `gorm:"column:application_id"`
+	ChannelID            string     `gorm:"column:channel_id"`
+	Version              string     `gorm:"column:version"`
+	Status               string     `gorm:"column:status"`
+	Source               string     `gorm:"column:source"`
+	CreatedByPrincipalID *string    `gorm:"column:created_by_principal_id"`
+	TriggeredBy          *string    `gorm:"column:triggered_by"`
+	TriggeredByEmail     *string    `gorm:"column:triggered_by_email"`
+	PublishDecisionID    *string    `gorm:"column:publish_decision_id"`
+	PublishedAt          *time.Time `gorm:"column:published_at"`
+	WithdrawnAt          *time.Time `gorm:"column:withdrawn_at"`
+	CreatedAt            time.Time  `gorm:"column:created_at;autoCreateTime:false"`
+	UpdatedAt            time.Time  `gorm:"column:updated_at;autoUpdateTime:false"`
+}
+
+func (releaseEntity) TableName() string { return "delivery.releases" }
+
+type releaseBuildEntity struct {
+	OrganizationID string    `gorm:"column:organization_id"`
+	ApplicationID  string    `gorm:"column:application_id"`
+	ReleaseID      string    `gorm:"column:release_id;primaryKey"`
+	ArtifactID     string    `gorm:"column:artifact_id;primaryKey"`
+	BuildID        string    `gorm:"column:build_id"`
+	CreatedAt      time.Time `gorm:"column:created_at;autoCreateTime:false"`
+}
+
+func (releaseBuildEntity) TableName() string { return "delivery.release_builds" }
 
 // utc returns t in UTC. The driver returns times in the local zone, and the
 // domain records UTC.

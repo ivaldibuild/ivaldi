@@ -248,6 +248,12 @@ type CreateReleaseRequestBody struct {
 	// Publish Publish the Release as soon as it is created
 	Publish *bool `json:"publish,omitempty"`
 
+	// TriggeredBy Who triggered the Release, such as the CI user who ran the pipeline; recorded as reported, not verified
+	TriggeredBy *string `json:"triggered_by,omitempty"`
+
+	// TriggeredByEmail The email address of whoever triggered the Release; recorded as reported, not verified
+	TriggeredByEmail *string `json:"triggered_by_email,omitempty"`
+
 	// Version The Release's version, unique within the Application, such as 1.4.0
 	Version string `json:"version"`
 }
@@ -378,6 +384,8 @@ type Release struct {
 	PublishedAt          *time.Time     `json:"published_at"`
 	Source               ReleaseSource  `json:"source"`
 	Status               ReleaseStatus  `json:"status"`
+	TriggeredBy          *string        `json:"triggered_by"`
+	TriggeredByEmail     *string        `json:"triggered_by_email"`
 	UpdatedAt            time.Time      `json:"updated_at"`
 	Version              string         `json:"version"`
 	WithdrawnAt          *time.Time     `json:"withdrawn_at"`

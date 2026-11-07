@@ -10,6 +10,7 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 	"github.com/ivaldibuild/ivaldi/pkg/slug"
 )
 
@@ -110,7 +111,7 @@ func NewTarget(props NewTargetProps, targetID *string) (*Target, error) {
 	if err := validateLocator(props.Runtime, props.Locator); err != nil {
 		return nil, err
 	}
-	agent := optionalString(props.AgentPrincipalID)
+	agent := optional.OfPtr(props.AgentPrincipalID)
 
 	now := clock.Now()
 	t := &Target{

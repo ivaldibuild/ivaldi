@@ -9,6 +9,7 @@ import (
 
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 )
 
 // RegistryKind names the protocol a Registry speaks. OCI covers container
@@ -122,7 +123,7 @@ func NewRegistry(props NewRegistryProps, registryID *string) (*Registry, error) 
 	if props.LookupFrom == "" {
 		props.LookupFrom = LookupFromControlPlane
 	}
-	pool := optionalString(props.LookupPool)
+	pool := optional.OfPtr(props.LookupPool)
 	if err := validateLookup(props.LookupFrom, pool); err != nil {
 		return nil, err
 	}
@@ -136,7 +137,7 @@ func NewRegistry(props NewRegistryProps, registryID *string) (*Registry, error) 
 		displayName:    props.DisplayName,
 		kind:           props.Kind,
 		url:            props.URL,
-		credentialRef:  optionalString(props.CredentialRef),
+		credentialRef:  optional.OfPtr(props.CredentialRef),
 		lookupFrom:     props.LookupFrom,
 		lookupPool:     pool,
 		createdAt:      timeOr(props.CreatedAt, now),
@@ -293,7 +294,7 @@ func (r *Registry) SetLookup(from LookupFrom, pool string) error {
 	if err := r.checkActive(); err != nil {
 		return err
 	}
-	p := optionalString(&pool)
+	p := optional.OfPtr(&pool)
 	if err := validateLookup(from, p); err != nil {
 		return err
 	}

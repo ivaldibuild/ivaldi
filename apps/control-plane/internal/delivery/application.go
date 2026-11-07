@@ -9,6 +9,7 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 )
 
 // WorkloadSelectorLabel is the label an Application's workloads carry when
@@ -131,7 +132,7 @@ func NewApplication(props NewApplicationProps, applicationID *string) (*Applicat
 		ownerTeamID:      props.OwnerTeamID,
 		slug:             s,
 		displayName:      props.DisplayName,
-		sourceID:         optionalString(props.SourceID),
+		sourceID:         optional.OfPtr(props.SourceID),
 		workloadSelector: copyLabels(props.WorkloadSelector),
 		createdAt:        timeOr(props.CreatedAt, now),
 		updatedAt:        timeOr(props.UpdatedAt, now),

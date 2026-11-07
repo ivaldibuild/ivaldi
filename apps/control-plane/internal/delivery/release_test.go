@@ -158,6 +158,13 @@ func TestNewRelease(t *testing.T) {
 		"an unknown status":    func(p *NewReleaseProps) { p.Status = "deleted" },
 		"an unknown source":    func(p *NewReleaseProps) { p.Source = "imported" },
 		"no channel":           func(p *NewReleaseProps) { p.ChannelID = "" },
+		"a triggered_by that is too long": func(p *NewReleaseProps) {
+			p.TriggeredBy = new(strings.Repeat("a", maxTriggeredByLength+1))
+		},
+		"a triggered_by_email that is not an address": func(p *NewReleaseProps) { p.TriggeredByEmail = new("ada") },
+		"a triggered_by_email with a display name": func(p *NewReleaseProps) {
+			p.TriggeredByEmail = new("Ada <ada@example.com>")
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			props := domReleaseProps()
@@ -166,6 +173,21 @@ func TestNewRelease(t *testing.T) {
 			assert.ErrorIs(t, err, ErrInvalid)
 		})
 	}
+	t.Run("who triggered it is kept as reported, and empty means not set", func(t *testing.T) {
+		props := domReleaseProps()
+		props.TriggeredBy = new(strings.Repeat("a", maxTriggeredByLength))
+		props.TriggeredByEmail = new("ada@example.com")
+		r, err := NewRelease(props, nil)
+		require.NoError(t, err)
+		assert.Equal(t, props.TriggeredBy, r.TriggeredBy())
+		assert.Equal(t, "ada@example.com", *r.Snapshot().TriggeredByEmail)
+
+		props.TriggeredBy, props.TriggeredByEmail = new(""), new("")
+		r, err = NewRelease(props, nil)
+		require.NoError(t, err)
+		assert.Nil(t, r.TriggeredBy())
+		assert.Nil(t, r.TriggeredByEmail())
+	})
 	t.Run("a version need not be SemVer", func(t *testing.T) {
 		props := domReleaseProps()
 		props.Version = "build-1234"
@@ -230,6 +252,6 @@ func TestReleaseSnapshotKeys(t *testing.T) {
 	assert.ElementsMatch(t, append([]string{"id", "organization_id", "artifact_kind", "artifact_name", "digest", "provenance", "version",
 		"source_id", "commit_sha", "source_ref", "ci_provider", "ci_run_ref", "reported_tags", "built_at"}, ts...), keys(BuildSnapshot{}))
 	assert.ElementsMatch(t, append([]string{"id", "organization_id", "application_id", "channel_id", "version", "status", "source",
-		"created_by_principal_id", "publish_decision_id", "published_at", "withdrawn_at", "builds"}, ts...), keys(ReleaseSnapshot{}))
+		"created_by_principal_id", "publish_decision_id", "triggered_by", "triggered_by_email", "published_at", "withdrawn_at", "builds"}, ts...), keys(ReleaseSnapshot{}))
 	assert.ElementsMatch(t, []string{"artifact_id", "build_id", "created_at"}, keys(ReleaseBuildSnapshot{}))
 }

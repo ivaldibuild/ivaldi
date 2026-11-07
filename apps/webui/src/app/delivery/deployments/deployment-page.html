@@ -1,0 +1,160 @@
+@if (failure(); as message) {
+  <div hlmAlert variant="destructive" role="alert">
+    <h2 hlmAlertTitle>The Deployment didn't load</h2>
+    <p hlmAlertDescription>{{ message }}</p>
+  </div>
+} @else if (!deployment()) {
+  <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+    <hlm-spinner aria-hidden="true" /> Loading the Deployment…
+  </p>
+} @else {
+  <div class="flex flex-col gap-10">
+    <app-page-header
+      [heading]="heading()"
+      [crumbs]="[
+        { label: 'Projects', link: '/projects' },
+        {
+          label: project()?.display_name ?? 'Project',
+          link: ['/projects', application()!.project_id],
+        },
+        { label: application()!.display_name, link: ['/applications', application()!.id] },
+        { label: 'Deployments' },
+      ]"
+    >
+      <p pageMeta class="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+        <span role="status" aria-live="polite" class="inline-flex items-center gap-2">
+          <span class="sr-only">Status: </span>
+          <app-deployment-status [status]="deployment()!.status" />
+        </span>
+        <span
+          >In <span class="text-foreground">{{ environment()?.display_name }}</span></span
+        >
+        <a [routerLink]="['/releases', release()!.id]">Release {{ release()!.version }}</a>
+        @if (moving()) {
+          <span class="inline-flex items-center gap-1.5">
+            <hlm-spinner aria-hidden="true" class="size-3.5" /> Updating as it changes
+          </span>
+        }
+      </p>
+      <ng-container pageActions>
+        @if (canCancel() && !confirmingCancel()) {
+          <button hlmBtn variant="outline" type="button" (click)="confirmingCancel.set(true)">
+            Cancel deployment
+          </button>
+        }
+      </ng-container>
+    </app-page-header>
+
+    @if (confirmingCancel()) {
+      <div hlmAlert role="alertdialog" aria-labelledby="cancel-heading">
+        <h2 id="cancel-heading" hlmAlertTitle>Cancel this Deployment?</h2>
+        <div hlmAlertDescription class="flex flex-col gap-3">
+          <p>
+            {{ release()!.version }} won't be applied to {{ targetName() }}. What runs there now
+            keeps running. You can deploy again later.
+          </p>
+          <div class="flex flex-wrap gap-2">
+            <button
+              hlmBtn
+              variant="destructive"
+              type="button"
+              [disabled]="cancelStatus.saving()"
+              (click)="cancel()"
+            >
+              @if (cancelStatus.saving()) {
+                <hlm-spinner aria-hidden="true" /> Cancelling…
+              } @else {
+                Cancel deployment
+              }
+            </button>
+            <button hlmBtn variant="outline" type="button" (click)="confirmingCancel.set(false)">
+              Keep it
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
+    @if (cancelStatus.error(); as message) {
+      <div hlmAlert variant="destructive" role="alert">
+        <h2 hlmAlertTitle>The Deployment wasn't cancelled</h2>
+        <p hlmAlertDescription>{{ message }}</p>
+      </div>
+    }
+
+    @if (deployment()!.status === 'awaiting_approval') {
+      <div hlmAlert role="note">
+        <ng-icon name="lucideClock" aria-hidden="true" />
+        <h2 hlmAlertTitle>Waiting for approval</h2>
+        <p hlmAlertDescription>
+          Policy asked for a person to approve this Deployment before it applies. Approving from the
+          web app isn't available yet; until then it waits, or you can cancel it.
+        </p>
+      </div>
+    }
+
+    @if (deployment()!.findings.length > 0) {
+      <section aria-labelledby="findings-heading" class="flex flex-col gap-3">
+        <h2 id="findings-heading" class="text-heading text-lg font-semibold">Findings</h2>
+        <ul class="border-border flex flex-col border">
+          @for (finding of deployment()!.findings; track $index) {
+            <li class="border-border border-b px-4 py-3 text-sm last:border-b-0">{{ finding }}</li>
+          }
+        </ul>
+      </section>
+    }
+
+    <div class="grid items-start gap-10 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      <section aria-labelledby="timeline-heading" class="flex flex-col gap-4">
+        <h2 id="timeline-heading" class="text-heading text-lg font-semibold">Timeline</h2>
+        @if (timeline().length === 0) {
+          <p class="text-muted-foreground text-sm">Nothing reported yet.</p>
+        } @else {
+          <ol class="flex flex-col">
+            @for (event of timeline(); track event.id; let first = $first) {
+              <li class="flex gap-3">
+                <span class="flex flex-col items-center" aria-hidden="true">
+                  <span
+                    class="mt-1.5 size-2.5 shrink-0"
+                    [class.bg-primary]="first"
+                    [class.bg-foreground]="!first"
+                  ></span>
+                  <span class="bg-border w-px flex-1"></span>
+                </span>
+                <span class="flex flex-col pb-5">
+                  <span
+                    class="text-sm"
+                    [class.text-heading]="first"
+                    [class.font-semibold]="first"
+                    >{{ event.text }}</span
+                  >
+                  <span class="text-muted-foreground text-[13px]">{{ event.at }}</span>
+                </span>
+              </li>
+            }
+          </ol>
+        }
+      </section>
+
+      <section aria-labelledby="facts-heading" class="flex flex-col gap-4">
+        <h2 id="facts-heading" class="text-heading text-lg font-semibold">Details</h2>
+        <dl class="border-border flex flex-col border">
+          <div
+            class="border-border flex flex-wrap justify-between gap-2 border-b px-4 py-3 text-sm"
+          >
+            <dt class="text-muted-foreground">Target</dt>
+            <dd class="text-heading">{{ targetName() }}</dd>
+          </div>
+          @for (fact of facts(); track fact.label) {
+            <div
+              class="border-border flex flex-wrap justify-between gap-2 border-b px-4 py-3 text-sm last:border-b-0"
+            >
+              <dt class="text-muted-foreground">{{ fact.label }}</dt>
+              <dd class="text-foreground text-right">{{ fact.value }}</dd>
+            </div>
+          }
+        </dl>
+      </section>
+    </div>
+  </div>
+}

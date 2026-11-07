@@ -46,6 +46,17 @@ export type ReleaseStatus = Release['status'];
 export type ReleaseBuild = Schemas['ReleaseBuild'];
 export type Build = Schemas['BuildSnapshot'];
 
+/** How Releases are applied on a Target: the artifact holding the definition, and values. */
+export type ApplyConfig = Schemas['ApplyConfig'];
+export type Deployment = Schemas['DeploymentSnapshot'];
+export type DeploymentStatus = Deployment['status'];
+export type DeploymentEvent = Schemas['DeploymentEventSnapshot'];
+/** A Deployment with its timeline, from `GET /v1/deployments/{id}`. */
+export type DeploymentDetail = Schemas['DeploymentDetail'];
+/** What a Release would change on a Target, and the checks before it can deploy there. */
+export type ReleaseChanges = Schemas['ReleaseChanges'];
+export type DeploymentCheck = Schemas['DeploymentCheck'];
+
 /** The caller's Organisation as `GET /v1/organization` returns it. */
 export type Organization = Schemas['Organization'];
 

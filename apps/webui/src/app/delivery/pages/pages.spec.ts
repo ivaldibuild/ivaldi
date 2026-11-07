@@ -79,6 +79,8 @@ const standard = {
 };
 
 const releasesUrl = '/applications/app_1/releases?limit=20&sort_by=created_at&sort_order=desc';
+const deploymentsUrl =
+  '/applications/app_1/deployments?limit=20&sort_by=requested_at&sort_order=desc';
 
 describe('delivery pages', () => {
   let http: HttpTestingController;
@@ -145,6 +147,7 @@ describe('delivery pages', () => {
           '/environments/env_stg/targets': page(targets.env_stg),
           '/environments/env_prd/targets': page(targets.env_prd),
           [releasesUrl]: page([]),
+          [deploymentsUrl]: page([]),
         };
         req.flush(body[url] ?? ok([]));
       }
@@ -153,7 +156,7 @@ describe('delivery pages', () => {
 
   afterEach(() => http.verify());
 
-  it('shows which Targets each Application is placed on, per Environment', async () => {
+  it('shows the version deployed to each Target the Application is placed on', async () => {
     const { fixture, el } = render(ApplicationsPage);
     await settle(fixture);
     http.expectOne(`${v1}/workspaces/wsp_1/applications`).flush(page([application]));
@@ -168,16 +171,20 @@ describe('delivery pages', () => {
           application_id: 'app_1',
           target_id: 'tgt_stg',
           source: 'configured',
-          current_release_id: null,
+          current_release_id: 'rel_1',
         },
       ]),
     );
     await settle(fixture);
+    http.expectOne(`${v1}/releases/rel_1`).flush(ok({ id: 'rel_1', version: '1.4.0', builds: [] }));
+    await settle(fixture);
 
     const headers = [...el.querySelectorAll('thead th')].map((th) => th.textContent?.trim());
     expect(headers).toEqual(['Application', 'Staging', 'Production']);
-    const cells = [...el.querySelectorAll('tbody td')].map((td) => td.textContent?.trim());
-    expect(cells).toEqual(['staging-eu-1', 'Not placed']);
+    const cells = [...el.querySelectorAll('tbody td')].map((td) =>
+      td.textContent?.replace(/\s+/g, ' ').trim(),
+    );
+    expect(cells).toEqual(['1.4.0staging-eu-1', 'Not placed']);
     const group = el.querySelector('th[scope="rowgroup"]');
     expect(group?.querySelector('a')?.textContent?.trim()).toBe('Payments');
     expect(group?.querySelector('a')?.getAttribute('href')).toBe('/projects/prj_1');
@@ -244,7 +251,9 @@ describe('delivery pages', () => {
     expect(navigate).toHaveBeenCalledWith(['/applications', 'app_1']);
   });
 
-  async function renderApplication() {
+  async function renderApplication(
+    options: { placements?: unknown[]; artifacts?: unknown[] } = {},
+  ) {
     const { fixture, el } = render(ApplicationPage, { id: 'app_1' });
     await settle(fixture);
     http.expectOne(`${v1}/applications/app_1`).flush(ok(application));
@@ -264,14 +273,15 @@ describe('delivery pages', () => {
         },
       ]),
     );
-    http.expectOne(`${v1}/applications/app_1/artifacts`).flush(ok([]));
-    http.expectOne(`${v1}/applications/app_1/placements`).flush(ok([]));
+    http.expectOne(`${v1}/applications/app_1/artifacts`).flush(ok(options.artifacts ?? []));
+    http.expectOne(`${v1}/applications/app_1/placements`).flush(ok(options.placements ?? []));
     http.expectOne(`${v1}/workspaces/wsp_1/lifecycles`).flush(page([standard]));
     http.expectOne(`${v1}/workspaces/wsp_1/environments`).flush(page(environments));
     await settle(fixture);
     flushTargets();
     await settle(fixture);
     http.expectOne(`${v1}${releasesUrl}`).flush(page([]));
+    http.expectOne(`${v1}${deploymentsUrl}`).flush(page([]));
     await settle(fixture);
     return { fixture, el };
   }
@@ -340,5 +350,55 @@ describe('delivery pages', () => {
     req.flush(ok({ id: 'art_1', name: 'api' }));
     await drain(fixture);
     expect(el.querySelector('#artifact-name')).toBeNull();
+  });
+
+  it('says how Releases are applied on a Target, and changes it', async () => {
+    const chart = {
+      id: 'art_chart',
+      name: 'chart',
+      artifact_kind: 'helm_chart',
+      artifact_name: 'ghcr.io/northwind/charts/payments-api',
+      required: true,
+      source: 'declared',
+    };
+    const { fixture, el } = await renderApplication({
+      artifacts: [chart],
+      placements: [
+        {
+          application_id: 'app_1',
+          target_id: 'tgt_stg',
+          source: 'configured',
+          apply_config: null,
+          current_release_id: null,
+        },
+      ],
+    });
+    const row = el.querySelector('section[aria-labelledby="placements-heading"] li')!;
+    expect(row.textContent).toContain('Tracked only');
+
+    row
+      .querySelector<HTMLButtonElement>(
+        'button[aria-label="How Releases are applied on staging-eu-1"]',
+      )!
+      .click();
+    await settle(fixture);
+    const select = el.querySelector<HTMLSelectElement>('#apply-artifact')!;
+    select.value = 'chart';
+    select.dispatchEvent(new Event('change'));
+    await settle(fixture);
+    const values = el.querySelector<HTMLTextAreaElement>('#apply-values')!;
+    values.value = 'payments-staging-values\n\n';
+    values.dispatchEvent(new Event('input'));
+    values.closest('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+
+    const put = http.expectOne(`${v1}/applications/app_1/placements/tgt_stg`);
+    expect(put.request.method).toBe('PUT');
+    expect(put.request.body).toEqual({
+      apply_config: { definition_artifact: 'chart', values_refs: ['payments-staging-values'] },
+    });
+    put.flush(ok({}));
+    await drain(fixture);
+    expect(el.querySelector('#apply-artifact')).toBeNull();
   });
 });

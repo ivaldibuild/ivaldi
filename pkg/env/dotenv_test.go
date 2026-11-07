@@ -77,10 +77,10 @@ func TestLoadDotEnv_MissingFile(t *testing.T) {
 
 func TestParseDotEnvLine(t *testing.T) {
 	tests := []struct {
-		line    string
-		key     string
-		value   string
-		wantOK  bool
+		line   string
+		key    string
+		value  string
+		wantOK bool
 	}{
 		{"KEY=value", "KEY", "value", true},
 		{"KEY=", "KEY", "", true},

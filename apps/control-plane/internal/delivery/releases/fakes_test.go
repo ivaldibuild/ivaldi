@@ -201,6 +201,13 @@ func (s *store) GetApplication(_ context.Context, organizationID, applicationID 
 	return s.app, nil
 }
 
+func (s *store) GetApplicationByIdentifier(ctx context.Context, organizationID, identifier string) (*delivery.Application, error) {
+	if s.app != nil && organizationID == org && s.app.Slug() == identifier && !s.app.Archived() {
+		return s.app, nil
+	}
+	return s.GetApplication(ctx, organizationID, identifier)
+}
+
 func (s *store) ListArtifacts(_ context.Context, _, _ string, includeArchived bool) ([]*delivery.Artifact, error) {
 	var out []*delivery.Artifact
 	for _, a := range s.artifacts {

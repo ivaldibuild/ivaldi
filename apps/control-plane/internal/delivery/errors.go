@@ -16,6 +16,9 @@ var (
 	// ErrAlreadyExists means the record already exists, such as an
 	// Application's placement on a Target.
 	ErrAlreadyExists = errors.New("already exists")
+	// ErrAmbiguous means a slug names more than one record, such as
+	// Applications in two Projects, so the caller must use the ID.
+	ErrAmbiguous = errors.New("names more than one record; use its ID")
 	// ErrConflict means the record changed since the caller read it.
 	ErrConflict = errors.New("changed since it was read")
 	// ErrArchived means the record, or one it depends on, is archived.

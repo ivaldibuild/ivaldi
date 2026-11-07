@@ -186,3 +186,24 @@ func TestReleaseErrorsOverHTTP(t *testing.T) {
 		assert.Contains(t, out["detail"], "already has a release 1.4.0")
 	})
 }
+
+func TestCIMayNameTheApplicationBySlug(t *testing.T) {
+	h := newHTTPWorld(t)
+	assert.Equal(t, "payments-api", h.app.Slug())
+
+	rec, out := h.call(t, http.MethodPost, "/applications/payments-api/builds", "ci",
+		`{"artifact":"api","digest":"`+digest("c")+`","commit_sha":"`+strings.Repeat("c", 40)+`"}`)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, digest("c"), out["data"].(map[string]any)["digest"])
+
+	rec, out = h.call(t, http.MethodPost, "/applications/payments-api/releases", "ci", tagPipeline("1.4.0", "a"))
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	assert.Equal(t, h.app.ID(), out["data"].(map[string]any)["application_id"], "the Release records the Application's ID")
+
+	rec, out = h.call(t, http.MethodGet, "/applications/payments-api/releases", "ci", "")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Len(t, out["data"].(map[string]any)["items"], 1)
+
+	rec, _ = h.call(t, http.MethodGet, "/applications/checkout/releases", "ci", "")
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}

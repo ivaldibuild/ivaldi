@@ -54,7 +54,7 @@ func listCommand(a *app.App) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&appID, "app", "", "The Application's ID (required)")
+	cmd.Flags().StringVar(&appID, "app", "", "The Application's ID or slug (required)")
 	cmd.Flags().StringVar(&status, "status", "", "Only Releases with this status: draft, published, or withdrawn")
 	cmd.Flags().StringVar(&channel, "channel", "", "Only Releases in this Channel")
 	cmd.Flags().Int64Var(&limit, "limit", 20, "Most Releases to show")

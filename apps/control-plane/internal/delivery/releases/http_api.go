@@ -31,11 +31,11 @@ func NewReleaseController(service delivery.ReleaseService) *ReleaseController {
 var bearer = []map[string][]string{{api.BearerAuth: {}}}
 
 func (c *ReleaseController) RegisterRoutes(h huma.API) {
-	register(h, "report-build", http.MethodPost, "/applications/{application_id}/builds",
+	register(h, "report-build", http.MethodPost, "/applications/{application}/builds",
 		"Record a Build of one of an Application's artifacts, as CI reports it", 0, c.ReportBuild)
-	register(h, "create-release", http.MethodPost, "/applications/{application_id}/releases",
+	register(h, "create-release", http.MethodPost, "/applications/{application}/releases",
 		"Create a Release from its Builds, and publish it if asked", http.StatusCreated, c.CreateRelease)
-	register(h, "list-releases", http.MethodGet, "/applications/{application_id}/releases",
+	register(h, "list-releases", http.MethodGet, "/applications/{application}/releases",
 		"List an Application's Releases", 0, c.ListReleases)
 	register(h, "get-release", http.MethodGet, "/releases/{release_id}", "Get a Release with its Builds", 0, c.GetRelease)
 	register(h, "publish-release", http.MethodPost, "/releases/{release_id}/publish",
@@ -84,13 +84,13 @@ func (b BuildBody) input() delivery.BuildInput {
 }
 
 type ReportBuildRequest struct {
-	ApplicationID string `path:"application_id" doc:"The Application"`
-	Body          BuildBody
+	ApplicationIdentifier string `path:"application" doc:"The Application's ID, or the slug of an active Application"`
+	Body                  BuildBody
 }
 
 type CreateReleaseRequest struct {
-	ApplicationID string `path:"application_id" doc:"The Application"`
-	Body          struct {
+	ApplicationIdentifier string `path:"application" doc:"The Application's ID, or the slug of an active Application"`
+	Body                  struct {
 		Version   string      `json:"version" required:"true" minLength:"1" maxLength:"255" doc:"The Release's version, unique within the Application, such as 1.4.0"`
 		ChannelID string      `json:"channel_id,omitempty" required:"false" doc:"The Channel to join; when omitted, the one active Channel whose rules the Release meets"`
 		Builds    []BuildBody `json:"builds" required:"true" minItems:"1" doc:"One Build per artifact"`
@@ -99,14 +99,14 @@ type CreateReleaseRequest struct {
 }
 
 type ListReleasesRequest struct {
-	ApplicationID  string `path:"application_id" doc:"The Application"`
-	ChannelID      string `query:"channel_id" doc:"Keep the Releases in this Channel"`
-	Status         string `query:"status" enum:"draft,published,withdrawn" doc:"Keep the Releases with this status"`
-	Limit          int    `query:"limit" minimum:"1" maximum:"100" doc:"Most items to return"`
-	SortBy         string `query:"sort_by" enum:"created_at,version" doc:"Field to sort by: created_at (the default) or version, as text"`
-	SortOrder      string `query:"sort_order" enum:"asc,desc" doc:"Sort direction"`
-	NextCursor     string `query:"next_cursor" doc:"Cursor from a previous page's next_cursor"`
-	PreviousCursor string `query:"previous_cursor" doc:"Cursor from a previous page's previous_cursor"`
+	ApplicationIdentifier string `path:"application" doc:"The Application's ID, or the slug of an active Application"`
+	ChannelID             string `query:"channel_id" doc:"Keep the Releases in this Channel"`
+	Status                string `query:"status" enum:"draft,published,withdrawn" doc:"Keep the Releases with this status"`
+	Limit                 int    `query:"limit" minimum:"1" maximum:"100" doc:"Most items to return"`
+	SortBy                string `query:"sort_by" enum:"created_at,version" doc:"Field to sort by: created_at (the default) or version, as text"`
+	SortOrder             string `query:"sort_order" enum:"asc,desc" doc:"Sort direction"`
+	NextCursor            string `query:"next_cursor" doc:"Cursor from a previous page's next_cursor"`
+	PreviousCursor        string `query:"previous_cursor" doc:"Cursor from a previous page's previous_cursor"`
 }
 
 type ReleaseRequest struct {
@@ -165,7 +165,7 @@ func (c *ReleaseController) ReportBuild(ctx context.Context, req *ReportBuildReq
 		return nil, err
 	}
 	b, err := c.service.ReportBuild(ctx, who.Actor, delivery.ReportBuildInput{
-		OrganizationID: who.OrganizationID, ApplicationID: req.ApplicationID, Build: req.Body.input(),
+		OrganizationID: who.OrganizationID, ApplicationID: req.ApplicationIdentifier, Build: req.Body.input(),
 	})
 	if err != nil {
 		return nil, httpError(ctx, err)
@@ -179,12 +179,17 @@ func (c *ReleaseController) CreateRelease(ctx context.Context, req *CreateReleas
 		return nil, err
 	}
 	in := delivery.CreateReleaseInput{
-		OrganizationID: who.OrganizationID, ApplicationID: req.ApplicationID,
-		Version: req.Body.Version, ChannelID: req.Body.ChannelID, Publish: req.Body.Publish,
+		OrganizationID: who.OrganizationID,
+		ApplicationID:  req.ApplicationIdentifier,
+		Version:        req.Body.Version,
+		ChannelID:      req.Body.ChannelID,
+		Publish:        req.Body.Publish,
 	}
+
 	for _, b := range req.Body.Builds {
 		in.Builds = append(in.Builds, b.input())
 	}
+
 	return c.respond(ctx, func() (*delivery.ReleaseDetail, error) { return c.service.CreateRelease(ctx, who.Actor, in) })
 }
 
@@ -201,7 +206,7 @@ func (c *ReleaseController) ListReleases(ctx context.Context, req *ListReleasesR
 		page.PreviousCursor = &req.PreviousCursor
 	}
 	result, err := c.service.ListReleases(ctx, who.Actor, delivery.ListReleasesQuery{
-		OrganizationID: who.OrganizationID, ApplicationID: req.ApplicationID,
+		OrganizationID: who.OrganizationID, ApplicationID: req.ApplicationIdentifier,
 		ChannelID: req.ChannelID, Status: release.Status(req.Status), Page: page,
 	})
 	if err != nil {
@@ -264,6 +269,8 @@ func httpError(ctx context.Context, err error) error {
 		return huma.Error422UnprocessableEntity("the request is invalid")
 	case errors.Is(err, delivery.ErrNotFound):
 		return huma.Error404NotFound("not found")
+	case errors.Is(err, delivery.ErrAmbiguous):
+		return huma.Error409Conflict("more than one active Application has that slug; use its ID")
 	case errors.Is(err, delivery.ErrAlreadyExists),
 		errors.Is(err, delivery.ErrArchived),
 		errors.Is(err, delivery.ErrReleaseStatus),

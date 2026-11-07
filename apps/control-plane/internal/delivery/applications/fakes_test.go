@@ -229,6 +229,25 @@ func (s *store) GetApplicationForUpdate(ctx context.Context, organizationID, id 
 	return s.GetApplication(ctx, organizationID, id)
 }
 
+func (s *store) GetApplicationByIdentifier(ctx context.Context, organizationID, identifier string) (*delivery.Application, error) {
+	if app, err := s.GetApplication(ctx, organizationID, identifier); err == nil {
+		return app, nil
+	}
+	var found *delivery.Application
+	for _, snap := range s.applications {
+		if snap.OrganizationID == organizationID && snap.Slug == identifier && snap.ArchivedAt == nil {
+			if found != nil {
+				return nil, delivery.ErrAmbiguous
+			}
+			found = rebuildApplication(snap)
+		}
+	}
+	if found == nil {
+		return nil, delivery.ErrNotFound
+	}
+	return found, nil
+}
+
 func (s *store) GetApplicationBySlug(_ context.Context, organizationID, projectID, slug string) (*delivery.Application, error) {
 	for _, snap := range s.applications {
 		if snap.OrganizationID == organizationID && snap.ProjectID == projectID && snap.Slug == slug && snap.ArchivedAt == nil {

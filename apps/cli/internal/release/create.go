@@ -60,7 +60,7 @@ With --publish it is published at once, as a tag pipeline would.`,
 	}
 
 	fl := cmd.Flags()
-	fl.StringVar(&f.app, "app", "", "The Application's ID (required)")
+	fl.StringVar(&f.app, "app", "", "The Application's ID or slug (required)")
 	fl.StringVar(&f.version, "version", "", "The Release's version; defaults to the version a v-prefixed tag names")
 	fl.StringArrayVar(&f.artifacts, "artifact", nil, "An artifact's Build as name=digest, such as api=sha256:4f2a...; repeat for each artifact")
 	fl.StringVar(&f.channel, "channel", "", "The Channel's ID; by default the one whose rules the Release meets")

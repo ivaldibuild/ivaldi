@@ -130,6 +130,35 @@ func TestApplicationRepository(t *testing.T) {
 		first.Restore()
 		assert.ErrorIs(t, f.apps.UpdateApplication(ctx, first), delivery.ErrSlugTaken)
 	})
+
+	t.Run("by ID or slug", func(t *testing.T) {
+		app := f.createApp(t, orgA, wsA, projA, "named")
+		for _, identifier := range []string{app.ID(), "named"} {
+			got, err := f.apps.GetApplicationByIdentifier(ctx, orgA, identifier)
+			require.NoError(t, err, identifier)
+			assert.Equal(t, app.Snapshot(), got.Snapshot(), identifier)
+		}
+		_, err := f.apps.GetApplicationByIdentifier(ctx, orgB, "named")
+		assert.ErrorIs(t, err, delivery.ErrNotFound, "another Organization's slug")
+		_, err = f.apps.GetApplicationByIdentifier(ctx, orgA, "nothing")
+		assert.ErrorIs(t, err, delivery.ErrNotFound)
+
+		other := f.createApp(t, orgA, wsA, projB, "named")
+		_, err = f.apps.GetApplicationByIdentifier(ctx, orgA, "named")
+		assert.ErrorIs(t, err, delivery.ErrAmbiguous, "two Projects use the slug")
+		got, err := f.apps.GetApplicationByIdentifier(ctx, orgA, other.ID())
+		require.NoError(t, err)
+		assert.Equal(t, other.ID(), got.ID(), "an ID is never ambiguous")
+
+		other.Archive()
+		require.NoError(t, f.apps.UpdateApplication(ctx, other))
+		got, err = f.apps.GetApplicationByIdentifier(ctx, orgA, "named")
+		require.NoError(t, err)
+		assert.Equal(t, app.ID(), got.ID(), "archived Applications' slugs name nothing")
+		got, err = f.apps.GetApplicationByIdentifier(ctx, orgA, other.ID())
+		require.NoError(t, err)
+		assert.Equal(t, other.ID(), got.ID(), "an archived Application is found by its ID")
+	})
 }
 
 func TestApplicationListAndCount(t *testing.T) {

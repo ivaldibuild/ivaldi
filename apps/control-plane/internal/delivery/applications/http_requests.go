@@ -80,12 +80,12 @@ type ListWorkspaceApplicationsRequest struct {
 }
 
 type ApplicationRequest struct {
-	ApplicationID string `path:"application_id" doc:"The Application's ID"`
+	ApplicationIdentifier string `path:"application" doc:"The Application's ID, or the slug of an active Application"`
 }
 
 type UpdateApplicationRequest struct {
-	ApplicationID string `path:"application_id" doc:"The Application's ID"`
-	Body          struct {
+	ApplicationIdentifier string `path:"application" doc:"The Application's ID, or the slug of an active Application"`
+	Body                  struct {
 		DisplayName      *string           `json:"display_name,omitempty" required:"false" minLength:"3" doc:"New display name"`
 		Slug             *string           `json:"slug,omitempty" required:"false" doc:"New slug"`
 		WorkloadSelector map[string]string `json:"workload_selector,omitempty" required:"false" doc:"New workload selector, replacing the old one"`
@@ -97,15 +97,15 @@ func (r *UpdateApplicationRequest) props() delivery.UpdateApplicationProps {
 }
 
 type LinkApplicationSourceRequest struct {
-	ApplicationID string `path:"application_id" doc:"The Application's ID"`
-	Body          struct {
+	ApplicationIdentifier string `path:"application" doc:"The Application's ID, or the slug of an active Application"`
+	Body                  struct {
 		SourceID string `json:"source_id" required:"true" doc:"The Source the application is built from; empty removes it"`
 	}
 }
 
 type TransferApplicationRequest struct {
-	ApplicationID string `path:"application_id" doc:"The Application's ID"`
-	Body          struct {
+	ApplicationIdentifier string `path:"application" doc:"The Application's ID, or the slug of an active Application"`
+	Body                  struct {
 		OwnerTeamID string `json:"owner_team_id" required:"true" minLength:"1" doc:"The active Team to hand the application to"`
 	}
 }
@@ -113,8 +113,8 @@ type TransferApplicationRequest struct {
 // Artifacts.
 
 type CreateArtifactRequest struct {
-	ApplicationID string `path:"application_id" doc:"The Application the artifact belongs to"`
-	Body          struct {
+	ApplicationIdentifier string `path:"application" doc:"The Application's ID, or the slug of an active Application"`
+	Body                  struct {
 		Name         string  `json:"name" required:"true" minLength:"1" doc:"The artifact's name in the application, such as api or chart"`
 		ArtifactKind string  `json:"artifact_kind" required:"true" enum:"container_image,helm_chart,archive" doc:"What kind of artifact it is"`
 		ArtifactName string  `json:"artifact_name" required:"true" minLength:"1" doc:"What its Builds are published under, without a tag or digest"`
@@ -126,7 +126,7 @@ type CreateArtifactRequest struct {
 func (r *CreateArtifactRequest) input(organizationID string) delivery.CreateArtifactInput {
 	return delivery.CreateArtifactInput{
 		OrganizationID: organizationID,
-		ApplicationID:  r.ApplicationID,
+		ApplicationID:  r.ApplicationIdentifier,
 		Name:           r.Body.Name,
 		ArtifactKind:   delivery.ArtifactKind(r.Body.ArtifactKind),
 		ArtifactName:   r.Body.ArtifactName,
@@ -136,8 +136,8 @@ func (r *CreateArtifactRequest) input(organizationID string) delivery.CreateArti
 }
 
 type ListArtifactsRequest struct {
-	ApplicationID   string `path:"application_id" doc:"The Application's ID"`
-	IncludeArchived bool   `query:"include_archived" doc:"Include archived artifacts"`
+	ApplicationIdentifier string `path:"application" doc:"The Application's ID, or the slug of an active Application"`
+	IncludeArchived       bool   `query:"include_archived" doc:"Include archived artifacts"`
 }
 
 type ArtifactRequest struct {
@@ -178,8 +178,8 @@ func (b RuleBody) props() delivery.ChannelRuleProps {
 }
 
 type CreateChannelRequest struct {
-	ApplicationID string `path:"application_id" doc:"The Application the Channel belongs to"`
-	Body          struct {
+	ApplicationIdentifier string `path:"application" doc:"The Application's ID, or the slug of an active Application"`
+	Body                  struct {
 		DisplayName string     `json:"display_name" required:"true" minLength:"3" doc:"The display name for the channel"`
 		Slug        *string    `json:"slug,omitempty" required:"false" doc:"Url slug for the channel; derived from the display name when omitted"`
 		Description *string    `json:"description,omitempty" required:"false" doc:"What the channel is for"`
@@ -191,7 +191,7 @@ type CreateChannelRequest struct {
 func (r *CreateChannelRequest) input(organizationID string) delivery.CreateChannelInput {
 	in := delivery.CreateChannelInput{
 		OrganizationID: organizationID,
-		ApplicationID:  r.ApplicationID,
+		ApplicationID:  r.ApplicationIdentifier,
 		LifecycleID:    r.Body.LifecycleID,
 		Slug:           deref(r.Body.Slug),
 		DisplayName:    r.Body.DisplayName,
@@ -204,8 +204,8 @@ func (r *CreateChannelRequest) input(organizationID string) delivery.CreateChann
 }
 
 type ListChannelsRequest struct {
-	ApplicationID   string `path:"application_id" doc:"The Application's ID"`
-	IncludeArchived bool   `query:"include_archived" doc:"Include archived Channels"`
+	ApplicationIdentifier string `path:"application" doc:"The Application's ID, or the slug of an active Application"`
+	IncludeArchived       bool   `query:"include_archived" doc:"Include archived Channels"`
 }
 
 type ChannelRequest struct {
@@ -264,8 +264,8 @@ func (b *ApplyConfigBody) config() *delivery.ApplyConfig {
 }
 
 type CreatePlacementRequest struct {
-	ApplicationID string `path:"application_id" doc:"The Application to place"`
-	Body          struct {
+	ApplicationIdentifier string `path:"application" doc:"The Application's ID, or the slug of an active Application"`
+	Body                  struct {
 		TargetID    string           `json:"target_id" required:"true" doc:"The Target to place it on, in the application's Workspace"`
 		ApplyConfig *ApplyConfigBody `json:"apply_config,omitempty" required:"false" doc:"How Releases are applied there; Deployments are tracked only when omitted"`
 	}
@@ -274,25 +274,25 @@ type CreatePlacementRequest struct {
 func (r *CreatePlacementRequest) input(organizationID string) delivery.CreatePlacementInput {
 	return delivery.CreatePlacementInput{
 		OrganizationID: organizationID,
-		ApplicationID:  r.ApplicationID,
+		ApplicationID:  r.ApplicationIdentifier,
 		TargetID:       r.Body.TargetID,
 		ApplyConfig:    r.Body.ApplyConfig.config(),
 	}
 }
 
 type ListPlacementsRequest struct {
-	ApplicationID string `path:"application_id" doc:"The Application's ID"`
+	ApplicationIdentifier string `path:"application" doc:"The Application's ID, or the slug of an active Application"`
 }
 
 type PlacementRequest struct {
-	ApplicationID string `path:"application_id" doc:"The Application's ID"`
-	TargetID      string `path:"target_id" doc:"The Target's ID"`
+	ApplicationIdentifier string `path:"application" doc:"The Application's ID, or the slug of an active Application"`
+	TargetID              string `path:"target_id" doc:"The Target's ID"`
 }
 
 type ConfigurePlacementRequest struct {
-	ApplicationID string `path:"application_id" doc:"The Application's ID"`
-	TargetID      string `path:"target_id" doc:"The Target's ID"`
-	Body          struct {
+	ApplicationIdentifier string `path:"application" doc:"The Application's ID, or the slug of an active Application"`
+	TargetID              string `path:"target_id" doc:"The Target's ID"`
+	Body                  struct {
 		ApplyConfig *ApplyConfigBody `json:"apply_config,omitempty" required:"false" doc:"How Releases are applied there; omitting it makes Deployments there tracked only"`
 	}
 }

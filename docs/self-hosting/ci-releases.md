@@ -37,9 +37,10 @@ A token acts with its service account's grants. The authorizer checks it like an
 ## The command
 
 ```sh
-ivaldictl release create --app <application ID> --artifact api=sha256:<digest> [--artifact chart=sha256:<digest>] [--publish]
+ivaldictl release create --app <application ID or slug> --artifact api=sha256:<digest> [--artifact chart=sha256:<digest>] [--publish]
 ```
 
+- **The Application** is named by its ID or its slug. A slug is unique only within a Project, so if two Projects have an Application with the same slug, the command fails and you must give the ID.
 - **Builds** are named by digest: `--artifact <artifact name>=<digest>`, once per artifact. Tags cannot be resolved to digests yet.
 - **What CI knows.** In GitHub Actions and GitLab CI, `ivaldictl` reads the commit, the full Git ref, and the CI run's URL from the environment:
 
@@ -75,7 +76,7 @@ jobs:
         env:
           IVALDI_SERVER_URL: https://ivaldi.example.com
           IVALDI_API_TOKEN: ${{ secrets.IVALDI_API_TOKEN }}
-          APP: app_01H...
+          APP: payments-api
 ```
 
 On a pull request, give a version and leave out `--publish`, so the Release stays a draft:

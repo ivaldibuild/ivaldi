@@ -31,23 +31,23 @@ func (c *ApplicationController) RegisterRoutes(h huma.API) {
 	register(h, "create-application", http.MethodPost, "/projects/{project_id}/applications", "Create an Application in a Project, with its default Channel", http.StatusCreated, c.CreateApplication)
 	register(h, "list-applications", http.MethodGet, "/projects/{project_id}/applications", "List a Project's Applications", 0, c.ListApplications)
 	register(h, "list-workspace-applications", http.MethodGet, "/workspaces/{workspace_id}/applications", "List a Workspace's Applications", 0, c.ListWorkspaceApplications)
-	register(h, "get-application", http.MethodGet, "/applications/{application_id}", "Get an Application", 0, c.GetApplication)
-	register(h, "update-application", http.MethodPatch, "/applications/{application_id}", "Change an Application", 0, c.UpdateApplication)
-	register(h, "link-application-source", http.MethodPut, "/applications/{application_id}/source", "Link or unlink the Source an Application is built from", 0, c.LinkApplicationSource)
-	register(h, "transfer-application", http.MethodPost, "/applications/{application_id}/transfer", "Hand an Application to another Team", 0, c.TransferApplication)
-	register(h, "archive-application", http.MethodPost, "/applications/{application_id}/archive", "Archive an Application", 0, c.ArchiveApplication)
-	register(h, "restore-application", http.MethodPost, "/applications/{application_id}/restore", "Restore an archived Application", 0, c.RestoreApplication)
+	register(h, "get-application", http.MethodGet, "/applications/{application}", "Get an Application", 0, c.GetApplication)
+	register(h, "update-application", http.MethodPatch, "/applications/{application}", "Change an Application", 0, c.UpdateApplication)
+	register(h, "link-application-source", http.MethodPut, "/applications/{application}/source", "Link or unlink the Source an Application is built from", 0, c.LinkApplicationSource)
+	register(h, "transfer-application", http.MethodPost, "/applications/{application}/transfer", "Hand an Application to another Team", 0, c.TransferApplication)
+	register(h, "archive-application", http.MethodPost, "/applications/{application}/archive", "Archive an Application", 0, c.ArchiveApplication)
+	register(h, "restore-application", http.MethodPost, "/applications/{application}/restore", "Restore an archived Application", 0, c.RestoreApplication)
 
-	register(h, "create-artifact", http.MethodPost, "/applications/{application_id}/artifacts", "Declare an artifact of an Application", http.StatusCreated, c.CreateArtifact)
-	register(h, "list-artifacts", http.MethodGet, "/applications/{application_id}/artifacts", "List an Application's artifacts", 0, c.ListArtifacts)
+	register(h, "create-artifact", http.MethodPost, "/applications/{application}/artifacts", "Declare an artifact of an Application", http.StatusCreated, c.CreateArtifact)
+	register(h, "list-artifacts", http.MethodGet, "/applications/{application}/artifacts", "List an Application's artifacts", 0, c.ListArtifacts)
 	register(h, "update-artifact", http.MethodPatch, "/artifacts/{artifact_id}", "Change an artifact", 0, c.UpdateArtifact)
 	register(h, "set-artifact-registry", http.MethodPut, "/artifacts/{artifact_id}/registry", "Set or clear the Registry an artifact is looked up in", 0, c.SetArtifactRegistry)
 	register(h, "declare-artifact", http.MethodPost, "/artifacts/{artifact_id}/declare", "Confirm an artifact the runtime agent observed", 0, c.DeclareArtifact)
 	register(h, "archive-artifact", http.MethodPost, "/artifacts/{artifact_id}/archive", "Archive an artifact", 0, c.ArchiveArtifact)
 	register(h, "restore-artifact", http.MethodPost, "/artifacts/{artifact_id}/restore", "Restore an archived artifact", 0, c.RestoreArtifact)
 
-	register(h, "create-channel", http.MethodPost, "/applications/{application_id}/channels", "Add a Channel to an Application", http.StatusCreated, c.CreateChannel)
-	register(h, "list-channels", http.MethodGet, "/applications/{application_id}/channels", "List an Application's Channels", 0, c.ListChannels)
+	register(h, "create-channel", http.MethodPost, "/applications/{application}/channels", "Add a Channel to an Application", http.StatusCreated, c.CreateChannel)
+	register(h, "list-channels", http.MethodGet, "/applications/{application}/channels", "List an Application's Channels", 0, c.ListChannels)
 	register(h, "get-channel", http.MethodGet, "/channels/{channel_id}", "Get a Channel", 0, c.GetChannel)
 	register(h, "update-channel", http.MethodPatch, "/channels/{channel_id}", "Change a Channel", 0, c.UpdateChannel)
 	register(h, "set-channel-lifecycle", http.MethodPut, "/channels/{channel_id}/lifecycle", "Set the Lifecycle a Channel follows", 0, c.SetChannelLifecycle)
@@ -58,10 +58,10 @@ func (c *ApplicationController) RegisterRoutes(h huma.API) {
 	register(h, "update-channel-rule", http.MethodPut, "/channels/{channel_id}/rules/{rule_id}", "Replace a Channel rule", 0, c.UpdateChannelRule)
 	register(h, "remove-channel-rule", http.MethodDelete, "/channels/{channel_id}/rules/{rule_id}", "Remove a Channel rule", 0, c.RemoveChannelRule)
 
-	register(h, "create-placement", http.MethodPost, "/applications/{application_id}/placements", "Place an Application on a Target", http.StatusCreated, c.CreatePlacement)
-	register(h, "list-placements", http.MethodGet, "/applications/{application_id}/placements", "List the Targets an Application is placed on", 0, c.ListPlacements)
-	register(h, "configure-placement", http.MethodPut, "/applications/{application_id}/placements/{target_id}", "Set or clear how Releases are applied to a Target", 0, c.ConfigurePlacement)
-	register(h, "remove-placement", http.MethodDelete, "/applications/{application_id}/placements/{target_id}", "Remove an Application from a Target", http.StatusNoContent, c.RemovePlacement)
+	register(h, "create-placement", http.MethodPost, "/applications/{application}/placements", "Place an Application on a Target", http.StatusCreated, c.CreatePlacement)
+	register(h, "list-placements", http.MethodGet, "/applications/{application}/placements", "List the Targets an Application is placed on", 0, c.ListPlacements)
+	register(h, "configure-placement", http.MethodPut, "/applications/{application}/placements/{target_id}", "Set or clear how Releases are applied to a Target", 0, c.ConfigurePlacement)
+	register(h, "remove-placement", http.MethodDelete, "/applications/{application}/placements/{target_id}", "Remove an Application from a Target", http.StatusNoContent, c.RemovePlacement)
 }
 
 func register[I, O any](h huma.API, id, method, path, summary string, status int, handler func(context.Context, *I) (*O, error)) {
@@ -135,33 +135,33 @@ func (c *ApplicationController) list(ctx context.Context, q delivery.ListApplica
 }
 
 func (c *ApplicationController) GetApplication(ctx context.Context, req *ApplicationRequest) (*ApplicationResponse, error) {
-	return c.application(ctx, req.ApplicationID, c.service.GetApplication)
+	return c.application(ctx, req.ApplicationIdentifier, c.service.GetApplication)
 }
 
 func (c *ApplicationController) UpdateApplication(ctx context.Context, req *UpdateApplicationRequest) (*ApplicationResponse, error) {
-	return c.application(ctx, req.ApplicationID, func(ctx context.Context, actor identity.Actor, organizationID, applicationID string) (*delivery.Application, error) {
+	return c.application(ctx, req.ApplicationIdentifier, func(ctx context.Context, actor identity.Actor, organizationID, applicationID string) (*delivery.Application, error) {
 		return c.service.UpdateApplication(ctx, actor, organizationID, applicationID, req.props())
 	})
 }
 
 func (c *ApplicationController) LinkApplicationSource(ctx context.Context, req *LinkApplicationSourceRequest) (*ApplicationResponse, error) {
-	return c.application(ctx, req.ApplicationID, func(ctx context.Context, actor identity.Actor, organizationID, applicationID string) (*delivery.Application, error) {
+	return c.application(ctx, req.ApplicationIdentifier, func(ctx context.Context, actor identity.Actor, organizationID, applicationID string) (*delivery.Application, error) {
 		return c.service.LinkApplicationSource(ctx, actor, organizationID, applicationID, req.Body.SourceID)
 	})
 }
 
 func (c *ApplicationController) TransferApplication(ctx context.Context, req *TransferApplicationRequest) (*ApplicationResponse, error) {
-	return c.application(ctx, req.ApplicationID, func(ctx context.Context, actor identity.Actor, organizationID, applicationID string) (*delivery.Application, error) {
+	return c.application(ctx, req.ApplicationIdentifier, func(ctx context.Context, actor identity.Actor, organizationID, applicationID string) (*delivery.Application, error) {
 		return c.service.TransferApplication(ctx, actor, organizationID, applicationID, req.Body.OwnerTeamID)
 	})
 }
 
 func (c *ApplicationController) ArchiveApplication(ctx context.Context, req *ApplicationRequest) (*ApplicationResponse, error) {
-	return c.application(ctx, req.ApplicationID, c.service.ArchiveApplication)
+	return c.application(ctx, req.ApplicationIdentifier, c.service.ArchiveApplication)
 }
 
 func (c *ApplicationController) RestoreApplication(ctx context.Context, req *ApplicationRequest) (*ApplicationResponse, error) {
-	return c.application(ctx, req.ApplicationID, c.service.RestoreApplication)
+	return c.application(ctx, req.ApplicationIdentifier, c.service.RestoreApplication)
 }
 
 // application calls an operation on one Application.
@@ -181,7 +181,7 @@ func (c *ApplicationController) CreateArtifact(ctx context.Context, req *CreateA
 
 func (c *ApplicationController) ListArtifacts(ctx context.Context, req *ListArtifactsRequest) (*ArtifactListResponse, error) {
 	return call(ctx, func(who identity.Caller) ([]*delivery.Artifact, error) {
-		return c.service.ListArtifacts(ctx, who.Actor, who.OrganizationID, req.ApplicationID, req.IncludeArchived)
+		return c.service.ListArtifacts(ctx, who.Actor, who.OrganizationID, req.ApplicationIdentifier, req.IncludeArchived)
 	}, func(items []*delivery.Artifact) *ArtifactListResponse {
 		return &ArtifactListResponse{Body: api.SuccessResponse(nil, snapshotAll(items, (*delivery.Artifact).Snapshot))}
 	})
@@ -228,7 +228,7 @@ func (c *ApplicationController) CreateChannel(ctx context.Context, req *CreateCh
 
 func (c *ApplicationController) ListChannels(ctx context.Context, req *ListChannelsRequest) (*ChannelListResponse, error) {
 	return call(ctx, func(who identity.Caller) ([]*delivery.Channel, error) {
-		return c.service.ListChannels(ctx, who.Actor, who.OrganizationID, req.ApplicationID, req.IncludeArchived)
+		return c.service.ListChannels(ctx, who.Actor, who.OrganizationID, req.ApplicationIdentifier, req.IncludeArchived)
 	}, func(items []*delivery.Channel) *ChannelListResponse {
 		return &ChannelListResponse{Body: api.SuccessResponse(nil, snapshotAll(items, (*delivery.Channel).Snapshot))}
 	})
@@ -297,7 +297,7 @@ func (c *ApplicationController) CreatePlacement(ctx context.Context, req *Create
 
 func (c *ApplicationController) ListPlacements(ctx context.Context, req *ListPlacementsRequest) (*PlacementListResponse, error) {
 	return call(ctx, func(who identity.Caller) ([]*delivery.Placement, error) {
-		return c.service.ListPlacements(ctx, who.Actor, who.OrganizationID, req.ApplicationID)
+		return c.service.ListPlacements(ctx, who.Actor, who.OrganizationID, req.ApplicationIdentifier)
 	}, func(items []*delivery.Placement) *PlacementListResponse {
 		return &PlacementListResponse{Body: api.SuccessResponse(nil, snapshotAll(items, (*delivery.Placement).Snapshot))}
 	})
@@ -305,12 +305,12 @@ func (c *ApplicationController) ListPlacements(ctx context.Context, req *ListPla
 
 func (c *ApplicationController) ConfigurePlacement(ctx context.Context, req *ConfigurePlacementRequest) (*PlacementResponse, error) {
 	return call(ctx, func(who identity.Caller) (*delivery.Placement, error) {
-		return c.service.ConfigurePlacement(ctx, who.Actor, who.OrganizationID, req.ApplicationID, req.TargetID, req.Body.ApplyConfig.config())
+		return c.service.ConfigurePlacement(ctx, who.Actor, who.OrganizationID, req.ApplicationIdentifier, req.TargetID, req.Body.ApplyConfig.config())
 	}, placementResponse)
 }
 
 func (c *ApplicationController) RemovePlacement(ctx context.Context, req *PlacementRequest) (*struct{}, error) {
 	return call(ctx, func(who identity.Caller) (struct{}, error) {
-		return struct{}{}, c.service.RemovePlacement(ctx, who.Actor, who.OrganizationID, req.ApplicationID, req.TargetID)
+		return struct{}{}, c.service.RemovePlacement(ctx, who.Actor, who.OrganizationID, req.ApplicationIdentifier, req.TargetID)
 	}, func(struct{}) *struct{} { return nil })
 }

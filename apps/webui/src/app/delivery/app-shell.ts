@@ -4,6 +4,7 @@ import { NgIcon, provideIcons } from '@ng-icons/core';
 import {
   lucideBox,
   lucideFolder,
+  lucideBot,
   lucideGitBranch,
   lucideLayers,
   lucideLogOut,
@@ -29,6 +30,7 @@ import { WorkspaceContext } from './workspace-context';
   ],
   providers: [
     provideIcons({
+      lucideBot,
       lucideBox,
       lucideFolder,
       lucideGitBranch,
@@ -53,6 +55,7 @@ export class AppShell {
 
   protected readonly organisation = [
     { path: '/people', label: 'People & access', icon: 'lucideUsers' },
+    { path: '/service-accounts', label: 'Service accounts', icon: 'lucideBot' },
   ];
 
   constructor() {

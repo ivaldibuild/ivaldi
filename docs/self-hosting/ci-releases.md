@@ -13,24 +13,27 @@ CI records each Release of an Application with `ivaldictl release create`, carry
 
 ## Setting up a service account
 
-An owner or admin creates the service account, gives it a role, and issues it a token:
+An owner or admin, signed in with `ivaldictl auth login`, creates the service account, gives it a role, and issues it a token:
 
 ```sh
-# Create the service account
-POST /v1/service-accounts            {"display_name": "GitHub Actions"}
+# Create the service account; note its ID (prn_...)
+ivaldictl service-account create --name "GitHub Actions" --description "Releases from CI" -o text
 
 # Give it a role. Creating and publishing Releases needs release.manage and
 # release.publish, which admins hold; admin can be granted on a Workspace.
-POST /v1/grants                      {"principal_id": "<service account ID>", "role": "admin", "resource_id": "<workspace ID>"}
+# ivaldictl has no grant command yet, so call the API:
+#   POST /v1/grants  {"principal_id": "<service account ID>", "role": "admin", "resource_id": "<workspace ID>"}
 
 # Issue a token. Its secret is shown once.
-POST /v1/service-accounts/<id>/tokens {"name": "github-actions", "expires_at": "2027-06-01T00:00:00Z"}
+ivaldictl api-token create --service-account <service account ID> --name github-actions --expires-in 180d -o text
 ```
 
-Store the returned `secret` (it starts with `ivt_`) as a CI secret. Ivaldi keeps only its SHA-256 hash and the first 12 characters, to tell tokens apart.
+Store the secret (it starts with `ivt_`) as a CI secret. Ivaldi keeps only its SHA-256 hash and the first 12 characters, to tell tokens apart. `--expires-at` takes an RFC 3339 time instead of `--expires-in`; with neither, the token never expires.
 
-- **Revoking a token:** `POST /v1/api-tokens/<id>/revoke` ends it for good.
-- **Suspending the account:** `POST /v1/service-accounts/<id>/suspend` stops all of its tokens until it is reactivated.
+- **Listing tokens:** `ivaldictl api-token list --service-account <id>` shows each token's prefix and expiry, never its secret.
+- **Revoking a token:** `ivaldictl api-token revoke <token ID>` ends it for good.
+- **Suspending the account:** `ivaldictl service-account suspend <id>` stops all of its tokens until `ivaldictl service-account reactivate <id>`.
+- **The API underneath:** `POST /v1/service-accounts`, `POST /v1/service-accounts/{id}/tokens`, `POST /v1/api-tokens/{id}/revoke`, and `POST /v1/service-accounts/{id}/suspend` or `/reactivate`, with `service_account.manage` on the Organization.
 
 A token acts with its service account's grants. The authorizer checks it like any other caller.
 

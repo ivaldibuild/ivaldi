@@ -15,6 +15,14 @@ output-options:
     - get-release
     - publish-release
     - withdraw-release
+    - list-service-accounts
+    - create-service-account
+    - get-service-account
+    - suspend-service-account
+    - reactivate-service-account
+    - list-api-tokens
+    - create-api-token
+    - revoke-api-token
 compatibility:
   # Name enum values after their type, such as ListReleasesParamsSortOrderDesc,
   # so values of different enums never collide.

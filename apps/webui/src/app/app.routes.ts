@@ -115,6 +115,18 @@ export const routes: Routes = [
         loadComponent: () => import('./organisation/people-page').then((m) => m.PeoplePage),
       },
       {
+        path: 'service-accounts',
+        title: 'Service accounts · Ivaldi',
+        loadComponent: () =>
+          import('./organisation/service-accounts-page').then((m) => m.ServiceAccountsPage),
+      },
+      {
+        path: 'service-accounts/:id',
+        title: 'Service account · Ivaldi',
+        loadComponent: () =>
+          import('./organisation/service-account-page').then((m) => m.ServiceAccountPage),
+      },
+      {
         path: 'lifecycles',
         title: 'Lifecycles · Ivaldi',
         loadComponent: () =>

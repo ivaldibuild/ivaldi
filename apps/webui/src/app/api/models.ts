@@ -55,6 +55,13 @@ export type Person = Schemas['Person'];
 export type Grant = Schemas['Grant'];
 export type BuiltInRole = Schemas['CreateGrantRequestBody']['role'];
 
+/** A non-person principal, such as CI, from `GET /v1/service-accounts`. */
+export type ServiceAccount = Schemas['ServiceAccount'];
+/** A service account's API token, without its secret. */
+export type ApiToken = Schemas['APITokenSnapshot'];
+/** A token as it is issued: the only time its secret is shown. */
+export type IssuedApiToken = Schemas['IssuedToken'];
+
 /** A cursor-paged list's page, with its cursors. */
 export interface CursorPage<T> {
   items: T[];

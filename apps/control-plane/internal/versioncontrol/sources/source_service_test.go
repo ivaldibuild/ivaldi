@@ -113,7 +113,16 @@ func (p provider) CommitsBetween(context.Context, vcs.Endpoint, vcs.Repository, 
 	return nil, nil
 }
 
-func TestCreateSourceRecordsTheRepositoryAndItsResource(t *testing.T) {
+type fixture struct {
+	service    versioncontrol.SourceService
+	store      *sourceStore
+	rec        *recorder
+	project    *workspace.Project
+	connection *versioncontrol.Connection
+}
+
+func newFixture(t *testing.T) fixture {
+	t.Helper()
 	project, err := workspace.NewProject(workspace.NewProjectProps{
 		OrganizationID: orgID,
 		WorkspaceID:    "wsp_01ARZ3NDEKTSV4RRFFQ69G5FAV",
@@ -150,24 +159,47 @@ func TestCreateSourceRecordsTheRepositoryAndItsResource(t *testing.T) {
 		WithAuditRecorder(auditRecorder{rec}),
 	)
 	require.NoError(t, err)
+	return fixture{service: service, store: store, rec: rec, project: project, connection: connection}
+}
 
-	source, err := service.CreateSource(context.Background(), actor, versioncontrol.CreateSourceInput{
+func (f fixture) createSource(t *testing.T) *versioncontrol.Source {
+	t.Helper()
+	source, err := f.service.CreateSource(context.Background(), actor, versioncontrol.CreateSourceInput{
 		OrganizationID:       orgID,
-		ProjectID:            project.ID(),
-		ConnectionID:         connection.ID(),
+		ProjectID:            f.project.ID(),
+		ConnectionID:         f.connection.ID(),
 		ExternalRepositoryID: "99",
 	})
 	require.NoError(t, err)
+	return source
+}
+
+func TestCreateSourceRecordsTheRepositoryAndItsResource(t *testing.T) {
+	f := newFixture(t)
+	source := f.createSource(t)
 
 	assert.Equal(t, "acme/payments", source.FullName())
-	assert.Equal(t, project.WorkspaceID(), source.WorkspaceID())
-	assert.Equal(t, store.created, source)
-	require.Len(t, rec.resources, 1)
-	assert.Equal(t, iam.ResourceSource, rec.resources[0].Type)
-	assert.Equal(t, project.ID(), rec.resources[0].ParentID)
-	assert.Equal(t, 1, rec.events)
-	require.Len(t, rec.audits, 1)
-	assert.Equal(t, versioncontrol.EventSourceCreated, rec.audits[0].Type)
+	assert.Equal(t, f.project.WorkspaceID(), source.WorkspaceID())
+	assert.Equal(t, f.store.created, source)
+	require.Len(t, f.rec.resources, 1)
+	assert.Equal(t, iam.ResourceSource, f.rec.resources[0].Type)
+	assert.Equal(t, f.project.ID(), f.rec.resources[0].ParentID)
+	assert.Equal(t, 1, f.rec.events)
+	require.Len(t, f.rec.audits, 1)
+	assert.Equal(t, versioncontrol.EventSourceCreated, f.rec.audits[0].Type)
+}
+
+func TestRestoreSourceRefusesAnArchivedProject(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	source := f.createSource(t)
+	_, err := f.service.ArchiveSource(ctx, actor, orgID, source.ID())
+	require.NoError(t, err)
+	f.project.Archive()
+
+	_, err = f.service.RestoreSource(ctx, actor, orgID, source.ID())
+	assert.ErrorIs(t, err, versioncontrol.ErrArchived)
+	assert.True(t, source.Archived())
 }
 
 type auditRecorder struct{ rec *recorder }

@@ -24,7 +24,7 @@ func translate(err error) error {
 		case "idx_sources_repository":
 			return fmt.Errorf("%w: %w", versioncontrol.ErrAlreadyExists, err)
 		case "idx_connections_webhook_route":
-			return fmt.Errorf("%w: %w", versioncontrol.ErrConflict, err)
+			return fmt.Errorf("%w: %w", versioncontrol.ErrAccountConnected, err)
 		default:
 			return fmt.Errorf("%w: %w", versioncontrol.ErrConflict, err)
 		}

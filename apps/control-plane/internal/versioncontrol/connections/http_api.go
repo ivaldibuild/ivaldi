@@ -9,6 +9,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/api"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/versioncontrol"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
+	"github.com/ivaldibuild/ivaldi/pkg/vcs"
 )
 
 // Controller serves the Connection operations. Every operation requires an
@@ -27,7 +28,9 @@ func NewController(service versioncontrol.ConnectionService) *Controller {
 var bearer = []map[string][]string{{api.BearerAuth: {}}}
 
 func (c *Controller) RegisterRoutes(h huma.API) {
-	register(h, "create-connection", http.MethodPost, "/connections", "Connect a version-control provider account", http.StatusCreated, c.CreateConnection)
+	register(h, "create-connection", http.MethodPost, "/connections", "Connect a version-control provider account that does not use an app installation", http.StatusCreated, c.CreateConnection)
+	register(h, "start-connection-installation", http.MethodPost, "/connections/installations", "Start installing a provider's app to connect an account", 0, c.StartInstallation)
+	register(h, "complete-connection-installation", http.MethodPost, "/connections/installations/complete", "Connect the account an app installation covers, once the provider confirms the caller can access it", http.StatusCreated, c.CompleteInstallation)
 	register(h, "list-connections", http.MethodGet, "/connections", "List the Organization's version-control connections", 0, c.ListConnections)
 	register(h, "get-connection", http.MethodGet, "/connections/{connection_id}", "Get a version-control connection", 0, c.GetConnection)
 	register(h, "archive-connection", http.MethodPost, "/connections/{connection_id}/archive", "Archive a version-control connection", 0, c.ArchiveConnection)
@@ -97,6 +100,32 @@ func (c *Controller) ArchiveConnection(ctx context.Context, req *ConnectionReque
 		return nil, err
 	}
 	connection, err := c.service.ArchiveConnection(ctx, who.Actor, who.OrganizationID, req.ConnectionID)
+	if err != nil {
+		return nil, translateToHttpError(ctx, err)
+	}
+	return connectionResponse(connection), nil
+}
+
+func (c *Controller) StartInstallation(ctx context.Context, req *StartInstallationRequest) (*InstallationStartResponse, error) {
+	who, err := caller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	start, err := c.service.StartInstallation(ctx, who.Actor, who.OrganizationID, vcs.ProviderKind(req.Body.Provider))
+	if err != nil {
+		return nil, translateToHttpError(ctx, err)
+	}
+	return &InstallationStartResponse{Body: api.SuccessResponse(nil, InstallationStartSnapshot{
+		URL: start.URL, ExpiresAt: start.ExpiresAt,
+	})}, nil
+}
+
+func (c *Controller) CompleteInstallation(ctx context.Context, req *CompleteInstallationRequest) (*ConnectionResponse, error) {
+	who, err := caller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	connection, err := c.service.CompleteInstallation(ctx, who.Actor, req.input(who.OrganizationID))
 	if err != nil {
 		return nil, translateToHttpError(ctx, err)
 	}

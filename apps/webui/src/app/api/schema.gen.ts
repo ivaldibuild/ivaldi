@@ -619,8 +619,42 @@ export interface paths {
     /** List the Organization's version-control connections */
     get: operations['list-connections'];
     put?: never;
-    /** Connect a version-control provider account */
+    /** Connect a version-control provider account that does not use an app installation */
     post: operations['create-connection'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/connections/installations': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Start installing a provider's app to connect an account */
+    post: operations['start-connection-installation'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/connections/installations/complete': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Connect the account an app installation covers, once the provider confirms the caller can access it */
+    post: operations['complete-connection-installation'];
     delete?: never;
     options?: never;
     head?: never;
@@ -2198,6 +2232,25 @@ export interface components {
       /** Format: date-time */
       updated_at: string;
     };
+    CompleteInstallationRequestBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/CompleteInstallationRequestBody.json
+       */
+      readonly $schema?: string;
+      /** @description The authorization code the provider sent back */
+      code: string;
+      /** @description The installation ID the provider sent back */
+      installation_id: string;
+      /**
+       * @description The provider the install was started for
+       * @enum {string}
+       */
+      provider: 'github';
+      /** @description The state the provider sent back, from start-connection-installation */
+      state: string;
+    };
     ConfigurePlacementRequestBody: {
       /**
        * Format: uri
@@ -2231,6 +2284,7 @@ export interface components {
       status: 'active' | 'suspended' | 'revoked';
       /** Format: date-time */
       updated_at: string;
+      webhook_route_key: string | null;
     };
     CreateAgentAPIRequestBody: {
       /**
@@ -2339,10 +2393,10 @@ export interface components {
        */
       readonly $schema?: string;
       /**
-       * @description How Ivaldi authenticates; app_installation when omitted
+       * @description How Ivaldi authenticates. App installations are connected through the install flow, not here
        * @enum {string}
        */
-      auth_kind?: 'app_installation' | 'oauth' | 'access_token';
+      auth_kind: 'oauth' | 'access_token';
       /** @description The provider's account or installation ID */
       external_account_id: string;
       /** @description The provider account's name, such as the GitHub organization login */
@@ -2765,6 +2819,15 @@ export interface components {
       name: string;
       source: string;
       team_id: string | null;
+    };
+    InstallationStartSnapshot: {
+      /**
+       * Format: date-time
+       * @description When the install must be completed by
+       */
+      expires_at: string;
+      /** @description Where to send the person to install the app */
+      url: string;
     };
     IssuedEnrolment: {
       /** Format: date-time */
@@ -3391,6 +3454,20 @@ export interface components {
       readonly $schema?: string;
       /** @description Response payload, always present: an empty list is [], not omitted */
       data: components['schemas']['Grant'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
+    ResponseInstallationStartSnapshot: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseInstallationStartSnapshot.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['InstallationStartSnapshot'];
       /** @description Human-readable message */
       message?: string;
       /** @description Request status */
@@ -4298,6 +4375,19 @@ export interface components {
       visibility: 'public' | 'private' | 'internal';
       web_url: string | null;
       workspace_id: string;
+    };
+    StartInstallationRequestBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/StartInstallationRequestBody.json
+       */
+      readonly $schema?: string;
+      /**
+       * @description The provider whose app to install
+       * @enum {string}
+       */
+      provider: 'github';
     };
     TargetSnapshot: {
       agent_principal_id: string | null;
@@ -6180,6 +6270,72 @@ export interface operations {
     requestBody: {
       content: {
         'application/json': components['schemas']['CreateConnectionRequestBody'];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseConnectionSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'start-connection-installation': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['StartInstallationRequestBody'];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseInstallationStartSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'complete-connection-installation': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CompleteInstallationRequestBody'];
       };
     };
     responses: {

@@ -41,6 +41,7 @@ func (c *Config) Validate() error {
 	v.externalURL(c.ExternalURL)
 	c.validateAuth(v)
 	c.validateBootstrap(v)
+	c.validateVersionControl(v)
 
 	if len(v.problems) > 0 {
 		return &ValidationError{Problems: v.problems}

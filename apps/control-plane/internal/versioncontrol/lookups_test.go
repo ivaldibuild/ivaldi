@@ -76,7 +76,7 @@ func newConnection(t *testing.T, lookup vcs.LookupFrom, pool *string) *Connectio
 
 func newSource(t *testing.T, connection *Connection) *Source {
 	t.Helper()
-	repositoryKey := repositoryKey(connection.Provider(), connection.HostURL(), "99")
+	repositoryKey := providerKey(connection.Provider(), connection.HostURL(), "99")
 	source, err := NewSource(NewSourceProps{
 		OrganizationID: "org_01ARZ3NDEKTSV4RRFFQ69G5FAV",
 		ConnectionID:   connection.ID(),

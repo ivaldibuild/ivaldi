@@ -2,14 +2,20 @@ package github
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"time"
 
 	"github.com/ivaldibuild/ivaldi/pkg/vcs"
 )
 
+// maxComparePages bounds one comparison at 50 pages of 100 commits, so a
+// range between distant commits fails rather than reading without end.
+const maxComparePages = 50
+
 // CommitsBetween returns the commits reachable from to but not from, oldest
-// first, following the provider's pages.
+// first, following the provider's pages. It addresses the repository by its
+// stable ID, so a rename or transfer does not break it.
 func (c *Client) CommitsBetween(ctx context.Context, at vcs.Endpoint, repo vcs.Repository, from, to string) ([]vcs.Commit, error) {
 	if from == "" || to == "" {
 		return nil, vcs.ErrInvalidRange
@@ -17,24 +23,32 @@ func (c *Client) CommitsBetween(ctx context.Context, at vcs.Endpoint, repo vcs.R
 	if from == to {
 		return []vcs.Commit{}, nil
 	}
-	base, err := c.base(at)
+	if err := c.checkEndpoint(at); err != nil {
+		return nil, err
+	}
+	if repo.ExternalID == "" {
+		return nil, fmt.Errorf("github: the repository has no ID")
+	}
+	token, err := c.installationToken(ctx, at.InstallationID)
 	if err != nil {
 		return nil, err
 	}
-	token, err := c.installationToken(ctx, base, at.InstallationID)
-	if err != nil {
-		return nil, err
-	}
-	next := base + "/repos/" + repo.FullName + "/compare/" + url.PathEscape(from+"..."+to) + "?per_page=100"
-	var commits []vcs.Commit
-	for next != "" {
+	next := c.apiURL + "/repositories/" + url.PathEscape(repo.ExternalID) +
+		"/compare/" + url.PathEscape(from+"..."+to) + "?per_page=100"
+	commits := []vcs.Commit{}
+	for pages := 0; next != ""; pages++ {
+		if pages == maxComparePages {
+			return nil, fmt.Errorf("%w: more than %d commits", vcs.ErrRangeTooLarge, maxComparePages*100)
+		}
 		var page compareResponse
 		header, err := c.getWithHeader(ctx, token, next, &page)
 		if err != nil {
 			return nil, err
 		}
 		commits = append(commits, page.commits()...)
-		next = nextLink(header)
+		if next, err = c.next(header); err != nil {
+			return nil, err
+		}
 	}
 	return commits, nil
 }

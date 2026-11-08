@@ -9,7 +9,7 @@ type CreateConnectionRequest struct {
 	Body struct {
 		Provider            string  `json:"provider" required:"true" enum:"github,gitlab,bitbucket,gitea,azure_devops" doc:"The version-control provider"`
 		HostURL             string  `json:"host_url" required:"true" format:"uri" doc:"The provider's address, such as https://github.com or a self-hosted server"`
-		AuthKind            string  `json:"auth_kind,omitempty" required:"false" enum:"app_installation,oauth,access_token" doc:"How Ivaldi authenticates; app_installation when omitted"`
+		AuthKind            string  `json:"auth_kind" required:"true" enum:"oauth,access_token" doc:"How Ivaldi authenticates. App installations are connected through the install flow, not here"`
 		ExternalAccountID   string  `json:"external_account_id" required:"true" doc:"The provider's account or installation ID"`
 		ExternalAccountName *string `json:"external_account_name,omitempty" required:"false" doc:"The provider account's name, such as the GitHub organization login"`
 		LookupFrom          string  `json:"lookup_from,omitempty" required:"false" enum:"control_plane,data_plane" doc:"Where lookups run; control_plane when omitted"`
@@ -18,10 +18,6 @@ type CreateConnectionRequest struct {
 }
 
 func (r *CreateConnectionRequest) input(organizationID string) versioncontrol.CreateConnectionInput {
-	authKind := versioncontrol.AuthKind(r.Body.AuthKind)
-	if authKind == "" {
-		authKind = versioncontrol.AuthKindAppInstallation
-	}
 	lookupFrom := vcs.LookupFrom(r.Body.LookupFrom)
 	if lookupFrom == "" {
 		lookupFrom = vcs.LookupFromControlPlane
@@ -30,7 +26,7 @@ func (r *CreateConnectionRequest) input(organizationID string) versioncontrol.Cr
 		OrganizationID:      organizationID,
 		Provider:            vcs.ProviderKind(r.Body.Provider),
 		HostURL:             r.Body.HostURL,
-		AuthKind:            authKind,
+		AuthKind:            versioncontrol.AuthKind(r.Body.AuthKind),
 		ExternalAccountID:   r.Body.ExternalAccountID,
 		ExternalAccountName: r.Body.ExternalAccountName,
 		LookupFrom:          lookupFrom,
@@ -44,4 +40,29 @@ type ListConnectionsRequest struct {
 
 type ConnectionRequest struct {
 	ConnectionID string `path:"connection_id" doc:"The Connection's ID"`
+}
+
+type StartInstallationRequest struct {
+	Body struct {
+		Provider string `json:"provider" required:"true" enum:"github" doc:"The provider whose app to install"`
+	}
+}
+
+type CompleteInstallationRequest struct {
+	Body struct {
+		Provider       string `json:"provider" required:"true" enum:"github" doc:"The provider the install was started for"`
+		State          string `json:"state" required:"true" doc:"The state the provider sent back, from start-connection-installation"`
+		Code           string `json:"code" required:"true" doc:"The authorization code the provider sent back"`
+		InstallationID string `json:"installation_id" required:"true" doc:"The installation ID the provider sent back"`
+	}
+}
+
+func (r *CompleteInstallationRequest) input(organizationID string) versioncontrol.CompleteInstallationInput {
+	return versioncontrol.CompleteInstallationInput{
+		OrganizationID: organizationID,
+		Provider:       vcs.ProviderKind(r.Body.Provider),
+		State:          r.Body.State,
+		Code:           r.Body.Code,
+		InstallationID: r.Body.InstallationID,
+	}
 }

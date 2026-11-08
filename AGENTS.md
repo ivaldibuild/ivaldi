@@ -36,13 +36,13 @@ Use established terms consistently: Workspace, Project, Source, Work Item, Sessi
 
 ## Coding Style & Naming Conventions
 
-* Use standard Go formatting: tabs for indentation, `gofmt` on every changed `.go` file, and idiomatic package names that are short, lowercase, and singular. 
-* Exported identifiers use `PascalCase`; unexported identifiers use `camelCase`. 
-* Keep Cobra command setup in `cmd/`, reusable business logic out of `main` packages, and provider details away from domain logic. 
+* Use standard Go formatting: tabs for indentation, `gofmt` on every changed `.go` file, and idiomatic package names that are short, lowercase, and singular.
+* Exported identifiers use `PascalCase`; unexported identifiers use `camelCase`.
+* Keep Cobra command setup in `cmd/`, reusable business logic out of `main` packages, and provider details away from domain logic.
 * Return errors with useful context. Avoid catch-all packages such as `utils`, `helpers`, or `common`; app-specific code belongs in `apps/<app>/internal`.
 * Use interfaces to define public contracts, and testing easier.
 * Make code readable where possible.
-* Only write tests that are objectively neccessary.
+* Only write tests that are objectively necessary.
 
 ## Testing Guidelines
 

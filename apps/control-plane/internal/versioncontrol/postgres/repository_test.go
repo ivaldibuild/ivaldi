@@ -109,6 +109,28 @@ func TestConnectionAndSourceRepositories(t *testing.T) {
 	assert.Equal(t, source.ID(), page.Items[0].ID())
 }
 
+// An installation connects to one Organization across the whole platform,
+// and an archived Connection frees it.
+func TestAnInstallationConnectsToOneOrganization(t *testing.T) {
+	f := newFixture(t)
+	installation := vcs.Installation{
+		Provider: vcs.ProviderGitHub, HostURL: "https://github.com", InstallationID: "42", AccountName: "acme",
+	}
+	first := must(versioncontrol.NewInstalledConnection(orgA, nil, installation))
+	require.NoError(t, f.connections.CreateConnection(f.ctx, first))
+
+	loaded, err := f.connections.GetConnection(f.ctx, orgA, first.ID())
+	require.NoError(t, err)
+	assert.Equal(t, first.Snapshot(), loaded.Snapshot())
+
+	second := must(versioncontrol.NewInstalledConnection(orgB, nil, installation))
+	assert.ErrorIs(t, f.connections.CreateConnection(f.ctx, second), versioncontrol.ErrAccountConnected)
+
+	first.Archive()
+	require.NoError(t, f.connections.UpdateConnection(f.ctx, first))
+	assert.NoError(t, f.connections.CreateConnection(f.ctx, second))
+}
+
 func TestSourceRepositoryKeepsRepositoriesUnique(t *testing.T) {
 	f := newFixture(t)
 	connection := newConnection(t)

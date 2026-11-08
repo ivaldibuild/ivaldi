@@ -18,6 +18,7 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
 	"github.com/ivaldibuild/ivaldi/pkg/transaction"
+	"github.com/ivaldibuild/ivaldi/pkg/vcs"
 )
 
 type Option func(*options)
@@ -26,10 +27,32 @@ type options struct {
 	connections versioncontrol.ConnectionRepository
 	authz       authorization.Authorizer
 	writer      change.Writer
+	installers  map[vcs.ProviderKind]vcs.Installer
+	states      versioncontrol.StateSealer
 }
 
 func WithConnectionRepo(r versioncontrol.ConnectionRepository) Option {
 	return func(o *options) { o.connections = r }
+}
+
+// WithInstaller connects the provider's accounts through its install flow.
+// Without one, installing for that provider fails with a clear error.
+func WithInstaller(provider vcs.ProviderKind, installer vcs.Installer) Option {
+	return func(o *options) {
+		if installer == nil {
+			return
+		}
+		if o.installers == nil {
+			o.installers = map[vcs.ProviderKind]vcs.Installer{}
+		}
+		o.installers[provider] = installer
+	}
+}
+
+// WithStateSealer seals the state an install flow carries through the
+// provider. It is required with an installer.
+func WithStateSealer(s versioncontrol.StateSealer) Option {
+	return func(o *options) { o.states = s }
 }
 
 func WithAuthorizer(a authorization.Authorizer) Option {
@@ -60,22 +83,31 @@ func NewConnectionService(opts ...Option) (versioncontrol.ConnectionService, err
 		return nil, fmt.Errorf("connection service: ConnectionRepo is required")
 	case o.authz == nil:
 		return nil, fmt.Errorf("connection service: Authorizer is required")
+	case len(o.installers) > 0 && o.states == nil:
+		return nil, fmt.Errorf("connection service: StateSealer is required with an installer")
 	}
 	if err := o.writer.Check(); err != nil {
 		return nil, fmt.Errorf("connection service: %w", err)
 	}
-	s := &service{connections: o.connections, w: o.writer}
+	s := &service{connections: o.connections, w: o.writer, installers: o.installers, states: o.states}
 	return &authorized{next: s, authz: o.authz}, nil
 }
 
 type service struct {
 	connections versioncontrol.ConnectionRepository
 	w           change.Writer
+	installers  map[vcs.ProviderKind]vcs.Installer
+	states      versioncontrol.StateSealer
 }
 
 var _ versioncontrol.ConnectionService = (*service)(nil)
 
 func (s *service) CreateConnection(ctx context.Context, actor identity.Actor, in versioncontrol.CreateConnectionInput) (*versioncontrol.Connection, error) {
+	// An app installation's ID proves nothing about who may use it, so it
+	// is connected only through the install flow.
+	if in.AuthKind == versioncontrol.AuthKindAppInstallation {
+		return nil, versioncontrol.NewErrInvalidInput("connect an app installation through the install flow, not by its ID")
+	}
 	c, err := versioncontrol.NewConnection(versioncontrol.NewConnectionProps{
 		OrganizationID:       in.OrganizationID,
 		Provider:             in.Provider,
@@ -91,7 +123,15 @@ func (s *service) CreateConnection(ctx context.Context, actor identity.Actor, in
 	if err != nil {
 		return nil, err
 	}
-	err = s.w.Tx.WithinTx(ctx, func(ctx context.Context) error {
+	if err := s.create(ctx, actor, c); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// create saves a new Connection with its events and audit record.
+func (s *service) create(ctx context.Context, actor identity.Actor, c *versioncontrol.Connection) error {
+	return s.w.Tx.WithinTx(ctx, func(ctx context.Context) error {
 		if err := s.connections.CreateConnection(ctx, c); err != nil {
 			return fmt.Errorf("create connection: %w", err)
 		}
@@ -103,10 +143,6 @@ func (s *service) CreateConnection(ctx context.Context, actor identity.Actor, in
 			ResourceID: c.ID(), Actor: actor, After: c.Snapshot(),
 		})
 	})
-	if err != nil {
-		return nil, err
-	}
-	return c, nil
 }
 
 func (s *service) GetConnection(ctx context.Context, _ identity.Actor, organizationID, connectionID string) (*versioncontrol.Connection, error) {

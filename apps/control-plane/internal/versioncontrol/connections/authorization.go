@@ -6,6 +6,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/versioncontrol"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
+	"github.com/ivaldibuild/ivaldi/pkg/vcs"
 )
 
 // authorized asks the authorizer before each operation and passes its
@@ -65,4 +66,26 @@ func (a *authorized) ArchiveConnection(ctx context.Context, actor identity.Actor
 		return nil, err
 	}
 	return a.next.ArchiveConnection(ctx, actor, organizationID, connectionID)
+}
+
+func (a *authorized) StartInstallation(ctx context.Context, actor identity.Actor, organizationID string, provider vcs.ProviderKind) (*versioncontrol.InstallationStart, error) {
+	ctx, err := a.decide(ctx, actor, versioncontrol.PermissionConnectionManage, organizationID, versioncontrol.ActionConnectionInstall, provider)
+	if err != nil {
+		return nil, err
+	}
+	return a.next.StartInstallation(ctx, actor, organizationID, provider)
+}
+
+// CompleteInstallation proposes the provider and installation, never the
+// authorization code or the state, which are credentials.
+func (a *authorized) CompleteInstallation(ctx context.Context, actor identity.Actor, in versioncontrol.CompleteInstallationInput) (*versioncontrol.Connection, error) {
+	proposal := struct {
+		Provider       vcs.ProviderKind `json:"provider"`
+		InstallationID string           `json:"installation_id"`
+	}{in.Provider, in.InstallationID}
+	ctx, err := a.decide(ctx, actor, versioncontrol.PermissionConnectionManage, in.OrganizationID, versioncontrol.ActionConnectionCreate, proposal)
+	if err != nil {
+		return nil, err
+	}
+	return a.next.CompleteInstallation(ctx, actor, in)
 }

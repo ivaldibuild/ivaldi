@@ -131,15 +131,9 @@ func (s *service) CreateSource(ctx context.Context, actor identity.Actor, in ver
 	if err != nil {
 		return nil, err
 	}
-	connection, err := s.connections.GetConnection(ctx, in.OrganizationID, in.ConnectionID)
+	connection, err := s.usableConnection(ctx, in.OrganizationID, in.ConnectionID)
 	if err != nil {
 		return nil, err
-	}
-	if !connection.Usable() {
-		return nil, fmt.Errorf("%w: connection %s", versioncontrol.ErrInactiveConnection, connection.ID())
-	}
-	if connection.LookupFrom() == vcs.LookupFromDataPlane {
-		return nil, versioncontrol.ErrLookupInDataPlane
 	}
 	repository, err := s.repository(ctx, connection, in.ExternalRepositoryID)
 	if err != nil {
@@ -197,6 +191,23 @@ func (s *service) activeProject(ctx context.Context, organizationID, projectID s
 	return project, nil
 }
 
+// usableConnection reads a Connection the control plane may look up
+// through: active, not archived, and not one whose lookups run in the data
+// plane.
+func (s *service) usableConnection(ctx context.Context, organizationID, connectionID string) (*versioncontrol.Connection, error) {
+	connection, err := s.connections.GetConnection(ctx, organizationID, connectionID)
+	if err != nil {
+		return nil, err
+	}
+	if !connection.Usable() {
+		return nil, fmt.Errorf("%w: connection %s", versioncontrol.ErrInactiveConnection, connection.ID())
+	}
+	if connection.LookupFrom() == vcs.LookupFromDataPlane {
+		return nil, versioncontrol.ErrLookupInDataPlane
+	}
+	return connection, nil
+}
+
 // repository reads the repository's metadata from the provider, so the
 // Source stores what the provider says rather than what a client claims.
 func (s *service) repository(ctx context.Context, connection *versioncontrol.Connection, externalRepositoryID string) (vcs.Repository, error) {
@@ -215,7 +226,12 @@ func translateProviderError(err error, externalRepositoryID string) error {
 	case errors.Is(err, vcs.ErrNotFound):
 		return versioncontrol.NewErrInvalidInput(fmt.Sprintf("the provider has no repository %s", externalRepositoryID))
 	case errors.Is(err, vcs.ErrUnsupportedProvider):
-		return versioncontrol.ErrProviderUnsupported
+		return fmt.Errorf("%w: %w", versioncontrol.ErrProviderUnsupported, err)
+	case errors.Is(err, vcs.ErrUnauthorized):
+		// The provider hides repositories an installation cannot see behind
+		// a 404, so a refusal means the installation itself was suspended or
+		// removed.
+		return fmt.Errorf("%w: the provider refused the connection: %w", versioncontrol.ErrInactiveConnection, err)
 	default:
 		return fmt.Errorf("%w: %w", versioncontrol.ErrProviderUnavailable, err)
 	}
@@ -276,6 +292,13 @@ func (s *service) RestoreSource(ctx context.Context, actor identity.Actor, organ
 		if !source.Archived() {
 			out = source
 			return nil
+		}
+		// A restored Source must be usable again, as if it were created now.
+		if _, err := s.activeProject(ctx, organizationID, source.ProjectID()); err != nil {
+			return err
+		}
+		if _, err := s.usableConnection(ctx, organizationID, source.ConnectionID()); err != nil {
+			return err
 		}
 		before := source.Snapshot()
 		source.Restore()

@@ -24,10 +24,18 @@ func translateToHttpError(ctx context.Context, err error) error {
 		return huma.Error422UnprocessableEntity("the request is invalid")
 	case errors.Is(err, versioncontrol.ErrNotFound):
 		return huma.Error404NotFound("not found")
-	case errors.Is(err, versioncontrol.ErrAlreadyExists),
-		errors.Is(err, versioncontrol.ErrArchived),
-		errors.Is(err, versioncontrol.ErrConflict):
-		return huma.Error409Conflict(err.Error())
+	case errors.Is(err, versioncontrol.ErrAccountConnected):
+		return huma.Error409Conflict("this provider account is already connected")
+	case errors.Is(err, versioncontrol.ErrAlreadyExists):
+		return huma.Error409Conflict("already exists")
+	case errors.Is(err, versioncontrol.ErrArchived):
+		return huma.Error409Conflict("archived")
+	case errors.Is(err, versioncontrol.ErrConflict):
+		return huma.Error409Conflict("changed since it was read; read it again")
+	case errors.Is(err, versioncontrol.ErrProviderUnsupported):
+		return huma.Error422UnprocessableEntity("no provider is configured for this connection")
+	case errors.Is(err, versioncontrol.ErrProviderUnavailable):
+		return huma.Error502BadGateway("the provider is unavailable")
 	case errors.As(err, &approval):
 		return huma.Error403Forbidden("the change needs approval; decision " + approval.DecisionID)
 	case errors.Is(err, authorization.ErrDenied):

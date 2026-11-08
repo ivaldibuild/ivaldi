@@ -23,4 +23,7 @@ var (
 	ErrConnectionInactive = errors.New("the source's connection is not active")
 	// ErrInvalidRange means a commit range is missing an endpoint.
 	ErrInvalidRange = errors.New("a commit range needs two commits")
+	// ErrRangeTooLarge means a commit range holds more commits than a
+	// provider reads in one lookup.
+	ErrRangeTooLarge = errors.New("the commit range holds too many commits")
 )

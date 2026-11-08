@@ -818,6 +818,44 @@
         ],
         "type": "object"
       },
+      "CompleteInstallationRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/CompleteInstallationRequestBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "code": {
+            "description": "The authorization code the provider sent back",
+            "type": "string"
+          },
+          "installation_id": {
+            "description": "The installation ID the provider sent back",
+            "type": "string"
+          },
+          "provider": {
+            "description": "The provider the install was started for",
+            "enum": [
+              "github"
+            ],
+            "type": "string"
+          },
+          "state": {
+            "description": "The state the provider sent back, from start-connection-installation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "state",
+          "code",
+          "installation_id"
+        ],
+        "type": "object"
+      },
       "ConfigurePlacementRequestBody": {
         "additionalProperties": false,
         "properties": {
@@ -911,6 +949,10 @@
           "updated_at": {
             "format": "date-time",
             "type": "string"
+          },
+          "webhook_route_key": {
+            "nullable": true,
+            "type": "string"
           }
         },
         "required": [
@@ -922,6 +964,7 @@
           "credential_ref",
           "external_account_id",
           "external_account_name",
+          "webhook_route_key",
           "lookup_from",
           "lookup_pool",
           "status",
@@ -1151,9 +1194,8 @@
             "type": "string"
           },
           "auth_kind": {
-            "description": "How Ivaldi authenticates; app_installation when omitted",
+            "description": "How Ivaldi authenticates. App installations are connected through the install flow, not here",
             "enum": [
-              "app_installation",
               "oauth",
               "access_token"
             ],
@@ -1199,6 +1241,7 @@
         "required": [
           "provider",
           "host_url",
+          "auth_kind",
           "external_account_id"
         ],
         "type": "object"
@@ -2173,6 +2216,25 @@
           "name",
           "source",
           "team_id"
+        ],
+        "type": "object"
+      },
+      "InstallationStartSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "description": "When the install must be completed by",
+            "format": "date-time",
+            "type": "string"
+          },
+          "url": {
+            "description": "Where to send the person to install the app",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "expires_at"
         ],
         "type": "object"
       },
@@ -3887,6 +3949,35 @@
           },
           "data": {
             "$ref": "#/components/schemas/Grant",
+            "description": "Response payload, always present: an empty list is [], not omitted"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ResponseInstallationStartSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseInstallationStartSnapshot.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/InstallationStartSnapshot",
             "description": "Response payload, always present: an empty list is [], not omitted"
           },
           "message": {
@@ -6153,6 +6244,29 @@
           "created_at",
           "updated_at",
           "archived_at"
+        ],
+        "type": "object"
+      },
+      "StartInstallationRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/StartInstallationRequestBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "provider": {
+            "description": "The provider whose app to install",
+            "enum": [
+              "github"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider"
         ],
         "type": "object"
       },
@@ -9415,7 +9529,99 @@
             "bearer": []
           }
         ],
-        "summary": "Connect a version-control provider account",
+        "summary": "Connect a version-control provider account that does not use an app installation",
+        "tags": [
+          "version-control"
+        ]
+      }
+    },
+    "/v1/connections/installations": {
+      "post": {
+        "operationId": "start-connection-installation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartInstallationRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseInstallationStartSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Start installing a provider's app to connect an account",
+        "tags": [
+          "version-control"
+        ]
+      }
+    },
+    "/v1/connections/installations/complete": {
+      "post": {
+        "operationId": "complete-connection-installation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteInstallationRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseConnectionSnapshot"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Connect the account an app installation covers, once the provider confirms the caller can access it",
         "tags": [
           "version-control"
         ]

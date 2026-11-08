@@ -1,11 +1,13 @@
 // Package github reads repositories and commit history from GitHub through a
-// GitHub App installation.
+// GitHub App installation, and connects installations through the App's
+// install flow.
 //
 // The App's private key is the installation's own credential, configured on
 // the control plane. A Connection stores the installation ID, and the client
-// mints and caches an installation token for it. Web URLs, such as
-// https://github.com, and API URLs differ: github.com uses api.github.com,
-// and GitHub Enterprise Server uses <host>/api/v3.
+// mints and caches an installation token for it. The client serves the one
+// GitHub the App is registered with, github.com or a GitHub Enterprise
+// Server, and refuses a Connection that names any other host: the App's JWT
+// and its tokens never leave for an address a caller chose.
 package github
 
 import (
@@ -28,6 +30,9 @@ import (
 // apiVersion is the GitHub REST API version the client asks for.
 const apiVersion = "2022-11-28"
 
+// DefaultWebURL is github.com.
+const DefaultWebURL = "https://github.com"
+
 // Config configures the GitHub App client.
 type Config struct {
 	// AppID is the GitHub App's ID, which signs the JWT that mints
@@ -35,9 +40,20 @@ type Config struct {
 	AppID int64
 	// PrivateKeyPEM is the App's private key.
 	PrivateKeyPEM []byte
-	// BaseURL overrides the API address. Leave it empty to derive it from
-	// each connection's host URL.
-	BaseURL string
+	// Slug is the App's name in its URL, as in https://github.com/apps/<slug>.
+	Slug string
+	// ClientID and ClientSecret are the App's OAuth credentials, which
+	// verify that the person completing an install can access the
+	// installation.
+	ClientID     string
+	ClientSecret string
+	// WebURL is the GitHub the App is registered with. Leave it empty for
+	// github.com; set it for GitHub Enterprise Server. Connections must name
+	// this host.
+	WebURL string
+	// APIURL overrides the API address, which is otherwise api.github.com
+	// for github.com and <WebURL>/api/v3 for GitHub Enterprise Server.
+	APIURL string
 	// HTTPClient is used for every request. Leave it nil for a default
 	// client with a timeout.
 	HTTPClient *http.Client
@@ -45,58 +61,88 @@ type Config struct {
 
 // Client reads repositories and commits through GitHub App installations.
 type Client struct {
-	appID   int64
-	key     *rsa.PrivateKey
-	baseURL string
-	http    *http.Client
+	appID        int64
+	key          *rsa.PrivateKey
+	slug         string
+	clientID     string
+	clientSecret string
+	webURL       string
+	webHost      string
+	apiURL       string
+	http         *http.Client
 
 	mu     sync.Mutex
 	tokens map[string]installationToken
 }
 
-var _ vcs.Provider = (*Client)(nil)
+var (
+	_ vcs.Provider  = (*Client)(nil)
+	_ vcs.Installer = (*Client)(nil)
+)
 
 // New returns a GitHub client, or an error naming an invalid configuration.
 func New(cfg Config) (*Client, error) {
-	if cfg.AppID <= 0 {
+	switch {
+	case cfg.AppID <= 0:
 		return nil, fmt.Errorf("github: AppID is required")
+	case cfg.Slug == "":
+		return nil, fmt.Errorf("github: Slug is required")
+	case cfg.ClientID == "" || cfg.ClientSecret == "":
+		return nil, fmt.Errorf("github: ClientID and ClientSecret are required")
 	}
 	key, err := parsePrivateKey(cfg.PrivateKeyPEM)
 	if err != nil {
 		return nil, err
+	}
+	webURL := strings.TrimSuffix(cfg.WebURL, "/")
+	if webURL == "" {
+		webURL = DefaultWebURL
+	}
+	web, err := url.Parse(webURL)
+	if err != nil || web.Host == "" || (web.Scheme != "https" && web.Scheme != "http") {
+		return nil, fmt.Errorf("github: WebURL %q must be an absolute http or https URL", cfg.WebURL)
+	}
+	apiURL := strings.TrimSuffix(cfg.APIURL, "/")
+	switch {
+	case apiURL != "":
+	case strings.EqualFold(web.Host, "github.com"):
+		apiURL = "https://api.github.com"
+	default:
+		apiURL = webURL + "/api/v3"
 	}
 	client := cfg.HTTPClient
 	if client == nil {
 		client = &http.Client{Timeout: 15 * time.Second}
 	}
 	return &Client{
-		appID:   cfg.AppID,
-		key:     key,
-		baseURL: strings.TrimSuffix(cfg.BaseURL, "/"),
-		http:    client,
-		tokens:  map[string]installationToken{},
+		appID:        cfg.AppID,
+		key:          key,
+		slug:         cfg.Slug,
+		clientID:     cfg.ClientID,
+		clientSecret: cfg.ClientSecret,
+		webURL:       webURL,
+		webHost:      strings.ToLower(web.Host),
+		apiURL:       apiURL,
+		http:         client,
+		tokens:       map[string]installationToken{},
 	}, nil
 }
 
-// base returns the API address for a connection's provider.
-func (c *Client) base(at vcs.Endpoint) (string, error) {
+// checkEndpoint refuses an endpoint this client must not contact: another
+// provider, a host other than the configured GitHub, or one without an
+// installation.
+func (c *Client) checkEndpoint(at vcs.Endpoint) error {
 	if at.Provider != vcs.ProviderGitHub {
-		return "", fmt.Errorf("%w: %s", vcs.ErrUnsupportedProvider, at.Provider)
-	}
-	if at.InstallationID == "" {
-		return "", fmt.Errorf("%w: a GitHub connection needs an installation ID", vcs.ErrUnauthorized)
-	}
-	if c.baseURL != "" {
-		return c.baseURL, nil
+		return fmt.Errorf("%w: %s", vcs.ErrUnsupportedProvider, at.Provider)
 	}
 	u, err := url.Parse(at.HostURL)
-	if err != nil || u.Host == "" {
-		return "", fmt.Errorf("github: invalid host URL %q", at.HostURL)
+	if err != nil || !strings.EqualFold(u.Host, c.webHost) {
+		return fmt.Errorf("%w: %q is not the configured GitHub host", vcs.ErrUnsupportedProvider, at.HostURL)
 	}
-	if u.Host == "github.com" {
-		return "https://api.github.com", nil
+	if at.InstallationID == "" {
+		return fmt.Errorf("%w: a GitHub connection needs an installation ID", vcs.ErrUnauthorized)
 	}
-	return u.Scheme + "://" + u.Host + "/api/v3", nil
+	return nil
 }
 
 func (c *Client) doRequest(ctx context.Context, method, token string, body []byte, path string) (*http.Response, error) {
@@ -167,7 +213,14 @@ func statusError(res *http.Response) error {
 	switch res.StatusCode {
 	case http.StatusNotFound:
 		return vcs.ErrNotFound
-	case http.StatusUnauthorized, http.StatusForbidden:
+	case http.StatusForbidden:
+		// GitHub answers 403 when a rate limit runs out, not only when it
+		// refuses access.
+		if res.Header.Get("X-RateLimit-Remaining") == "0" || res.Header.Get("Retry-After") != "" {
+			return vcs.ErrUnavailable
+		}
+		return vcs.ErrUnauthorized
+	case http.StatusUnauthorized:
 		return vcs.ErrUnauthorized
 	case http.StatusTooManyRequests:
 		return vcs.ErrUnavailable
@@ -176,6 +229,17 @@ func statusError(res *http.Response) error {
 		return vcs.ErrUnavailable
 	}
 	return fmt.Errorf("github: the provider answered %s", res.Status)
+}
+
+// next returns the rel="next" address in a Link header, or "" on the last
+// page. It refuses an address outside the API, so a token is never sent
+// anywhere else.
+func (c *Client) next(h http.Header) (string, error) {
+	link := nextLink(h)
+	if link == "" || strings.HasPrefix(link, c.apiURL+"/") {
+		return link, nil
+	}
+	return "", fmt.Errorf("github: the next page %q is outside the API", link)
 }
 
 // nextLink returns the rel="next" address in a Link header, or "".

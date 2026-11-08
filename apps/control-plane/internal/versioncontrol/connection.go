@@ -40,6 +40,7 @@ type Connection struct {
 	credentialRef       *string
 	externalAccountID   string
 	externalAccountName *string
+	webhookRouteKey     *string
 	lookupFrom          vcs.LookupFrom
 	lookupPool          *string
 	status              Status
@@ -61,6 +62,7 @@ type ConnectionSnapshot struct {
 	CredentialRef        *string          `json:"credential_ref"`
 	ExternalAccountID    string           `json:"external_account_id"`
 	ExternalAccountName  *string          `json:"external_account_name"`
+	WebhookRouteKey      *string          `json:"webhook_route_key"`
 	LookupFrom           vcs.LookupFrom   `json:"lookup_from" enum:"control_plane,data_plane"`
 	LookupPool           *string          `json:"lookup_pool"`
 	Status               Status           `json:"status" enum:"active,suspended,revoked"`
@@ -73,13 +75,16 @@ type ConnectionSnapshot struct {
 // NewConnectionProps describes a Connection. A new one leaves the timestamps
 // nil; a repository loading a stored one sets them.
 type NewConnectionProps struct {
-	OrganizationID       string
-	Provider             vcs.ProviderKind
-	HostURL              string
-	AuthKind             AuthKind
-	CredentialRef        *string
-	ExternalAccountID    string
-	ExternalAccountName  *string
+	OrganizationID      string
+	Provider            vcs.ProviderKind
+	HostURL             string
+	AuthKind            AuthKind
+	CredentialRef       *string
+	ExternalAccountID   string
+	ExternalAccountName *string
+	// WebhookRouteKey identifies the provider account across the whole
+	// platform, so one account belongs to one Organization.
+	WebhookRouteKey      *string
 	LookupFrom           vcs.LookupFrom
 	LookupPool           *string
 	Status               Status
@@ -113,6 +118,9 @@ func NewConnection(props NewConnectionProps, connectionID *string) (*Connection,
 	if err := validateText("external account name", deref(props.ExternalAccountName), maxExternalNameLength, false); err != nil {
 		return nil, err
 	}
+	if err := validateText("webhook route key", deref(props.WebhookRouteKey), maxWebhookRouteKeyLength, false); err != nil {
+		return nil, err
+	}
 	if err := validateLookup(props.LookupFrom, props.LookupPool); err != nil {
 		return nil, err
 	}
@@ -134,6 +142,7 @@ func NewConnection(props NewConnectionProps, connectionID *string) (*Connection,
 		credentialRef:       optional.OfPtr(props.CredentialRef),
 		externalAccountID:   props.ExternalAccountID,
 		externalAccountName: optional.OfPtr(props.ExternalAccountName),
+		webhookRouteKey:     optional.OfPtr(props.WebhookRouteKey),
 		lookupFrom:          props.LookupFrom,
 		lookupPool:          optional.OfPtr(props.LookupPool),
 		status:              props.Status,
@@ -146,6 +155,26 @@ func NewConnection(props NewConnectionProps, connectionID *string) (*Connection,
 		c.RecordEvent(ConnectionCreated{c.Snapshot()})
 	}
 	return c, nil
+}
+
+// NewInstalledConnection returns a Connection to a provider account the
+// provider confirmed the creator can access, through an install flow. Its
+// webhook route key is unique across the platform, so the account cannot be
+// connected to a second Organization.
+func NewInstalledConnection(organizationID string, createdByPrincipalID *string, in vcs.Installation) (*Connection, error) {
+	routeKey := providerKey(in.Provider, in.HostURL, in.InstallationID)
+	return NewConnection(NewConnectionProps{
+		OrganizationID:       organizationID,
+		Provider:             in.Provider,
+		HostURL:              in.HostURL,
+		AuthKind:             AuthKindAppInstallation,
+		ExternalAccountID:    in.InstallationID,
+		ExternalAccountName:  optional.Of(in.AccountName),
+		WebhookRouteKey:      &routeKey,
+		LookupFrom:           vcs.LookupFromControlPlane,
+		Status:               StatusActive,
+		CreatedByPrincipalID: createdByPrincipalID,
+	}, nil)
 }
 
 func validateAuthKind(k AuthKind) error {
@@ -185,6 +214,7 @@ func (c *Connection) AuthKind() AuthKind            { return c.authKind }
 func (c *Connection) CredentialRef() *string        { return copyString(c.credentialRef) }
 func (c *Connection) ExternalAccountID() string     { return c.externalAccountID }
 func (c *Connection) ExternalAccountName() *string  { return copyString(c.externalAccountName) }
+func (c *Connection) WebhookRouteKey() *string      { return copyString(c.webhookRouteKey) }
 func (c *Connection) LookupFrom() vcs.LookupFrom    { return c.lookupFrom }
 func (c *Connection) LookupPool() *string           { return copyString(c.lookupPool) }
 func (c *Connection) Status() Status                { return c.status }
@@ -219,6 +249,7 @@ func (c *Connection) Snapshot() ConnectionSnapshot {
 		CredentialRef:        copyString(c.credentialRef),
 		ExternalAccountID:    c.externalAccountID,
 		ExternalAccountName:  copyString(c.externalAccountName),
+		WebhookRouteKey:      copyString(c.webhookRouteKey),
 		LookupFrom:           c.lookupFrom,
 		LookupPool:           copyString(c.lookupPool),
 		Status:               c.status,

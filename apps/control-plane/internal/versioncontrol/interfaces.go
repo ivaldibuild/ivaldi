@@ -2,6 +2,7 @@ package versioncontrol
 
 import (
 	"context"
+	"time"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
@@ -61,6 +62,33 @@ type CreateConnectionInput struct {
 	LookupPool          *string
 }
 
+// StateSealer seals the state an install flow carries through the provider,
+// so it comes back unchanged and only until it expires. IAM's session codec
+// implements it.
+type StateSealer interface {
+	// Encode seals v, readable as name until ttl passes.
+	Encode(name string, v any, ttl time.Duration) (string, error)
+	// Decode opens a value Encode sealed under name into v.
+	Decode(name, value string, v any) error
+}
+
+// InstallationStart is where to send a person to install Ivaldi's app.
+type InstallationStart struct {
+	URL       string
+	ExpiresAt time.Time
+}
+
+// CompleteInstallationInput is what the provider sent back to the frontend
+// after an install: the state from StartInstallation, an authorization
+// code, and the installation ID.
+type CompleteInstallationInput struct {
+	OrganizationID string
+	Provider       vcs.ProviderKind
+	State          string
+	Code           string
+	InstallationID string
+}
+
 // CreateSourceInput describes a new Source.
 type CreateSourceInput struct {
 	OrganizationID       string
@@ -71,10 +99,20 @@ type CreateSourceInput struct {
 
 // ConnectionService manages an Organization's provider Connections.
 type ConnectionService interface {
+	// CreateConnection records a Connection that does not use an app
+	// installation. App installations are connected only through
+	// StartInstallation and CompleteInstallation, where the provider
+	// confirms the person can access the installation.
 	CreateConnection(ctx context.Context, actor identity.Actor, in CreateConnectionInput) (*Connection, error)
 	GetConnection(ctx context.Context, actor identity.Actor, organizationID, connectionID string) (*Connection, error)
 	ListConnections(ctx context.Context, actor identity.Actor, organizationID string, includeArchived bool) ([]*Connection, error)
 	ArchiveConnection(ctx context.Context, actor identity.Actor, organizationID, connectionID string) (*Connection, error)
+	// StartInstallation returns where to send the actor to install Ivaldi's
+	// app, with state bound to the actor and the Organization.
+	StartInstallation(ctx context.Context, actor identity.Actor, organizationID string, provider vcs.ProviderKind) (*InstallationStart, error)
+	// CompleteInstallation creates the Connection once the provider
+	// confirms the actor can access the installation.
+	CompleteInstallation(ctx context.Context, actor identity.Actor, in CompleteInstallationInput) (*Connection, error)
 }
 
 // SourceService manages the Sources under a Project.

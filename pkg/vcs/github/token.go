@@ -49,10 +49,9 @@ func parsePrivateKey(pemBytes []byte) (*rsa.PrivateKey, error) {
 }
 
 // installationToken returns a cached token for the installation, or mints one.
-func (c *Client) installationToken(ctx context.Context, base, installationID string) (string, error) {
-	key := base + "/" + installationID
+func (c *Client) installationToken(ctx context.Context, installationID string) (string, error) {
 	c.mu.Lock()
-	token, ok := c.tokens[key]
+	token, ok := c.tokens[installationID]
 	c.mu.Unlock()
 	if ok && time.Until(token.expiresAt) > tokenRefreshMargin {
 		return token.value, nil
@@ -62,7 +61,7 @@ func (c *Client) installationToken(ctx context.Context, base, installationID str
 	if err != nil {
 		return "", err
 	}
-	path := base + "/app/installations/" + url.PathEscape(installationID) + "/access_tokens"
+	path := c.apiURL + "/app/installations/" + url.PathEscape(installationID) + "/access_tokens"
 	var body tokenResponse
 	if err := c.do(ctx, http.MethodPost, jwt, nil, path, &body); err != nil {
 		return "", err
@@ -76,7 +75,7 @@ func (c *Client) installationToken(ctx context.Context, base, installationID str
 		expiresAt = parsed
 	}
 	c.mu.Lock()
-	c.tokens[key] = installationToken{value: body.Token, expiresAt: expiresAt}
+	c.tokens[installationID] = installationToken{value: body.Token, expiresAt: expiresAt}
 	c.mu.Unlock()
 	return body.Token, nil
 }

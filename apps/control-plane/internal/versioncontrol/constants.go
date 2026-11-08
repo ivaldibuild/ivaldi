@@ -12,6 +12,7 @@ package versioncontrol
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/ivaldibuild/ivaldi/pkg/id"
 	"github.com/ivaldibuild/ivaldi/pkg/vcs"
@@ -30,16 +31,21 @@ const (
 
 // Limits on what one record may hold. Text lengths match the columns.
 const (
-	maxHostURLLength       = 2048
-	maxExternalIDLength    = 255
-	maxExternalNameLength  = 255
-	maxFullNameLength      = 512
-	maxDefaultBranchLength = 255
-	maxRepositoryKeyLength = 768
-	maxCloneURLLength      = 2048
-	maxWebURLLength        = 2048
-	maxLookupPoolLength    = 255
+	maxHostURLLength         = 2048
+	maxExternalIDLength      = 255
+	maxExternalNameLength    = 255
+	maxFullNameLength        = 512
+	maxDefaultBranchLength   = 255
+	maxRepositoryKeyLength   = 768
+	maxCloneURLLength        = 2048
+	maxWebURLLength          = 2048
+	maxLookupPoolLength      = 255
+	maxWebhookRouteKeyLength = 512
 )
+
+// InstallationTTL bounds an install flow, from starting it to coming back
+// from the provider.
+const InstallationTTL = 30 * time.Minute
 
 // Permissions this capability asks the authorizer about. Connections belong
 // to the Organization; Sources are resources under their Project.
@@ -54,6 +60,7 @@ const (
 const (
 	ActionConnectionArchive = "connection.archive"
 	ActionConnectionCreate  = "connection.create"
+	ActionConnectionInstall = "connection.install"
 	ActionConnectionList    = "connection.list"
 	ActionConnectionRead    = "connection.read"
 	ActionSourceArchive     = "source.archive"
@@ -90,9 +97,11 @@ func (v Visibility) valid() error {
 	return NewErrInvalidInput(fmt.Sprintf("visibility %q must be public, private, or internal", v))
 }
 
-// repositoryKey identifies a repository across the Organization. The
-// provider's repository ID is stable across renames and transfers.
-func repositoryKey(provider vcs.ProviderKind, hostURL, externalID string) string {
+// providerKey identifies something a provider holds, such as a repository
+// or an installation, by the provider, its host, and the provider's stable
+// ID, such as github:github.com:123456. The ID survives renames and
+// transfers.
+func providerKey(provider vcs.ProviderKind, hostURL, externalID string) string {
 	host := hostURL
 	if u, err := parseURL(hostURL); err == nil && u.Host != "" {
 		host = u.Host

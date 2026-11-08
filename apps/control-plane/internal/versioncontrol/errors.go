@@ -12,6 +12,9 @@ var (
 	// ErrAlreadyExists means another active Source in the Organization
 	// already connects the same repository.
 	ErrAlreadyExists = errors.New("already exists")
+	// ErrAccountConnected means a Connection, in this Organization or
+	// another, already connects the provider account.
+	ErrAccountConnected = errors.New("the provider account is already connected")
 	// ErrArchived means the record, or one it depends on, is archived.
 	ErrArchived = errors.New("archived")
 	// ErrConflict means the record changed since the caller read it.

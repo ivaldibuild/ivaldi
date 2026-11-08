@@ -48,7 +48,7 @@ erDiagram
 
 ## How the main flows work
 
-**Connecting a provider.** An Organization admin installs Ivaldi's app or provides a token. The capability stores the credential through the credentials capability, records the Connection with its `webhook_route_key`, and verifies it with a test lookup through the Connection's lookup path.
+**Connecting a provider.** An Organization admin installs Ivaldi's app or provides a token. An app installation is connected only through the install flow: the frontend asks the control plane to start it and sends the admin to the provider with sealed state bound to the admin and the Organization. The provider sends them back with an authorization code and the installation ID, and the frontend passes those to the control plane. The control plane checks the state is the caller's own, exchanges the code for the admin's user token, and records the Connection only if the installation is one of the App's installations the admin can access. An installation ID on its own proves nothing, because installation IDs are sequential and anyone can type one. The Connection's `webhook_route_key` (for example `github:github.com:42`) is unique across the platform, so an installation belongs to one Organization at a time. A token is stored through the credentials capability. The control plane contacts only the provider host it is configured with, never a host a Connection names.
 
 **Connecting a Source.** A Project admin picks a repository that the Connection can see. In one transaction, the capability inserts the Source and registers its IAM resource under the Project. It emits a connected event, which the indexer and other capabilities can react to.
 

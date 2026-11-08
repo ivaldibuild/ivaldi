@@ -17,6 +17,7 @@ type connectionEntity struct {
 	CredentialRef        *string    `gorm:"column:credential_ref"`
 	ExternalAccountID    string     `gorm:"column:external_account_id"`
 	ExternalAccountName  *string    `gorm:"column:external_account_name"`
+	WebhookRouteKey      *string    `gorm:"column:webhook_route_key"`
 	LookupFrom           string     `gorm:"column:lookup_from"`
 	LookupPool           *string    `gorm:"column:lookup_pool"`
 	Status               string     `gorm:"column:status"`

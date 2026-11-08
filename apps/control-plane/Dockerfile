@@ -14,7 +14,7 @@ COPY go.work go.work.sum ./
 COPY pkg/go.mod pkg/go.sum pkg/
 COPY apps/cli/go.mod apps/cli/go.sum apps/cli/
 COPY apps/control-plane/go.mod apps/control-plane/go.sum apps/control-plane/
-COPY apps/runtime-agent/go.mod apps/runtime-agent/
+COPY apps/k8s-agent/go.mod apps/k8s-agent/
 
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 

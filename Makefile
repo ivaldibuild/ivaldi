@@ -66,7 +66,7 @@ prepare:
 	@echo "Preparing build environment..."
 	@mkdir -p bin
 
-build: build-server build-cli
+build: build-server build-cli build-k8s-agent
 
 build-cli: prepare
 	@echo "Building CLI binary..."

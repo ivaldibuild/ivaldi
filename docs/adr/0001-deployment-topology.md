@@ -23,7 +23,7 @@ Split Ivaldi into two planes, and ship one codebase with deployment profiles ins
 
 **Data plane:** the worker, the indexer, sandboxes, and the runtime agent. It runs where the code and compute live. It holds source checkouts, code-intelligence indexes, and execution environments.
 
-The gateway can run in either plane (see [ADR 0002](0002-gateway-integration-ingress.md)). The control plane, gateway, worker, and indexer ship as one binary, and the runtime agent as another ([ADR 0010](0010-one-binary-for-the-components.md)); the split here is between where components run, not how they are packaged.
+The gateway can run in either plane (see [ADR 0002](0002-gateway-integration-ingress.md)). The control plane, gateway, worker, and indexer ship as one binary, and each runtime's agent as another ([ADR 0010](0010-one-binary-for-the-components.md), [ADR 0013](0013-one-agent-per-runtime.md)); the split here is between where components run, not how they are packaged.
 
 | Mode | Control plane | Data plane |
 |---|---|---|

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -42,4 +43,24 @@ func AddPersistentFlags(cmd *cobra.Command, flags map[string]Flag) {
 			}
 		}
 	}
+}
+
+func GetEnvString(key string, defaultValue string) string {
+	osValue := os.Getenv(key)
+	if osValue != "" {
+		return osValue
+	}
+
+	return defaultValue
+}
+
+func GetEnvDuration(key string, defaultValue time.Duration) time.Duration {
+	osValue := os.Getenv(key)
+	if osValue != "" {
+		if duration, err := time.ParseDuration(osValue); err == nil {
+			return duration
+		}
+	}
+
+	return defaultValue
 }

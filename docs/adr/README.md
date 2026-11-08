@@ -16,5 +16,6 @@ Consequential architecture decisions, one per file. Each record states its conte
 | [0010](0010-one-binary-for-the-components.md) | One binary runs the control plane, gateway, worker, and indexer | Proposed |
 | [0011](0011-transactional-outbox.md) | A transactional outbox for control-plane domain events | Proposed |
 | [0012](0012-token-issuer-and-signing-keys.md) | One token issuer with signing keys from configuration | Proposed |
+| [0013](0013-one-agent-per-runtime.md) | One agent per runtime, Kubernetes first | Proposed |
 
 New records take the next number and use the same section headings.

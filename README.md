@@ -53,7 +53,7 @@ Because of this split, one codebase supports three deployment modes:
 | Gateway | Either | `ivaldi gateway` | Receives provider webhooks and inbound MCP tool calls |
 | Worker | Data | `ivaldi worker` | Runs agent Sessions and other execution |
 | Indexer | Data | `ivaldi indexer` | Builds code-intelligence indexes from source |
-| [Runtime agent](apps/runtime-agent) | Data | its own | Observes, carries out, and reports Kubernetes deployments |
+| [Kubernetes agent](apps/k8s-agent) | Data | `ivaldi-k8s-agent` | Observes, carries out, and reports Kubernetes deployments; other runtimes, such as VPS hosts, get their own agent ([ADR 0013](docs/adr/0013-one-agent-per-runtime.md)) |
 | [CLI](apps/cli) | — | `ivaldictl` | Command-line client |
 | [`pkg/`](pkg) | Shared | — | Libraries used by more than one component |
 
@@ -69,7 +69,7 @@ Ivaldi is a multi-module Go repository. Tool versions, Go and the golang-migrate
 mise install
 
 # Test every module in the Go workspace
-go test ./pkg/... ./apps/cli/... ./apps/control-plane/... ./apps/runtime-agent/...
+go test ./pkg/... ./apps/cli/... ./apps/control-plane/... ./apps/k8s-agent/...
 
 # Run the control plane or the CLI from source
 go run ./apps/control-plane/cmd

@@ -16,7 +16,7 @@ The control plane already serves part of what the agent needs: enrolment and ren
 - **Kubernetes identity first.** The default credential method is `kubernetes`: the agent presents a projected ServiceAccount token with audience `ivaldi`, which the kubelet rotates. `bearer` and `mtls` stay available for control planes that cannot reach the cluster's OIDC issuer.
 - **Execution is opt-in twice.** The control plane executes only on Environments with `execution_enabled`, and the agent executes only in namespaces its chart grants write access to.
 - **Helm first.** A Release's deployment definition is its `helm_chart` artifact, and the assignment carries `helm_release_name`. Plain manifests and image-only Releases come later, as other ways the same agent applies a Release.
-- **Secrets are referenced by the Application and resolved by the agent.** An Application declares which secrets it needs and where they live in a secret manager. The control plane stores only those references. The agent resolves them with its own cloud identity when it renders a chart, and records which secret versions it used, never their values.
+- **Variables are resolved in two halves.** An Application's [deployment variables](deployment-variables.md) hold plain values and references to secrets in the customer's secret manager. The control plane picks the winning value of each for the Target; the agent fetches secrets with its own cloud identity, fills in bindings, and renders the chart. It records which secret versions it used, never their values.
 - **Digests, never tags.** The agent reports the digest each container is actually running, read from the Pod's status, and fetches charts by digest.
 - **The agent decides nothing about policy.** It applies what it is assigned and reports what it sees. Lifecycle checks, approvals, findings, and Release matching stay in the control plane ([ADR 0003](../adr/0003-identity-access-and-policy.md)).
 
@@ -112,18 +112,18 @@ A report is sent only when the status changes, with the workloads' conditions in
 
 ### Picking up an assignment
 
-The agent polls one endpoint for every Deployment on any of its Targets that is `applying` or `progressing`, each with its Release, Builds by digest, `apply_config`, `helm_release_name`, and the Application's secret references resolved for that Target ([Secrets](#secrets)). It works at most one per Application and Target, and at most `max_concurrent_applies` (default 4) in total. An assignment for a namespace the agent cannot write to is reported `failed` straight away with that reason; the control plane should refuse it before that (see [Control-plane changes](#control-plane-changes)).
+The agent polls one endpoint for every Deployment on any of its Targets that is `applying` or `progressing`, each with its Release, Builds by digest, `apply_config`, `helm_release_name`, the snapshot revision of its variables, and the winning value of each variable for that Target ([deployment variables](deployment-variables.md#resolving-a-deployments-variables)). It works at most one per Application and Target, and at most `max_concurrent_applies` (default 4) in total. An assignment for a namespace the agent cannot write to is reported `failed` straight away with that reason; the control plane should refuse it before that (see [Control-plane changes](#control-plane-changes)).
 
 While it applies a Deployment, changes it sees for that Application on that Target are reported against the Deployment, not as an observation.
 
 ### Applying with Helm
 
 1. **Fetch the chart.** The artifact named by `apply_config.definition_artifact` must be a `helm_chart`. The agent pulls `oci://<published_as>@<digest>` and checks the digest. Registry credentials come from a docker-config Secret named in the chart's values (`registries.pullSecret`).
-2. **Resolve secrets**, as described in [Secrets](#secrets). A reference that cannot be resolved fails the Deployment before anything is applied, naming the reference but not any value.
+2. **Resolve variables**, as described in [Variables and secrets](#variables-and-secrets). A secret that cannot be fetched, an undefined binding, or a cycle fails the Deployment before anything is applied, naming the variable but not any value.
 3. **Build the values.** In order, later wins:
    1. the chart's defaults;
-   2. each of `apply_config.values_refs` (non-secret, Target-specific values documents, resolved like secrets);
-   3. secrets delivered as values (`as: value`);
+   2. each of `apply_config.values_refs` (whole values documents in the namespace, such as a platform team's ConfigMap);
+   3. each variable with a `values_path`, at that path: `text` variables, and `secret` variables delivered as values;
    4. the Release's images, under `global.ivaldi.artifacts.<artifact name>` as `repository`, `digest`, and `image` (`<repository>@<digest>`);
    5. `global.ivaldi.application`, `.release`, `.deployment`, `.version`, and `global.ivaldi.secrets.name` when secrets are delivered as a Kubernetes Secret.
 4. **Install or upgrade** the Helm release `helm_release_name` in the Target's namespace with the Helm Go SDK, server-side apply, and no wait: the agent tracks the rollout itself. The Helm release is labelled `ivaldi.build/deployment=<deployment ID>`.
@@ -136,25 +136,9 @@ The agent does not roll back on its own: a rollback is a new Deployment of an ea
 
 Every report has a deterministic `report_id`, `<deployment ID>:<step>`, so a retry is stored once. On picking up an assignment, the agent reads the Helm release's history; if the latest revision already carries this Deployment's ID, it skips to tracking the rollout.
 
-## Secrets
+## Variables and secrets
 
-### What the Application stores
-
-An Application declares the secrets its charts need. Each **secret reference** has:
-
-| Field | Meaning |
-|---|---|
-| `name` | Unique in the Application, such as `database-password`. It is also the key the secret gets in the Kubernetes Secret the agent writes. |
-| `store_id` | The Secret Store it lives in (below). |
-| `path` | Where it is in the store, as a template, such as `payments/{environment}/database`. |
-| `field` | Optional: one field of a JSON or key-value secret, such as `password`. Empty means the whole secret. |
-| `version` | Optional: a pinned version. Empty means the latest at deploy time. |
-| `as` | `secret` (the default) or `value`. |
-| `values_path` | For `as: value`, where in the chart's values it goes, such as `database.password`. |
-
-**Paths are templates**, so one definition serves every Environment: `{environment}`, `{target}`, `{namespace}`, `{cluster}`, `{application}`, and `{project}` are replaced by slugs when the control plane builds an assignment. A placement can override any reference's `store_id`, `path`, `field`, or `version` for one Target, for the cases a template cannot express.
-
-The control plane stores references only. They are part of the Application's configuration rather than a Release, so a rotated path or a new secret needs no new Release; the next Deployment uses what the Application says at that time.
+What an Application's variables are, how scopes pick a value, and how a Release snapshots them is in [deployment variables](deployment-variables.md). This section is the agent's half: fetching secrets, filling in bindings, and giving the result to the chart.
 
 ### Secret Stores
 
@@ -168,17 +152,19 @@ Behind it sits the Ivaldi-owned secret-store interface ADR 0004 asks for, in `pk
 
 ### How the agent resolves them
 
+- **Bindings first, then secrets.** The agent fills in `#{…}` bindings in secret paths, fetches the secrets, then fills in bindings in `text` values, which may bind those secrets. Any value that binds a secret is treated as a secret from then on. An undefined name or a cycle fails the Deployment.
 - **With its own identity.** The agent authenticates to the store as its Kubernetes ServiceAccount: EKS Pod Identity or IRSA for AWS, Vault's Kubernetes auth with the store's role, and its own RBAC for `kubernetes`. Ivaldi holds no secret-manager credentials anywhere.
 - **At render time, in memory.** Values are fetched for one apply, used, and dropped. They are never logged, never put in a report's `detail`, and never sent to the control plane.
-- **As a Kubernetes Secret by default.** For `as: secret`, the agent writes an immutable Secret, `<helm release>-secrets-<hash>`, in the Target's namespace, with one key per reference, and passes its name to the chart as `global.ivaldi.secrets.name`. The hash covers the resolved versions, so a rotated secret gets a new name, which changes the Pod template and rolls the workloads. The agent keeps the Secrets of the last three Deployments, for rollbacks, and deletes older ones.
-- **As values only when asked.** `as: value` puts the secret into the chart's values at `values_path`, for charts that cannot read a Secret. Helm stores values in its release records, so the secret then sits in every revision's history in the namespace and shows in `helm get values`. The web app says so where the option is chosen.
-- **Versions are recorded.** The agent reports, for each reference, the store's version ID it resolved (an AWS version ID, a Vault KV version, a Kubernetes `resourceVersion`) in a `progress` event. A Deployment's history therefore says which secret versions it shipped, which is part of its provenance.
+- **As a Kubernetes Secret by default.** For `deliver_as: secret`, the agent writes an immutable Secret, `<helm release>-secrets-<hash>`, in the Target's namespace, with one key per secret variable (the variable's name, which is why names are limited to what a Secret key allows), and passes its name to the chart as `global.ivaldi.secrets.name`. The hash covers the resolved versions, so a rotated secret gets a new name, which changes the Pod template and rolls the workloads. The agent keeps the Secrets of the last three Deployments, for rollbacks, and deletes older ones.
+- **As values only when asked.** `deliver_as: value` puts the secret into the chart's values at `values_path`, for charts that cannot read a Secret. Helm stores values in its release records, so the secret then sits in every revision's history in the namespace and shows in `helm get values`. The web app says so where the option is chosen.
+- **Versions are recorded.** The agent reports, for each reference, the store's version ID it resolved (an AWS version ID, a Vault KV version, a Kubernetes `resourceVersion`) in a `progress` event. With the snapshot revision the Deployment records, its history says exactly what configuration it shipped.
+- **Masked wherever it reports.** Before sending any `detail` or log line, the agent replaces every resolved secret value longer than three characters with `***`, including inside Helm's own error messages, which can echo values. As Octopus warns, literal masking is not foolproof, so the agent also never puts rendered values or manifests in a report.
 
 ### Who can read what
 
 One cluster-wide agent with one cloud identity can read every secret that identity is granted, for every Target in the cluster. Two controls keep that from becoming a path from staging to production:
 
-- **In Ivaldi:** a store's `environment_ids`, checked when a reference is saved and again when an assignment is built.
+- **In Ivaldi:** a store's `environment_ids`, checked when a value is saved and again when a Deployment is requested.
 - **In the customer's cloud:** the IAM policy or Vault role the agent's identity holds, which the customer scopes as they like.
 
 A stronger option is for the agent to resolve each Target's secrets as a ServiceAccount in that Target's namespace, using the TokenRequest API, so a cloud policy can be written per namespace. It needs `create` on `serviceaccounts/token` for one ServiceAccount in each execute namespace, and one more identity per namespace for the customer to set up. It is left as an open question rather than built in.
@@ -232,7 +218,7 @@ apps/k8s-agent/
   internal/observe/        selector matching, image digests, observations
   internal/health/         kstatus to Deployment status, debouncing
   internal/execute/        assignments, chart fetching, values, Helm, post-renderer
-  internal/secrets/        resolving references, writing the Kubernetes Secret
+  internal/variables/      bindings, fetching secrets, masking, writing the Kubernetes Secret
 pkg/secretstore/           the secret-store interface and its providers: AWS Secrets Manager, Vault, Kubernetes
 ```
 
@@ -252,7 +238,7 @@ Tests use client-go's fake clientset, a fake Helm action configuration, a fake s
    `POST /v1/deployments/{id}/events` stays as it is, with the agent check moved to the Cluster.
 4. **Refuse what cannot run.** A Deployment request to a Target whose namespace the agent last reported it cannot execute in is refused with that reason, instead of waiting for the agent to fail it.
 5. **Secret Stores.** A first slice of the credentials capability: `credentials.secret_stores` and `/v1/secret-stores`, Workspace-scoped, with their own read and manage permissions.
-6. **Application secret references.** `delivery.application_secrets`, a child of Application like artifacts, managed through the Application's API with `application.manage`; per-placement overrides on `application_targets`; checks that each store is in the Application's Workspace and allowed for the Environment; and the resolved references (templates filled in, overrides applied) in each assignment.
+6. **Deployment variables.** Variables, Variable Sets, and Release snapshots, as designed in [deployment variables](deployment-variables.md), with each assignment carrying the winning value of every variable for its Target.
 
 Changes 1 to 3 replace operations that only an agent calls, and no agent exists yet, so nothing deployed depends on the old ones. The separate runner listener (`runners.port`, 8661) is configured but not served; the agent uses the API listener until it is.
 

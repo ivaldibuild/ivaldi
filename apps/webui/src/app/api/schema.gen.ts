@@ -488,6 +488,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/changes/{change_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get a recorded Change */
+    get: operations['get-change'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/channels/{channel_id}': {
     parameters: {
       query?: never;
@@ -1560,6 +1577,24 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/sources/{source_id}/changes': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List a Source's recorded Changes */
+    get: operations['list-source-changes'];
+    put?: never;
+    /** Record a Change that ties commits to a Session or Work Item */
+    post: operations['record-change'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/sources/{source_id}/restore': {
     parameters: {
       query?: never;
@@ -2242,6 +2277,21 @@ export interface components {
       expected_version: number;
       /** @description The new value, as JSON */
       value: unknown;
+    };
+    ChangeSnapshot: {
+      commit_shas: string[];
+      /** Format: date-time */
+      created_at: string;
+      created_by_principal_id: string | null;
+      external_ref: string | null;
+      id: string;
+      organization_id: string;
+      session_id: string | null;
+      source_id: string;
+      title: string;
+      /** Format: date-time */
+      updated_at: string;
+      work_item_id: string | null;
     };
     ChannelRuleSnapshot: {
       artifact_id: string | null;
@@ -3143,6 +3193,24 @@ export interface components {
       /** @description Where to send the browser to sign in with the provider */
       start_url: string;
     };
+    RecordChangeRequestBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/RecordChangeRequestBody.json
+       */
+      readonly $schema?: string;
+      /** @description Commits the Change contains, as full SHAs */
+      commit_shas: string[];
+      /** @description Provider reference such as a pull request URL */
+      external_ref?: string;
+      /** @description The Session that produced the change */
+      session_id?: string;
+      /** @description Short description of the change */
+      title: string;
+      /** @description The Work Item the change serves */
+      work_item_id?: string;
+    };
     RedeemRequestBody: {
       /**
        * Format: uri
@@ -3223,6 +3291,7 @@ export interface components {
     ReleaseChange: {
       author_email: string;
       author_name: string;
+      change_id: string | null;
       commit_sha: string;
       /** Format: date-time */
       committed_at: string;
@@ -3439,6 +3508,20 @@ export interface components {
       readonly $schema?: string;
       /** @description Response payload, always present: an empty list is [], not omitted */
       data: components['schemas']['BuildSnapshot'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
+    ResponseChangeSnapshot: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseChangeSnapshot.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['ChangeSnapshot'];
       /** @description Human-readable message */
       message?: string;
       /** @description Request status */
@@ -3948,6 +4031,20 @@ export interface components {
       /** @description Request status */
       status: string;
     };
+    ResponseResultChangeSnapshot: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseResultChangeSnapshot.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['ResultChangeSnapshot'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
     ResponseResultDeploymentSnapshot: {
       /**
        * Format: uri
@@ -4213,6 +4310,15 @@ export interface components {
       has_next: boolean;
       has_previous: boolean;
       items: components['schemas']['ApplicationSnapshot'][];
+      next_cursor: string | null;
+      previous_cursor: string | null;
+      /** Format: int64 */
+      total_count: number;
+    };
+    ResultChangeSnapshot: {
+      has_next: boolean;
+      has_previous: boolean;
+      items: components['schemas']['ChangeSnapshot'][];
       next_cursor: string | null;
       previous_cursor: string | null;
       /** Format: int64 */
@@ -6004,6 +6110,38 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['LoginStepOutputBody'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'get-change': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Change's ID */
+        change_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseChangeSnapshot'];
         };
       };
       /** @description Error */
@@ -8684,6 +8822,85 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ResponseSourceSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'list-source-changes': {
+    parameters: {
+      query?: {
+        /** @description Most items to return */
+        limit?: number;
+        /** @description Field to sort by: created_at (the default) or title */
+        sort_by?: 'created_at' | 'title';
+        /** @description Sort direction */
+        sort_order?: 'asc' | 'desc';
+        /** @description Cursor from a previous page's next_cursor */
+        next_cursor?: string;
+        /** @description Cursor from a previous page's previous_cursor */
+        previous_cursor?: string;
+      };
+      header?: never;
+      path: {
+        /** @description The Source to list Changes for */
+        source_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseResultChangeSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'record-change': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Source the commits belong to */
+        source_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RecordChangeRequestBody'];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseChangeSnapshot'];
         };
       };
       /** @description Error */

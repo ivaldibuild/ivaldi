@@ -35,11 +35,12 @@ var ownerOnlyPermissions = map[string]bool{
 }
 
 // memberPermissions are what a member may do beyond reading: work on Work
-// Items and run Sessions. The capabilities that check them do not exist yet.
+// Items, run Sessions, and record the Changes those Sessions make.
 var memberPermissions = map[string]bool{
 	"work_item.create": true,
 	"work_item.manage": true,
 	"session.create":   true,
+	"change.record":    true,
 }
 
 // IsReadPermission reports whether permission only reads.

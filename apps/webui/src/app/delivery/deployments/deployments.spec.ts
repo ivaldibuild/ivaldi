@@ -204,8 +204,9 @@ describe('deployments', () => {
             author_email: 'ada@example.com',
             committed_at: '2026-11-08T10:00:00Z',
             url: null,
-            session_id: null,
-            work_item_id: null,
+            change_id: 'chg_1',
+            session_id: 'ses_1',
+            work_item_id: 'wki_1',
           },
         ],
       });
@@ -237,6 +238,7 @@ describe('deployments', () => {
       const cells = [...preview.querySelectorAll('tbody tr > *')].map((c) => c.textContent?.trim());
       expect(cells).toEqual(['api', '1.4.0', '1.5.0']);
       expect(preview.textContent).toContain('Add checkout');
+      expect(preview.textContent).toContain('Work item wki_1');
       expect(preview.textContent).toContain('The Application is placed on the Target');
       button(el, 'Deploy 1.5.0')!.click();
       await settle(fixture);

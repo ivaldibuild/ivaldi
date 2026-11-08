@@ -12,6 +12,7 @@ import (
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/audit"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/provenance"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/events"
@@ -304,6 +305,7 @@ type world struct {
 	svc     delivery.DeploymentService
 	authz   *fakeAuthorizer
 	history *fakeHistory
+	changes *fakeChanges
 	rel     *delivery.Release
 	app     *delivery.Application
 	env     *delivery.Environment
@@ -318,6 +320,15 @@ type fakeHistory struct {
 
 func (f *fakeHistory) CommitsBetween(context.Context, string, string, string, string) ([]vcs.Commit, error) {
 	return f.commits, f.err
+}
+
+// fakeChanges is what the provenance capability recorded.
+type fakeChanges struct {
+	changes []*provenance.Change
+}
+
+func (f *fakeChanges) ChangesForCommits(context.Context, string, string, []string) ([]*provenance.Change, error) {
+	return f.changes, nil
 }
 
 func newWorld(t *testing.T) *world {
@@ -341,14 +352,15 @@ func newWorld(t *testing.T) *world {
 	s.artifacts[artifact.ID()] = artifact
 	authz := &fakeAuthorizer{}
 	history := &fakeHistory{}
+	recorded := &fakeChanges{}
 	svc, err := NewService(
 		WithDeploymentRepo(fakeDeployments{s}), WithReleaseRepo(fakeReleases{s}), WithBuildRepo(fakeBuilds{s}),
 		WithApplications(fakeApplications{s}), WithEnvironments(fakeEnvironments{s}), WithTargets(fakeTargets{s}),
-		WithLifecycles(fakeLifecycles{s}), WithCommitHistory(history), WithAuthorizer(authz), WithTransactor(s),
+		WithLifecycles(fakeLifecycles{s}), WithCommitHistory(history), WithChanges(recorded), WithAuthorizer(authz), WithTransactor(s),
 		WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
 	)
 	require.NoError(t, err)
-	return &world{store: s, svc: svc, authz: authz, history: history, rel: s.releases[mustOneID(s.releases)], app: app, env: env}
+	return &world{store: s, svc: svc, authz: authz, history: history, changes: recorded, rel: s.releases[mustOneID(s.releases)], app: app, env: env}
 }
 
 func TestRequestDeployments(t *testing.T) {
@@ -532,6 +544,14 @@ func TestReleaseChangesListsCommitsBetweenBuilds(t *testing.T) {
 		SHA: "bbbbbbbb", Message: "Add checkout\n\nDetails", AuthorName: "Ada",
 		AuthorEmail: "ada@example.com", CommittedAt: committedAt,
 	}}
+	sessionID := "ses_01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	workItemID := "wki_01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	recorded := must(provenance.NewChange(provenance.NewChangeProps{
+		OrganizationID: org, SourceID: "src_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+		SessionID: &sessionID, WorkItemID: &workItemID, Title: "Add checkout",
+		CommitSHAs: []string{"bbbbbbbb"},
+	}, nil))
+	w.changes.changes = []*provenance.Change{recorded}
 
 	changes, err := w.svc.ReleaseChanges(ctx, ada, org, nextRelease.ID(), targetID)
 	require.NoError(t, err)
@@ -545,8 +565,9 @@ func TestReleaseChangesListsCommitsBetweenBuilds(t *testing.T) {
 	assert.Equal(t, "bbbbbbbb", changes.Changes[0].CommitSHA)
 	assert.Equal(t, "Add checkout", changes.Changes[0].Title)
 	assert.Equal(t, committedAt, changes.Changes[0].CommittedAt)
-	assert.Nil(t, changes.Changes[0].SessionID)
-	assert.Nil(t, changes.Changes[0].WorkItemID)
+	assert.Equal(t, recorded.ID(), *changes.Changes[0].ChangeID)
+	assert.Equal(t, sessionID, *changes.Changes[0].SessionID)
+	assert.Equal(t, workItemID, *changes.Changes[0].WorkItemID)
 
 	// A Build with no commit makes the range unreadable, but not the read.
 	withoutCommit := ciBuild(artifact, "c", "")

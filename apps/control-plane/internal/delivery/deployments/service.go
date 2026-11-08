@@ -14,6 +14,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/change"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/outbox"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/provenance"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
@@ -37,6 +38,7 @@ type options struct {
 	targets      Targets
 	lifecycles   Lifecycles
 	history      vcs.History
+	changes      provenance.Lookup
 	authz        authorization.Authorizer
 	writer       change.Writer
 }
@@ -67,6 +69,13 @@ func WithLifecycles(r Lifecycles) ServiceOption {
 // version-control capability provides it through vcs.History.
 func WithCommitHistory(h vcs.History) ServiceOption {
 	return func(o *options) { o.history = h }
+}
+
+// WithChanges reads the Changes Ivaldi recorded for commits, so release
+// notes carry their Session and Work Item. It is optional: without it,
+// commits are still listed with no attribution.
+func WithChanges(l provenance.Lookup) ServiceOption {
+	return func(o *options) { o.changes = l }
 }
 func WithAuthorizer(a authorization.Authorizer) ServiceOption {
 	return func(o *options) { o.authz = a }
@@ -455,8 +464,46 @@ func (s *service) ReleaseChanges(ctx context.Context, _ identity.Actor, organiza
 		}
 		return strings.Compare(a.CommitSHA, b.CommitSHA)
 	})
+	if err := s.attributeChanges(ctx, organizationID, changes.Changes); err != nil {
+		return nil, err
+	}
 	changes.Checks = plan.checks
 	return changes, nil
+}
+
+// attributeChanges fills each commit's recorded Change, Session, and Work
+// Item. Without a provenance lookup, commits stay unattributed.
+func (s *service) attributeChanges(ctx context.Context, organizationID string, changes []delivery.ReleaseChange) error {
+	if s.changes == nil || len(changes) == 0 {
+		return nil
+	}
+	bySource := map[string][]string{}
+	for _, c := range changes {
+		bySource[c.SourceID] = append(bySource[c.SourceID], c.CommitSHA)
+	}
+	attributed := map[string]*provenance.Change{}
+	for sourceID, commitSHAs := range bySource {
+		found, err := s.changes.ChangesForCommits(ctx, organizationID, sourceID, commitSHAs)
+		if err != nil {
+			return fmt.Errorf("read changes for source %s: %w", sourceID, err)
+		}
+		for _, change := range found {
+			for _, sha := range change.CommitSHAs() {
+				attributed[sourceID+"\x00"+sha] = change
+			}
+		}
+	}
+	for i := range changes {
+		change := attributed[changes[i].SourceID+"\x00"+changes[i].CommitSHA]
+		if change == nil {
+			continue
+		}
+		id := change.ID()
+		changes[i].ChangeID = &id
+		changes[i].SessionID = change.SessionID()
+		changes[i].WorkItemID = change.WorkItemID()
+	}
+	return nil
 }
 
 // commitRange reads the commits between two Builds of one Source. It

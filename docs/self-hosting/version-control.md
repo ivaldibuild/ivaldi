@@ -42,3 +42,21 @@ Owners and admins start it from **Organisation settings → Connections → Conn
 4. The callback page (signing the person in again first if their session lapsed) calls `POST /v1/connections/installations/complete` with `provider`, `state`, `code`, and `installation_id`, as the same signed-in person. Ivaldi checks the state was issued to them for their Organization, exchanges the code for their GitHub user token, and creates the Connection only if the installation is one of the App's installations they can access. It does not keep the user token. The page then returns to Connections and removes the code from the address bar and history.
 
 An installation can be connected to one Organization at a time. Archive its Connection to connect it elsewhere.
+
+## Recording Changes
+
+Release notes map commits to work through **Changes**. A Session, a CI job, or an automation records one with `POST /v1/sources/{source_id}/changes`:
+
+```json
+{
+  "commit_shas": ["1a2b3c4d", "5e6f7a8b"],
+  "session_id": "ses_...",
+  "work_item_id": "wki_...",
+  "title": "Add checkout",
+  "external_ref": "https://github.com/acme/checkout/pull/42"
+}
+```
+
+`commit_shas` must be the full SHAs as the provider reports them. `session_id`, `work_item_id`, and `external_ref` are optional. Recording needs `change.record` on the Source, and reading needs `change.read`. A commit belongs to one Change in its Source; recording it again returns `409`. The deploy sheet then shows the Change, Session, and Work Item next to the commit.
+
+Until the Session capability records Changes itself, this endpoint is how CI or an automation supplies the link.

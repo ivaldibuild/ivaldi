@@ -22,6 +22,8 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/orchestration/agents"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/policy"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/policy/locks"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/provenance"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/provenance/changes"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/team"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/team/teams"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/versioncontrol"
@@ -65,6 +67,7 @@ type services struct {
 	enrollment      enrollment.Service
 	connections     versioncontrol.ConnectionService
 	sources         versioncontrol.SourceService
+	changes         provenance.ChangeService
 }
 
 // routes returns a controller for every /v1 operation. Onboarding is served
@@ -91,6 +94,7 @@ func (s services) routes(describe bool) []api.Routes {
 		enrollment.NewController(s.enrollment),
 		connections.NewController(s.connections),
 		sources.NewController(s.sources),
+		changes.NewController(s.changes),
 	}
 	if s.onboarding != nil || describe {
 		out = append(out, iamhttp.NewOnboardingController(s.onboarding))

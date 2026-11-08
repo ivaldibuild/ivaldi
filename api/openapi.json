@@ -731,6 +731,67 @@
         ],
         "type": "object"
       },
+      "ChangeSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "commit_shas": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by_principal_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "external_ref": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "organization_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "work_item_id": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "source_id",
+          "session_id",
+          "work_item_id",
+          "title",
+          "external_ref",
+          "commit_shas",
+          "created_by_principal_id",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
       "ChannelRuleSnapshot": {
         "additionalProperties": false,
         "properties": {
@@ -3073,6 +3134,50 @@
         ],
         "type": "object"
       },
+      "RecordChangeRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/RecordChangeRequestBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "commit_shas": {
+            "description": "Commits the Change contains, as full SHAs",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array"
+          },
+          "external_ref": {
+            "description": "Provider reference such as a pull request URL",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The Session that produced the change",
+            "type": "string"
+          },
+          "title": {
+            "description": "Short description of the change",
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "work_item_id": {
+            "description": "The Work Item the change serves",
+            "type": "string"
+          }
+        },
+        "required": [
+          "commit_shas",
+          "title"
+        ],
+        "type": "object"
+      },
       "RedeemRequestBody": {
         "additionalProperties": false,
         "properties": {
@@ -3343,6 +3448,10 @@
           "author_name": {
             "type": "string"
           },
+          "change_id": {
+            "nullable": true,
+            "type": "string"
+          },
           "commit_sha": {
             "type": "string"
           },
@@ -3381,6 +3490,7 @@
           "author_email",
           "committed_at",
           "url",
+          "change_id",
           "session_id",
           "work_item_id"
         ],
@@ -3899,6 +4009,35 @@
           },
           "data": {
             "$ref": "#/components/schemas/BuildSnapshot",
+            "description": "Response payload, always present: an empty list is [], not omitted"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ResponseChangeSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseChangeSnapshot.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ChangeSnapshot",
             "description": "Response payload, always present: an empty list is [], not omitted"
           },
           "message": {
@@ -4999,6 +5138,35 @@
         ],
         "type": "object"
       },
+      "ResponseResultChangeSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseResultChangeSnapshot.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ResultChangeSnapshot",
+            "description": "Response payload, always present: an empty list is [], not omitted"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
       "ResponseResultDeploymentSnapshot": {
         "additionalProperties": false,
         "properties": {
@@ -5571,6 +5739,44 @@
           "items": {
             "items": {
               "$ref": "#/components/schemas/ApplicationSnapshot"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "nullable": true,
+            "type": "string"
+          },
+          "previous_cursor": {
+            "nullable": true,
+            "type": "string"
+          },
+          "total_count": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total_count",
+          "has_next",
+          "has_previous",
+          "next_cursor",
+          "previous_cursor"
+        ],
+        "type": "object"
+      },
+      "ResultChangeSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "has_next": {
+            "type": "boolean"
+          },
+          "has_previous": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ChangeSnapshot"
             },
             "type": "array"
           },
@@ -9137,6 +9343,54 @@
         "summary": "Sign up with a provider identity and create an organization",
         "tags": [
           "sign-in"
+        ]
+      }
+    },
+    "/v1/changes/{change_id}": {
+      "get": {
+        "operationId": "get-change",
+        "parameters": [
+          {
+            "description": "The Change's ID",
+            "in": "path",
+            "name": "change_id",
+            "required": true,
+            "schema": {
+              "description": "The Change's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseChangeSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get a recorded Change",
+        "tags": [
+          "provenance"
         ]
       }
     },
@@ -13537,6 +13791,171 @@
         "summary": "Disconnect a Source",
         "tags": [
           "version-control"
+        ]
+      }
+    },
+    "/v1/sources/{source_id}/changes": {
+      "get": {
+        "operationId": "list-source-changes",
+        "parameters": [
+          {
+            "description": "The Source to list Changes for",
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "description": "The Source to list Changes for",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Most items to return",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "Most items to return",
+              "format": "int64",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Field to sort by: created_at (the default) or title",
+            "explode": false,
+            "in": "query",
+            "name": "sort_by",
+            "schema": {
+              "description": "Field to sort by: created_at (the default) or title",
+              "enum": [
+                "created_at",
+                "title"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Sort direction",
+            "explode": false,
+            "in": "query",
+            "name": "sort_order",
+            "schema": {
+              "description": "Sort direction",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Cursor from a previous page's next_cursor",
+            "explode": false,
+            "in": "query",
+            "name": "next_cursor",
+            "schema": {
+              "description": "Cursor from a previous page's next_cursor",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Cursor from a previous page's previous_cursor",
+            "explode": false,
+            "in": "query",
+            "name": "previous_cursor",
+            "schema": {
+              "description": "Cursor from a previous page's previous_cursor",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseResultChangeSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List a Source's recorded Changes",
+        "tags": [
+          "provenance"
+        ]
+      },
+      "post": {
+        "operationId": "record-change",
+        "parameters": [
+          {
+            "description": "The Source the commits belong to",
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "description": "The Source the commits belong to",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordChangeRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseChangeSnapshot"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Record a Change that ties commits to a Session or Work Item",
+        "tags": [
+          "provenance"
         ]
       }
     },

@@ -161,6 +161,7 @@ func (a *app) wireDelivery() error {
 		deployments.WithTargets(targetRepo),
 		deployments.WithLifecycles(lifecycleRepo),
 		deployments.WithCommitHistory(a.commitHistory),
+		deployments.WithChanges(a.changes),
 		deployments.WithAuthorizer(a.authz),
 		deployments.WithTransactor(a.tx),
 		deployments.WithOutboxRecorder(a.outbox),

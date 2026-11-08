@@ -182,6 +182,16 @@
                             <span>
                               {{ change.title || 'No commit message' }}
                               <span class="text-muted-foreground"> · {{ change.author_name }}</span>
+                              @if (change.work_item_id) {
+                                <span class="text-muted-foreground">
+                                  · Work item {{ change.work_item_id }}</span
+                                >
+                              }
+                              @if (change.session_id) {
+                                <span class="text-muted-foreground">
+                                  · Session {{ change.session_id }}</span
+                                >
+                              }
                             </span>
                           </li>
                         }

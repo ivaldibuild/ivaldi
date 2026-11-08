@@ -33,6 +33,7 @@ import (
 	orchestrationpg "github.com/ivaldibuild/ivaldi-control-plane/internal/orchestration/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/outbox"
 	outboxpg "github.com/ivaldibuild/ivaldi-control-plane/internal/outbox/postgres"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/provenance"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/team"
 	teampg "github.com/ivaldibuild/ivaldi-control-plane/internal/team/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
@@ -74,7 +75,9 @@ type app struct {
 	services services
 	// commitHistory reads commit ranges for delivery's release notes.
 	commitHistory vcs.History
-	handlers      []api.Handlers
+	// changes reads recorded Changes for release notes.
+	changes  provenance.Lookup
+	handlers []api.Handlers
 }
 
 // tokenLeeway allows for clock skew between replicas verifying tokens.
@@ -232,6 +235,9 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 		return nil, nil, err
 	}
 	if err := a.wireVersionControl(cfg); err != nil {
+		return nil, nil, err
+	}
+	if err := a.wireProvenance(); err != nil {
 		return nil, nil, err
 	}
 	if err := a.wireAgents(); err != nil {

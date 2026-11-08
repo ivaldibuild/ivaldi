@@ -4,6 +4,8 @@
 - Date: 2026-11-07
 - Related: [ADR 0001](../adr/0001-deployment-topology.md), [ADR 0003](../adr/0003-identity-access-and-policy.md), [ADR 0006](../adr/0006-release-and-delivery-tracking.md), [ADR 0008](../adr/0008-reaching-customer-systems.md), [IAM data model](iam-data-model.md)
 
+> [ADR 0014](../adr/0014-agents-serve-clusters.md) moves runtime-agent enrolment from Targets to Clusters. This document describes what is implemented today and is updated when that change is.
+
 ## Decision
 
 A data-plane workload, such as a runtime agent, enrols for one Target and

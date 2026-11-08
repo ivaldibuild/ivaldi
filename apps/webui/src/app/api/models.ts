@@ -84,8 +84,15 @@ export type ConnectionProvider = Connection['provider'];
 export type InstallationStart = Schemas['InstallationStartSnapshot'];
 /** What the provider sent back after an install, for `POST /v1/connections/installations/complete`. */
 export type CompleteInstallation = Omit<Schemas['CompleteInstallationRequestBody'], '$schema'>;
+/** A repository a Connection's account lets Ivaldi read, which can become a Source. */
+export type Repository = Schemas['RepositorySnapshot'];
+/** A repository connected to a Project through a Connection. */
+export type Source = Schemas['SourceSnapshot'];
 /** A provider whose accounts are connected by installing its app. */
 export type InstallableProvider = CompleteInstallation['provider'];
+
+/** Which of the asked permissions the signed-in person holds on a resource. */
+export type MyPermissions = Schemas['MyPermissions'];
 
 /** A cursor-paged list's page, with its cursors. */
 export interface CursorPage<T> {

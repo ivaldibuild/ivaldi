@@ -199,11 +199,8 @@ func (s *service) usableConnection(ctx context.Context, organizationID, connecti
 	if err != nil {
 		return nil, err
 	}
-	if !connection.Usable() {
-		return nil, fmt.Errorf("%w: connection %s", versioncontrol.ErrInactiveConnection, connection.ID())
-	}
-	if connection.LookupFrom() == vcs.LookupFromDataPlane {
-		return nil, versioncontrol.ErrLookupInDataPlane
+	if err := connection.CheckControlPlaneLookup(); err != nil {
+		return nil, err
 	}
 	return connection, nil
 }

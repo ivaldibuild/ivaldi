@@ -163,3 +163,24 @@ func TestSourceArchiveAndRestore(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, got.Archived())
 }
+
+func TestConnectedRepositoryKeysCountsOnlyActiveSources(t *testing.T) {
+	f := newFixture(t)
+	connection := newConnection(t)
+	require.NoError(t, f.connections.CreateConnection(f.ctx, connection))
+	active := newSource(t, connection, "1")
+	require.NoError(t, f.sources.CreateSource(f.ctx, active))
+	disconnected := newSource(t, connection, "2")
+	require.NoError(t, f.sources.CreateSource(f.ctx, disconnected))
+	disconnected.Archive()
+	require.NoError(t, f.sources.UpdateSource(f.ctx, disconnected))
+
+	keys := []string{connection.RepositoryKey("1"), connection.RepositoryKey("2"), connection.RepositoryKey("3")}
+	connected, err := f.sources.ConnectedRepositoryKeys(f.ctx, orgA, keys)
+	require.NoError(t, err)
+	assert.Equal(t, []string{active.RepositoryKey()}, connected)
+
+	other, err := f.sources.ConnectedRepositoryKeys(f.ctx, orgB, keys)
+	require.NoError(t, err)
+	assert.Empty(t, other, "another Organization's Sources do not count")
+}

@@ -2626,6 +2626,26 @@
         ],
         "type": "object"
       },
+      "MyPermissions": {
+        "additionalProperties": false,
+        "properties": {
+          "granted": {
+            "description": "The asked permissions the caller holds on the resource",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "resource_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource_id",
+          "granted"
+        ],
+        "type": "object"
+      },
       "OnboardingHttpRequestBody": {
         "additionalProperties": false,
         "properties": {
@@ -3528,6 +3548,42 @@
         ],
         "type": "object"
       },
+      "RepositorySnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "connected": {
+            "description": "Whether an active Source in the Organization already connects it",
+            "type": "boolean"
+          },
+          "default_branch": {
+            "type": "string"
+          },
+          "external_id": {
+            "description": "The provider's stable repository ID",
+            "type": "string"
+          },
+          "full_name": {
+            "description": "The repository's name, such as acme/checkout",
+            "type": "string"
+          },
+          "visibility": {
+            "description": "public, private, or internal",
+            "type": "string"
+          },
+          "web_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "external_id",
+          "full_name",
+          "default_branch",
+          "visibility",
+          "web_url",
+          "connected"
+        ],
+        "type": "object"
+      },
       "RequestDeploymentsRequestBody": {
         "additionalProperties": false,
         "properties": {
@@ -4306,6 +4362,38 @@
         ],
         "type": "object"
       },
+      "ResponseListRepositorySnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseListRepositorySnapshot.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "description": "Response payload, always present: an empty list is [], not omitted",
+            "items": {
+              "$ref": "#/components/schemas/RepositorySnapshot"
+            },
+            "type": "array"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
       "ResponseListServiceAccount": {
         "additionalProperties": false,
         "properties": {
@@ -4478,6 +4566,35 @@
           },
           "data": {
             "$ref": "#/components/schemas/Me",
+            "description": "Response payload, always present: an empty list is [], not omitted"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ResponseMyPermissions": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseMyPermissions.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/MyPermissions",
             "description": "Response payload, always present: an empty list is [], not omitted"
           },
           "message": {
@@ -9723,6 +9840,54 @@
         ]
       }
     },
+    "/v1/connections/{connection_id}/repositories": {
+      "get": {
+        "operationId": "list-connection-repositories",
+        "parameters": [
+          {
+            "description": "The Connection's ID",
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "description": "The Connection's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseListRepositorySnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the repositories a connection's account lets Ivaldi read",
+        "tags": [
+          "version-control"
+        ]
+      }
+    },
     "/v1/deployments/{deployment_id}": {
       "get": {
         "operationId": "get-deployment",
@@ -10933,6 +11098,71 @@
           }
         ],
         "summary": "Get the signed-in caller, their Organization, and their roles in it",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/v1/me/permissions": {
+      "get": {
+        "description": "Lets a frontend offer only what the caller may do. Every operation still decides for itself.",
+        "operationId": "get-my-permissions",
+        "parameters": [
+          {
+            "description": "The resource to check, such as a Project; the Organization when omitted",
+            "explode": false,
+            "in": "query",
+            "name": "resource_id",
+            "schema": {
+              "description": "The resource to check, such as a Project; the Organization when omitted",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The permissions to check, such as source.manage",
+            "explode": true,
+            "in": "query",
+            "name": "permission",
+            "required": true,
+            "schema": {
+              "description": "The permissions to check, such as source.manage",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 20,
+              "minItems": 1,
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseMyPermissions"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Check which of the given permissions the caller holds on a resource",
         "tags": [
           "me"
         ]

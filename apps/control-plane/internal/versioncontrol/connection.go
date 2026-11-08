@@ -229,6 +229,25 @@ func (c *Connection) Archived() bool { return c.deletedAt != nil }
 // Usable reports whether the Connection may be used for lookups.
 func (c *Connection) Usable() bool { return !c.Archived() && c.status == StatusActive }
 
+// CheckControlPlaneLookup refuses a lookup from the control plane through a
+// Connection that is not usable, or whose lookups run in the data plane
+// (ADR 0008).
+func (c *Connection) CheckControlPlaneLookup() error {
+	if !c.Usable() {
+		return fmt.Errorf("%w: connection %s", ErrInactiveConnection, c.ID())
+	}
+	if c.lookupFrom == vcs.LookupFromDataPlane {
+		return ErrLookupInDataPlane
+	}
+	return nil
+}
+
+// RepositoryKey is the key a Source connecting the account's repository
+// would have, unique among the Organization's active Sources.
+func (c *Connection) RepositoryKey(externalRepositoryID string) string {
+	return providerKey(c.provider, c.hostURL, externalRepositoryID)
+}
+
 // Endpoint returns how a provider reaches this account.
 func (c *Connection) Endpoint() vcs.Endpoint {
 	return vcs.Endpoint{

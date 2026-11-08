@@ -219,3 +219,27 @@ func TestInstallURL(t *testing.T) {
 	defer server.Close()
 	assert.Equal(t, server.URL+"/github-apps/ivaldi/installations/new?state=s%2B1", testClient(t, server).InstallURL("s+1"))
 }
+
+func TestRepositoriesListsWhatTheInstallationCanRead(t *testing.T) {
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == tokenPath:
+			writeToken(w)
+		case r.URL.Path == "/installation/repositories" && r.URL.Query().Get("page") == "":
+			w.Header().Set("Link", `<`+server.URL+`/installation/repositories?per_page=100&page=2>; rel="next"`)
+			_, _ = w.Write([]byte(`{"total_count": 2, "repositories": [{"id": 1, "full_name": "acme/web", "visibility": "public"}]}`))
+		case r.URL.Path == "/installation/repositories":
+			_, _ = w.Write([]byte(`{"total_count": 2, "repositories": [{"id": 2, "full_name": "acme/api", "visibility": "private"}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	repositories, err := testClient(t, server).Repositories(context.Background(), endpoint(server))
+	require.NoError(t, err)
+	require.Len(t, repositories, 2)
+	assert.Equal(t, "1", repositories[0].ExternalID)
+	assert.Equal(t, "acme/api", repositories[1].FullName)
+}

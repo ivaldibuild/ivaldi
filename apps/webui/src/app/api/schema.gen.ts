@@ -695,6 +695,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/connections/{connection_id}/repositories': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List the repositories a connection's account lets Ivaldi read */
+    get: operations['list-connection-repositories'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/deployments/{deployment_id}': {
     parameters: {
       query?: never;
@@ -973,6 +990,26 @@ export interface paths {
     };
     /** Get the signed-in caller, their Organization, and their roles in it */
     get: operations['get-me'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/me/permissions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Check which of the given permissions the caller holds on a resource
+     * @description Lets a frontend offer only what the caller may do. Every operation still decides for itself.
+     */
+    get: operations['get-my-permissions'];
     put?: never;
     post?: never;
     delete?: never;
@@ -2955,6 +2992,11 @@ export interface components {
        */
       position: number;
     };
+    MyPermissions: {
+      /** @description The asked permissions the caller holds on the resource */
+      granted: string[];
+      resource_id: string;
+    };
     OnboardingHttpRequestBody: {
       /**
        * Format: uri
@@ -3251,6 +3293,18 @@ export interface components {
        * @enum {string}
        */
       status?: 'progressing' | 'healthy' | 'degraded' | 'failed';
+    };
+    RepositorySnapshot: {
+      /** @description Whether an active Source in the Organization already connects it */
+      connected: boolean;
+      default_branch: string;
+      /** @description The provider's stable repository ID */
+      external_id: string;
+      /** @description The repository's name, such as acme/checkout */
+      full_name: string;
+      /** @description public, private, or internal */
+      visibility: string;
+      web_url: string;
     };
     RequestDeploymentsRequestBody: {
       /**
@@ -3613,6 +3667,20 @@ export interface components {
       /** @description Request status */
       status: string;
     };
+    ResponseListRepositorySnapshot: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseListRepositorySnapshot.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['RepositorySnapshot'][];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
     ResponseListServiceAccount: {
       /**
        * Format: uri
@@ -3692,6 +3760,20 @@ export interface components {
       readonly $schema?: string;
       /** @description Response payload, always present: an empty list is [], not omitted */
       data: components['schemas']['Me'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
+    ResponseMyPermissions: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseMyPermissions.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['MyPermissions'];
       /** @description Human-readable message */
       message?: string;
       /** @description Request status */
@@ -6423,6 +6505,38 @@ export interface operations {
       };
     };
   };
+  'list-connection-repositories': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Connection's ID */
+        connection_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseListRepositorySnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
   'get-deployment': {
     parameters: {
       query?: never;
@@ -7137,6 +7251,40 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ResponseMe'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'get-my-permissions': {
+    parameters: {
+      query: {
+        /** @description The resource to check, such as a Project; the Organization when omitted */
+        resource_id?: string;
+        /** @description The permissions to check, such as source.manage */
+        permission: string[];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseMyPermissions'];
         };
       };
       /** @description Error */

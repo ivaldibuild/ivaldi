@@ -59,6 +59,9 @@ type Endpoint struct {
 type Provider interface {
 	// Repository reads one repository by the provider's stable ID.
 	Repository(ctx context.Context, at Endpoint, externalRepositoryID string) (Repository, error)
+	// Repositories lists the repositories the account's installation can
+	// read. It returns ErrTooManyRepositories rather than a partial list.
+	Repositories(ctx context.Context, at Endpoint) ([]Repository, error)
 	// CommitsBetween returns the commits reachable from to but not from,
 	// oldest first.
 	CommitsBetween(ctx context.Context, at Endpoint, repo Repository, from, to string) ([]Commit, error)

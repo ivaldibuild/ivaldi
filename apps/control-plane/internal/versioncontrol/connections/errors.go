@@ -32,6 +32,10 @@ func translateToHttpError(ctx context.Context, err error) error {
 		return huma.Error409Conflict("archived")
 	case errors.Is(err, versioncontrol.ErrConflict):
 		return huma.Error409Conflict("changed since it was read; read it again")
+	case errors.Is(err, versioncontrol.ErrInactiveConnection):
+		return huma.Error409Conflict("the connection is not active")
+	case errors.Is(err, versioncontrol.ErrLookupInDataPlane):
+		return huma.Error409Conflict("this connection's lookups run in the data plane, so the control plane cannot read its repositories")
 	case errors.Is(err, versioncontrol.ErrProviderUnsupported):
 		return huma.Error422UnprocessableEntity("no provider is configured for this connection")
 	case errors.Is(err, versioncontrol.ErrProviderUnavailable):

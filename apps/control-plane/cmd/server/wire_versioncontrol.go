@@ -49,6 +49,8 @@ func (a *app) wireVersionControl(cfg *config.Config) error {
 	connectionService, err := connections.NewConnectionService(
 		connections.WithConnectionRepo(connectionRepo),
 		connections.WithInstaller(vcs.ProviderGitHub, installer),
+		connections.WithProvider(provider),
+		connections.WithConnectedRepositories(sourceRepo),
 		connections.WithStateSealer(states),
 		connections.WithAuthorizer(a.authz),
 		connections.WithTransactor(a.tx),

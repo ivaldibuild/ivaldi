@@ -8,6 +8,8 @@ import { signal, Type } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { API_BASE_URL } from '../../api-base-url';
+import { PermissionsApi } from '../../api/permissions-api';
+import { SourcesApi } from '../../api/sources-api';
 import { WorkspaceContext } from '../workspace-context';
 import { NewProjectPage } from './new-project-page';
 import { ProjectEditPage } from './project-edit-page';
@@ -75,6 +77,9 @@ describe('project pages', () => {
         provideHttpClientTesting(),
         provideRouter([]),
         { provide: API_BASE_URL, useValue: 'https://cp.test' },
+        // The Project page's Sources have their own spec (project-sources.spec.ts).
+        { provide: SourcesApi, useValue: { list: () => Promise.resolve([]) } },
+        { provide: PermissionsApi, useValue: { granted: () => Promise.resolve(new Set()) } },
         {
           provide: WorkspaceContext,
           useValue: { current: signal(workspace), workspaces: signal([workspace]) },

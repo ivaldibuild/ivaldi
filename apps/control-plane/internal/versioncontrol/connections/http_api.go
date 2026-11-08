@@ -33,6 +33,7 @@ func (c *Controller) RegisterRoutes(h huma.API) {
 	register(h, "complete-connection-installation", http.MethodPost, "/connections/installations/complete", "Connect the account an app installation covers, once the provider confirms the caller can access it", http.StatusCreated, c.CompleteInstallation)
 	register(h, "list-connections", http.MethodGet, "/connections", "List the Organization's version-control connections", 0, c.ListConnections)
 	register(h, "get-connection", http.MethodGet, "/connections/{connection_id}", "Get a version-control connection", 0, c.GetConnection)
+	register(h, "list-connection-repositories", http.MethodGet, "/connections/{connection_id}/repositories", "List the repositories a connection's account lets Ivaldi read", 0, c.ListRepositories)
 	register(h, "archive-connection", http.MethodPost, "/connections/{connection_id}/archive", "Archive a version-control connection", 0, c.ArchiveConnection)
 }
 
@@ -130,4 +131,18 @@ func (c *Controller) CompleteInstallation(ctx context.Context, req *CompleteInst
 		return nil, translateToHttpError(ctx, err)
 	}
 	return connectionResponse(connection), nil
+}
+
+func (c *Controller) ListRepositories(ctx context.Context, req *ConnectionRequest) (*RepositoryListResponse, error) {
+	who, err := caller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	repositories, err := c.service.ListRepositories(ctx, who.Actor, who.OrganizationID, req.ConnectionID)
+	if err != nil {
+		return nil, translateToHttpError(ctx, err)
+	}
+	out := &RepositoryListResponse{}
+	out.Body = api.SuccessResponse(nil, repositorySnapshots(repositories))
+	return out, nil
 }

@@ -32,6 +32,38 @@ func (c *ProfileController) RegisterRoutes(h huma.API) {
 		Tags:        []string{"me"},
 		Security:    []map[string][]string{{api.BearerAuth: {}}},
 	}, c.GetMe)
+	huma.Register(h, huma.Operation{
+		OperationID: "get-my-permissions",
+		Method:      http.MethodGet,
+		Path:        "/me/permissions",
+		Summary:     "Check which of the given permissions the caller holds on a resource",
+		Description: "Lets a frontend offer only what the caller may do. Every operation still decides for itself.",
+		Tags:        []string{"me"},
+		Security:    []map[string][]string{{api.BearerAuth: {}}},
+	}, c.GetMyPermissions)
+}
+
+type MyPermissionsRequest struct {
+	ResourceID  string   `query:"resource_id" doc:"The resource to check, such as a Project; the Organization when omitted"`
+	Permissions []string `query:"permission,explode" required:"true" minItems:"1" maxItems:"20" doc:"The permissions to check, such as source.manage"`
+}
+
+func (c *ProfileController) GetMyPermissions(ctx context.Context, req *MyPermissionsRequest) (*MyPermissionsResponse, error) {
+	who, ok := identity.CallerFrom(ctx)
+	if !ok {
+		return nil, huma.Error401Unauthorized("an access token is required")
+	}
+	granted, err := c.service.Permissions(ctx, who.Actor, who.OrganizationID, req.ResourceID, req.Permissions)
+	if err != nil {
+		return nil, translateToHttpError(ctx, err)
+	}
+	resource := req.ResourceID
+	if resource == "" {
+		resource = who.OrganizationID
+	}
+	out := &MyPermissionsResponse{}
+	out.Body = api.SuccessResponse(nil, MyPermissions{ResourceID: resource, Granted: granted})
+	return out, nil
 }
 
 func (c *ProfileController) GetMe(ctx context.Context, _ *struct{}) (*MeResponse, error) {

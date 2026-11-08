@@ -83,3 +83,14 @@ func (r *sourceRepository) UpdateSource(ctx context.Context, s *versioncontrol.S
 			"archived_at":          e.ArchivedAt,
 		}))
 }
+
+func (r *sourceRepository) ConnectedRepositoryKeys(ctx context.Context, organizationID string, keys []string) ([]string, error) {
+	connected := []string{}
+	if len(keys) == 0 {
+		return connected, nil
+	}
+	err := r.conn(ctx).Model(&sourceEntity{}).
+		Where("organization_id = ? AND repository_key IN ? AND archived_at IS NULL", organizationID, keys).
+		Pluck("repository_key", &connected).Error
+	return connected, translate(err)
+}

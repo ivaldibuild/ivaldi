@@ -26,4 +26,7 @@ var (
 	// ErrRangeTooLarge means a commit range holds more commits than a
 	// provider reads in one lookup.
 	ErrRangeTooLarge = errors.New("the commit range holds too many commits")
+	// ErrTooManyRepositories means an account holds more repositories than
+	// a provider lists in one lookup.
+	ErrTooManyRepositories = errors.New("the account holds too many repositories to list")
 )

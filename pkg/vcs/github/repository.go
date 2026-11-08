@@ -25,6 +25,42 @@ func (c *Client) Repository(ctx context.Context, at vcs.Endpoint, externalReposi
 	return body.repository(at), nil
 }
 
+// maxRepositoryPages bounds a listing at 50 pages of 100 repositories.
+const maxRepositoryPages = 50
+
+// Repositories lists the repositories the installation can read, following
+// the provider's pages.
+func (c *Client) Repositories(ctx context.Context, at vcs.Endpoint) ([]vcs.Repository, error) {
+	if err := c.checkEndpoint(at); err != nil {
+		return nil, err
+	}
+	token, err := c.installationToken(ctx, at.InstallationID)
+	if err != nil {
+		return nil, err
+	}
+	repositories := []vcs.Repository{}
+	next := c.apiURL + "/installation/repositories?per_page=100"
+	for pages := 0; next != ""; pages++ {
+		if pages == maxRepositoryPages {
+			return nil, fmt.Errorf("%w: more than %d", vcs.ErrTooManyRepositories, maxRepositoryPages*100)
+		}
+		var page struct {
+			Repositories []repositoryResponse `json:"repositories"`
+		}
+		header, err := c.getWithHeader(ctx, token, next, &page)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range page.Repositories {
+			repositories = append(repositories, r.repository(at))
+		}
+		if next, err = c.next(header); err != nil {
+			return nil, err
+		}
+	}
+	return repositories, nil
+}
+
 type repositoryResponse struct {
 	ID            int64  `json:"id"`
 	FullName      string `json:"full_name"`

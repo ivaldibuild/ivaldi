@@ -58,16 +58,17 @@ const (
 
 // Actions name what an actor asks the authorizer to allow.
 const (
-	ActionConnectionArchive = "connection.archive"
-	ActionConnectionCreate  = "connection.create"
-	ActionConnectionInstall = "connection.install"
-	ActionConnectionList    = "connection.list"
-	ActionConnectionRead    = "connection.read"
-	ActionSourceArchive     = "source.archive"
-	ActionSourceCreate      = "source.create"
-	ActionSourceList        = "source.list"
-	ActionSourceRead        = "source.read"
-	ActionSourceRestore     = "source.restore"
+	ActionConnectionArchive          = "connection.archive"
+	ActionConnectionCreate           = "connection.create"
+	ActionConnectionInstall          = "connection.install"
+	ActionConnectionList             = "connection.list"
+	ActionConnectionListRepositories = "connection.list_repositories"
+	ActionConnectionRead             = "connection.read"
+	ActionSourceArchive              = "source.archive"
+	ActionSourceCreate               = "source.create"
+	ActionSourceList                 = "source.list"
+	ActionSourceRead                 = "source.read"
+	ActionSourceRestore              = "source.restore"
 )
 
 // Audit event types this capability emits.

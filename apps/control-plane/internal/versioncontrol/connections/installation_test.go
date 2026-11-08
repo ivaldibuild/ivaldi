@@ -115,6 +115,7 @@ func newService(t *testing.T, store *connectionStore, inst *installer) versionco
 		WithConnectionRepo(store),
 		WithInstaller(vcs.ProviderGitHub, inst),
 		WithStateSealer(&sealer{values: map[string][]byte{}}),
+		WithConnectedRepositories(connectedKeys(nil)),
 		WithAuthorizer(allow{}),
 		WithTransactor(writer{}),
 		WithOutboxRecorder(writer{}),

@@ -72,6 +72,9 @@ func (s *sourceStore) GetSourceForUpdate(context.Context, string, string) (*vers
 func (s *sourceStore) ListSources(context.Context, versioncontrol.ListSourcesQuery) (*pagination.Result[*versioncontrol.Source], error) {
 	return nil, nil
 }
+func (s *sourceStore) ConnectedRepositoryKeys(context.Context, string, []string) ([]string, error) {
+	return nil, nil
+}
 func (s *sourceStore) UpdateSource(context.Context, *versioncontrol.Source) error { return nil }
 
 type connectionStore struct {
@@ -108,6 +111,9 @@ type provider struct {
 
 func (p provider) Repository(context.Context, vcs.Endpoint, string) (vcs.Repository, error) {
 	return p.repository, nil
+}
+func (p provider) Repositories(context.Context, vcs.Endpoint) ([]vcs.Repository, error) {
+	return []vcs.Repository{p.repository}, nil
 }
 func (p provider) CommitsBetween(context.Context, vcs.Endpoint, vcs.Repository, string, string) ([]vcs.Commit, error) {
 	return nil, nil

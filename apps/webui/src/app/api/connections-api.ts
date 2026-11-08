@@ -1,6 +1,12 @@
 import { inject, Service } from '@angular/core';
 import { ApiClient } from './api-client';
-import { CompleteInstallation, Connection, InstallableProvider, InstallationStart } from './models';
+import {
+  CompleteInstallation,
+  Connection,
+  InstallableProvider,
+  InstallationStart,
+  Repository,
+} from './models';
 
 /**
  * The Organisation's version-control Connections. An app installation is connected only by
@@ -13,6 +19,11 @@ export class ConnectionsApi {
 
   list(includeArchived = false): Promise<Connection[]> {
     return this.api.get(`/connections${includeArchived ? '?include_archived=true' : ''}`);
+  }
+
+  /** What the Connection's account lets Ivaldi read now, by name; asked of the provider each time. */
+  repositories(id: string): Promise<Repository[]> {
+    return this.api.get(`/connections/${encodeURIComponent(id)}/repositories`);
   }
 
   archive(id: string): Promise<Connection> {

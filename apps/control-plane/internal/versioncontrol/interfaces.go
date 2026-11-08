@@ -42,6 +42,22 @@ type SourceRepository interface {
 	GetSourceForUpdate(ctx context.Context, organizationID, sourceID string) (*Source, error)
 	ListSources(ctx context.Context, query ListSourcesQuery) (*pagination.Result[*Source], error)
 	UpdateSource(ctx context.Context, s *Source) error
+	ConnectedRepositories
+}
+
+// ConnectedRepositories reports which repositories active Sources already
+// connect, by repository key.
+type ConnectedRepositories interface {
+	// ConnectedRepositoryKeys returns those of keys that an active Source in
+	// the Organization connects.
+	ConnectedRepositoryKeys(ctx context.Context, organizationID string, keys []string) ([]string, error)
+}
+
+// AvailableRepository is a repository a Connection's account lets Ivaldi
+// read, and whether an active Source in the Organization connects it.
+type AvailableRepository struct {
+	Repository vcs.Repository
+	Connected  bool
 }
 
 // Workspaces reads the Project a Source sits under. workspace.Lookups
@@ -107,6 +123,10 @@ type ConnectionService interface {
 	GetConnection(ctx context.Context, actor identity.Actor, organizationID, connectionID string) (*Connection, error)
 	ListConnections(ctx context.Context, actor identity.Actor, organizationID string, includeArchived bool) ([]*Connection, error)
 	ArchiveConnection(ctx context.Context, actor identity.Actor, organizationID, connectionID string) (*Connection, error)
+	// ListRepositories lists the repositories the Connection's account lets
+	// Ivaldi read, by full name, as the provider reports them now. They are
+	// what a Source can connect.
+	ListRepositories(ctx context.Context, actor identity.Actor, organizationID, connectionID string) ([]AvailableRepository, error)
 	// StartInstallation returns where to send the actor to install Ivaldi's
 	// app, with state bound to the actor and the Organization.
 	StartInstallation(ctx context.Context, actor identity.Actor, organizationID string, provider vcs.ProviderKind) (*InstallationStart, error)

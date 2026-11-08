@@ -4,10 +4,14 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/authorizer"
+	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
+	"github.com/ivaldibuild/ivaldi/pkg/logging"
 )
 
 // store holds what the fake repositories below read. Each fake embeds its
@@ -127,5 +131,19 @@ func (s *store) options() []ProfileServiceOption {
 	return []ProfileServiceOption{
 		WithPrincipalRepo(principals{s}), WithUserRepo(users{store: s}), WithAccountRepo(accounts{store: s}),
 		WithOrganizationRepo(orgs{store: s}), WithAccessRepo(access{s}),
+		WithAuthorizer(s.authorizer()),
 	}
+}
+
+// authorizer is IAM's own authorizer over the fake access, so permission
+// checks follow the real role rules.
+func (s *store) authorizer() authorization.Authorizer {
+	logger := logging.NewMockLogger()
+	// A denial logs its message and six fields.
+	denied := []any{mock.Anything}
+	for range 6 {
+		denied = append(denied, mock.Anything)
+	}
+	logger.On("Debug", denied...).Maybe()
+	return must(authorizer.New(authorizer.WithAccessRepo(access{s}), authorizer.WithLogger(logger)))
 }

@@ -11,6 +11,7 @@ import { RequestStatus } from '../../shared/request-status';
 import { ApplicationGrid, GridGroup, placementRows } from '../application-grid';
 import { DeliveryApi } from '../delivery-api';
 import { PageHeader } from '../page-header';
+import { ProjectSources } from '../project-sources';
 import { ProjectsApi } from '../projects-api';
 
 /** One Project: its Applications and where each is placed. Editing it is a page of its own. */
@@ -21,6 +22,7 @@ import { ProjectsApi } from '../projects-api';
     RouterLink,
     ApplicationGrid,
     PageHeader,
+    ProjectSources,
     HlmAlertImports,
     HlmBadgeImports,
     HlmButtonImports,

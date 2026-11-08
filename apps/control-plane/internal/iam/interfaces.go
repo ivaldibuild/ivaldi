@@ -154,6 +154,10 @@ type PeopleRepository interface {
 // not active, as the authorizer would.
 type ProfileService interface {
 	Profile(ctx context.Context, actor identity.Actor, organizationID string) (*Profile, error)
+	// Permissions returns which of permissions the actor holds on the
+	// resource, as the authorizer decides them, so a frontend offers only
+	// what the actor may do. The operations still decide for themselves.
+	Permissions(ctx context.Context, actor identity.Actor, organizationID, resourceID string, permissions []string) ([]string, error)
 }
 
 // ResourceRegistrar keeps IAM's copy of the resource hierarchy in step with

@@ -75,6 +75,9 @@ const (
 	ActionGrantList          = "grant.list"
 	ActionGrantCreate        = "grant.create"
 	ActionGrantRemove        = "grant.remove"
+	// ActionPermissionCheck asks whether the caller holds a permission, so
+	// a frontend offers only what the caller may do. It changes nothing.
+	ActionPermissionCheck = "permission.check"
 
 	ActionServiceAccountCreate     = "service_account.create"
 	ActionServiceAccountList       = "service_account.list"

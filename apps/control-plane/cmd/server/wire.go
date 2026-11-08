@@ -273,6 +273,7 @@ func (a *app) wireProfile() error {
 		profile.WithAccountRepo(a.iam.accounts),
 		profile.WithOrganizationRepo(a.iam.orgs),
 		profile.WithAccessRepo(iampg.NewAccessRepository(a.db)),
+		profile.WithAuthorizer(a.authz),
 	)
 	if err != nil {
 		return err

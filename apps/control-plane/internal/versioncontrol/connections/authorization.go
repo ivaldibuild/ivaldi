@@ -60,6 +60,13 @@ func (a *authorized) ListConnections(ctx context.Context, actor identity.Actor, 
 	return a.next.ListConnections(ctx, actor, organizationID, includeArchived)
 }
 
+func (a *authorized) ListRepositories(ctx context.Context, actor identity.Actor, organizationID, connectionID string) ([]versioncontrol.AvailableRepository, error) {
+	if err := a.read(ctx, actor, organizationID, versioncontrol.ActionConnectionListRepositories); err != nil {
+		return nil, err
+	}
+	return a.next.ListRepositories(ctx, actor, organizationID, connectionID)
+}
+
 func (a *authorized) ArchiveConnection(ctx context.Context, actor identity.Actor, organizationID, connectionID string) (*versioncontrol.Connection, error) {
 	ctx, err := a.decide(ctx, actor, versioncontrol.PermissionConnectionManage, organizationID, versioncontrol.ActionConnectionArchive, connectionID)
 	if err != nil {

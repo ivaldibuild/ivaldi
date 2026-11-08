@@ -1,0 +1,249 @@
+<section aria-labelledby="sources-heading" class="flex flex-col gap-4">
+  <div class="flex flex-wrap items-center justify-between gap-4">
+    <h2 id="sources-heading" class="text-heading text-lg font-semibold">Sources</h2>
+    @if (canManage() && !archived() && !connecting()) {
+      <button hlmBtn variant="outline" type="button" (click)="openConnect()">
+        <ng-icon name="lucidePlus" aria-hidden="true" /> Connect repository
+      </button>
+    }
+  </div>
+
+  @if (connecting()) {
+    <form
+      class="border-border flex max-w-205 flex-col gap-4 border p-5"
+      novalidate
+      aria-labelledby="connect-repository-heading"
+      (submit)="connect($event)"
+    >
+      <h3 id="connect-repository-heading" class="text-heading font-semibold">
+        Connect a repository
+      </h3>
+
+      @if (connectionsStatus.loading()) {
+        <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+          <hlm-spinner aria-hidden="true" /> Loading Connections…
+        </p>
+      } @else if (connectionsStatus.error(); as message) {
+        <div hlmAlert variant="destructive" role="alert">
+          <p hlmAlertDescription>{{ message }}</p>
+        </div>
+      } @else if (usableConnections().length === 0) {
+        <p class="text-foreground text-sm">
+          The Organisation has no active Connection to pick repositories from.
+          <a routerLink="/settings/connections">Connect a GitHub account</a> first.
+        </p>
+      } @else {
+        <div class="flex flex-col gap-2">
+          <label for="source-connection" class="text-sm font-semibold">Account</label>
+          <select
+            id="source-connection"
+            class="border-input bg-background text-foreground h-10 border px-2"
+            [value]="connectionId()"
+            (change)="chooseConnection($any($event.target).value)"
+          >
+            @for (connection of usableConnections(); track connection.id) {
+              <option [value]="connection.id">{{ accountName(connection) }}</option>
+            }
+          </select>
+        </div>
+
+        @if (repositoriesStatus.loading()) {
+          <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+            <hlm-spinner aria-hidden="true" /> Asking GitHub for the account's repositories…
+          </p>
+        } @else if (repositoriesStatus.error(); as message) {
+          <div hlmAlert variant="destructive" role="alert">
+            <h4 hlmAlertTitle>The repositories didn't load</h4>
+            <p hlmAlertDescription>{{ message }}</p>
+          </div>
+        } @else if (repositories().length === 0) {
+          <p class="text-foreground text-sm">
+            The account hasn't given Ivaldi access to any repositories. Choose repositories in the
+            GitHub App's installation settings, then try again.
+          </p>
+        } @else {
+          <div class="flex flex-col gap-2">
+            <label for="source-filter" class="text-sm font-semibold">Find a repository</label>
+            <input
+              hlmInput
+              id="source-filter"
+              type="search"
+              placeholder="Filter by name"
+              autocomplete="off"
+              [value]="filter()"
+              (input)="filter.set($any($event.target).value)"
+            />
+          </div>
+          <fieldset class="flex flex-col gap-1">
+            <legend class="sr-only">Repository</legend>
+            <div class="border-border max-h-80 overflow-y-auto border">
+              @for (repository of filtered(); track repository.external_id) {
+                <label
+                  class="hover:bg-muted border-border flex cursor-pointer items-center gap-3 border-b px-3 py-2 text-sm last:border-b-0"
+                  [class.opacity-60]="repository.connected"
+                >
+                  <input
+                    type="radio"
+                    name="source-repository"
+                    class="accent-primary size-4"
+                    [value]="repository.external_id"
+                    [checked]="selected() === repository.external_id"
+                    [disabled]="repository.connected"
+                    (change)="selected.set(repository.external_id)"
+                  />
+                  <span class="text-foreground font-mono">{{ repository.full_name }}</span>
+                  <span class="text-muted-foreground ml-auto text-[13px] capitalize">{{
+                    repository.visibility
+                  }}</span>
+                  @if (repository.connected) {
+                    <span hlmBadge variant="outline">{{ connectedLabel(repository) }}</span>
+                  }
+                </label>
+              } @empty {
+                <p class="text-muted-foreground px-3 py-2 text-sm">No repository matches.</p>
+              }
+            </div>
+          </fieldset>
+        }
+      }
+
+      @if (createStatus.error(); as message) {
+        <div hlmAlert variant="destructive" role="alert">
+          <p hlmAlertDescription>{{ message }}</p>
+        </div>
+      }
+
+      <div class="flex flex-wrap gap-2">
+        <button hlmBtn type="submit" [disabled]="!selected() || createStatus.saving()">
+          @if (createStatus.saving()) {
+            <hlm-spinner aria-hidden="true" /> Connecting…
+          } @else {
+            Connect repository
+          }
+        </button>
+        <button hlmBtn variant="outline" type="button" (click)="closeConnect()">Cancel</button>
+      </div>
+    </form>
+  }
+
+  @if (actionStatus.error(); as message) {
+    <div hlmAlert variant="destructive" role="alert">
+      <h3 hlmAlertTitle>That didn't work</h3>
+      <p hlmAlertDescription>{{ message }}</p>
+    </div>
+  }
+
+  @if (status.error(); as message) {
+    <div hlmAlert variant="destructive" role="alert">
+      <h3 hlmAlertTitle>Sources didn't load</h3>
+      <p hlmAlertDescription>{{ message }}</p>
+    </div>
+  }
+
+  <label class="flex items-center gap-2 self-start text-sm">
+    <input
+      type="checkbox"
+      class="accent-primary size-4"
+      [checked]="showArchived()"
+      (change)="showArchived.set($any($event.target).checked)"
+    />
+    Show disconnected Sources
+  </label>
+
+  @if (status.loading()) {
+    <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+      <hlm-spinner aria-hidden="true" /> Loading Sources…
+    </p>
+  } @else if (sources().length === 0 && !status.error()) {
+    <p class="text-muted-foreground text-sm">No repositories connected to this Project yet.</p>
+  } @else if (sources().length > 0) {
+    <div class="border-border relative overflow-x-auto border">
+      <table class="w-full min-w-170 border-collapse text-sm">
+        <thead>
+          <tr class="text-muted-foreground text-left">
+            <th scope="col" class="border-border border-b px-4 py-3 font-semibold">Repository</th>
+            <th scope="col" class="border-border border-b px-4 py-3 font-semibold">
+              Default branch
+            </th>
+            <th scope="col" class="border-border border-b px-4 py-3 font-semibold">Connected</th>
+            @if (canManage()) {
+              <th scope="col" class="border-border border-b px-4 py-3 font-semibold">
+                <span class="sr-only">Actions</span>
+              </th>
+            }
+          </tr>
+        </thead>
+        <tbody>
+          @for (source of sources(); track source.id) {
+            <tr>
+              <th
+                scope="row"
+                class="border-border border-b px-4 py-3 text-left align-top font-normal"
+              >
+                @if (source.web_url) {
+                  <a
+                    class="text-heading font-mono font-semibold"
+                    [href]="source.web_url"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    >{{ source.full_name }}<span class="sr-only"> (opens in a new tab)</span></a
+                  >
+                } @else {
+                  <span class="text-heading font-mono font-semibold">{{ source.full_name }}</span>
+                }
+                @if (source.archived_at) {
+                  <span hlmBadge variant="outline" class="ml-2">Disconnected</span>
+                }
+                <div class="text-muted-foreground text-[13px] capitalize">
+                  {{ source.visibility }}
+                </div>
+              </th>
+              <td class="border-border text-foreground border-b px-4 py-3 align-top font-mono">
+                {{ source.default_branch || '—' }}
+              </td>
+              <td class="border-border text-muted-foreground border-b px-4 py-3 align-top">
+                {{ formatDay(source.created_at) }}
+              </td>
+              @if (canManage()) {
+                <td class="border-border border-b px-4 py-3 align-top">
+                  <div class="flex flex-wrap justify-end gap-2">
+                    @if (acting() === source.id) {
+                      <hlm-spinner aria-label="Saving" />
+                    }
+                    @if (source.archived_at) {
+                      @if (!archived()) {
+                        <button
+                          hlmBtn
+                          variant="outline"
+                          size="sm"
+                          type="button"
+                          [attr.aria-label]="'Reconnect ' + source.full_name"
+                          [disabled]="acting() !== null"
+                          (click)="reconnect(source)"
+                        >
+                          Reconnect
+                        </button>
+                      }
+                    } @else {
+                      <button
+                        hlmBtn
+                        variant="outline"
+                        size="sm"
+                        type="button"
+                        [attr.aria-label]="'Disconnect ' + source.full_name"
+                        [disabled]="acting() !== null"
+                        (click)="disconnect(source)"
+                      >
+                        Disconnect
+                      </button>
+                    }
+                  </div>
+                </td>
+              }
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</section>

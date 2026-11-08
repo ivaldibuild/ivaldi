@@ -16,6 +16,10 @@ type fakeSources struct {
 }
 
 func (f fakeSources) CreateSource(context.Context, *Source) error { return nil }
+func (f fakeSources) ConnectedRepositoryKeys(context.Context, string, []string) ([]string, error) {
+	return nil, nil
+}
+
 func (f fakeSources) GetSource(context.Context, string, string) (*Source, error) {
 	return f.source, nil
 }
@@ -47,6 +51,10 @@ type fakeProvider struct {
 	gotEndpoint vcs.Endpoint
 	commits     []vcs.Commit
 	err         error
+}
+
+func (f *fakeProvider) Repositories(context.Context, vcs.Endpoint) ([]vcs.Repository, error) {
+	return nil, nil
 }
 
 func (f *fakeProvider) Repository(context.Context, vcs.Endpoint, string) (vcs.Repository, error) {

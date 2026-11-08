@@ -62,3 +62,13 @@ func meResponse(p *iam.Profile) *MeResponse {
 		Roles: roles,
 	})}
 }
+
+// MyPermissions lists which of the asked permissions the caller holds.
+type MyPermissions struct {
+	ResourceID string   `json:"resource_id"`
+	Granted    []string `json:"granted" doc:"The asked permissions the caller holds on the resource"`
+}
+
+type MyPermissionsResponse struct {
+	Body api.Response[MyPermissions]
+}

@@ -54,6 +54,8 @@ erDiagram
 
 **Receiving a webhook.** The gateway checks the signature with the Connection's webhook secret, resolves `webhook_route_key` to the Organization and Connection, and maps the payload's repository ID to a Source by `repository_key`. Events for repositories that are not connected Sources are acknowledged and dropped. Repository events (renamed, transferred, default branch changed, archived) update the Source. Installation events (suspended, uninstalled) update the Connection's `status`.
 
+**Choosing a repository.** To connect a Source, the web app lists the repositories a Connection's account lets Ivaldi read (`GET /v1/connections/{id}/repositories`, which needs `connection.read`). The list is asked of the provider each time and never stored, because Ivaldi does not mirror the provider and the list changes whenever someone changes the installation's repository access.
+
 **Comparing commits.** Delivery, or any other capability, asks for the commits between two SHAs in a Source. The request goes through `pkg/vcs` and the Connection's lookup path, and returns commit IDs, authors, and messages only ([ADR 0008](../adr/0008-reaching-customer-systems.md)).
 
 **Archiving.** This capability registers with the workspace capability as a dependent: a Project with active Sources cannot be archived ([workspace data model](workspace-data-model.md)). Disconnecting a Source sets `archived_at` and soft-deletes its IAM resource. Records that refer to it keep working, because the row stays.
@@ -71,7 +73,6 @@ erDiagram
 ## Open questions
 
 - **Transferred repositories.** When a repository moves to a provider account covered by a different Connection, should the Source follow it to the new Connection automatically, or wait for an admin?
-- **Repositories outside any Project.** Should a Connection list its repositories so admins can see what is not yet connected, and is that list stored or fetched each time?
 - **Several Sources per Application.** Applications have one optional `source_id`. Is that enough when an Application's artifacts are built from more than one repository?
 - **Provider-specific settings.** Do some providers need per-Source settings, such as which branches send webhooks or which events to subscribe to?
 

@@ -29,10 +29,24 @@ type options struct {
 	writer      change.Writer
 	installers  map[vcs.ProviderKind]vcs.Installer
 	states      versioncontrol.StateSealer
+	provider    vcs.Provider
+	connected   versioncontrol.ConnectedRepositories
 }
 
 func WithConnectionRepo(r versioncontrol.ConnectionRepository) Option {
 	return func(o *options) { o.connections = r }
+}
+
+// WithProvider lists a Connection's repositories. It is optional: without
+// one, listing fails with a clear error.
+func WithProvider(p vcs.Provider) Option {
+	return func(o *options) { o.provider = p }
+}
+
+// WithConnectedRepositories marks the listed repositories that an active
+// Source already connects.
+func WithConnectedRepositories(c versioncontrol.ConnectedRepositories) Option {
+	return func(o *options) { o.connected = c }
 }
 
 // WithInstaller connects the provider's accounts through its install flow.
@@ -83,13 +97,15 @@ func NewConnectionService(opts ...Option) (versioncontrol.ConnectionService, err
 		return nil, fmt.Errorf("connection service: ConnectionRepo is required")
 	case o.authz == nil:
 		return nil, fmt.Errorf("connection service: Authorizer is required")
+	case o.connected == nil:
+		return nil, fmt.Errorf("connection service: ConnectedRepositories is required")
 	case len(o.installers) > 0 && o.states == nil:
 		return nil, fmt.Errorf("connection service: StateSealer is required with an installer")
 	}
 	if err := o.writer.Check(); err != nil {
 		return nil, fmt.Errorf("connection service: %w", err)
 	}
-	s := &service{connections: o.connections, w: o.writer, installers: o.installers, states: o.states}
+	s := &service{connections: o.connections, w: o.writer, installers: o.installers, states: o.states, provider: o.provider, connected: o.connected}
 	return &authorized{next: s, authz: o.authz}, nil
 }
 
@@ -98,6 +114,8 @@ type service struct {
 	w           change.Writer
 	installers  map[vcs.ProviderKind]vcs.Installer
 	states      versioncontrol.StateSealer
+	provider    vcs.Provider
+	connected   versioncontrol.ConnectedRepositories
 }
 
 var _ versioncontrol.ConnectionService = (*service)(nil)

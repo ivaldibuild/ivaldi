@@ -37,3 +37,31 @@ type InstallationStartSnapshot struct {
 type InstallationStartResponse struct {
 	Body api.Response[InstallationStartSnapshot]
 }
+
+// RepositorySnapshot is a repository a Connection's account lets Ivaldi
+// read, as the provider reports it. ExternalID is what connecting it as a
+// Source takes.
+type RepositorySnapshot struct {
+	ExternalID    string `json:"external_id" doc:"The provider's stable repository ID"`
+	FullName      string `json:"full_name" doc:"The repository's name, such as acme/checkout"`
+	DefaultBranch string `json:"default_branch"`
+	Visibility    string `json:"visibility" doc:"public, private, or internal"`
+	WebURL        string `json:"web_url"`
+	Connected     bool   `json:"connected" doc:"Whether an active Source in the Organization already connects it"`
+}
+
+type RepositoryListResponse struct {
+	Body api.Response[[]RepositorySnapshot]
+}
+
+func repositorySnapshots(repositories []versioncontrol.AvailableRepository) []RepositorySnapshot {
+	out := make([]RepositorySnapshot, 0, len(repositories))
+	for _, a := range repositories {
+		r := a.Repository
+		out = append(out, RepositorySnapshot{
+			ExternalID: r.ExternalID, FullName: r.FullName, DefaultBranch: r.DefaultBranch,
+			Visibility: r.Visibility, WebURL: r.WebURL, Connected: a.Connected,
+		})
+	}
+	return out
+}

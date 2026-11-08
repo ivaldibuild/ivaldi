@@ -24,6 +24,9 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/policy/locks"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/team"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/team/teams"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/versioncontrol"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/versioncontrol/connections"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/versioncontrol/sources"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace/projects"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace/settings"
@@ -60,6 +63,8 @@ type services struct {
 	releases        delivery.ReleaseService
 	deployments     delivery.DeploymentService
 	enrollment      enrollment.Service
+	connections     versioncontrol.ConnectionService
+	sources         versioncontrol.SourceService
 }
 
 // routes returns a controller for every /v1 operation. Onboarding is served
@@ -84,6 +89,8 @@ func (s services) routes(describe bool) []api.Routes {
 		releases.NewReleaseController(s.releases),
 		deployments.NewController(s.deployments),
 		enrollment.NewController(s.enrollment),
+		connections.NewController(s.connections),
+		sources.NewController(s.sources),
 	}
 	if s.onboarding != nil || describe {
 		out = append(out, iamhttp.NewOnboardingController(s.onboarding))

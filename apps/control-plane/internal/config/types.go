@@ -38,6 +38,10 @@ type Config struct {
 	Redis      Redis      `yaml:"redis"`
 	Events     Events     `yaml:"events"`
 	Telemetry  Telemetry  `yaml:"telemetry"`
+
+	// VersionControl configures the version-control providers Ivaldi can
+	// read repositories and commit history from.
+	VersionControl VersionControl `yaml:"version_control"`
 }
 
 // DeploymentMode is who operates the control plane (ADR 0001). A managed

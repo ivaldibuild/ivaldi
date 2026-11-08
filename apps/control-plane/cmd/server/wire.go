@@ -228,6 +228,9 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 	if err := a.wireTeams(); err != nil {
 		return nil, nil, err
 	}
+	if err := a.wireVersionControl(cfg); err != nil {
+		return nil, nil, err
+	}
 	if err := a.wireAgents(); err != nil {
 		return nil, nil, err
 	}

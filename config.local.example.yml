@@ -46,3 +46,12 @@ bootstrap:
   organization_name: Ivaldi Local
   admin_email: admin@ivaldi.local
   admin_password_file: .local/admin-password
+
+# Version-control reads. The GitHub App's private key stays in a mounted file.
+# Connections created through /v1/connections name their GitHub App
+# installation, and Ivaldi mints installation tokens from this key.
+# version_control:
+#   github:
+#     app_id: <GitHub App ID>
+#     private_key_file: .local/github-app.pem
+#     # api_url: https://ghe.example.com/api/v3

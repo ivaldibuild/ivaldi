@@ -609,6 +609,58 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/connections': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List the Organization's version-control connections */
+    get: operations['list-connections'];
+    put?: never;
+    /** Connect a version-control provider account */
+    post: operations['create-connection'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/connections/{connection_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get a version-control connection */
+    get: operations['get-connection'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/connections/{connection_id}/archive': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Archive a version-control connection */
+    post: operations['archive-connection'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/deployments/{deployment_id}': {
     parameters: {
       query?: never;
@@ -1023,6 +1075,24 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/projects/{project_id}/sources': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List a Project's Sources */
+    get: operations['list-project-sources'];
+    put?: never;
+    /** Connect a repository as a Source under a Project */
+    post: operations['create-source'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/projects/{project_id}/transfer': {
     parameters: {
       query?: never;
@@ -1379,6 +1449,57 @@ export interface paths {
     get: operations['resolve-setting'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/sources/{source_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get a Source */
+    get: operations['get-source'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/sources/{source_id}/archive': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Disconnect a Source */
+    post: operations['archive-source'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/sources/{source_id}/restore': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Restore a disconnected Source */
+    post: operations['restore-source'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1804,6 +1925,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/workspaces/{workspace_id}/sources': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List a Workspace's Sources */
+    get: operations['list-workspace-sources'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2070,6 +2208,30 @@ export interface components {
       /** @description How Releases are applied there; omitting it makes Deployments there tracked only */
       apply_config?: components['schemas']['ApplyConfigBody'];
     };
+    ConnectionSnapshot: {
+      /** @enum {string} */
+      auth_kind: 'app_installation' | 'oauth' | 'access_token';
+      /** Format: date-time */
+      created_at: string;
+      created_by_principal_id: string | null;
+      credential_ref: string | null;
+      /** Format: date-time */
+      deleted_at: string | null;
+      external_account_id: string;
+      external_account_name: string | null;
+      host_url: string;
+      id: string;
+      /** @enum {string} */
+      lookup_from: 'control_plane' | 'data_plane';
+      lookup_pool: string | null;
+      organization_id: string;
+      /** @enum {string} */
+      provider: 'github' | 'gitlab' | 'bitbucket' | 'gitea' | 'azure_devops';
+      /** @enum {string} */
+      status: 'active' | 'suspended' | 'revoked';
+      /** Format: date-time */
+      updated_at: string;
+    };
     CreateAgentAPIRequestBody: {
       /**
        * Format: uri
@@ -2168,6 +2330,40 @@ export interface components {
       rules?: components['schemas']['RuleBody'][];
       /** @description Url slug for the channel; derived from the display name when omitted */
       slug?: string;
+    };
+    CreateConnectionRequestBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/CreateConnectionRequestBody.json
+       */
+      readonly $schema?: string;
+      /**
+       * @description How Ivaldi authenticates; app_installation when omitted
+       * @enum {string}
+       */
+      auth_kind?: 'app_installation' | 'oauth' | 'access_token';
+      /** @description The provider's account or installation ID */
+      external_account_id: string;
+      /** @description The provider account's name, such as the GitHub organization login */
+      external_account_name?: string;
+      /**
+       * Format: uri
+       * @description The provider's address, such as https://github.com or a self-hosted server
+       */
+      host_url: string;
+      /**
+       * @description Where lookups run; control_plane when omitted
+       * @enum {string}
+       */
+      lookup_from?: 'control_plane' | 'data_plane';
+      /** @description The data-plane pool that runs lookups, with lookup_from data_plane */
+      lookup_pool?: string;
+      /**
+       * @description The version-control provider
+       * @enum {string}
+       */
+      provider: 'github' | 'gitlab' | 'bitbucket' | 'gitea' | 'azure_devops';
     };
     CreateEnvironmentRequestBody: {
       /**
@@ -2327,6 +2523,18 @@ export interface components {
        * @enum {string}
        */
       method: 'bearer' | 'mtls' | 'kubernetes';
+    };
+    CreateSourceRequestBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/CreateSourceRequestBody.json
+       */
+      readonly $schema?: string;
+      /** @description The Connection the repository is reached through */
+      connection_id: string;
+      /** @description The provider's stable repository ID */
+      external_repository_id: string;
     };
     CreateTargetRequestBody: {
       /**
@@ -3118,6 +3326,20 @@ export interface components {
       /** @description Request status */
       status: string;
     };
+    ResponseConnectionSnapshot: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseConnectionSnapshot.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['ConnectionSnapshot'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
     ResponseCreatedApplication: {
       /**
        * Format: uri
@@ -3253,6 +3475,20 @@ export interface components {
       readonly $schema?: string;
       /** @description Response payload, always present: an empty list is [], not omitted */
       data: components['schemas']['ChannelSnapshot'][];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
+    ResponseListConnectionSnapshot: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseListConnectionSnapshot.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['ConnectionSnapshot'][];
       /** @description Human-readable message */
       message?: string;
       /** @description Request status */
@@ -3650,6 +3886,20 @@ export interface components {
       /** @description Request status */
       status: string;
     };
+    ResponseResultSourceSnapshot: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseResultSourceSnapshot.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['ResultSourceSnapshot'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
     ResponseResultTargetSnapshot: {
       /**
        * Format: uri
@@ -3715,6 +3965,20 @@ export interface components {
       readonly $schema?: string;
       /** @description Response payload, always present: an empty list is [], not omitted */
       data: components['schemas']['SettingSnapshot'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
+    ResponseSourceSnapshot: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseSourceSnapshot.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['SourceSnapshot'];
       /** @description Human-readable message */
       message?: string;
       /** @description Request status */
@@ -3847,6 +4111,15 @@ export interface components {
       has_next: boolean;
       has_previous: boolean;
       items: components['schemas']['Release'][];
+      next_cursor: string | null;
+      previous_cursor: string | null;
+      /** Format: int64 */
+      total_count: number;
+    };
+    ResultSourceSnapshot: {
+      has_next: boolean;
+      has_previous: boolean;
+      items: components['schemas']['SourceSnapshot'][];
       next_cursor: string | null;
       previous_cursor: string | null;
       /** Format: int64 */
@@ -4001,6 +4274,30 @@ export interface components {
       organization_slug?: string;
       /** @description The signup_token the provider sign-in sent the browser back with */
       signup_token: string;
+    };
+    SourceSnapshot: {
+      /** Format: date-time */
+      archived_at: string | null;
+      clone_url: string | null;
+      connection_id: string;
+      /** Format: date-time */
+      created_at: string;
+      created_by_principal_id: string | null;
+      default_branch: string;
+      external_repository_id: string;
+      full_name: string;
+      id: string;
+      organization_id: string;
+      project_id: string;
+      repository_key: string;
+      /** Format: date-time */
+      updated_at: string;
+      /** Format: date-time */
+      upstream_archived_at: string | null;
+      /** @enum {string} */
+      visibility: 'public' | 'private' | 'internal';
+      web_url: string | null;
+      workspace_id: string;
     };
     TargetSnapshot: {
       agent_principal_id: string | null;
@@ -5841,6 +6138,135 @@ export interface operations {
       };
     };
   };
+  'list-connections': {
+    parameters: {
+      query?: {
+        /** @description Include archived connections */
+        include_archived?: boolean;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseListConnectionSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'create-connection': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateConnectionRequestBody'];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseConnectionSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'get-connection': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Connection's ID */
+        connection_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseConnectionSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'archive-connection': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Connection's ID */
+        connection_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseConnectionSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
   'get-deployment': {
     parameters: {
       query?: never;
@@ -6920,6 +7346,87 @@ export interface operations {
       };
     };
   };
+  'list-project-sources': {
+    parameters: {
+      query?: {
+        /** @description Include disconnected Sources */
+        include_archived?: boolean;
+        /** @description Most items to return */
+        limit?: number;
+        /** @description Field to sort by: created_at (the default) or full_name */
+        sort_by?: 'created_at' | 'full_name';
+        /** @description Sort direction */
+        sort_order?: 'asc' | 'desc';
+        /** @description Cursor from a previous page's next_cursor */
+        next_cursor?: string;
+        /** @description Cursor from a previous page's previous_cursor */
+        previous_cursor?: string;
+      };
+      header?: never;
+      path: {
+        /** @description The Project to list Sources in */
+        project_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseResultSourceSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'create-source': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Project the Source belongs to */
+        project_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateSourceRequestBody'];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseSourceSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
   'transfer-project': {
     parameters: {
       query?: never;
@@ -7794,6 +8301,102 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ResponseResolved'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'get-source': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Source's ID */
+        source_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseSourceSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'archive-source': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Source's ID */
+        source_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseSourceSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'restore-source': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Source's ID */
+        source_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseSourceSnapshot'];
         };
       };
       /** @description Error */
@@ -9043,6 +9646,51 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ResponseWorkspaceSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'list-workspace-sources': {
+    parameters: {
+      query?: {
+        /** @description Include disconnected Sources */
+        include_archived?: boolean;
+        /** @description Most items to return */
+        limit?: number;
+        /** @description Field to sort by: created_at (the default) or full_name */
+        sort_by?: 'created_at' | 'full_name';
+        /** @description Sort direction */
+        sort_order?: 'asc' | 'desc';
+        /** @description Cursor from a previous page's next_cursor */
+        next_cursor?: string;
+        /** @description Cursor from a previous page's previous_cursor */
+        previous_cursor?: string;
+      };
+      header?: never;
+      path: {
+        /** @description The Workspace to list Sources in */
+        workspace_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseResultSourceSnapshot'];
         };
       };
       /** @description Error */

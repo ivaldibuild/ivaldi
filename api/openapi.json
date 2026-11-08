@@ -835,6 +835,103 @@
         },
         "type": "object"
       },
+      "ConnectionSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "auth_kind": {
+            "enum": [
+              "app_installation",
+              "oauth",
+              "access_token"
+            ],
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by_principal_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "credential_ref": {
+            "nullable": true,
+            "type": "string"
+          },
+          "deleted_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "external_account_id": {
+            "type": "string"
+          },
+          "external_account_name": {
+            "nullable": true,
+            "type": "string"
+          },
+          "host_url": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lookup_from": {
+            "enum": [
+              "control_plane",
+              "data_plane"
+            ],
+            "type": "string"
+          },
+          "lookup_pool": {
+            "nullable": true,
+            "type": "string"
+          },
+          "organization_id": {
+            "type": "string"
+          },
+          "provider": {
+            "enum": [
+              "github",
+              "gitlab",
+              "bitbucket",
+              "gitea",
+              "azure_devops"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "suspended",
+              "revoked"
+            ],
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "provider",
+          "host_url",
+          "auth_kind",
+          "credential_ref",
+          "external_account_id",
+          "external_account_name",
+          "lookup_from",
+          "lookup_pool",
+          "status",
+          "created_by_principal_id",
+          "created_at",
+          "updated_at",
+          "deleted_at"
+        ],
+        "type": "object"
+      },
       "CreateAgentAPIRequestBody": {
         "additionalProperties": false,
         "properties": {
@@ -1040,6 +1137,69 @@
         "required": [
           "display_name",
           "lifecycle_id"
+        ],
+        "type": "object"
+      },
+      "CreateConnectionRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/CreateConnectionRequestBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "auth_kind": {
+            "description": "How Ivaldi authenticates; app_installation when omitted",
+            "enum": [
+              "app_installation",
+              "oauth",
+              "access_token"
+            ],
+            "type": "string"
+          },
+          "external_account_id": {
+            "description": "The provider's account or installation ID",
+            "type": "string"
+          },
+          "external_account_name": {
+            "description": "The provider account's name, such as the GitHub organization login",
+            "type": "string"
+          },
+          "host_url": {
+            "description": "The provider's address, such as https://github.com or a self-hosted server",
+            "format": "uri",
+            "type": "string"
+          },
+          "lookup_from": {
+            "description": "Where lookups run; control_plane when omitted",
+            "enum": [
+              "control_plane",
+              "data_plane"
+            ],
+            "type": "string"
+          },
+          "lookup_pool": {
+            "description": "The data-plane pool that runs lookups, with lookup_from data_plane",
+            "type": "string"
+          },
+          "provider": {
+            "description": "The version-control provider",
+            "enum": [
+              "github",
+              "gitlab",
+              "bitbucket",
+              "gitea",
+              "azure_devops"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "host_url",
+          "external_account_id"
         ],
         "type": "object"
       },
@@ -1373,6 +1533,31 @@
         },
         "required": [
           "method"
+        ],
+        "type": "object"
+      },
+      "CreateSourceRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/CreateSourceRequestBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "connection_id": {
+            "description": "The Connection the repository is reached through",
+            "type": "string"
+          },
+          "external_repository_id": {
+            "description": "The provider's stable repository ID",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection_id",
+          "external_repository_id"
         ],
         "type": "object"
       },
@@ -3574,6 +3759,35 @@
         ],
         "type": "object"
       },
+      "ResponseConnectionSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseConnectionSnapshot.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ConnectionSnapshot",
+            "description": "Response payload, always present: an empty list is [], not omitted"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
       "ResponseCreatedApplication": {
         "additionalProperties": false,
         "properties": {
@@ -3855,6 +4069,38 @@
             "description": "Response payload, always present: an empty list is [], not omitted",
             "items": {
               "$ref": "#/components/schemas/ChannelSnapshot"
+            },
+            "type": "array"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ResponseListConnectionSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseListConnectionSnapshot.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "description": "Response payload, always present: an empty list is [], not omitted",
+            "items": {
+              "$ref": "#/components/schemas/ConnectionSnapshot"
             },
             "type": "array"
           },
@@ -4709,6 +4955,35 @@
         ],
         "type": "object"
       },
+      "ResponseResultSourceSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseResultSourceSnapshot.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ResultSourceSnapshot",
+            "description": "Response payload, always present: an empty list is [], not omitted"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
       "ResponseResultTargetSnapshot": {
         "additionalProperties": false,
         "properties": {
@@ -4837,6 +5112,35 @@
           },
           "data": {
             "$ref": "#/components/schemas/SettingSnapshot",
+            "description": "Response payload, always present: an empty list is [], not omitted"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ResponseSourceSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseSourceSnapshot.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SourceSnapshot",
             "description": "Response payload, always present: an empty list is [], not omitted"
           },
           "message": {
@@ -5321,6 +5625,44 @@
         ],
         "type": "object"
       },
+      "ResultSourceSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "has_next": {
+            "type": "boolean"
+          },
+          "has_previous": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SourceSnapshot"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "nullable": true,
+            "type": "string"
+          },
+          "previous_cursor": {
+            "nullable": true,
+            "type": "string"
+          },
+          "total_count": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total_count",
+          "has_next",
+          "has_previous",
+          "next_cursor",
+          "previous_cursor"
+        ],
+        "type": "object"
+      },
       "ResultTargetSnapshot": {
         "additionalProperties": false,
         "properties": {
@@ -5721,6 +6063,96 @@
           "login_challenge",
           "signup_token",
           "organization_name"
+        ],
+        "type": "object"
+      },
+      "SourceSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "archived_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "clone_url": {
+            "nullable": true,
+            "type": "string"
+          },
+          "connection_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by_principal_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "default_branch": {
+            "type": "string"
+          },
+          "external_repository_id": {
+            "type": "string"
+          },
+          "full_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "organization_id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "repository_key": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "upstream_archived_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "visibility": {
+            "enum": [
+              "public",
+              "private",
+              "internal"
+            ],
+            "type": "string"
+          },
+          "web_url": {
+            "nullable": true,
+            "type": "string"
+          },
+          "workspace_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "connection_id",
+          "workspace_id",
+          "project_id",
+          "external_repository_id",
+          "repository_key",
+          "full_name",
+          "default_branch",
+          "visibility",
+          "clone_url",
+          "web_url",
+          "created_by_principal_id",
+          "upstream_archived_at",
+          "created_at",
+          "updated_at",
+          "archived_at"
         ],
         "type": "object"
       },
@@ -8897,6 +9329,194 @@
         ]
       }
     },
+    "/v1/connections": {
+      "get": {
+        "operationId": "list-connections",
+        "parameters": [
+          {
+            "description": "Include archived connections",
+            "explode": false,
+            "in": "query",
+            "name": "include_archived",
+            "schema": {
+              "description": "Include archived connections",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseListConnectionSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the Organization's version-control connections",
+        "tags": [
+          "version-control"
+        ]
+      },
+      "post": {
+        "operationId": "create-connection",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateConnectionRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseConnectionSnapshot"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Connect a version-control provider account",
+        "tags": [
+          "version-control"
+        ]
+      }
+    },
+    "/v1/connections/{connection_id}": {
+      "get": {
+        "operationId": "get-connection",
+        "parameters": [
+          {
+            "description": "The Connection's ID",
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "description": "The Connection's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseConnectionSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get a version-control connection",
+        "tags": [
+          "version-control"
+        ]
+      }
+    },
+    "/v1/connections/{connection_id}/archive": {
+      "post": {
+        "operationId": "archive-connection",
+        "parameters": [
+          {
+            "description": "The Connection's ID",
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "description": "The Connection's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseConnectionSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Archive a version-control connection",
+        "tags": [
+          "version-control"
+        ]
+      }
+    },
     "/v1/deployments/{deployment_id}": {
       "get": {
         "operationId": "get-deployment",
@@ -10729,6 +11349,181 @@
         ]
       }
     },
+    "/v1/projects/{project_id}/sources": {
+      "get": {
+        "operationId": "list-project-sources",
+        "parameters": [
+          {
+            "description": "The Project to list Sources in",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "description": "The Project to list Sources in",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Include disconnected Sources",
+            "explode": false,
+            "in": "query",
+            "name": "include_archived",
+            "schema": {
+              "description": "Include disconnected Sources",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Most items to return",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "Most items to return",
+              "format": "int64",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Field to sort by: created_at (the default) or full_name",
+            "explode": false,
+            "in": "query",
+            "name": "sort_by",
+            "schema": {
+              "description": "Field to sort by: created_at (the default) or full_name",
+              "enum": [
+                "created_at",
+                "full_name"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Sort direction",
+            "explode": false,
+            "in": "query",
+            "name": "sort_order",
+            "schema": {
+              "description": "Sort direction",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Cursor from a previous page's next_cursor",
+            "explode": false,
+            "in": "query",
+            "name": "next_cursor",
+            "schema": {
+              "description": "Cursor from a previous page's next_cursor",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Cursor from a previous page's previous_cursor",
+            "explode": false,
+            "in": "query",
+            "name": "previous_cursor",
+            "schema": {
+              "description": "Cursor from a previous page's previous_cursor",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseResultSourceSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List a Project's Sources",
+        "tags": [
+          "version-control"
+        ]
+      },
+      "post": {
+        "operationId": "create-source",
+        "parameters": [
+          {
+            "description": "The Project the Source belongs to",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "description": "The Project the Source belongs to",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSourceRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseSourceSnapshot"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Connect a repository as a Source under a Project",
+        "tags": [
+          "version-control"
+        ]
+      }
+    },
     "/v1/projects/{project_id}/transfer": {
       "post": {
         "operationId": "transfer-project",
@@ -12142,6 +12937,150 @@
         "summary": "Get a setting's effective value at a level",
         "tags": [
           "settings"
+        ]
+      }
+    },
+    "/v1/sources/{source_id}": {
+      "get": {
+        "operationId": "get-source",
+        "parameters": [
+          {
+            "description": "The Source's ID",
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "description": "The Source's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseSourceSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get a Source",
+        "tags": [
+          "version-control"
+        ]
+      }
+    },
+    "/v1/sources/{source_id}/archive": {
+      "post": {
+        "operationId": "archive-source",
+        "parameters": [
+          {
+            "description": "The Source's ID",
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "description": "The Source's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseSourceSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Disconnect a Source",
+        "tags": [
+          "version-control"
+        ]
+      }
+    },
+    "/v1/sources/{source_id}/restore": {
+      "post": {
+        "operationId": "restore-source",
+        "parameters": [
+          {
+            "description": "The Source's ID",
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "description": "The Source's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseSourceSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Restore a disconnected Source",
+        "tags": [
+          "version-control"
         ]
       }
     },
@@ -14347,6 +15286,125 @@
         "summary": "Restore an archived Workspace",
         "tags": [
           "workspaces"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/sources": {
+      "get": {
+        "operationId": "list-workspace-sources",
+        "parameters": [
+          {
+            "description": "The Workspace to list Sources in",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "description": "The Workspace to list Sources in",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Include disconnected Sources",
+            "explode": false,
+            "in": "query",
+            "name": "include_archived",
+            "schema": {
+              "description": "Include disconnected Sources",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Most items to return",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "Most items to return",
+              "format": "int64",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Field to sort by: created_at (the default) or full_name",
+            "explode": false,
+            "in": "query",
+            "name": "sort_by",
+            "schema": {
+              "description": "Field to sort by: created_at (the default) or full_name",
+              "enum": [
+                "created_at",
+                "full_name"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Sort direction",
+            "explode": false,
+            "in": "query",
+            "name": "sort_order",
+            "schema": {
+              "description": "Sort direction",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Cursor from a previous page's next_cursor",
+            "explode": false,
+            "in": "query",
+            "name": "next_cursor",
+            "schema": {
+              "description": "Cursor from a previous page's next_cursor",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Cursor from a previous page's previous_cursor",
+            "explode": false,
+            "in": "query",
+            "name": "previous_cursor",
+            "schema": {
+              "description": "Cursor from a previous page's previous_cursor",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseResultSourceSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List a Workspace's Sources",
+        "tags": [
+          "version-control"
         ]
       }
     }

@@ -41,6 +41,7 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
 	"github.com/ivaldibuild/ivaldi/pkg/logging"
 	"github.com/ivaldibuild/ivaldi/pkg/transaction"
+	"github.com/ivaldibuild/ivaldi/pkg/vcs"
 )
 
 // app is what serve runs, built from the configuration. It is the one place
@@ -71,7 +72,9 @@ type app struct {
 	kubernetes workloadauth.KubernetesVerifier
 	// services serve the API's operations; root.go builds its routes from them.
 	services services
-	handlers []api.Handlers
+	// commitHistory reads commit ranges for delivery's release notes.
+	commitHistory vcs.History
+	handlers      []api.Handlers
 }
 
 // tokenLeeway allows for clock skew between replicas verifying tokens.

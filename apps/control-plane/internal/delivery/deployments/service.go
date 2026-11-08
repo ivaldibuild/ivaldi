@@ -5,9 +5,9 @@ package deployments
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/audit"
@@ -21,6 +21,7 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/pagination"
 	"github.com/ivaldibuild/ivaldi/pkg/release"
 	"github.com/ivaldibuild/ivaldi/pkg/transaction"
+	"github.com/ivaldibuild/ivaldi/pkg/vcs"
 )
 
 const maxRequestedTargets = 20
@@ -35,6 +36,7 @@ type options struct {
 	environments Environments
 	targets      Targets
 	lifecycles   Lifecycles
+	history      vcs.History
 	authz        authorization.Authorizer
 	writer       change.Writer
 }
@@ -59,6 +61,12 @@ func WithTargets(r Targets) ServiceOption {
 }
 func WithLifecycles(r Lifecycles) ServiceOption {
 	return func(o *options) { o.lifecycles = r }
+}
+
+// WithCommitHistory reads the commits between two Builds. The
+// version-control capability provides it through vcs.History.
+func WithCommitHistory(h vcs.History) ServiceOption {
+	return func(o *options) { o.history = h }
 }
 func WithAuthorizer(a authorization.Authorizer) ServiceOption {
 	return func(o *options) { o.authz = a }
@@ -91,6 +99,7 @@ func NewService(opts ...ServiceOption) (delivery.DeploymentService, error) {
 		{"Environments", o.environments != nil},
 		{"Targets", o.targets != nil},
 		{"Lifecycles", o.lifecycles != nil},
+		{"CommitHistory", o.history != nil},
 		{"Authorizer", o.authz != nil},
 	}
 	for _, r := range required {
@@ -383,7 +392,10 @@ func (s *service) ReleaseChanges(ctx context.Context, _ identity.Actor, organiza
 		return nil, err
 	}
 	var previous map[string]*delivery.Build
-	changes := &delivery.ReleaseChanges{ReleaseID: rel.ID(), TargetID: targetID, Changes: []json.RawMessage{}}
+	changes := &delivery.ReleaseChanges{
+		ReleaseID: rel.ID(), TargetID: targetID,
+		Artifacts: []delivery.ArtifactChange{}, Changes: []delivery.ReleaseChange{},
+	}
 	if plan.placement != nil && plan.placement.CurrentReleaseID() != nil {
 		changes.CurrentReleaseID = plan.placement.CurrentReleaseID()
 		prevRelease, err := s.releases.GetRelease(ctx, organizationID, *plan.placement.CurrentReleaseID())
@@ -395,6 +407,7 @@ func (s *service) ReleaseChanges(ctx context.Context, _ identity.Actor, organiza
 			return nil, err
 		}
 	}
+	seen := map[string]bool{}
 	for _, rb := range rel.Builds() {
 		artifact := byArtifact[rb.ArtifactID]
 		if artifact == nil {
@@ -404,15 +417,111 @@ func (s *service) ReleaseChanges(ctx context.Context, _ identity.Actor, organiza
 		if b == nil {
 			continue
 		}
-		item := delivery.ArtifactChange{ArtifactID: rb.ArtifactID, ArtifactName: artifact.Name(), Next: b.Snapshot()}
-		if prev := previous[rb.ArtifactID]; prev != nil {
+		item := delivery.ArtifactChange{
+			ArtifactID:   rb.ArtifactID,
+			ArtifactName: artifact.Name(),
+			Next:         b.Snapshot(),
+			CommitSHAs:   []string{},
+			Unresolved:   []string{},
+		}
+		prev := previous[rb.ArtifactID]
+		if prev != nil {
 			snap := prev.Snapshot()
 			item.Previous = &snap
 		}
+		if prev == nil {
+			item.Unresolved = append(item.Unresolved, "the artifact is new on this Target")
+		} else if prev.Digest() != b.Digest() {
+			commits, reason := s.commitRange(ctx, organizationID, prev, b)
+			if reason != "" {
+				item.Unresolved = append(item.Unresolved, reason)
+			}
+			sourceID := sourceOf(b)
+			for _, commit := range commits {
+				item.CommitSHAs = append(item.CommitSHAs, commit.SHA)
+				key := sourceID + "\x00" + commit.SHA
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				changes.Changes = append(changes.Changes, changeOf(sourceID, commit))
+			}
+		}
 		changes.Artifacts = append(changes.Artifacts, item)
 	}
+	slices.SortFunc(changes.Changes, func(a, b delivery.ReleaseChange) int {
+		if !a.CommittedAt.Equal(b.CommittedAt) {
+			return a.CommittedAt.Compare(b.CommittedAt)
+		}
+		return strings.Compare(a.CommitSHA, b.CommitSHA)
+	})
 	changes.Checks = plan.checks
 	return changes, nil
+}
+
+// commitRange reads the commits between two Builds of one Source. It
+// returns why the range could not be listed, rather than an error, so one
+// artifact never fails the whole read.
+func (s *service) commitRange(ctx context.Context, organizationID string, previous, next *delivery.Build) ([]vcs.Commit, string) {
+	p, n := previous.Snapshot(), next.Snapshot()
+	switch {
+	case n.SourceID == nil:
+		return nil, "the Build has no Source"
+	case p.SourceID == nil:
+		return nil, "the previous Build has no Source"
+	case *n.SourceID != *p.SourceID:
+		return nil, "the Builds come from different Sources"
+	case n.CommitSHA == nil:
+		return nil, "the Build has no commit"
+	case p.CommitSHA == nil:
+		return nil, "the previous Build has no commit"
+	}
+	commits, err := s.history.CommitsBetween(ctx, organizationID, *n.SourceID, *p.CommitSHA, *n.CommitSHA)
+	if err != nil {
+		return nil, rangeUnavailable(err)
+	}
+	return commits, ""
+}
+
+// rangeUnavailable says why a range could not be read, without exposing
+// provider internals.
+func rangeUnavailable(err error) string {
+	switch {
+	case errors.Is(err, vcs.ErrSourceArchived):
+		return "the Source is archived"
+	case errors.Is(err, vcs.ErrConnectionInactive):
+		return "the Source's connection is not active"
+	case errors.Is(err, vcs.ErrLookupInDataPlane):
+		return "lookups for the Source's connection run in the data plane"
+	case errors.Is(err, vcs.ErrUnsupportedProvider):
+		return "no version-control provider is configured for the Source"
+	case errors.Is(err, vcs.ErrNotFound):
+		return "the commit range could not be found"
+	case errors.Is(err, vcs.ErrUnauthorized), errors.Is(err, vcs.ErrUnavailable):
+		return "the version-control provider could not be reached"
+	}
+	return "the commit range could not be resolved"
+}
+
+func sourceOf(b *delivery.Build) string {
+	if id := b.Snapshot().SourceID; id != nil {
+		return *id
+	}
+	return ""
+}
+
+func changeOf(sourceID string, commit vcs.Commit) delivery.ReleaseChange {
+	title, _, _ := strings.Cut(commit.Message, "\n")
+	return delivery.ReleaseChange{
+		CommitSHA:   commit.SHA,
+		SourceID:    sourceID,
+		Title:       strings.TrimSpace(title),
+		Message:     commit.Message,
+		AuthorName:  commit.AuthorName,
+		AuthorEmail: commit.AuthorEmail,
+		CommittedAt: commit.CommittedAt,
+		URL:         commit.URL,
+	}
 }
 
 // plan loads a Target and checks whether the Release may be deployed there.

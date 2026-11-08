@@ -192,6 +192,10 @@ export class DeployPage {
     return !!change.previous && change.previous.digest === change.next.digest;
   }
 
+  protected shortCommit(sha: string): string {
+    return sha.slice(0, 8);
+  }
+
   // Deploying.
 
   protected readonly status = new RequestStatus();

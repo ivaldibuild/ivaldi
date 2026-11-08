@@ -90,6 +90,12 @@ type ArtifactChange struct {
 	ArtifactName string         `json:"artifact_name"`
 	Previous     *BuildSnapshot `json:"previous"`
 	Next         BuildSnapshot  `json:"next"`
+	// CommitSHAs are the commits between the previous and next Build,
+	// oldest first. It is empty when the Builds are the same or the range
+	// could not be resolved.
+	CommitSHAs []string `json:"commit_shas"`
+	// Unresolved says why no commit range was listed for this artifact.
+	Unresolved []string `json:"unresolved"`
 }
 
 // DeploymentCheck is one pre-flight check for a Deployment.
@@ -100,15 +106,15 @@ type DeploymentCheck struct {
 }
 
 // ReleaseChanges is what a Release would change on a Target, with the
-// checks the deploy sheet needs. Commit-linked Changes and Work Items are
-// empty until the version-control and Change capabilities exist.
+// checks the deploy sheet needs. Changes lists the commits between the
+// Target's current Release and this one, once each.
 type ReleaseChanges struct {
 	ReleaseID        string            `json:"release_id"`
 	TargetID         string            `json:"target_id"`
 	CurrentReleaseID *string           `json:"current_release_id"`
 	Artifacts        []ArtifactChange  `json:"artifacts"`
 	Checks           []DeploymentCheck `json:"checks"`
-	Changes          []json.RawMessage `json:"changes"`
+	Changes          []ReleaseChange   `json:"changes"`
 }
 
 // ReportDeploymentInput is one agent report about a Deployment.

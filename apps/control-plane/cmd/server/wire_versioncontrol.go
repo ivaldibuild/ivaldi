@@ -5,6 +5,7 @@ import (
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/config"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/authhttp/session"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/versioncontrol"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/versioncontrol/connections"
 	versioncontrolpg "github.com/ivaldibuild/ivaldi-control-plane/internal/versioncontrol/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/versioncontrol/sources"
@@ -78,6 +79,12 @@ func (a *app) wireVersionControl(cfg *config.Config) error {
 
 	a.services.connections = connectionService
 	a.services.sources = sourceService
+
+	lookups, err := versioncontrol.NewLookups(sourceRepo, connectionRepo, provider)
+	if err != nil {
+		return err
+	}
+	a.commitHistory = lookups
 	return nil
 }
 

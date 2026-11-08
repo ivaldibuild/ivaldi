@@ -386,18 +386,32 @@
           "artifact_name": {
             "type": "string"
           },
+          "commit_shas": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "next": {
             "$ref": "#/components/schemas/BuildSnapshot"
           },
           "previous": {
             "$ref": "#/components/schemas/BuildSnapshot"
+          },
+          "unresolved": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [
           "artifact_id",
           "artifact_name",
           "previous",
-          "next"
+          "next",
+          "commit_shas",
+          "unresolved"
         ],
         "type": "object"
       },
@@ -3320,6 +3334,58 @@
         ],
         "type": "object"
       },
+      "ReleaseChange": {
+        "additionalProperties": false,
+        "properties": {
+          "author_email": {
+            "type": "string"
+          },
+          "author_name": {
+            "type": "string"
+          },
+          "commit_sha": {
+            "type": "string"
+          },
+          "committed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "session_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "nullable": true,
+            "type": "string"
+          },
+          "work_item_id": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "commit_sha",
+          "source_id",
+          "title",
+          "message",
+          "author_name",
+          "author_email",
+          "committed_at",
+          "url",
+          "session_id",
+          "work_item_id"
+        ],
+        "type": "object"
+      },
       "ReleaseChanges": {
         "additionalProperties": false,
         "properties": {
@@ -3330,7 +3396,9 @@
             "type": "array"
           },
           "changes": {
-            "items": {},
+            "items": {
+              "$ref": "#/components/schemas/ReleaseChange"
+            },
             "type": "array"
           },
           "checks": {

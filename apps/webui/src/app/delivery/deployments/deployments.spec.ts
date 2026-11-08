@@ -189,10 +189,25 @@ describe('deployments', () => {
             artifact_name: 'api',
             previous: build('1.4.0', 'sha256:aaa'),
             next: build('1.5.0', 'sha256:bbb'),
+            commit_shas: ['bbbbbbbb'],
+            unresolved: [],
           },
         ],
         checks: checks(failing),
-        changes: [],
+        changes: [
+          {
+            commit_sha: 'bbbbbbbb',
+            source_id: 'src_1',
+            title: 'Add checkout',
+            message: 'Add checkout',
+            author_name: 'Ada',
+            author_email: 'ada@example.com',
+            committed_at: '2026-11-08T10:00:00Z',
+            url: null,
+            session_id: null,
+            work_item_id: null,
+          },
+        ],
       });
     }
 
@@ -221,6 +236,7 @@ describe('deployments', () => {
       const preview = el.querySelector('article[aria-label="staging-eu-1"]')!;
       const cells = [...preview.querySelectorAll('tbody tr > *')].map((c) => c.textContent?.trim());
       expect(cells).toEqual(['api', '1.4.0', '1.5.0']);
+      expect(preview.textContent).toContain('Add checkout');
       expect(preview.textContent).toContain('The Application is placed on the Target');
       button(el, 'Deploy 1.5.0')!.click();
       await settle(fixture);

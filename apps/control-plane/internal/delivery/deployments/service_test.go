@@ -3,6 +3,7 @@ package deployments
 import (
 	"context"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
 	"github.com/ivaldibuild/ivaldi/pkg/pagination"
 	"github.com/ivaldibuild/ivaldi/pkg/release"
+	"github.com/ivaldibuild/ivaldi/pkg/vcs"
 )
 
 const (
@@ -299,11 +301,23 @@ func (o outboxLog) Record(_ context.Context, envs ...events.Envelope) error {
 
 type world struct {
 	*store
-	svc   delivery.DeploymentService
-	authz *fakeAuthorizer
-	rel   *delivery.Release
-	app   *delivery.Application
-	env   *delivery.Environment
+	svc     delivery.DeploymentService
+	authz   *fakeAuthorizer
+	history *fakeHistory
+	rel     *delivery.Release
+	app     *delivery.Application
+	env     *delivery.Environment
+}
+
+// fakeHistory is the commit history the version-control capability would
+// provide.
+type fakeHistory struct {
+	commits []vcs.Commit
+	err     error
+}
+
+func (f *fakeHistory) CommitsBetween(context.Context, string, string, string, string) ([]vcs.Commit, error) {
+	return f.commits, f.err
 }
 
 func newWorld(t *testing.T) *world {
@@ -326,14 +340,15 @@ func newWorld(t *testing.T) *world {
 	s.releases, s.builds = release, builds
 	s.artifacts[artifact.ID()] = artifact
 	authz := &fakeAuthorizer{}
+	history := &fakeHistory{}
 	svc, err := NewService(
 		WithDeploymentRepo(fakeDeployments{s}), WithReleaseRepo(fakeReleases{s}), WithBuildRepo(fakeBuilds{s}),
 		WithApplications(fakeApplications{s}), WithEnvironments(fakeEnvironments{s}), WithTargets(fakeTargets{s}),
-		WithLifecycles(fakeLifecycles{s}), WithAuthorizer(authz), WithTransactor(s),
+		WithLifecycles(fakeLifecycles{s}), WithCommitHistory(history), WithAuthorizer(authz), WithTransactor(s),
 		WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
 	)
 	require.NoError(t, err)
-	return &world{store: s, svc: svc, authz: authz, rel: s.releases[mustOneID(s.releases)], app: app, env: env}
+	return &world{store: s, svc: svc, authz: authz, history: history, rel: s.releases[mustOneID(s.releases)], app: app, env: env}
 }
 
 func TestRequestDeployments(t *testing.T) {
@@ -489,7 +504,80 @@ func TestReleaseChanges(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, changes.Artifacts, 1)
 	assert.Nil(t, changes.Artifacts[0].Previous)
+	assert.Contains(t, changes.Artifacts[0].Unresolved, "the artifact is new on this Target")
+	assert.Empty(t, changes.Changes)
 	assert.NotEmpty(t, changes.Checks)
+}
+
+func TestReleaseChangesListsCommitsBetweenBuilds(t *testing.T) {
+	w := newWorld(t)
+	artifact := w.artifacts[mustOneID(w.artifacts)]
+	previousBuild := ciBuild(artifact, "a", "aaaaaaaa")
+	nextBuild := ciBuild(artifact, "b", "bbbbbbbb")
+	w.builds[previousBuild.ID()] = previousBuild
+	w.builds[nextBuild.ID()] = nextBuild
+
+	previousRelease := releaseOf(w.rel, artifact, previousBuild, "0.9.0")
+	nextRelease := releaseOf(w.rel, artifact, nextBuild, "1.0.0")
+	w.releases[previousRelease.ID()] = previousRelease
+	w.releases[nextRelease.ID()] = nextRelease
+
+	deployment := mustDeployment(org, previousRelease.ID(), w.app.ID(), envID, targetID, release.DeploymentHealthy)
+	placement := w.placements[placementKey(w.app.ID(), targetID)]
+	require.NoError(t, placement.SetCurrent(deployment.ID(), previousRelease.ID()))
+	w.placements[placementKey(w.app.ID(), targetID)] = placement
+
+	committedAt := t0.Add(-time.Hour)
+	w.history.commits = []vcs.Commit{{
+		SHA: "bbbbbbbb", Message: "Add checkout\n\nDetails", AuthorName: "Ada",
+		AuthorEmail: "ada@example.com", CommittedAt: committedAt,
+	}}
+
+	changes, err := w.svc.ReleaseChanges(ctx, ada, org, nextRelease.ID(), targetID)
+	require.NoError(t, err)
+	require.Len(t, changes.Artifacts, 1)
+	item := changes.Artifacts[0]
+	require.NotNil(t, item.Previous)
+	assert.Equal(t, previousBuild.Digest(), item.Previous.Digest)
+	assert.Equal(t, []string{"bbbbbbbb"}, item.CommitSHAs)
+	assert.Empty(t, item.Unresolved)
+	require.Len(t, changes.Changes, 1)
+	assert.Equal(t, "bbbbbbbb", changes.Changes[0].CommitSHA)
+	assert.Equal(t, "Add checkout", changes.Changes[0].Title)
+	assert.Equal(t, committedAt, changes.Changes[0].CommittedAt)
+	assert.Nil(t, changes.Changes[0].SessionID)
+	assert.Nil(t, changes.Changes[0].WorkItemID)
+
+	// A Build with no commit makes the range unreadable, but not the read.
+	withoutCommit := ciBuild(artifact, "c", "")
+	w.builds[withoutCommit.ID()] = withoutCommit
+	nextWithoutCommit := releaseOf(w.rel, artifact, withoutCommit, "1.0.1")
+	w.releases[nextWithoutCommit.ID()] = nextWithoutCommit
+	changes, err = w.svc.ReleaseChanges(ctx, ada, org, nextWithoutCommit.ID(), targetID)
+	require.NoError(t, err)
+	require.Len(t, changes.Artifacts, 1)
+	assert.Contains(t, changes.Artifacts[0].Unresolved, "the Build has no commit")
+	assert.Empty(t, changes.Changes)
+}
+
+// ciBuild returns a CI-reported Build from source src at commit.
+func ciBuild(artifact *delivery.Artifact, digest, commit string) *delivery.Build {
+	source := "src_01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	return must(delivery.NewBuild(delivery.NewBuildProps{
+		OrganizationID: org, ArtifactKind: artifact.ArtifactKind(), ArtifactName: artifact.ArtifactName(),
+		Digest:     "sha256:" + strings.Repeat(digest, 64),
+		Provenance: delivery.BuildCIReported,
+		Details:    delivery.BuildDetails{SourceID: &source, CommitSHA: &commit},
+	}, nil))
+}
+
+// releaseOf returns a published Release like template with one Build.
+func releaseOf(template *delivery.Release, artifact *delivery.Artifact, build *delivery.Build, version string) *delivery.Release {
+	return must(delivery.NewRelease(delivery.NewReleaseProps{
+		OrganizationID: org, ApplicationID: template.ApplicationID(), ChannelID: template.ChannelID(),
+		Version: version, Status: release.StatusPublished,
+		Builds: []delivery.NewReleaseBuildProps{{ArtifactID: artifact.ID(), BuildID: build.ID()}},
+	}, nil))
 }
 
 func (s *store) auditTypes() []string {

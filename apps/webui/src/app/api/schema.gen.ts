@@ -2127,8 +2127,10 @@ export interface components {
     ArtifactChange: {
       artifact_id: string;
       artifact_name: string;
+      commit_shas: string[];
       next: components['schemas']['BuildSnapshot'];
       previous: components['schemas']['BuildSnapshot'];
+      unresolved: string[];
     };
     ArtifactSnapshot: {
       application_id: string;
@@ -3218,9 +3220,22 @@ export interface components {
       /** Format: date-time */
       created_at: string;
     };
+    ReleaseChange: {
+      author_email: string;
+      author_name: string;
+      commit_sha: string;
+      /** Format: date-time */
+      committed_at: string;
+      message: string;
+      session_id: string | null;
+      source_id: string;
+      title: string;
+      url: string | null;
+      work_item_id: string | null;
+    };
     ReleaseChanges: {
       artifacts: components['schemas']['ArtifactChange'][];
-      changes: unknown[];
+      changes: components['schemas']['ReleaseChange'][];
       checks: components['schemas']['DeploymentCheck'][];
       current_release_id: string | null;
       release_id: string;

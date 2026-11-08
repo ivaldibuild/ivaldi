@@ -172,6 +172,28 @@
                         }
                       </tbody>
                     </table>
+                    @if (item.preview.changes.changes.length > 0) {
+                      <ul class="flex flex-col gap-1.5 text-sm" aria-label="Commits">
+                        @for (change of item.preview.changes.changes; track change.commit_sha) {
+                          <li class="flex items-start gap-2">
+                            <code class="text-muted-foreground shrink-0">{{
+                              shortCommit(change.commit_sha)
+                            }}</code>
+                            <span>
+                              {{ change.title || 'No commit message' }}
+                              <span class="text-muted-foreground"> · {{ change.author_name }}</span>
+                            </span>
+                          </li>
+                        }
+                      </ul>
+                    }
+                    @for (change of item.preview.changes.artifacts; track change.artifact_id) {
+                      @for (reason of change.unresolved; track reason) {
+                        <p class="text-muted-foreground text-sm" role="note">
+                          {{ change.artifact_name }}: {{ reason }}
+                        </p>
+                      }
+                    }
                     <ul class="flex flex-col gap-1.5 text-sm" aria-label="Checks">
                       @for (check of item.preview.changes.checks; track check.name) {
                         <li class="flex items-start gap-2">

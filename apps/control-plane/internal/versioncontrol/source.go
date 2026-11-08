@@ -1,6 +1,7 @@
 package versioncontrol
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
@@ -211,4 +212,46 @@ func (s *Source) Restore() {
 	s.archivedAt = nil
 	s.updatedAt = clock.Now()
 	s.RecordEvent(SourceRestored{s.Snapshot()})
+}
+
+// Refresh updates an active Source from the provider's current view of the
+// repository, such as after a rename or a default-branch change.
+func (s *Source) Refresh(repository vcs.Repository) error {
+	if s.Archived() {
+		return fmt.Errorf("%w: source %s", ErrArchived, s.ID())
+	}
+	if repository.ExternalID != s.externalRepositoryID {
+		return NewErrInvalidInput(fmt.Sprintf("repository %s is not source %s", repository.ExternalID, s.ID()))
+	}
+	if err := validateText("repository full name", repository.FullName, maxFullNameLength, true); err != nil {
+		return err
+	}
+	if err := validateText("default branch", repository.DefaultBranch, maxDefaultBranchLength, false); err != nil {
+		return err
+	}
+	if err := Visibility(repository.Visibility).valid(); err != nil {
+		return err
+	}
+	if err := validateText("clone URL", repository.CloneURL, maxCloneURLLength, false); err != nil {
+		return err
+	}
+	if err := validateText("web URL", repository.WebURL, maxWebURLLength, false); err != nil {
+		return err
+	}
+	changed := s.fullName != repository.FullName ||
+		s.defaultBranch != repository.DefaultBranch ||
+		string(s.visibility) != repository.Visibility ||
+		deref(s.cloneURL) != repository.CloneURL ||
+		deref(s.webURL) != repository.WebURL
+	if !changed {
+		return nil
+	}
+	s.fullName = repository.FullName
+	s.defaultBranch = repository.DefaultBranch
+	s.visibility = Visibility(repository.Visibility)
+	s.cloneURL = optional.Of(repository.CloneURL)
+	s.webURL = optional.Of(repository.WebURL)
+	s.updatedAt = clock.Now()
+	s.RecordEvent(SourceUpdated{s.Snapshot()})
+	return nil
 }

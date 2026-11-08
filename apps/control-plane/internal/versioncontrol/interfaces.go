@@ -123,6 +123,13 @@ type ConnectionService interface {
 	GetConnection(ctx context.Context, actor identity.Actor, organizationID, connectionID string) (*Connection, error)
 	ListConnections(ctx context.Context, actor identity.Actor, organizationID string, includeArchived bool) ([]*Connection, error)
 	ArchiveConnection(ctx context.Context, actor identity.Actor, organizationID, connectionID string) (*Connection, error)
+	// SuspendConnection marks a Connection unusable, such as when its
+	// provider suspends the installation.
+	SuspendConnection(ctx context.Context, actor identity.Actor, organizationID, connectionID string) (*Connection, error)
+	// RevokeConnection marks a Connection unusable for good.
+	RevokeConnection(ctx context.Context, actor identity.Actor, organizationID, connectionID string) (*Connection, error)
+	// ReactivateConnection makes a suspended or revoked Connection usable.
+	ReactivateConnection(ctx context.Context, actor identity.Actor, organizationID, connectionID string) (*Connection, error)
 	// ListRepositories lists the repositories the Connection's account lets
 	// Ivaldi read, by full name, as the provider reports them now. They are
 	// what a Source can connect.
@@ -142,4 +149,7 @@ type SourceService interface {
 	ListSources(ctx context.Context, actor identity.Actor, query ListSourcesQuery) (*pagination.Result[*Source], error)
 	ArchiveSource(ctx context.Context, actor identity.Actor, organizationID, sourceID string) (*Source, error)
 	RestoreSource(ctx context.Context, actor identity.Actor, organizationID, sourceID string) (*Source, error)
+	// RefreshSource updates a Source from the provider's current view of
+	// the repository.
+	RefreshSource(ctx context.Context, actor identity.Actor, organizationID, sourceID string) (*Source, error)
 }

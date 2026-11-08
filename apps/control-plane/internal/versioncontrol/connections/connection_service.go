@@ -204,3 +204,56 @@ func (s *service) ArchiveConnection(ctx context.Context, actor identity.Actor, o
 	}
 	return out, nil
 }
+
+func (s *service) SuspendConnection(ctx context.Context, actor identity.Actor, organizationID, connectionID string) (*versioncontrol.Connection, error) {
+	return s.changeStatus(ctx, actor, organizationID, connectionID, versioncontrol.EventConnectionSuspended,
+		func(c *versioncontrol.Connection) error { return c.Suspend() })
+}
+
+func (s *service) RevokeConnection(ctx context.Context, actor identity.Actor, organizationID, connectionID string) (*versioncontrol.Connection, error) {
+	return s.changeStatus(ctx, actor, organizationID, connectionID, versioncontrol.EventConnectionRevoked,
+		func(c *versioncontrol.Connection) error { return c.Revoke() })
+}
+
+func (s *service) ReactivateConnection(ctx context.Context, actor identity.Actor, organizationID, connectionID string) (*versioncontrol.Connection, error) {
+	return s.changeStatus(ctx, actor, organizationID, connectionID, versioncontrol.EventConnectionReactivated,
+		func(c *versioncontrol.Connection) error { return c.Reactivate() })
+}
+
+// changeStatus applies one Connection status transition and records the
+// event and audit record it produced.
+func (s *service) changeStatus(ctx context.Context, actor identity.Actor, organizationID, connectionID, event string, apply func(*versioncontrol.Connection) error) (*versioncontrol.Connection, error) {
+	var out *versioncontrol.Connection
+	err := s.w.Tx.WithinTx(ctx, func(ctx context.Context) error {
+		c, err := s.connections.GetConnectionForUpdate(ctx, organizationID, connectionID)
+		if err != nil {
+			return err
+		}
+		before := c.Snapshot()
+		if err := apply(c); err != nil {
+			return err
+		}
+		if c.Snapshot().Status == before.Status {
+			out = c
+			return nil
+		}
+		if err := s.connections.UpdateConnection(ctx, c); err != nil {
+			return fmt.Errorf("change connection status: %w", err)
+		}
+		if err := s.w.Events(ctx, versioncontrol.AggregateConnection, c.ID(), c); err != nil {
+			return err
+		}
+		if err := s.w.AuditRecord(ctx, audit.Event{
+			Type: event, OrganizationID: organizationID,
+			ResourceID: c.ID(), Actor: actor, Before: before, After: c.Snapshot(),
+		}); err != nil {
+			return err
+		}
+		out = c
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}

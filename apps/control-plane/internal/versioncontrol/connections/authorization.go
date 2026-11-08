@@ -75,6 +75,30 @@ func (a *authorized) ArchiveConnection(ctx context.Context, actor identity.Actor
 	return a.next.ArchiveConnection(ctx, actor, organizationID, connectionID)
 }
 
+func (a *authorized) SuspendConnection(ctx context.Context, actor identity.Actor, organizationID, connectionID string) (*versioncontrol.Connection, error) {
+	ctx, err := a.decide(ctx, actor, versioncontrol.PermissionConnectionManage, organizationID, versioncontrol.ActionConnectionSuspend, connectionID)
+	if err != nil {
+		return nil, err
+	}
+	return a.next.SuspendConnection(ctx, actor, organizationID, connectionID)
+}
+
+func (a *authorized) RevokeConnection(ctx context.Context, actor identity.Actor, organizationID, connectionID string) (*versioncontrol.Connection, error) {
+	ctx, err := a.decide(ctx, actor, versioncontrol.PermissionConnectionManage, organizationID, versioncontrol.ActionConnectionRevoke, connectionID)
+	if err != nil {
+		return nil, err
+	}
+	return a.next.RevokeConnection(ctx, actor, organizationID, connectionID)
+}
+
+func (a *authorized) ReactivateConnection(ctx context.Context, actor identity.Actor, organizationID, connectionID string) (*versioncontrol.Connection, error) {
+	ctx, err := a.decide(ctx, actor, versioncontrol.PermissionConnectionManage, organizationID, versioncontrol.ActionConnectionReactivate, connectionID)
+	if err != nil {
+		return nil, err
+	}
+	return a.next.ReactivateConnection(ctx, actor, organizationID, connectionID)
+}
+
 func (a *authorized) StartInstallation(ctx context.Context, actor identity.Actor, organizationID string, provider vcs.ProviderKind) (*versioncontrol.InstallationStart, error) {
 	ctx, err := a.decide(ctx, actor, versioncontrol.PermissionConnectionManage, organizationID, versioncontrol.ActionConnectionInstall, provider)
 	if err != nil {

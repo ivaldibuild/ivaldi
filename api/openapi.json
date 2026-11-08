@@ -10162,6 +10162,54 @@
         ]
       }
     },
+    "/v1/connections/{connection_id}/reactivate": {
+      "post": {
+        "operationId": "reactivate-connection",
+        "parameters": [
+          {
+            "description": "The Connection's ID",
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "description": "The Connection's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseConnectionSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Make a suspended or revoked connection usable again",
+        "tags": [
+          "version-control"
+        ]
+      }
+    },
     "/v1/connections/{connection_id}/repositories": {
       "get": {
         "operationId": "list-connection-repositories",
@@ -10205,6 +10253,102 @@
           }
         ],
         "summary": "List the repositories a connection's account lets Ivaldi read",
+        "tags": [
+          "version-control"
+        ]
+      }
+    },
+    "/v1/connections/{connection_id}/revoke": {
+      "post": {
+        "operationId": "revoke-connection",
+        "parameters": [
+          {
+            "description": "The Connection's ID",
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "description": "The Connection's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseConnectionSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Mark a version-control connection unusable for good",
+        "tags": [
+          "version-control"
+        ]
+      }
+    },
+    "/v1/connections/{connection_id}/suspend": {
+      "post": {
+        "operationId": "suspend-connection",
+        "parameters": [
+          {
+            "description": "The Connection's ID",
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "description": "The Connection's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseConnectionSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Mark a version-control connection unusable",
         "tags": [
           "version-control"
         ]
@@ -13956,6 +14100,54 @@
         "summary": "Record a Change that ties commits to a Session or Work Item",
         "tags": [
           "provenance"
+        ]
+      }
+    },
+    "/v1/sources/{source_id}/refresh": {
+      "post": {
+        "operationId": "refresh-source",
+        "parameters": [
+          {
+            "description": "The Source's ID",
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "description": "The Source's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseSourceSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update a Source from the provider's current repository metadata",
+        "tags": [
+          "version-control"
         ]
       }
     },

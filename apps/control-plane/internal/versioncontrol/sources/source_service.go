@@ -234,6 +234,72 @@ func translateProviderError(err error, externalRepositoryID string) error {
 	}
 }
 
+// RefreshSource updates a Source from the provider's current view of the
+// repository, such as after a rename or a default-branch change.
+func (s *service) RefreshSource(ctx context.Context, actor identity.Actor, organizationID, sourceID string) (*versioncontrol.Source, error) {
+	source, err := s.sources.GetSource(ctx, organizationID, sourceID)
+	if err != nil {
+		return nil, err
+	}
+	connection, err := s.usableConnection(ctx, organizationID, source.ConnectionID())
+	if err != nil {
+		return nil, err
+	}
+	repository, err := s.repository(ctx, connection, source.ExternalRepositoryID())
+	if err != nil {
+		return nil, err
+	}
+	var out *versioncontrol.Source
+	err = s.w.Tx.WithinTx(ctx, func(ctx context.Context) error {
+		source, err := s.sources.GetSourceForUpdate(ctx, organizationID, sourceID)
+		if err != nil {
+			return err
+		}
+		before := source.Snapshot()
+		if err := source.Refresh(repository); err != nil {
+			return err
+		}
+		if !sourceChanged(before, source) {
+			out = source
+			return nil
+		}
+		if err := s.sources.UpdateSource(ctx, source); err != nil {
+			return fmt.Errorf("refresh source: %w", err)
+		}
+		if err := s.w.Events(ctx, versioncontrol.AggregateSource, source.ID(), source); err != nil {
+			return err
+		}
+		if err := s.w.AuditRecord(ctx, audit.Event{
+			Type: versioncontrol.EventSourceUpdated, OrganizationID: organizationID,
+			ResourceID: source.ID(), Actor: actor, Before: before, After: source.Snapshot(),
+		}); err != nil {
+			return err
+		}
+		out = source
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// sourceChanged reports whether a refresh changed the stored metadata.
+func sourceChanged(before versioncontrol.SourceSnapshot, source *versioncontrol.Source) bool {
+	return before.FullName != source.FullName() ||
+		before.DefaultBranch != source.DefaultBranch() ||
+		before.Visibility != source.Visibility() ||
+		text(before.CloneURL) != text(source.CloneURL()) ||
+		text(before.WebURL) != text(source.WebURL())
+}
+
+func text(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
 func (s *service) GetSource(ctx context.Context, _ identity.Actor, organizationID, sourceID string) (*versioncontrol.Source, error) {
 	return s.sources.GetSource(ctx, organizationID, sourceID)
 }

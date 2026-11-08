@@ -33,6 +33,7 @@ func (c *Controller) RegisterRoutes(h huma.API) {
 	register(h, "get-source", http.MethodGet, "/sources/{source_id}", "Get a Source", 0, c.GetSource)
 	register(h, "archive-source", http.MethodPost, "/sources/{source_id}/archive", "Disconnect a Source", 0, c.ArchiveSource)
 	register(h, "restore-source", http.MethodPost, "/sources/{source_id}/restore", "Restore a disconnected Source", 0, c.RestoreSource)
+	register(h, "refresh-source", http.MethodPost, "/sources/{source_id}/refresh", "Update a Source from the provider's current repository metadata", 0, c.RefreshSource)
 }
 
 func register[I, O any](h huma.API, id, method, path, summary string, status int, handler func(context.Context, *I) (*O, error)) {
@@ -109,6 +110,10 @@ func (c *Controller) ArchiveSource(ctx context.Context, req *SourceRequest) (*So
 
 func (c *Controller) RestoreSource(ctx context.Context, req *SourceRequest) (*SourceResponse, error) {
 	return c.source(ctx, req.SourceID, c.service.RestoreSource)
+}
+
+func (c *Controller) RefreshSource(ctx context.Context, req *SourceRequest) (*SourceResponse, error) {
+	return c.source(ctx, req.SourceID, c.service.RefreshSource)
 }
 
 func (c *Controller) source(ctx context.Context, sourceID string, op func(context.Context, identity.Actor, string, string) (*versioncontrol.Source, error)) (*SourceResponse, error) {

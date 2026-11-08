@@ -63,20 +63,28 @@ const (
 	ActionConnectionInstall          = "connection.install"
 	ActionConnectionList             = "connection.list"
 	ActionConnectionListRepositories = "connection.list_repositories"
+	ActionConnectionReactivate       = "connection.reactivate"
 	ActionConnectionRead             = "connection.read"
+	ActionConnectionRevoke           = "connection.revoke"
+	ActionConnectionSuspend          = "connection.suspend"
 	ActionSourceArchive              = "source.archive"
 	ActionSourceCreate               = "source.create"
 	ActionSourceList                 = "source.list"
 	ActionSourceRead                 = "source.read"
+	ActionSourceRefresh              = "source.refresh"
 	ActionSourceRestore              = "source.restore"
 )
 
 // Audit event types this capability emits.
 const (
-	EventConnectionCreated  = "connection.created"
-	EventConnectionArchived = "connection.archived"
+	EventConnectionCreated     = "connection.created"
+	EventConnectionArchived    = "connection.archived"
+	EventConnectionSuspended   = "connection.suspended"
+	EventConnectionRevoked     = "connection.revoked"
+	EventConnectionReactivated = "connection.reactivated"
 
 	EventSourceCreated  = "source.created"
+	EventSourceUpdated  = "source.updated"
 	EventSourceArchived = "source.archived"
 	EventSourceRestored = "source.restored"
 )

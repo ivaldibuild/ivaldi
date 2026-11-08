@@ -89,3 +89,11 @@ func (a *authorized) RestoreSource(ctx context.Context, actor identity.Actor, or
 	}
 	return a.next.RestoreSource(ctx, actor, organizationID, sourceID)
 }
+
+func (a *authorized) RefreshSource(ctx context.Context, actor identity.Actor, organizationID, sourceID string) (*versioncontrol.Source, error) {
+	ctx, err := a.decide(ctx, actor, versioncontrol.PermissionSourceManage, organizationID, sourceID, versioncontrol.ActionSourceRefresh, sourceID)
+	if err != nil {
+		return nil, err
+	}
+	return a.next.RefreshSource(ctx, actor, organizationID, sourceID)
+}

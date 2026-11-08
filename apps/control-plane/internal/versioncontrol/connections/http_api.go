@@ -35,6 +35,9 @@ func (c *Controller) RegisterRoutes(h huma.API) {
 	register(h, "get-connection", http.MethodGet, "/connections/{connection_id}", "Get a version-control connection", 0, c.GetConnection)
 	register(h, "list-connection-repositories", http.MethodGet, "/connections/{connection_id}/repositories", "List the repositories a connection's account lets Ivaldi read", 0, c.ListRepositories)
 	register(h, "archive-connection", http.MethodPost, "/connections/{connection_id}/archive", "Archive a version-control connection", 0, c.ArchiveConnection)
+	register(h, "suspend-connection", http.MethodPost, "/connections/{connection_id}/suspend", "Mark a version-control connection unusable", 0, c.SuspendConnection)
+	register(h, "revoke-connection", http.MethodPost, "/connections/{connection_id}/revoke", "Mark a version-control connection unusable for good", 0, c.RevokeConnection)
+	register(h, "reactivate-connection", http.MethodPost, "/connections/{connection_id}/reactivate", "Make a suspended or revoked connection usable again", 0, c.ReactivateConnection)
 }
 
 func register[I, O any](h huma.API, id, method, path, summary string, status int, handler func(context.Context, *I) (*O, error)) {
@@ -96,11 +99,27 @@ func (c *Controller) GetConnection(ctx context.Context, req *ConnectionRequest) 
 }
 
 func (c *Controller) ArchiveConnection(ctx context.Context, req *ConnectionRequest) (*ConnectionResponse, error) {
+	return c.connectionAction(ctx, req.ConnectionID, c.service.ArchiveConnection)
+}
+
+func (c *Controller) SuspendConnection(ctx context.Context, req *ConnectionRequest) (*ConnectionResponse, error) {
+	return c.connectionAction(ctx, req.ConnectionID, c.service.SuspendConnection)
+}
+
+func (c *Controller) RevokeConnection(ctx context.Context, req *ConnectionRequest) (*ConnectionResponse, error) {
+	return c.connectionAction(ctx, req.ConnectionID, c.service.RevokeConnection)
+}
+
+func (c *Controller) ReactivateConnection(ctx context.Context, req *ConnectionRequest) (*ConnectionResponse, error) {
+	return c.connectionAction(ctx, req.ConnectionID, c.service.ReactivateConnection)
+}
+
+func (c *Controller) connectionAction(ctx context.Context, connectionID string, op func(context.Context, identity.Actor, string, string) (*versioncontrol.Connection, error)) (*ConnectionResponse, error) {
 	who, err := caller(ctx)
 	if err != nil {
 		return nil, err
 	}
-	connection, err := c.service.ArchiveConnection(ctx, who.Actor, who.OrganizationID, req.ConnectionID)
+	connection, err := op(ctx, who.Actor, who.OrganizationID, connectionID)
 	if err != nil {
 		return nil, translateToHttpError(ctx, err)
 	}

@@ -291,6 +291,56 @@ func (c *Connection) Archive() {
 	c.RecordEvent(ConnectionArchived{c.Snapshot()})
 }
 
+// Suspend marks a Connection unusable, such as when its provider suspends
+// the installation. Suspending a suspended Connection does nothing.
+func (c *Connection) Suspend() error {
+	if c.Archived() {
+		return fmt.Errorf("%w: connection %s", ErrArchived, c.ID())
+	}
+	if c.status == StatusSuspended {
+		return nil
+	}
+	if c.status == StatusRevoked {
+		return fmt.Errorf("%w: a revoked connection cannot be suspended", ErrConflict)
+	}
+	c.setStatus(StatusSuspended)
+	c.RecordEvent(ConnectionSuspended{c.Snapshot()})
+	return nil
+}
+
+// Revoke marks a Connection unusable for good, such as when its provider
+// uninstalls the app. Revoking a revoked Connection does nothing.
+func (c *Connection) Revoke() error {
+	if c.Archived() {
+		return fmt.Errorf("%w: connection %s", ErrArchived, c.ID())
+	}
+	if c.status == StatusRevoked {
+		return nil
+	}
+	c.setStatus(StatusRevoked)
+	c.RecordEvent(ConnectionRevoked{c.Snapshot()})
+	return nil
+}
+
+// Reactivate makes a suspended or revoked Connection usable again.
+// Reactivating an active Connection does nothing.
+func (c *Connection) Reactivate() error {
+	if c.Archived() {
+		return fmt.Errorf("%w: connection %s", ErrArchived, c.ID())
+	}
+	if c.status == StatusActive {
+		return nil
+	}
+	c.setStatus(StatusActive)
+	c.RecordEvent(ConnectionReactivated{c.Snapshot()})
+	return nil
+}
+
+func (c *Connection) setStatus(status Status) {
+	c.status = status
+	c.updatedAt = clock.Now()
+}
+
 func deref(s *string) string {
 	if s == nil {
 		return ""

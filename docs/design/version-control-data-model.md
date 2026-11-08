@@ -58,6 +58,10 @@ erDiagram
 
 **Comparing commits.** Delivery, or any other capability, asks for the commits between two SHAs in a Source. The request goes through `pkg/vcs` and the Connection's lookup path, and returns commit IDs, authors, and messages only ([ADR 0008](../adr/0008-reaching-customer-systems.md)).
 
+**Connection status.** A provider can suspend an installation or revoke it. `POST /v1/connections/{id}/suspend`, `/revoke`, and `/reactivate` record those states; a suspended or revoked Connection cannot be used for lookups, and its Sources show as disconnected. Nothing calls these from provider events yet; an administrator can.
+
+**Refreshing a Source.** `POST /v1/sources/{id}/refresh` re-reads the repository from the provider and updates its full name, default branch, visibility, and URLs. This handles renames and default-branch changes until provider webhooks update them automatically. The Source keeps its ID because it is keyed by the provider's stable repository ID.
+
 **Archiving.** This capability registers with the workspace capability as a dependent: a Project with active Sources cannot be archived ([workspace data model](workspace-data-model.md)). Disconnecting a Source sets `archived_at` and soft-deletes its IAM resource. Records that refer to it keep working, because the row stays.
 
 ## Invariants

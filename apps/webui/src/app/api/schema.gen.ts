@@ -712,6 +712,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/connections/{connection_id}/reactivate': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Make a suspended or revoked connection usable again */
+    post: operations['reactivate-connection'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/connections/{connection_id}/repositories': {
     parameters: {
       query?: never;
@@ -723,6 +740,40 @@ export interface paths {
     get: operations['list-connection-repositories'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/connections/{connection_id}/revoke': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Mark a version-control connection unusable for good */
+    post: operations['revoke-connection'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/connections/{connection_id}/suspend': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Mark a version-control connection unusable */
+    post: operations['suspend-connection'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1589,6 +1640,23 @@ export interface paths {
     put?: never;
     /** Record a Change that ties commits to a Session or Work Item */
     post: operations['record-change'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/sources/{source_id}/refresh': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Update a Source from the provider's current repository metadata */
+    post: operations['refresh-source'];
     delete?: never;
     options?: never;
     head?: never;
@@ -6658,6 +6726,38 @@ export interface operations {
       };
     };
   };
+  'reactivate-connection': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Connection's ID */
+        connection_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseConnectionSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
   'list-connection-repositories': {
     parameters: {
       query?: never;
@@ -6677,6 +6777,70 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ResponseListRepositorySnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'revoke-connection': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Connection's ID */
+        connection_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseConnectionSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'suspend-connection': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Connection's ID */
+        connection_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseConnectionSnapshot'];
         };
       };
       /** @description Error */
@@ -8901,6 +9065,38 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ResponseChangeSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'refresh-source': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Source's ID */
+        source_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseSourceSnapshot'];
         };
       };
       /** @description Error */

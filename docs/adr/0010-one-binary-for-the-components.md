@@ -1,6 +1,6 @@
 # ADR 0010: One binary runs the control plane, gateway, worker, and indexer
 
-- Status: Proposed
+- Status: Proposed; the runtime agent is now one agent per runtime, starting with `apps/k8s-agent` ([ADR 0013](0013-one-agent-per-runtime.md))
 - Date: 2026-10-21
 
 ## Context

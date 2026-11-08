@@ -1,6 +1,6 @@
 # ADR 0006: Release and delivery tracking
 
-- Status: Proposed
+- Status: Proposed; the single runtime agent with providers is replaced by [ADR 0013](0013-one-agent-per-runtime.md)
 - Date: 2026-10-18
 
 ## Context
@@ -84,7 +84,7 @@ It does two jobs:
 - **Observe:** watch Targets for workload changes, rollout progress, and health, and report them as Deployments with the observed source. Where an external deployer exposes its own state, such as an Argo CD Application or a Flux Kustomization, the agent can read it for richer status.
 - **Execute:** when enabled, receive a Deployment assignment, apply it, and report its progress.
 
-Runtimes sit behind an Ivaldi-owned interface. Kubernetes is the first provider. Helm and plain manifests are ways that provider applies a Release, not separate providers. A future runtime is a new provider, not a change to the domain.
+Runtimes sit behind an Ivaldi-owned interface. Kubernetes is the first provider. Helm and plain manifests are ways that provider applies a Release, not separate providers. A future runtime is a new provider, not a change to the domain. ([ADR 0013](0013-one-agent-per-runtime.md) makes each runtime its own agent instead; the domain stays runtime-neutral.)
 
 ### Deployments link to Builds by digest
 

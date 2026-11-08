@@ -14,7 +14,9 @@ The main difference is secrets. Octopus stores sensitive values itself, encrypte
 - **Two kinds of value: `text` and `secret`.** A `text` value is stored in Ivaldi. A `secret` value is a reference (Secret Store, path, field, version) and is resolved by the agent. There is no third kind for secrets that Ivaldi stores encrypted. Customers without a secret manager use the `kubernetes` Secret Store, which reads a Secret in the Target's namespace. An Ivaldi-held store for managed-cloud tenants is ADR 0004's open question, and would be another Secret Store kind rather than a new kind of value.
 - **Variable Sets share variables across Applications.** A Variable Set belongs to a Workspace, and Applications include it, like Octopus's library variable sets.
 - **A Release takes a snapshot of its variables.** As in Octopus, creating a Release snapshots the variables it will deploy with, so redeploying it or rolling back to it uses the configuration it was released with, not whatever the Application holds that day. The snapshot can be refreshed later, which creates a new revision. A Release's Builds stay immutable once it is published.
-- **Every Deployment records the snapshot revision it used.** Together with the secret versions the agent reports, a Deployment's history says exactly what configuration it shipped.
+- **Every Deployment records the snapshot revision it used and the secret versions it resolved.** Its history says exactly what configuration it shipped.
+- **A rollback restores that configuration.** Rolling back replays the snapshot revision and the secret versions of the Deployment being restored, so it brings back the old secret values too, not just the old code.
+- **A refresh that changes production needs a human's approval.** It changes what an already-approved Release would deploy, so policy treats it like a production Deployment.
 - **Ivaldi resolves scopes; the agent resolves secrets and bindings.** The control plane picks the winning value of each variable for the Deployment's Target. The agent fetches secrets, fills in bindings, and hands the result to the chart.
 - **Ambiguity is refused at save time.** Octopus resolves some ties non-deterministically. Ivaldi refuses to save two values that could tie.
 
@@ -79,22 +81,42 @@ System variables are always defined, and can be bound but not overridden:
 
 **Creating a Release takes a snapshot** of every variable it will deploy with: the Application's variables and those of the Variable Sets it includes, with all their scoped values and each value's source. Secret values are snapshotted as references; the secret itself is read when the Release is deployed. A snapshot is revision 1 of the Release's variables.
 
-**Refreshing creates a new revision.** "Update variables" on a Release takes a fresh snapshot from the Application's current variables and makes it the Release's current revision. Earlier revisions are kept. Octopus can also update chosen variables only; Ivaldi refreshes the whole snapshot, and the API's preview shows what would change before it does. Refreshing needs `release.manage`. It is allowed on a draft and on a published Release, because a snapshot is configuration and not one of the Release's Builds. It is not allowed on a withdrawn Release.
+**Refreshing creates a new revision.** "Update variables" on a Release takes a fresh snapshot from the Application's current variables and makes it the Release's current revision. Earlier revisions are kept. Octopus can also update chosen variables only; Ivaldi refreshes the whole snapshot, and the API's preview shows what would change before it does. Refreshing needs `release.manage`, and a human's approval when it changes what production would get ([below](#refreshes-that-change-production-need-approval)). It is allowed on a draft and on a published Release, because a snapshot is configuration and not one of the Release's Builds. It is not allowed on a withdrawn Release.
 
-**Deployments use the current revision** of their Release's snapshot when they are requested, and record which revision that was:
+**Deployments use the current revision** of their Release's snapshot when they are requested, except rollbacks (below), and record which revision that was. Redeploying a Release uses its current revision, so a redeploy after a variable change needs a refresh first, as in Octopus. A Deployment's record keeps the revision it used even if the Release is refreshed later.
 
-- redeploying a Release uses its current revision, so a redeploy after a variable change needs a refresh first, as in Octopus;
-- rolling back to an earlier Release uses that Release's current revision, which is the configuration it last shipped with;
-- a Deployment's record keeps the revision it used even if the Release is refreshed later.
+**A snapshot names secrets; a Deployment pins their versions.** A snapshot freezes which secret is used, not its value. A rollout or a redeploy resolves each secret to the version its value pins, or to the latest when it pins none, which is how a redeploy picks up a rotated secret. The agent reports the version it resolved for every secret before it applies anything, and the control plane stores them on the Deployment ([Kubernetes agent](k8s-agent.md#variables-and-secrets)).
 
-**Secrets with no pinned version resolve to the latest at deploy time.** A snapshot freezes which secret is used, not its value. A customer who needs a rollback to restore an old secret value pins `version`. The agent records the version it resolved either way ([Kubernetes agent](k8s-agent.md#variables-and-secrets)).
+### Rollbacks restore the configuration they replace
+
+The control plane decides a requested Deployment's `reason` (today every executed Deployment is a `rollout`):
+
+- `redeploy` when the Release is the placement's current Release;
+- `rollback` when the Release succeeded on this Target before (one of its Deployments there reached `healthy`) and is not current;
+- `rollout` otherwise.
+
+A **rollback replays the last Deployment of that Release on that Target that reached `healthy`**: it uses that Deployment's snapshot revision, not the Release's current one, and pins every secret to the version that Deployment resolved. The assignment carries the pins, and the agent fetches exactly those versions. Restoring a Release therefore restores the code, the configuration, and the secret values it last ran with there.
+
+- **A pinned version may be gone.** Secret managers keep a limited history: Vault's KV engine keeps ten versions by default, and AWS Secrets Manager eventually removes versions that have no staging label. A rollback whose pinned version no longer exists fails before anything is applied, naming the secret. The self-hosting docs will say how many versions to keep.
+- **Rolling back with current secrets is a deliberate choice.** The person can then request the rollback again with `secrets: latest`, which keeps the restored snapshot revision but resolves secrets to their latest versions. It is recorded on the Deployment and audited, and policy sees it like any other Deployment request.
+- **A Release last seen through observation has nothing to replay.** If the Release's last healthy Deployment on the Target was observed rather than executed, there are no recorded versions. The rollback uses the Release's current revision and latest secrets, and the deploy sheet says so before it is requested.
+
+### Refreshes that change production need approval
+
+When someone refreshes a Release's snapshot, the control plane resolves the old and the new revision for every active Target whose Environment has the `production` tier and is in the Release's Channel's Lifecycle. If any variable's winning value differs for any of them (a text value, a secret reference, or a pinned version), the refresh changes production.
+
+- **Policy decides, delivery reports.** Delivery asks the single authorizer for `release.refresh_variables`, naming the production Environments the change touches ([ADR 0003](../adr/0003-identity-access-and-policy.md)). Requiring a human's approval for that is a built-in policy rule, like ADR 0007's rule for autonomous agents, not code in delivery. A refresh that changes no production value needs no approval.
+- **The new revision waits.** It is stored as `pending_approval` and does not become current until it is approved, so Deployments meanwhile keep using the current revision. A refused approval marks it `rejected`. A Release has at most one pending revision; refreshing again replaces it, marking the earlier one `superseded`.
+- **Approvers see the change.** The approval request shows which variables change, for which production Targets, from what to what, with secrets shown as references. It goes to the Application's owning Team by default.
+- **Who can approve.** A human user, never an agent Session, who holds `variable.manage` on every production Environment the change touches.
+- **Why only refreshes.** A new Release's snapshot needs no approval of its own: its first Deployment to production is already the gate, and the deploy sheet shows its variables. A refresh needs one because it changes what an already-approved Release would deploy, including on its next rollback.
 
 ## Resolving a Deployment's variables
 
 When the control plane builds an assignment, it takes the Deployment's snapshot revision and, for each variable, picks the winning value for the Deployment's Target, Environment, and Channel. The assignment carries, for each variable with a winning value:
 
 - `name`, `kind`, `values_path`, `deliver_as`, and its source (Application or Variable Set);
-- the `text` value, or the secret reference;
+- the `text` value, or the secret reference with the version to fetch: the one the value pins, the one a rollback replays, or none for the latest;
 
 plus every system variable.
 
@@ -123,16 +145,18 @@ All in the `delivery` schema, following its conventions. Secret Stores belong to
 | `application_variable_sets` | | Which Variable Sets an Application includes |
 | `variables` | `var` | Exactly one of `application_id` or `variable_set_id`; `name` (unique case-insensitively within its owner), `description`, `kind`, `values_path`, `deliver_as` |
 | `variable_values` | `vvl` | Child of a variable: `text_value`, or `store_id`, `path`, `field`, `version`; `environment_ids`, `target_ids`, `channel_ids` |
-| `variable_snapshots` | `vsn` | One per Release revision: `release_id`, `revision`, the snapshot as JSON, who took it and when |
+| `variable_snapshots` | `vsn` | One per Release revision: `release_id`, `revision`, the snapshot as JSON, `status` (`current`, `pending_approval`, `rejected`, `superseded`), `approval_decision_id`, who took it and when |
 
-`releases` gains `variable_snapshot_id` (the current revision), and `deployments` gains `variable_snapshot_id` (the revision it used). A variable and its values form one aggregate, changed through the variable's methods. A Variable Set cannot be archived while an active Application includes it. Environments, Targets, and Channels named in a scope cannot be archived while an active value names them, matching delivery's rule that configuration is not archived out from under what uses it.
+`releases` gains `variable_snapshot_id` (the current revision). `deployments` gains `variable_snapshot_id` (the revision it used), `secret_versions` (for each secret variable: its store, path, field, and the version ID the agent resolved), `secrets_latest` (a rollback that asked for current secrets), and `restores_deployment_id` (for a rollback, the Deployment it replays). A variable and its values form one aggregate, changed through the variable's methods. A Variable Set cannot be archived while an active Application includes it. Environments, Targets, and Channels named in a scope cannot be archived while an active value names them, matching delivery's rule that configuration is not archived out from under what uses it.
 
 `apply_config.values_refs` stays for whole values documents, such as a values file a platform team keeps in a ConfigMap. Variables are for individual values.
 
 ## Invariants
 
 - **No secret value is stored by Ivaldi**, in variables, snapshots, audit records, events, or Deployment history. Only references and resolved version IDs are.
-- **Every Deployment records its snapshot revision**, and a snapshot revision never changes once taken.
+- **Every executed Deployment records its snapshot revision and the secret versions it resolved**, and a snapshot revision never changes once taken.
+- **A rollback deploys the snapshot revision and secret versions of the Deployment it restores**, or fails, unless the person asked for current secrets.
+- **A revision that changes production values becomes current only with a human's approval.**
 - **No two values of a variable can tie** for any Deployment, within one owner or across an Application's included Variable Sets.
 - **A Deployment uses only Secret Stores allowed for its Environment.**
 - **Changing a value scoped to an Environment needs permission on that Environment.**
@@ -141,6 +165,7 @@ All in the `delivery` schema, following its conventions. Secret Stores belong to
 
 - **Prompted variables.** Octopus can ask for a value when a Deployment is requested. Useful for one-off operations, but it puts unreviewed input into a Deployment; it waits for a need.
 - **Partial refresh.** Whether "Update variables" should refresh chosen variables only, as Octopus allows, or the whole snapshot as proposed.
-- **Refreshing a Release deployed to a protected Environment.** Whether policy should require an approval to refresh a snapshot that production will use, as it does for executed Deployments.
+- **Four eyes.** Whether the person who refreshed a snapshot may approve it themselves when they hold the permission. Octopus has no such rule; policy could add one for production.
+- **Approvals for other tiers.** Only `production` needs approval for now. Whether `staging`, or Environments named by policy, should too.
 - **Secret rotation without a Release.** A rotated secret reaches workloads at the next Deployment. Redeploying automatically when an unpinned secret's version changes would be a new Deployment `reason` and needs its own design.
 - **Variables as code.** Octopus can keep variables in Git with the deployment process. Ivaldi could read them from the Source a Release was built from, which would version them with the code; sensitive values would stay references either way.

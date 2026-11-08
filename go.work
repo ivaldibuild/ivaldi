@@ -3,6 +3,6 @@ go 1.27.1
 use (
     ./apps/cli
     ./apps/control-plane
-    ./apps/runtime-agent
+    ./apps/k8s-agent
     ./pkg
 )

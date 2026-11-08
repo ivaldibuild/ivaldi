@@ -1,5 +1,6 @@
 CLI_BINARY_NAME := ivaldictl
 SERVER_BINARY_NAME := ivaldi
+K8S_AGENT_BINARY_NAME := ivaldi-k8s-agent
 
 # Stamped into both binaries' --version.
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
@@ -36,9 +37,10 @@ LOCAL_DATABASE_URL ?= postgres://ivaldi_db_user:$(PG_PASSWORD)@127.0.0.1:5433/iv
 
 help:
 	@echo "Build (into bin/, version $(VERSION))"
-	@echo "  make build                                         Build $(SERVER_BINARY_NAME) and $(CLI_BINARY_NAME)"
+	@echo "  make build                                         Build $(SERVER_BINARY_NAME), $(CLI_BINARY_NAME), and $(K8S_AGENT_BINARY_NAME)"
 	@echo "  make build-server                                  Build $(SERVER_BINARY_NAME): control plane, gateway, worker, indexer"
 	@echo "  make build-cli                                     Build $(CLI_BINARY_NAME)"
+	@echo "  make build-k8s-agent                               Build $(K8S_AGENT_BINARY_NAME)"
 	@echo ""
 	@echo "API clients"
 	@echo "  make openapi                                       Regenerate api/openapi.json, ivaldictl's client, and the web app's types"
@@ -69,6 +71,10 @@ build: build-server build-cli
 build-cli: prepare
 	@echo "Building CLI binary..."
 	@go build $(LDFLAGS) -o bin/$(CLI_BINARY_NAME) ./apps/cli/cmd
+
+build-k8s-agent: prepare
+	@echo "Building Kubernetes agent binary..."
+	@go build $(LDFLAGS) -o bin/$(K8S_AGENT_BINARY_NAME) ./apps/k8s-agent/cmd
 
 build-server: prepare
 	@echo "Building server binary..."

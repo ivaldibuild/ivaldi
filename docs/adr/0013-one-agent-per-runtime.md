@@ -1,6 +1,6 @@
 # ADR 0013: One agent per runtime, Kubernetes first
 
-- Status: Proposed
+- Status: Proposed; agents serve Clusters rather than single Targets since [ADR 0014](0014-agents-serve-clusters.md)
 - Date: 2026-11-08
 - Related: [ADR 0001](0001-deployment-topology.md), [ADR 0003](0003-identity-access-and-policy.md), [ADR 0006](0006-release-and-delivery-tracking.md), [ADR 0008](0008-reaching-customer-systems.md), [ADR 0010](0010-one-binary-for-the-components.md), [workload enrolment](../design/workload-enrolment.md)
 

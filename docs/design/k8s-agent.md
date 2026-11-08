@@ -2,7 +2,7 @@
 
 - Status: Draft for review
 - Date: 2026-11-08
-- Related: [ADR 0001](../adr/0001-deployment-topology.md), [ADR 0003](../adr/0003-identity-access-and-policy.md), [ADR 0004](../adr/0004-credentials-and-keys.md), [ADR 0006](../adr/0006-release-and-delivery-tracking.md), [ADR 0008](../adr/0008-reaching-customer-systems.md), [ADR 0013](../adr/0013-one-agent-per-runtime.md), [delivery data model](delivery-data-model.md), [workload enrolment](workload-enrolment.md)
+- Related: [ADR 0001](../adr/0001-deployment-topology.md), [ADR 0003](../adr/0003-identity-access-and-policy.md), [ADR 0004](../adr/0004-credentials-and-keys.md), [ADR 0006](../adr/0006-release-and-delivery-tracking.md), [ADR 0008](../adr/0008-reaching-customer-systems.md), [ADR 0013](../adr/0013-one-agent-per-runtime.md), [ADR 0014](../adr/0014-agents-serve-clusters.md), [delivery data model](delivery-data-model.md), [workload enrolment](workload-enrolment.md)
 
 This document designs `ivaldi-k8s-agent` (`apps/k8s-agent`), the agent that runs inside a customer's Kubernetes cluster ([ADR 0013](../adr/0013-one-agent-per-runtime.md)). One agent serves a whole cluster, and through it every Target in that cluster. It has the two jobs [ADR 0006](../adr/0006-release-and-delivery-tracking.md) gives a runtime agent: **observe** what runs on its Targets and report it, and, when allowed, **execute** Deployments the control plane assigns to it. When it executes, it resolves the Application's secrets from the customer's secret manager and hands them to the chart, so secret values never reach Ivaldi ([ADR 0004](../adr/0004-credentials-and-keys.md)). It never touches the control-plane database and only ever connects out ([ADR 0008](../adr/0008-reaching-customer-systems.md)).
 
@@ -22,7 +22,7 @@ The control plane already serves part of what the agent needs: enrolment and ren
 
 ## Clusters
 
-A **Cluster** is a Kubernetes cluster an Organization deploys to. It belongs to the Organization rather than a Workspace, because one cluster usually hosts several Workspaces' Environments.
+A **Cluster** is a Kubernetes cluster an Organization deploys to ([ADR 0014](../adr/0014-agents-serve-clusters.md)). It belongs to the Organization rather than a Workspace, because one cluster usually hosts several Workspaces' Environments.
 
 - **clusters** (delivery, prefix `cls`): `slug` unique in the Organization, `display_name`, `runtime` (`kubernetes`), `agent_principal_id`, `agent_capabilities` (from the last heartbeat, below), `last_reported_at`, and soft deletion.
 - **Targets name their Cluster.** A Kubernetes Target's `locator.cluster` must be the slug of an active Cluster in the Organization. The locator keeps its shape, so nothing else about Targets changes.

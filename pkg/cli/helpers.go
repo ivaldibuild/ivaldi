@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"time"
+
 	"github.com/spf13/cobra"
 )
 
-// addPersistentFlags adds the provided flags to the given command as persistent flags.
+// AddPersistentFlags adds the provided flags to the given command as persistent flags.
 func AddPersistentFlags(cmd *cobra.Command, flags map[string]Flag) {
 	for key, flag := range flags {
 		switch flag.Type {
@@ -31,6 +33,12 @@ func AddPersistentFlags(cmd *cobra.Command, flags map[string]Flag) {
 				cmd.PersistentFlags().BoolP(key, flag.Short, flag.Default.(bool), flag.Description)
 			} else {
 				cmd.PersistentFlags().Bool(key, flag.Default.(bool), flag.Description)
+			}
+		case "duration":
+			if flag.Short != "" {
+				cmd.PersistentFlags().DurationP(key, flag.Short, flag.Default.(time.Duration), flag.Description)
+			} else {
+				cmd.PersistentFlags().Duration(key, flag.Default.(time.Duration), flag.Description)
 			}
 		}
 	}

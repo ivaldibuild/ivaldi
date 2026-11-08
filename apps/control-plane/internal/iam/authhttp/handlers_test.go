@@ -410,6 +410,44 @@ func TestProviderSignIn(t *testing.T) {
 	assert.Equal(t, clientRedir+"?code=c-org_acme&state=xyz", rec.Header().Get("Location"))
 }
 
+// A GitHub App that also signs people in may return from an install to the
+// sign-in callback; the callback sends it on to the web app's install page.
+func TestProviderCallbackSendsAnInstallReturnOn(t *testing.T) {
+	const page = "https://app.example.com/settings/connections/github/callback"
+	r, gh := newProviderRig(t, "1", false, nil)
+	r2 := newRig(t, WithProviders(Provider{Kind: "github", Connector: gh, OrganizationID: "org_acme", IdentityProviderID: "idp_gh"}),
+		WithInstallReturns(map[string]string{"github": page}))
+
+	// A sign-in in progress in the same browser keeps its cookie.
+	ch := r2.challenge(t, authorizePath)
+	r2.get("/auth/oauth/github/start?login_challenge=" + url.QueryEscape(ch))
+	hasFlow := func() bool {
+		for name := range r2.jar {
+			if strings.HasSuffix(name, oauthCookie) {
+				return true
+			}
+		}
+		return false
+	}
+	require.True(t, hasFlow())
+
+	install := url.Values{"code": {"c"}, "installation_id": {"42"}, "setup_action": {"install"}, "state": {"S"}}
+	rec := r2.get("/auth/oauth/github/callback?" + install.Encode())
+
+	require.Equal(t, http.StatusFound, rec.Code)
+	loc := location(t, rec)
+	assert.Equal(t, "app.example.com", loc.Host)
+	assert.Equal(t, "/settings/connections/github/callback", loc.Path)
+	assert.Equal(t, install, loc.Query(), "the code, installation, and state go on unchanged")
+	assert.Empty(t, gh.Callbacks, "the code is not redeemed as a sign-in")
+	assert.True(t, hasFlow(), "the sign-in in progress keeps its cookie")
+
+	t.Run("without install returns configured, it is an expired sign-in", func(t *testing.T) {
+		loc := location(t, r.get("/auth/oauth/github/callback?"+install.Encode()))
+		assert.Equal(t, errorExpired, loc.Query().Get("error"))
+	})
+}
+
 func TestProviderCallbackErrors(t *testing.T) {
 	t.Run("a state from another browser", func(t *testing.T) {
 		r, gh := newProviderRig(t, "1", false, nil)

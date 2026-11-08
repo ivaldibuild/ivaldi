@@ -8,7 +8,8 @@ Without this configuration the control plane still starts, but connecting GitHub
 
 On github.com, or on your GitHub Enterprise Server, create a GitHub App with:
 
-- **Callback URL**: the web app's page that completes an install (see [The install flow](#the-install-flow)).
+- **Callback URL**: `<web app URL>/settings/connections/github/callback`, such as `https://ivaldi.example.com/settings/connections/github/callback`. This is the web app's address, not the control plane's. If the same App also signs people in (`auth.providers.github`), keep its sign-in callback too, in any order. GitHub returns from an install to the first callback URL in the list, and its settings sort the list themselves; when that is the sign-in callback, the control plane sends the install on to the web app's page. Leave **Setup URL** empty: GitHub disables it and ignores it while user authorization during installation is on.
+- **Redirect on update** (optional): on, so someone can connect an account where the App is already installed by choosing it on GitHub's install page, rather than uninstalling and installing again.
 - **Request user authorization (OAuth) during installation**: on. GitHub then sends the person back to the callback URL with an authorization code, which Ivaldi uses to check they can access the installation.
 - **Repository permissions**: Metadata (read) and Contents (read).
 
@@ -24,6 +25,7 @@ Generate a private key and a client secret for the App, and note its App ID, cli
 | `version_control.github.client_secret_file` | `IVALDI_VERSION_CONTROL_GITHUB_CLIENT_SECRET_FILE` | A file holding the client secret. `IVALDI_VERSION_CONTROL_GITHUB_CLIENT_SECRET` sets it directly; setting both is an error. |
 | `version_control.github.private_key_file` | `IVALDI_VERSION_CONTROL_GITHUB_PRIVATE_KEY_FILE` | A file holding the App's PEM private key. |
 | `version_control.github.web_url` | `IVALDI_VERSION_CONTROL_GITHUB_WEB_URL` | GitHub Enterprise Server only, such as `https://ghe.example.com`. Leave it empty for github.com. |
+| `version_control.github.install_callback_url` | `IVALDI_VERSION_CONTROL_GITHUB_INSTALL_CALLBACK_URL` | The web app's page that finishes an install. Leave it empty to use `/settings/connections/github/callback` on `auth.login_url`'s host. |
 | `version_control.github.api_url` | `IVALDI_VERSION_CONTROL_GITHUB_API_URL` | Overrides the API address, which is otherwise `https://api.github.com`, or `<web_url>/api/v3`. |
 
 If any of these is set, the control plane refuses to start until the required ones are all set. Secrets are never read from the YAML file. Ivaldi contacts only this one GitHub host: a Connection that names any other host cannot be used.
@@ -32,9 +34,11 @@ Install state is sealed with keys derived from `auth.signing_key_files`, so ever
 
 ## The install flow
 
+Owners and admins start it from **Organisation settings → Connections → Connect GitHub**. Under the hood:
+
 1. The web app calls `POST /v1/connections/installations` with `{"provider": "github"}`. The caller needs `connection.manage` on the Organization. The response gives a `url` and an `expires_at` 30 minutes away.
 2. The web app sends the person to `url`, where they install the App and authorize it.
 3. GitHub sends them to the callback URL with `code`, `installation_id`, and `state`.
-4. The callback page calls `POST /v1/connections/installations/complete` with `provider`, `state`, `code`, and `installation_id`, as the same signed-in person. Ivaldi checks the state was issued to them for their Organization, exchanges the code for their GitHub user token, and creates the Connection only if the installation is one of the App's installations they can access. It does not keep the user token.
+4. The callback page (signing the person in again first if their session lapsed) calls `POST /v1/connections/installations/complete` with `provider`, `state`, `code`, and `installation_id`, as the same signed-in person. Ivaldi checks the state was issued to them for their Organization, exchanges the code for their GitHub user token, and creates the Connection only if the installation is one of the App's installations they can access. It does not keep the user token. The page then returns to Connections and removes the code from the address bar and history.
 
 An installation can be connected to one Organization at a time. Archive its Connection to connect it elsewhere.

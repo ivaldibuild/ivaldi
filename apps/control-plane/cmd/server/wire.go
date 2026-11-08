@@ -455,9 +455,14 @@ func (a *app) wireSignIn(cfg *config.Config, logger logging.Logger, passwords ha
 		return err
 	}
 	providers = append(providers, platform...)
-	var signUp []authhttp.Option
+	var extra []authhttp.Option
 	if cfg.Mode() == config.DeploymentModeCloud {
-		signUp = append(signUp, authhttp.WithOnboarding(a.onboarding))
+		extra = append(extra, authhttp.WithOnboarding(a.onboarding))
+	}
+	// GitHub may return from an App install to the sign-in callback, when the
+	// App also signs people in; send those returns on to the web app.
+	if page := cfg.GitHubInstallCallbackURL(); cfg.VersionControl.GitHub.Configured() && page != "" {
+		extra = append(extra, authhttp.WithInstallReturns(map[string]string{"github": page}))
 	}
 
 	cookieKeys, err := a.keys.DeriveKeys(session.KeyPurpose)
@@ -480,7 +485,7 @@ func (a *app) wireSignIn(cfg *config.Config, logger logging.Logger, passwords ha
 		authhttp.WithAuthorizationServer(a.oauth),
 		authhttp.WithCodec(codec),
 		authhttp.WithProviders(providers...),
-	}, signUp...)...)
+	}, extra...)...)
 	if err != nil {
 		return err
 	}

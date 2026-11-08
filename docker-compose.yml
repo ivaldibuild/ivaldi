@@ -68,6 +68,12 @@ services:
           capability=$$(basename "$$(dirname "$$dir")")
           table=$$capability
           if [ "$$capability" = versioncontrol ]; then table=version_control; fi
+          # A capability scaffolded before its first migration has an empty
+          # directory, which migrate refuses ("first .: file does not exist").
+          if ! ls "$$dir"/*.up.sql >/dev/null 2>&1; then
+            echo "skipping $$capability: no migrations yet"
+            continue
+          fi
           echo "migrating $$capability"
           migrate -path "$$dir" -database "$$DATABASE_URL&x-migrations-table=$${table}_schema_migrations" up
         done

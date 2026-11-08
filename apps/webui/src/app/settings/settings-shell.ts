@@ -55,6 +55,7 @@ export class SettingsShell {
     { path: '/settings/agents', label: 'Agents' },
     { path: '/settings/workspaces', label: 'Workspaces' },
     { path: '/settings/teams', label: 'Teams' },
+    { path: '/settings/connections', label: 'Connections' },
   ];
 
   private readonly url = toSignal(

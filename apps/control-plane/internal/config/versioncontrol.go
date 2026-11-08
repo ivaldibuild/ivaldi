@@ -2,8 +2,13 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 )
+
+// gitHubInstallCallbackPath is the web app's page that finishes a GitHub
+// App install.
+const gitHubInstallCallbackPath = "/settings/connections/github/callback"
 
 // VersionControl configures the version-control providers Ivaldi reads from.
 type VersionControl struct {
@@ -17,9 +22,9 @@ type VersionControl struct {
 // here rather than stored with a Connection.
 //
 // The App must have "Request user authorization (OAuth) during
-// installation" turned on, with its callback URL set to the web app's page
-// that completes an install, so GitHub confirms the person installing can
-// access the installation.
+// installation" turned on, with its callback URL set to the web app's
+// <web app URL>/settings/connections/github/callback, so GitHub confirms
+// the person installing can access the installation.
 type GitHubApp struct {
 	// AppID is the GitHub App's ID.
 	AppID int64 `yaml:"app_id" env:"IVALDI_VERSION_CONTROL_GITHUB_APP_ID"`
@@ -40,12 +45,32 @@ type GitHubApp struct {
 	// APIURL overrides the API address, which is otherwise api.github.com,
 	// or <web_url>/api/v3 for GitHub Enterprise Server.
 	APIURL string `yaml:"api_url" env:"IVALDI_VERSION_CONTROL_GITHUB_API_URL"`
+	// InstallCallbackURL is the web app's page that finishes an install.
+	// Leave it empty to use /settings/connections/github/callback on
+	// auth.login_url's host. When the App also signs people in, GitHub may
+	// return from an install to the sign-in callback instead, which sends
+	// the person on to this page.
+	InstallCallbackURL string `yaml:"install_callback_url" env:"IVALDI_VERSION_CONTROL_GITHUB_INSTALL_CALLBACK_URL"`
+}
+
+// GitHubInstallCallbackURL is the web app's page that finishes a GitHub App
+// install: InstallCallbackURL, or the page on auth.login_url's host.
+func (c *Config) GitHubInstallCallbackURL() string {
+	if u := c.VersionControl.GitHub.InstallCallbackURL; u != "" {
+		return u
+	}
+	login, err := url.Parse(c.Auth.LoginURL)
+	if err != nil || login.Host == "" {
+		return ""
+	}
+	return (&url.URL{Scheme: login.Scheme, Host: login.Host, Path: gitHubInstallCallbackPath}).String()
 }
 
 // Configured reports whether any GitHub App setting is present.
 func (g GitHubApp) Configured() bool {
 	return g.AppID != 0 || g.Slug != "" || g.PrivateKeyFile != "" || g.ClientID != "" ||
-		g.ClientSecret != "" || g.ClientSecretFile != "" || g.WebURL != "" || g.APIURL != ""
+		g.ClientSecret != "" || g.ClientSecretFile != "" || g.WebURL != "" || g.APIURL != "" ||
+		g.InstallCallbackURL != ""
 }
 
 // PrivateKey reads the App's PEM private key.
@@ -91,5 +116,8 @@ func (c *Config) validateVersionControl(v *validator) {
 	}
 	if g.APIURL != "" {
 		v.httpsURL("version_control.github.api_url", g.APIURL)
+	}
+	if g.InstallCallbackURL != "" {
+		v.redirectURI("version_control.github.install_callback_url", g.InstallCallbackURL)
 	}
 }

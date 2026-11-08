@@ -77,6 +77,16 @@ export type ApiToken = Schemas['APITokenSnapshot'];
 /** A token as it is issued: the only time its secret is shown. */
 export type IssuedApiToken = Schemas['IssuedToken'];
 
+/** How the Organisation reaches one version-control account, such as a GitHub App installation. */
+export type Connection = Schemas['ConnectionSnapshot'];
+export type ConnectionProvider = Connection['provider'];
+/** Where to send someone to install a provider's app, from `POST /v1/connections/installations`. */
+export type InstallationStart = Schemas['InstallationStartSnapshot'];
+/** What the provider sent back after an install, for `POST /v1/connections/installations/complete`. */
+export type CompleteInstallation = Omit<Schemas['CompleteInstallationRequestBody'], '$schema'>;
+/** A provider whose accounts are connected by installing its app. */
+export type InstallableProvider = CompleteInstallation['provider'];
+
 /** A cursor-paged list's page, with its cursors. */
 export interface CursorPage<T> {
   items: T[];

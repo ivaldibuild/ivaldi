@@ -157,3 +157,27 @@ auth:
 	assert.True(t, c.Auth.Providers.Google.JIT(), "on by default")
 	assert.True(t, OIDCProvider{}.JIT(), "on when unset")
 }
+
+func TestGitHubInstallCallbackURL(t *testing.T) {
+	for name, tc := range map[string]struct {
+		cfg  Config
+		want string
+	}{
+		"derived from the sign-in page's host": {
+			cfg:  Config{Auth: Auth{LoginURL: "https://app.example.com/login?x=1"}},
+			want: "https://app.example.com/settings/connections/github/callback",
+		},
+		"set explicitly": {
+			cfg: Config{
+				Auth:           Auth{LoginURL: "https://app.example.com/login"},
+				VersionControl: VersionControl{GitHub: GitHubApp{InstallCallbackURL: "https://web.example.com/gh"}},
+			},
+			want: "https://web.example.com/gh",
+		},
+		"no sign-in page": {cfg: Config{}, want: ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, tc.want, tc.cfg.GitHubInstallCallbackURL())
+		})
+	}
+}

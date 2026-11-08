@@ -51,11 +51,11 @@ bootstrap:
 # Organizations connect GitHub accounts by installing the App; GitHub confirms
 # the person installing can access the installation before Ivaldi records it.
 # The private key and client secret stay in files.
-# version_control:
-#   github:
-#     app_id: <GitHub App ID>
-#     slug: <the App's URL name>
-#     client_id: <the App's client ID>
-#     client_secret_file: .local/github-app-client-secret
-#     private_key_file: .local/github-app.pem
-#     # web_url: https://ghe.example.com   # GitHub Enterprise Server only
+version_control:
+  github:
+    app_id: <GitHub App ID>
+    slug: <the App's URL name>
+    client_id: <the App's client ID>
+    client_secret_file: .local/github-client-secret
+    private_key_file: .local/github-app.pem
+    # web_url: https://ghe.example.com   # GitHub Enterprise Server only

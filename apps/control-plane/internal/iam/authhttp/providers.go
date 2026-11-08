@@ -44,6 +44,26 @@ func WithProviders(p ...Provider) Option {
 	return func(h *handlers) { h.providers = append(h.providers, p...) }
 }
 
+// WithInstallReturns names, by provider kind, the frontend page that
+// finishes installing that provider's app, such as GitHub's at
+// <web app>/settings/connections/github/callback.
+//
+// A GitHub App that both signs people in and connects accounts sends a
+// person back from an install to its first callback URL, which may be this
+// sign-in callback, and GitHub's settings do not let the order be chosen.
+// The callback recognises such a return and sends it on, so either order
+// works.
+func WithInstallReturns(pages map[string]string) Option {
+	return func(h *handlers) { h.installReturns = pages }
+}
+
+// isInstallReturn reports whether a callback is the provider returning from
+// an app install rather than from a sign-in: only an install carries an
+// installation ID and a setup action.
+func isInstallReturn(q url.Values) bool {
+	return q.Get("installation_id") != "" && q.Get("setup_action") != ""
+}
+
 // providerFlow is what the oauth cookie holds between leaving for the
 // provider and coming back.
 type providerFlow struct {
@@ -104,6 +124,14 @@ func (h *handlers) startProvider(w http.ResponseWriter, r *http.Request) {
 // continues the authorization, or sends the browser back to the frontend to
 // choose an Organization, sign up, or show why it failed.
 func (h *handlers) providerCallback(w http.ResponseWriter, r *http.Request) {
+	// An install return goes on to the frontend unchanged, before the
+	// sign-in cookie is read or cleared, so a sign-in in progress in another
+	// tab is left alone. The frontend completes it with the person's own
+	// token, and the control plane checks its state there.
+	if page, ok := h.installReturns[r.PathValue("kind")]; ok && isInstallReturn(r.URL.Query()) {
+		redirect(w, iam.AppendQuery(page, r.URL.Query()))
+		return
+	}
 	var flow providerFlow
 	found := h.readCookie(r, oauthCookie, &flow)
 	h.clearCookie(w, oauthCookie)

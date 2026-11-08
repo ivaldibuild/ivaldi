@@ -77,7 +77,10 @@ type handlers struct {
 	codec      session.Codec
 	onboarding iam.Onboarding
 	providers  []Provider
-	secure     bool
+	// installReturns maps a provider kind to the frontend page that finishes
+	// installing its app.
+	installReturns map[string]string
+	secure         bool
 }
 
 // New returns the authorization server's HTTP side. It serves no pages: the

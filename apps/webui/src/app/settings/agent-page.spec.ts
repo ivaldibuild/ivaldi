@@ -126,17 +126,13 @@ describe('AgentPage', () => {
 
     button(el, 'Suspend')!.click();
     await settle(fixture);
-    http
-      .expectOne(`${v1}/agents/prn_bot/suspend`)
-      .flush(ok({ ...agent, status: 'suspended' }));
+    http.expectOne(`${v1}/agents/prn_bot/suspend`).flush(ok({ ...agent, status: 'suspended' }));
     await settle(fixture);
     expect(button(el, 'Reactivate')).toBeDefined();
 
     button(el, 'Reactivate')!.click();
     await settle(fixture);
-    http
-      .expectOne(`${v1}/agents/prn_bot/reactivate`)
-      .flush(ok({ ...agent, status: 'active' }));
+    http.expectOne(`${v1}/agents/prn_bot/reactivate`).flush(ok({ ...agent, status: 'active' }));
     await settle(fixture);
     expect(button(el, 'Suspend')).toBeDefined();
   });

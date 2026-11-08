@@ -180,6 +180,19 @@ export const routes: Routes = [
             loadComponent: () => import('./settings/teams-page').then((m) => m.TeamsPage),
           },
           {
+            path: 'connections',
+            title: 'Connections · Organisation settings · Ivaldi',
+            loadComponent: () =>
+              import('./settings/connections-page').then((m) => m.ConnectionsPage),
+          },
+          {
+            // The GitHub App's callback URL: GitHub sends people here after an install.
+            path: 'connections/github/callback',
+            title: 'Connecting GitHub · Organisation settings · Ivaldi',
+            loadComponent: () =>
+              import('./settings/github-install-callback').then((m) => m.GitHubInstallCallback),
+          },
+          {
             path: 'teams/:id',
             title: 'Team · Organisation settings · Ivaldi',
             loadComponent: () => import('./settings/team-page').then((m) => m.TeamPage),

@@ -194,7 +194,7 @@ Ivaldi uses a Registry only for lookups: resolving a tag to a digest when a Rele
 - **Executed Deployments respect their Lifecycle.** An executed Deployment's Environment is in its Release's Channel's Lifecycle, in a phase that was open when the Deployment was requested.
 - **At most one Deployment per Application and Target is in flight.** A partial unique index on `(organization_id, application_id, target_id)` where `finished_at` is NULL enforces it.
 - **A Deployment's copied columns match their sources.** `application_id` matches its Release and `environment_id` matches its Target.
-- **Only the Target's agent reports on it.** The control plane rejects reports from any other workload principal.
+- **Only the Target's agent reports on it.** The control plane rejects reports from any other workload principal. Since [ADR 0014](../adr/0014-agents-serve-clusters.md), the Target's agent is its Cluster's agent.
 - **Registries marked `data_plane` are never contacted from the control plane.** Their lookups run only through a data-plane workload in their pool.
 - **Published Releases and Builds are immutable.** The only exception is the provenance upgrade of an observed Build, and a CI-reported Build's commit and ref never change.
 - **Nothing is hard-deleted that a Deployment or Release refers to.** Applications, artifacts, and Channels are archived; Environments, Lifecycles, Registries, and Targets are soft-deleted; and Releases are withdrawn.

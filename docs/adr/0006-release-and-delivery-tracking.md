@@ -132,5 +132,5 @@ CI systems report Builds through the gateway's webhook module ([ADR 0002](0002-g
 - Whether generated code for the `schemas/` contracts lives in each capability's `pkg/` package or in one generated package.
 - Whether promotion needs more than Lifecycle order, such as a waiting period before the next phase opens, and whether that belongs to Lifecycles or to policy.
 - Which external deployers the agent observes first.
-- Whether one agent covers a whole cluster or is scoped per namespace.
+- Whether one agent covers a whole cluster or is scoped per namespace. ([ADR 0014](0014-agents-serve-clusters.md): a whole cluster.)
 - How far Observe goes beyond rollout status and health, for example into metrics, logs, or error rates from the customer's observability tools.

@@ -235,11 +235,16 @@ func translateProviderError(err error, externalRepositoryID string) error {
 }
 
 // RefreshSource updates a Source from the provider's current view of the
-// repository, such as after a rename or a default-branch change.
+// repository, such as after a rename or a default-branch change. The
+// provider is read before the transaction so no row stays locked while it
+// answers.
 func (s *service) RefreshSource(ctx context.Context, actor identity.Actor, organizationID, sourceID string) (*versioncontrol.Source, error) {
 	source, err := s.sources.GetSource(ctx, organizationID, sourceID)
 	if err != nil {
 		return nil, err
+	}
+	if source.Archived() {
+		return nil, fmt.Errorf("%w: source %s", versioncontrol.ErrArchived, source.ID())
 	}
 	connection, err := s.usableConnection(ctx, organizationID, source.ConnectionID())
 	if err != nil {
@@ -249,55 +254,24 @@ func (s *service) RefreshSource(ctx context.Context, actor identity.Actor, organ
 	if err != nil {
 		return nil, err
 	}
-	var out *versioncontrol.Source
-	err = s.w.Tx.WithinTx(ctx, func(ctx context.Context) error {
-		source, err := s.sources.GetSourceForUpdate(ctx, organizationID, sourceID)
-		if err != nil {
-			return err
-		}
-		before := source.Snapshot()
-		if err := source.Refresh(repository); err != nil {
-			return err
-		}
-		if !sourceChanged(before, source) {
-			out = source
-			return nil
-		}
-		if err := s.sources.UpdateSource(ctx, source); err != nil {
-			return fmt.Errorf("refresh source: %w", err)
-		}
-		if err := s.w.Events(ctx, versioncontrol.AggregateSource, source.ID(), source); err != nil {
-			return err
-		}
-		if err := s.w.AuditRecord(ctx, audit.Event{
-			Type: versioncontrol.EventSourceUpdated, OrganizationID: organizationID,
-			ResourceID: source.ID(), Actor: actor, Before: before, After: source.Snapshot(),
-		}); err != nil {
-			return err
-		}
-		out = source
-		return nil
+	return change.Run(ctx, s.w, actor, change.Spec[*versioncontrol.Source]{
+		AggregateType: versioncontrol.AggregateSource,
+		AggregateID:   func(source *versioncontrol.Source) string { return source.ID() },
+		Load: func(ctx context.Context) (*versioncontrol.Source, error) {
+			return s.sources.GetSourceForUpdate(ctx, organizationID, sourceID)
+		},
+		Apply: func(_ context.Context, source *versioncontrol.Source) error {
+			if source.Describes(repository) && !source.Archived() {
+				return change.ErrUnchanged
+			}
+			return source.Refresh(repository)
+		},
+		Save:     s.sources.UpdateSource,
+		Snapshot: func(source *versioncontrol.Source) any { return source.Snapshot() },
+		Event: func(source *versioncontrol.Source) audit.Event {
+			return audit.Event{Type: versioncontrol.EventSourceUpdated, OrganizationID: organizationID, ResourceID: source.ID()}
+		},
 	})
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// sourceChanged reports whether a refresh changed the stored metadata.
-func sourceChanged(before versioncontrol.SourceSnapshot, source *versioncontrol.Source) bool {
-	return before.FullName != source.FullName() ||
-		before.DefaultBranch != source.DefaultBranch() ||
-		before.Visibility != source.Visibility() ||
-		text(before.CloneURL) != text(source.CloneURL()) ||
-		text(before.WebURL) != text(source.WebURL())
-}
-
-func text(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
 }
 
 func (s *service) GetSource(ctx context.Context, _ identity.Actor, organizationID, sourceID string) (*versioncontrol.Source, error) {

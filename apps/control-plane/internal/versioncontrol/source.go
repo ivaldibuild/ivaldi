@@ -91,22 +91,7 @@ func NewSource(props NewSourceProps, sourceID *string) (*Source, error) {
 		return nil, err
 	}
 	repo := props.Repository
-	if err := validateText("external repository ID", repo.ExternalID, maxExternalIDLength, true); err != nil {
-		return nil, err
-	}
-	if err := validateText("repository full name", repo.FullName, maxFullNameLength, true); err != nil {
-		return nil, err
-	}
-	if err := validateText("default branch", repo.DefaultBranch, maxDefaultBranchLength, false); err != nil {
-		return nil, err
-	}
-	if err := Visibility(repo.Visibility).valid(); err != nil {
-		return nil, err
-	}
-	if err := validateText("clone URL", repo.CloneURL, maxCloneURLLength, false); err != nil {
-		return nil, err
-	}
-	if err := validateText("web URL", repo.WebURL, maxWebURLLength, false); err != nil {
+	if err := validateRepository(repo); err != nil {
 		return nil, err
 	}
 	key := props.RepositoryKey
@@ -214,14 +199,47 @@ func (s *Source) Restore() {
 	s.RecordEvent(SourceRestored{s.Snapshot()})
 }
 
+// Describes reports whether the Source already holds the repository's
+// metadata, so refreshing from it would change nothing.
+func (s *Source) Describes(repository vcs.Repository) bool {
+	return s.externalRepositoryID == repository.ExternalID &&
+		s.fullName == repository.FullName &&
+		s.defaultBranch == repository.DefaultBranch &&
+		string(s.visibility) == repository.Visibility &&
+		deref(s.cloneURL) == repository.CloneURL &&
+		deref(s.webURL) == repository.WebURL
+}
+
 // Refresh updates an active Source from the provider's current view of the
-// repository, such as after a rename or a default-branch change.
+// repository, such as after a rename or a default-branch change. Refreshing
+// from metadata the Source already holds does nothing.
 func (s *Source) Refresh(repository vcs.Repository) error {
 	if s.Archived() {
 		return fmt.Errorf("%w: source %s", ErrArchived, s.ID())
 	}
 	if repository.ExternalID != s.externalRepositoryID {
 		return NewErrInvalidInput(fmt.Sprintf("repository %s is not source %s", repository.ExternalID, s.ID()))
+	}
+	if err := validateRepository(repository); err != nil {
+		return err
+	}
+	if s.Describes(repository) {
+		return nil
+	}
+	s.fullName = repository.FullName
+	s.defaultBranch = repository.DefaultBranch
+	s.visibility = Visibility(repository.Visibility)
+	s.cloneURL = optional.Of(repository.CloneURL)
+	s.webURL = optional.Of(repository.WebURL)
+	s.updatedAt = clock.Now()
+	s.RecordEvent(SourceUpdated{s.Snapshot()})
+	return nil
+}
+
+// validateRepository checks the repository metadata a Source stores.
+func validateRepository(repository vcs.Repository) error {
+	if err := validateText("external repository ID", repository.ExternalID, maxExternalIDLength, true); err != nil {
+		return err
 	}
 	if err := validateText("repository full name", repository.FullName, maxFullNameLength, true); err != nil {
 		return err
@@ -235,23 +253,5 @@ func (s *Source) Refresh(repository vcs.Repository) error {
 	if err := validateText("clone URL", repository.CloneURL, maxCloneURLLength, false); err != nil {
 		return err
 	}
-	if err := validateText("web URL", repository.WebURL, maxWebURLLength, false); err != nil {
-		return err
-	}
-	changed := s.fullName != repository.FullName ||
-		s.defaultBranch != repository.DefaultBranch ||
-		string(s.visibility) != repository.Visibility ||
-		deref(s.cloneURL) != repository.CloneURL ||
-		deref(s.webURL) != repository.WebURL
-	if !changed {
-		return nil
-	}
-	s.fullName = repository.FullName
-	s.defaultBranch = repository.DefaultBranch
-	s.visibility = Visibility(repository.Visibility)
-	s.cloneURL = optional.Of(repository.CloneURL)
-	s.webURL = optional.Of(repository.WebURL)
-	s.updatedAt = clock.Now()
-	s.RecordEvent(SourceUpdated{s.Snapshot()})
-	return nil
+	return validateText("web URL", repository.WebURL, maxWebURLLength, false)
 }

@@ -10204,7 +10204,7 @@
             "bearer": []
           }
         ],
-        "summary": "Make a suspended or revoked connection usable again",
+        "summary": "Make a suspended connection usable again",
         "tags": [
           "version-control"
         ]

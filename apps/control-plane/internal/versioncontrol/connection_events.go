@@ -24,8 +24,8 @@ type ConnectionRevoked struct {
 	Connection ConnectionSnapshot `json:"connection"`
 }
 
-// ConnectionReactivated is recorded when a suspended or revoked Connection
-// becomes usable again.
+// ConnectionReactivated is recorded when a suspended Connection becomes
+// usable again.
 type ConnectionReactivated struct {
 	Connection ConnectionSnapshot `json:"connection"`
 }

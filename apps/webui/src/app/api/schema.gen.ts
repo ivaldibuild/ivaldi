@@ -721,7 +721,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Make a suspended or revoked connection usable again */
+    /** Make a suspended connection usable again */
     post: operations['reactivate-connection'];
     delete?: never;
     options?: never;

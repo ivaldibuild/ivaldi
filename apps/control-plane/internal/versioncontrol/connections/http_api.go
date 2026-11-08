@@ -37,7 +37,7 @@ func (c *Controller) RegisterRoutes(h huma.API) {
 	register(h, "archive-connection", http.MethodPost, "/connections/{connection_id}/archive", "Archive a version-control connection", 0, c.ArchiveConnection)
 	register(h, "suspend-connection", http.MethodPost, "/connections/{connection_id}/suspend", "Mark a version-control connection unusable", 0, c.SuspendConnection)
 	register(h, "revoke-connection", http.MethodPost, "/connections/{connection_id}/revoke", "Mark a version-control connection unusable for good", 0, c.RevokeConnection)
-	register(h, "reactivate-connection", http.MethodPost, "/connections/{connection_id}/reactivate", "Make a suspended or revoked connection usable again", 0, c.ReactivateConnection)
+	register(h, "reactivate-connection", http.MethodPost, "/connections/{connection_id}/reactivate", "Make a suspended connection usable again", 0, c.ReactivateConnection)
 }
 
 func register[I, O any](h huma.API, id, method, path, summary string, status int, handler func(context.Context, *I) (*O, error)) {

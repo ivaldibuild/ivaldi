@@ -126,9 +126,10 @@ type ConnectionService interface {
 	// SuspendConnection marks a Connection unusable, such as when its
 	// provider suspends the installation.
 	SuspendConnection(ctx context.Context, actor identity.Actor, organizationID, connectionID string) (*Connection, error)
-	// RevokeConnection marks a Connection unusable for good.
+	// RevokeConnection marks a Connection unusable for good; it can then
+	// only be archived.
 	RevokeConnection(ctx context.Context, actor identity.Actor, organizationID, connectionID string) (*Connection, error)
-	// ReactivateConnection makes a suspended or revoked Connection usable.
+	// ReactivateConnection makes a suspended Connection usable again.
 	ReactivateConnection(ctx context.Context, actor identity.Actor, organizationID, connectionID string) (*Connection, error)
 	// ListRepositories lists the repositories the Connection's account lets
 	// Ivaldi read, by full name, as the provider reports them now. They are

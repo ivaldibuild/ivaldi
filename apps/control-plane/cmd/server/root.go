@@ -1,12 +1,15 @@
 package server
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/api"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/config"
@@ -67,5 +70,13 @@ func runServe(cmd *cobra.Command, version string) error {
 		return err
 	}
 
-	return srv.Run(ctx)
+	// The relay and the API run until a signal cancels ctx. The relay must
+	// stop before the deferred close releases the database and Redis.
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error { return a.relay.Run(gctx) })
+	g.Go(func() error { return srv.Run(gctx) })
+	if err := g.Wait(); err != nil && !errors.Is(err, context.Canceled) {
+		return err
+	}
+	return nil
 }

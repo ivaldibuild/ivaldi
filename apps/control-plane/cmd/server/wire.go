@@ -2,9 +2,11 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/api"
@@ -39,6 +41,8 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/database"
+	"github.com/ivaldibuild/ivaldi/pkg/events"
+	"github.com/ivaldibuild/ivaldi/pkg/events/redisstream"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
 	"github.com/ivaldibuild/ivaldi/pkg/logging"
 	"github.com/ivaldibuild/ivaldi/pkg/transaction"
@@ -52,6 +56,8 @@ type app struct {
 	db         *gorm.DB
 	tx         transaction.Transactor
 	outbox     outbox.Store
+	redis      *redis.Client
+	relay      *outbox.Relay
 	iam        iamRepositories
 	onboarding iam.Onboarding
 	auth       iam.Authentication
@@ -100,11 +106,19 @@ type iamRepositories struct {
 }
 
 // wire opens the database and builds the capabilities. The caller closes the
-// database with close once the server has stopped.
+// database and the Redis connection with close once the server has stopped.
 func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *app, close func() error, err error) {
-	db, close, err := openDatabase(ctx, cfg)
+	db, closeDB, err := openDatabase(ctx, cfg)
 	if err != nil {
 		return nil, nil, err
+	}
+	redisClient, err := openRedis(cfg.Redis)
+	if err != nil {
+		_ = closeDB()
+		return nil, nil, err
+	}
+	close = func() error {
+		return errors.Join(closeDB(), redisClient.Close())
 	}
 	defer func() {
 		if err != nil {
@@ -117,6 +131,7 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 		db:     db,
 		tx:     database.NewTransactor(db),
 		outbox: outboxpg.NewRepository(db),
+		redis:  redisClient,
 		iam: iamRepositories{
 			orgs:      iampg.NewOrganizationRepository(db),
 			accounts:  iampg.NewAccountRepository(db),
@@ -131,6 +146,10 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 			codes:     iampg.NewOAuthAuthorizationCodeRepository(db),
 			refreshes: iampg.NewOAuthRefreshTokenRepository(db),
 		},
+	}
+
+	if err := a.wireOutbox(cfg, logger); err != nil {
+		return nil, nil, err
 	}
 
 	a.keys, err = loadKeys(cfg, logger)
@@ -272,6 +291,30 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 		a.services.onboarding = a.onboarding
 	}
 	return a, close, nil
+}
+
+// wireOutbox publishes the domain events services record. The relay reads the
+// control-plane database, so it belongs to serve, and it hands each event to
+// the Redis stream through the transport-neutral events.Handler seam (ADR
+// 0011).
+func (a *app) wireOutbox(cfg *config.Config, logger logging.Logger) error {
+	publisher, err := redisstream.NewPublisher(redisstream.Config{
+		Client: a.redis,
+		Stream: cfg.Outbox.Stream,
+	})
+	if err != nil {
+		return fmt.Errorf("outbox publisher: %w", err)
+	}
+	a.relay, err = outbox.NewRelay(outbox.RelayConfig{
+		Store:   a.outbox,
+		Handler: events.Forward(publisher),
+		Logger:  logger,
+	})
+	if err != nil {
+		return fmt.Errorf("outbox relay: %w", err)
+	}
+	logger.Info("outbox relay configured", logging.F("stream", cfg.Outbox.Stream))
+	return nil
 }
 
 // wireProfile serves GET /v1/me, which tells a signed-in caller who they are.

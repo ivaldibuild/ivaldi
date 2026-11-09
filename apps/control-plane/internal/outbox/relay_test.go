@@ -102,6 +102,29 @@ func entry(id, eventType string, attempts int) Entry {
 	}
 }
 
+// fakePublisher is the transport the relay forwards to in the publishing
+// tests.
+type fakePublisher struct {
+	published []events.Envelope
+	err       error
+}
+
+func (p *fakePublisher) Publish(_ context.Context, envelopes ...events.Envelope) error {
+	if p.err != nil {
+		return p.err
+	}
+	p.published = append(p.published, envelopes...)
+	return nil
+}
+
+func envelopeIDs(envelopes []events.Envelope) []string {
+	ids := make([]string, len(envelopes))
+	for i, e := range envelopes {
+		ids[i] = e.ID
+	}
+	return ids
+}
+
 func newTestRelay(t *testing.T, store Store, handler events.Handler, tune func(*RelayConfig)) *Relay {
 	t.Helper()
 	c := RelayConfig{Store: store, Handler: handler}
@@ -196,6 +219,38 @@ func TestDrainContinuesAfterAFailure(t *testing.T) {
 	assert.ErrorIs(t, err, handlerErr)
 	assert.Equal(t, []string{"evt_2"}, store.published)
 	assert.Contains(t, store.failed, "evt_1")
+}
+
+func TestDrainPublishesToTheTransport(t *testing.T) {
+	clock.Fix(t, time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC))
+	store := newFakeStore(entry("evt_1", "test.v1.first", 0), entry("evt_2", "test.v1.second", 0))
+	publisher := &fakePublisher{}
+	relay := newTestRelay(t, store, events.Forward(publisher), nil)
+
+	n, err := relay.Drain(context.Background())
+
+	require.NoError(t, err)
+	assert.Equal(t, 2, n)
+	assert.Equal(t, []string{"evt_1", "evt_2"}, envelopeIDs(publisher.published))
+	assert.Equal(t, []string{"evt_1", "evt_2"}, store.published)
+}
+
+func TestDrainSchedulesRetryWhenPublishingFails(t *testing.T) {
+	now := time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)
+	clock.Fix(t, now)
+	store := newFakeStore(entry("evt_1", "test.v1.first", 0))
+	publishErr := errors.New("redis unavailable")
+	publisher := &fakePublisher{err: publishErr}
+	relay := newTestRelay(t, store, events.Forward(publisher), func(c *RelayConfig) {
+		c.Backoff = 2 * time.Second
+	})
+
+	n, err := relay.Drain(context.Background())
+
+	assert.Equal(t, 1, n)
+	assert.ErrorIs(t, err, publishErr)
+	assert.Empty(t, store.published)
+	assert.Equal(t, now.Add(2*time.Second), store.failed["evt_1"])
 }
 
 func TestDrainReturnsAClaimError(t *testing.T) {

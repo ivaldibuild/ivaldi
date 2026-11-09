@@ -26,6 +26,11 @@ redis:
   address: 127.0.0.1:6379
   password_file: .local/valkey-password
 
+# The relay publishes the control plane's domain events to this stream. It is
+# separate from the gateway's events stream.
+# outbox:
+#   stream: ivaldi:control-plane:events
+
 auth:
   login_url: http://localhost:8670/login
   signing_key_files: [.local/signing.pem]

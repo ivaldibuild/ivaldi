@@ -117,6 +117,12 @@ func TestValidateRefuses(t *testing.T) {
 		{"admin password without built-in accounts", func(t *testing.T, c *Config) {
 			c.Bootstrap = Bootstrap{OrganizationName: "Acme", AdminEmail: "ada@acme.com", AdminPasswordFile: writeFile(t, "pw")}
 		}, "admin_password_file needs auth.builtin_accounts"},
+		{"redis password file missing", func(t *testing.T, c *Config) {
+			c.Redis.PasswordFile = filepath.Join(t.TempDir(), "absent")
+		}, "redis.password_file"},
+		{"redis CA file missing", func(t *testing.T, c *Config) {
+			c.Redis.CAFile = filepath.Join(t.TempDir(), "absent")
+		}, "redis.ca_file"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

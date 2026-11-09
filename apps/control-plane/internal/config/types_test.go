@@ -44,10 +44,36 @@ func TestDefaults(t *testing.T) {
 	assert.Equal(t, 5*time.Minute, c.Events.ClaimIdleTimeout)
 	assert.Equal(t, 5, c.Events.MaxDeliveries)
 	assert.Equal(t, "ivaldi:gateway:events:dead", c.Events.DeadLetterStream)
+	assert.Equal(t, "ivaldi:control-plane:events", c.Outbox.Stream)
 	assert.Equal(t, 8662, c.Telemetry.Port)
 	assert.InDelta(t, 0.1, c.Telemetry.TraceSampleRatio, 1e-9)
 	assert.False(t, c.Persistence.MigrateOnStart)
 	assert.Equal(t, "logs", c.Logging.Directory)
+}
+
+func TestRedisPasswordComesFromItsFile(t *testing.T) {
+	path := writeFile(t, "hunter2\n")
+
+	got, err := Redis{PasswordFile: path}.Password()
+
+	require.NoError(t, err)
+	assert.Equal(t, Secret("hunter2"), got)
+}
+
+func TestRedisPasswordIsOptional(t *testing.T) {
+	got, err := Redis{}.Password()
+
+	require.NoError(t, err)
+	assert.Empty(t, got)
+}
+
+func TestOutboxStreamCanBeSet(t *testing.T) {
+	var c Config
+	require.NoError(t, env.Parse(&c, env.Options{
+		Source: lookup(map[string]string{"IVALDI_OUTBOX_STREAM": "custom:events"}),
+	}))
+
+	assert.Equal(t, "custom:events", c.Outbox.Stream)
 }
 
 func TestProviders(t *testing.T) {

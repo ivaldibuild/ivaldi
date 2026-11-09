@@ -42,6 +42,7 @@ func (c *Config) Validate() error {
 	c.validateAuth(v)
 	c.validateBootstrap(v)
 	c.validateVersionControl(v)
+	c.validateRedis(v)
 
 	if len(v.problems) > 0 {
 		return &ValidationError{Problems: v.problems}
@@ -136,6 +137,22 @@ func (c *Config) validateBootstrap(v *validator) {
 		}
 		if _, err := os.Stat(b.AdminPasswordFile); err != nil {
 			v.addf("bootstrap.admin_password_file: %v", err)
+		}
+	}
+}
+
+// validateRedis checks the files the Redis connection reads at startup, so a
+// missing one is found then rather than when the relay first publishes.
+func (c *Config) validateRedis(v *validator) {
+	for name, path := range map[string]string{
+		"redis.password_file": c.Redis.PasswordFile,
+		"redis.ca_file":       c.Redis.CAFile,
+	} {
+		if path == "" {
+			continue
+		}
+		if _, err := os.Stat(path); err != nil {
+			v.addf("%s: %v", name, err)
 		}
 	}
 }

@@ -37,6 +37,7 @@ type Config struct {
 	Encryption Encryption `yaml:"encryption"`
 	Redis      Redis      `yaml:"redis"`
 	Events     Events     `yaml:"events"`
+	Outbox     Outbox     `yaml:"outbox"`
 	Telemetry  Telemetry  `yaml:"telemetry"`
 
 	// VersionControl configures the version-control providers Ivaldi can
@@ -415,6 +416,15 @@ type Events struct {
 	// DeadLetterStream.
 	MaxDeliveries    int    `yaml:"max_deliveries" env:"IVALDI_EVENTS_MAX_DELIVERIES" envDefault:"5"`
 	DeadLetterStream string `yaml:"dead_letter_stream" env:"IVALDI_EVENTS_DEAD_LETTER_STREAM" envDefault:"ivaldi:gateway:events:dead"`
+}
+
+// Outbox configures the relay that publishes the control plane's own domain
+// events (ADR 0011). Its tuning follows the outbox package's defaults.
+type Outbox struct {
+	// Stream is the stream the relay publishes domain events to. It is
+	// separate from the gateway's stream, which carries events into the
+	// control plane.
+	Stream string `yaml:"stream" env:"IVALDI_OUTBOX_STREAM" envDefault:"ivaldi:control-plane:events"`
 }
 
 // Telemetry configures the control plane's own health, metrics, and traces.

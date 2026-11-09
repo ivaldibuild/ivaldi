@@ -9264,6 +9264,59 @@
         ]
       }
     },
+    "/v1/auth/login/organizations": {
+      "get": {
+        "operationId": "list-login-organizations",
+        "parameters": [
+          {
+            "explode": false,
+            "in": "query",
+            "name": "login_challenge",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The login_session from the step that asked for a choice",
+            "explode": false,
+            "in": "query",
+            "name": "login_session",
+            "required": true,
+            "schema": {
+              "description": "The login_session from the step that asked for a choice",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginStepOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List the organizations a login session may choose from",
+        "tags": [
+          "sign-in"
+        ]
+      }
+    },
     "/v1/auth/login/password": {
       "post": {
         "operationId": "login-with-password",

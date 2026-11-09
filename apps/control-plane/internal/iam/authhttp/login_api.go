@@ -47,6 +47,11 @@ type passwordInput struct {
 	}
 }
 
+type organizationsInput struct {
+	LoginChallenge string `query:"login_challenge" required:"true"`
+	LoginSession   string `query:"login_session" required:"true" doc:"The login_session from the step that asked for a choice"`
+}
+
 type organizationInput struct {
 	Body struct {
 		LoginChallenge string `json:"login_challenge" required:"true"`
@@ -91,6 +96,10 @@ func (h *handlers) RegisterRoutes(api huma.API) {
 		Summary: "Sign in with an email and password",
 	}, h.loginWithPassword)
 	huma.Register(api, huma.Operation{
+		OperationID: "list-login-organizations", Metadata: public, Method: http.MethodGet, Path: "/auth/login/organizations", Tags: tags,
+		Summary: "List the organizations a login session may choose from",
+	}, h.listOrganizations)
+	huma.Register(api, huma.Operation{
 		OperationID: "choose-login-organization", Metadata: public, Method: http.MethodPost, Path: "/auth/login/organization", Tags: tags,
 		Summary: "Choose the organization to sign in to",
 	}, h.chooseOrganization)
@@ -129,6 +138,30 @@ func (h *handlers) loginWithPassword(ctx context.Context, in *passwordInput) (*l
 		return nil, h.apiError(err)
 	}
 	return h.step(ctx, ch, signInOf(signedIn), "")
+}
+
+// listOrganizations answers the organizations a login session may choose
+// from, for a browser the provider sent back with only the challenge and
+// the session. It opens them the way the organization step does, so a
+// mismatched or expired pair gets the same 400.
+func (h *handlers) listOrganizations(ctx context.Context, in *organizationsInput) (*loginStepOutput, error) {
+	ch, err := h.openChallenge(in.LoginChallenge)
+	if err != nil {
+		return nil, h.apiError(err)
+	}
+	var s loginSession
+	if err := h.open(sessionName, in.LoginSession, &s, func() string { return s.Nonce }, ch); err != nil {
+		return nil, h.apiError(err)
+	}
+	memberships, err := h.memberships(ctx, s.SignIn)
+	if err != nil {
+		return nil, h.apiError(err)
+	}
+	out := &loginStepOutput{}
+	for _, m := range memberships {
+		out.Body.Organizations = append(out.Body.Organizations, organizationOption{ID: m.OrganizationID, Slug: m.OrganizationSlug, Name: m.OrganizationName})
+	}
+	return out, nil
 }
 
 func (h *handlers) chooseOrganization(ctx context.Context, in *organizationInput) (*loginStepOutput, error) {

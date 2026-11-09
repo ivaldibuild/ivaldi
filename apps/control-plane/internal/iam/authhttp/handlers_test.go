@@ -370,6 +370,38 @@ func TestChoosingAnOrganization(t *testing.T) {
 	})
 }
 
+func TestListingALoginSessionOrganizations(t *testing.T) {
+	r, _ := newProviderRig(t, "1002", true, nil)
+	r.auth.memberships["acc_1002"] = []iam.Membership{acme, other}
+	ch := r.challenge(t, authorizePath)
+
+	// A provider sign-in with several organizations sends the browser back
+	// with only the challenge and the login session.
+	loc := location(t, r.viaProvider(t, ch))
+	require.Equal(t, "app.example.com", loc.Host)
+	sessionToken := loc.Query().Get("login_session")
+	require.NotEmpty(t, sessionToken)
+
+	rec, body := r.call(http.MethodGet, "/v1/auth/login/organizations?login_challenge="+url.QueryEscape(ch)+"&login_session="+url.QueryEscape(sessionToken), nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	organizations := body["organizations"].([]any)
+	require.Len(t, organizations, 2)
+	assert.Equal(t, "org_acme", organizations[0].(map[string]any)["id"])
+	assert.Equal(t, "acme", organizations[0].(map[string]any)["slug"])
+	assert.Equal(t, "Acme", organizations[0].(map[string]any)["name"])
+
+	t.Run("a session from another sign-in", func(t *testing.T) {
+		otherChallenge := r.another().challenge(t, authorizePath)
+		rec, _ := r.call(http.MethodGet, "/v1/auth/login/organizations?login_challenge="+url.QueryEscape(otherChallenge)+"&login_session="+url.QueryEscape(sessionToken), nil)
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+	})
+	t.Run("forged values", func(t *testing.T) {
+		rec, _ := r.call(http.MethodGet, "/v1/auth/login/organizations?login_challenge=forged&login_session=forged", nil)
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+	})
+}
+
 func newProviderRig(t *testing.T, subject string, platform bool, ob *fakeOnboarding) (*rig, *connectortest.Fake) {
 	t.Helper()
 	gh := &connectortest.Fake{Kind: iam.ProtocolGitHub, Name: "GitHub", Profile: iam.ExternalProfile{Subject: subject, Email: "grace@example.com", EmailVerified: true}}

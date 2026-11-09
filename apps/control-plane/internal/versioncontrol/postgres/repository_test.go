@@ -28,6 +28,7 @@ type fixture struct {
 	db          *gorm.DB
 	connections versioncontrol.ConnectionRepository
 	sources     versioncontrol.SourceRepository
+	webhooks    versioncontrol.WebhookDeliveryRepository
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -39,6 +40,7 @@ func newFixture(t *testing.T) *fixture {
 		db:          db,
 		connections: NewConnectionRepository(db),
 		sources:     NewSourceRepository(db),
+		webhooks:    NewWebhookDeliveryRepository(db),
 	}
 }
 
@@ -162,6 +164,84 @@ func TestSourceArchiveAndRestore(t *testing.T) {
 	got, err = f.sources.GetSource(f.ctx, orgA, source.ID())
 	require.NoError(t, err)
 	assert.False(t, got.Archived())
+}
+
+func TestConnectionByWebhookRouteKey(t *testing.T) {
+	f := newFixture(t)
+	routeKey := "github:github.com:42"
+	connection := must(versioncontrol.NewConnection(versioncontrol.NewConnectionProps{
+		OrganizationID:    orgA,
+		Provider:          vcs.ProviderGitHub,
+		HostURL:           "https://github.com",
+		AuthKind:          versioncontrol.AuthKindAppInstallation,
+		ExternalAccountID: "42",
+		WebhookRouteKey:   &routeKey,
+		LookupFrom:        vcs.LookupFromControlPlane,
+		Status:            versioncontrol.StatusActive,
+	}, nil))
+	require.NoError(t, f.connections.CreateConnection(f.ctx, connection))
+
+	got, err := f.connections.GetConnectionByWebhookRouteKey(f.ctx, routeKey)
+	require.NoError(t, err)
+	assert.Equal(t, connection.Snapshot(), got.Snapshot())
+
+	_, err = f.connections.GetConnectionByWebhookRouteKey(f.ctx, "github:github.com:43")
+	assert.ErrorIs(t, err, versioncontrol.ErrNotFound)
+
+	require.NoError(t, connection.Suspend())
+	require.NoError(t, f.connections.UpdateConnection(f.ctx, connection))
+	got, err = f.connections.GetConnectionByWebhookRouteKey(f.ctx, routeKey)
+	require.NoError(t, err, "a suspended Connection still resolves")
+	assert.Equal(t, versioncontrol.StatusSuspended, got.Status())
+
+	connection.Archive()
+	require.NoError(t, f.connections.UpdateConnection(f.ctx, connection))
+	_, err = f.connections.GetConnectionByWebhookRouteKey(f.ctx, routeKey)
+	assert.ErrorIs(t, err, versioncontrol.ErrNotFound)
+}
+
+func TestSourceByRepositoryKey(t *testing.T) {
+	f := newFixture(t)
+	connection := newConnection(t)
+	require.NoError(t, f.connections.CreateConnection(f.ctx, connection))
+	source := newSource(t, connection, "99")
+	require.NoError(t, f.sources.CreateSource(f.ctx, source))
+
+	got, err := f.sources.GetSourceByRepositoryKey(f.ctx, orgA, source.RepositoryKey())
+	require.NoError(t, err)
+	assert.Equal(t, source.Snapshot(), got.Snapshot())
+
+	_, err = f.sources.GetSourceByRepositoryKey(f.ctx, orgB, source.RepositoryKey())
+	assert.ErrorIs(t, err, versioncontrol.ErrNotFound)
+
+	source.Archive()
+	require.NoError(t, f.sources.UpdateSource(f.ctx, source))
+	_, err = f.sources.GetSourceByRepositoryKey(f.ctx, orgA, source.RepositoryKey())
+	assert.ErrorIs(t, err, versioncontrol.ErrNotFound)
+}
+
+func TestWebhookDeliveriesAreDeduplicated(t *testing.T) {
+	f := newFixture(t)
+	delivery := versioncontrol.WebhookDelivery{
+		Provider:       vcs.ProviderGitHub,
+		RouteKey:       "github:github.com:42",
+		DeliveryID:     "delivery-1",
+		OrganizationID: orgA,
+		ReceivedAt:     t0,
+	}
+
+	recorded, err := f.webhooks.RecordWebhookDelivery(f.ctx, delivery)
+	require.NoError(t, err)
+	assert.True(t, recorded)
+
+	recorded, err = f.webhooks.RecordWebhookDelivery(f.ctx, delivery)
+	require.NoError(t, err, "a duplicate delivery is not an error")
+	assert.False(t, recorded)
+
+	delivery.DeliveryID = "delivery-2"
+	recorded, err = f.webhooks.RecordWebhookDelivery(f.ctx, delivery)
+	require.NoError(t, err)
+	assert.True(t, recorded)
 }
 
 func TestConnectedRepositoryKeysCountsOnlyActiveSources(t *testing.T) {

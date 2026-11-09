@@ -39,6 +39,10 @@ func (r *sourceRepository) GetSourceForUpdate(ctx context.Context, organizationI
 		Where("organization_id = ? AND id = ?", organizationID, sourceID))
 }
 
+func (r *sourceRepository) GetSourceByRepositoryKey(ctx context.Context, organizationID, repositoryKey string) (*versioncontrol.Source, error) {
+	return r.get(r.conn(ctx).Where("organization_id = ? AND repository_key = ? AND archived_at IS NULL", organizationID, repositoryKey))
+}
+
 func (r *sourceRepository) get(q *gorm.DB) (*versioncontrol.Source, error) {
 	var entity sourceEntity
 	if err := q.Take(&entity).Error; err != nil {

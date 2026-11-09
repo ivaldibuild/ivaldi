@@ -1,5 +1,22 @@
 package vcs
 
+import (
+	"net/url"
+	"strings"
+)
+
+// RepositoryKey identifies something a provider holds, such as a repository
+// or an installation, by the provider, its host, and the provider's stable
+// ID, such as github:github.com:123456. The ID survives renames and
+// transfers.
+func RepositoryKey(provider ProviderKind, hostURL, externalID string) string {
+	host := hostURL
+	if u, err := url.Parse(hostURL); err == nil && u.Host != "" {
+		host = u.Host
+	}
+	return strings.Join([]string{string(provider), strings.TrimSuffix(host, "/"), externalID}, ":")
+}
+
 // Repository is one repository a provider serves.
 type Repository struct {
 	Provider      ProviderKind `json:"provider"`

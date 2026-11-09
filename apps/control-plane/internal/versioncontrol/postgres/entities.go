@@ -51,6 +51,18 @@ type sourceEntity struct {
 
 func (sourceEntity) TableName() string { return "version_control.sources" }
 
+type webhookDeliveryEntity struct {
+	Provider       string    `gorm:"column:provider;primaryKey"`
+	RouteKey       string    `gorm:"column:route_key;primaryKey"`
+	DeliveryID     string    `gorm:"column:delivery_id;primaryKey"`
+	OrganizationID string    `gorm:"column:organization_id"`
+	ReceivedAt     time.Time `gorm:"column:received_at;autoCreateTime:false"`
+}
+
+func (webhookDeliveryEntity) TableName() string {
+	return "version_control.webhook_deliveries"
+}
+
 func utc(t time.Time) *time.Time {
 	u := t.UTC()
 	return &u

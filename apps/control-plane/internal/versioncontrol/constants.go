@@ -11,11 +11,9 @@ package versioncontrol
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/ivaldibuild/ivaldi/pkg/id"
-	"github.com/ivaldibuild/ivaldi/pkg/vcs"
 )
 
 func init() {
@@ -104,16 +102,4 @@ func (v Visibility) valid() error {
 		return nil
 	}
 	return NewErrInvalidInput(fmt.Sprintf("visibility %q must be public, private, or internal", v))
-}
-
-// providerKey identifies something a provider holds, such as a repository
-// or an installation, by the provider, its host, and the provider's stable
-// ID, such as github:github.com:123456. The ID survives renames and
-// transfers.
-func providerKey(provider vcs.ProviderKind, hostURL, externalID string) string {
-	host := hostURL
-	if u, err := parseURL(hostURL); err == nil && u.Host != "" {
-		host = u.Host
-	}
-	return strings.Join([]string{string(provider), strings.TrimSuffix(host, "/"), externalID}, ":")
 }

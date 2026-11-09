@@ -99,7 +99,7 @@ func NewSource(props NewSourceProps, sourceID *string) (*Source, error) {
 		if !props.Provider.Valid() {
 			return nil, NewErrInvalidInput("a new source needs a valid provider")
 		}
-		key = providerKey(props.Provider, props.HostURL, repo.ExternalID)
+		key = vcs.RepositoryKey(props.Provider, props.HostURL, repo.ExternalID)
 	}
 	if err := validateText("repository key", key, maxRepositoryKeyLength, true); err != nil {
 		return nil, err

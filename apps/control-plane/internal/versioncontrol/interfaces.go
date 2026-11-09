@@ -17,6 +17,10 @@ type ConnectionRepository interface {
 	GetConnection(ctx context.Context, organizationID, connectionID string) (*Connection, error)
 	// GetConnectionForUpdate locks the Connection until the transaction ends.
 	GetConnectionForUpdate(ctx context.Context, organizationID, connectionID string) (*Connection, error)
+	// GetConnectionByWebhookRouteKey returns the Connection with the
+	// platform-wide webhook route key. It is the one lookup not scoped to an
+	// Organization. Archived Connections are not returned.
+	GetConnectionByWebhookRouteKey(ctx context.Context, routeKey string) (*Connection, error)
 	ListConnections(ctx context.Context, organizationID string, includeArchived bool) ([]*Connection, error)
 	UpdateConnection(ctx context.Context, c *Connection) error
 }
@@ -40,6 +44,8 @@ type SourceRepository interface {
 	GetSource(ctx context.Context, organizationID, sourceID string) (*Source, error)
 	// GetSourceForUpdate locks the Source until the transaction ends.
 	GetSourceForUpdate(ctx context.Context, organizationID, sourceID string) (*Source, error)
+	// GetSourceByRepositoryKey returns the active Source with the key.
+	GetSourceByRepositoryKey(ctx context.Context, organizationID, repositoryKey string) (*Source, error)
 	ListSources(ctx context.Context, query ListSourcesQuery) (*pagination.Result[*Source], error)
 	UpdateSource(ctx context.Context, s *Source) error
 	ConnectedRepositories

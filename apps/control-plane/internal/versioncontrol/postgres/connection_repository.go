@@ -40,6 +40,10 @@ func (r *connectionRepository) GetConnectionForUpdate(ctx context.Context, organ
 		Where("organization_id = ? AND id = ?", organizationID, connectionID))
 }
 
+func (r *connectionRepository) GetConnectionByWebhookRouteKey(ctx context.Context, routeKey string) (*versioncontrol.Connection, error) {
+	return r.get(r.conn(ctx).Where("webhook_route_key = ? AND deleted_at IS NULL", routeKey))
+}
+
 func (r *connectionRepository) get(q *gorm.DB) (*versioncontrol.Connection, error) {
 	var entity connectionEntity
 	if err := q.Take(&entity).Error; err != nil {

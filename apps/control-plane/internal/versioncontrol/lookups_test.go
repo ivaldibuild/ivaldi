@@ -26,6 +26,9 @@ func (f fakeSources) GetSource(context.Context, string, string) (*Source, error)
 func (f fakeSources) GetSourceForUpdate(context.Context, string, string) (*Source, error) {
 	return f.source, nil
 }
+func (f fakeSources) GetSourceByRepositoryKey(context.Context, string, string) (*Source, error) {
+	return f.source, nil
+}
 func (f fakeSources) ListSources(context.Context, ListSourcesQuery) (*pagination.Result[*Source], error) {
 	return nil, nil
 }
@@ -40,6 +43,9 @@ func (f fakeConnections) GetConnection(context.Context, string, string) (*Connec
 	return f.connection, nil
 }
 func (f fakeConnections) GetConnectionForUpdate(context.Context, string, string) (*Connection, error) {
+	return f.connection, nil
+}
+func (f fakeConnections) GetConnectionByWebhookRouteKey(context.Context, string) (*Connection, error) {
 	return f.connection, nil
 }
 func (f fakeConnections) ListConnections(context.Context, string, bool) ([]*Connection, error) {
@@ -84,7 +90,7 @@ func newConnection(t *testing.T, lookup vcs.LookupFrom, pool *string) *Connectio
 
 func newSource(t *testing.T, connection *Connection) *Source {
 	t.Helper()
-	repositoryKey := providerKey(connection.Provider(), connection.HostURL(), "99")
+	repositoryKey := vcs.RepositoryKey(connection.Provider(), connection.HostURL(), "99")
 	source, err := NewSource(NewSourceProps{
 		OrganizationID: "org_01ARZ3NDEKTSV4RRFFQ69G5FAV",
 		ConnectionID:   connection.ID(),

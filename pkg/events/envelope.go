@@ -9,8 +9,10 @@
 // Publisher, whose implementation in pkg/events/redisstream adds them to a
 // stream for handlers in other processes.
 //
-// Delivery is at least once and may be out of order, so every handler must be
-// idempotent.
+// A Consumer reads events back from a transport and hands each as a Delivery
+// to a DeliveryHandler. The transport acknowledges a delivery only after its
+// handler says the work is done, and the handler must be idempotent because
+// delivery is at least once and may be out of order.
 package events
 
 import (

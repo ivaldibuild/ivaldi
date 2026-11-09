@@ -1,9 +1,10 @@
-// Package redisstream publishes events to a Redis stream (ADR 0009).
+// Package redisstream publishes and consumes events over Redis streams
+// (ADR 0009, ADR 0011).
 //
-// It is the transport side of pkg/events: domain code sees events.Envelope and
-// events.Publisher, never Redis. A Relay forwards the outbox through a
-// Publisher, and a consumer in another process reads the stream with its own
-// consumer group.
+// It is the transport side of pkg/events: domain code sees events.Envelope,
+// events.Publisher, and events.Consumer, never Redis. A Relay forwards the
+// outbox through a Publisher, and a Consumer reads a stream through its own
+// consumer group, handling each entry with an events.DeliveryHandler.
 //
 // Every entry carries the envelope as flat string fields, so a consumer can
 // route on type, deduplicate on id, and decode payload without knowing the
@@ -14,7 +15,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/redis/go-redis/v9"
 
@@ -85,20 +85,4 @@ func (p *Publisher) Publish(ctx context.Context, envelopes ...events.Envelope) e
 		return fmt.Errorf("publish %d event(s) to %s: %w", len(envelopes), p.stream, err)
 	}
 	return nil
-}
-
-// fields is the stream entry's flat contract. Keep it in step with
-// schemas/event-envelope.v1.json and with consumers.
-func fields(e events.Envelope) map[string]any {
-	return map[string]any{
-		"id":              e.ID,
-		"type":            e.Type,
-		"organization_id": e.OrganizationID,
-		"aggregate_type":  e.AggregateType,
-		"aggregate_id":    e.AggregateID,
-		"occurred_at":     e.OccurredAt.UTC().Format(time.RFC3339Nano),
-		"correlation_id":  e.CorrelationID,
-		"causation_id":    e.CausationID,
-		"payload":         string(e.Payload),
-	}
 }

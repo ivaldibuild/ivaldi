@@ -86,3 +86,10 @@ func (r *Router) Dispatch(ctx context.Context, e Envelope) error {
 func (r *Router) Handle(ctx context.Context, e Envelope) error {
 	return r.Dispatch(ctx, e)
 }
+
+// HandleDelivery makes a Router a DeliveryHandler, so a consumer can dispatch
+// to it directly. It dispatches the delivery's envelope and leaves
+// acknowledgement to the consumer.
+func (r *Router) HandleDelivery(ctx context.Context, d Delivery) error {
+	return r.Dispatch(ctx, d.Envelope())
+}

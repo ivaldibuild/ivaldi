@@ -243,3 +243,33 @@ func TestForwardPublishesHandledEvents(t *testing.T) {
 
 	assert.Equal(t, []events.Envelope{e}, p.published)
 }
+
+// testDelivery is a Delivery for exercising Router.HandleDelivery.
+type testDelivery struct {
+	envelope events.Envelope
+	acked    bool
+}
+
+func (d *testDelivery) Envelope() events.Envelope { return d.envelope }
+
+func (d *testDelivery) EntryID() string { return "1-0" }
+
+func (d *testDelivery) DeliveryCount() int64 { return 1 }
+
+func (d *testDelivery) Ack(context.Context) error {
+	d.acked = true
+	return nil
+}
+
+func TestRouterHandlesDeliveries(t *testing.T) {
+	e := wrap(t, context.Background(), widgetRenamed{WidgetID: "wid_1"})[0]
+	var r events.Router
+	renames := &recorder{}
+	r.Subscribe(renames, "test.widget.renamed.v1")
+	d := &testDelivery{envelope: e}
+
+	require.NoError(t, r.HandleDelivery(context.Background(), d))
+
+	assert.Equal(t, []string{"test.widget.renamed.v1"}, renames.handled)
+	assert.False(t, d.acked, "the router leaves acknowledgement to the consumer")
+}

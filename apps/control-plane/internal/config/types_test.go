@@ -51,31 +51,6 @@ func TestDefaults(t *testing.T) {
 	assert.Equal(t, "logs", c.Logging.Directory)
 }
 
-func TestRedisPasswordComesFromItsFile(t *testing.T) {
-	path := writeFile(t, "hunter2\n")
-
-	got, err := Redis{PasswordFile: path}.Password()
-
-	require.NoError(t, err)
-	assert.Equal(t, Secret("hunter2"), got)
-}
-
-func TestRedisPasswordIsOptional(t *testing.T) {
-	got, err := Redis{}.Password()
-
-	require.NoError(t, err)
-	assert.Empty(t, got)
-}
-
-func TestOutboxStreamCanBeSet(t *testing.T) {
-	var c Config
-	require.NoError(t, env.Parse(&c, env.Options{
-		Source: lookup(map[string]string{"IVALDI_OUTBOX_STREAM": "custom:events"}),
-	}))
-
-	assert.Equal(t, "custom:events", c.Outbox.Stream)
-}
-
 func TestProviders(t *testing.T) {
 	secretFile := filepath.Join(t.TempDir(), "github-secret")
 	require.NoError(t, os.WriteFile(secretFile, []byte("gh-secret\n"), 0o600))

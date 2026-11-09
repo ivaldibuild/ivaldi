@@ -123,3 +123,15 @@ func TestPublishIgnoresAnEmptyBatch(t *testing.T) {
 	p := &Publisher{}
 	assert.NoError(t, p.Publish(context.Background()))
 }
+
+func TestPublishMarksARedisFailureUnavailable(t *testing.T) {
+	// Nothing listens on port 1, so the dial is refused at once.
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1", MaxRetries: -1})
+	t.Cleanup(func() { _ = client.Close() })
+	p, err := NewPublisher(Config{Client: client, Stream: "test:events"})
+	require.NoError(t, err)
+
+	err = p.Publish(context.Background(), events.Envelope{ID: "evt_1", Type: "test.v1.widget.archived"})
+
+	assert.ErrorIs(t, err, events.ErrUnavailable)
+}

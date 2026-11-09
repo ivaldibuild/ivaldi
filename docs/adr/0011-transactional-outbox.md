@@ -59,11 +59,15 @@ replicas claim different entries, and leases them for a configurable time. It
 dispatches entries oldest first, and after the batch marks published together
 the entries whose handlers returned nil. A handler failure increments the
 attempt count and schedules a retry with exponential backoff; after the
-maximum number of attempts the entry is dead-lettered instead of retried. An
-entry whose lease expires is claimed again, which is why handling is at least
-once. Every mark names the claim it comes from, and a mark from a claim that
-a later one replaced changes nothing, so a relay that outlived its lease
-cannot release, retry, or publish an entry another relay now holds.
+maximum number of attempts the entry is dead-lettered instead of retried. A
+handler that fails because its transport is down, not because of the event,
+returns `events.ErrUnavailable`: the relay then stops the batch and leaves the
+undelivered entries leased, counting no attempt, so an outage of the stream
+delays events but never dead-letters them. An entry whose lease expires is
+claimed again, which is why handling is at least once. Every mark names the
+claim it comes from, and a mark from a claim that a later one replaced changes
+nothing, so a relay that outlived its lease cannot release, retry, or publish
+an entry another relay now holds.
 
 Events that are published but not consumed are still in the stream; events
 that are published and no longer needed are deleted by the relay after a

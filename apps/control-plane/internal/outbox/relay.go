@@ -17,7 +17,9 @@ type RelayConfig struct {
 	Store Store
 	// Handler receives each claimed event. A *Router dispatches it to the
 	// handlers in this process; events.Forward publishes it to another
-	// process.
+	// process. A handler returns an error wrapping events.ErrUnavailable
+	// when its transport, not the event, failed: the event is retried after
+	// its lease without counting toward MaxAttempts.
 	Handler events.Handler
 	// Logger reports transient failures. It may be nil, in which case the
 	// Relay is silent; Drain still returns the error.
@@ -132,6 +134,8 @@ func NewRelay(c RelayConfig) (*Relay, error) {
 // delivered entries published together. A handler failure is recorded for
 // retry and returned, but does not stop the rest of the batch. A non-nil
 // error therefore means at least one event was not delivered or not marked.
+// An error wrapping events.ErrUnavailable is not the event's failure: Drain
+// stops the batch there and leaves the rest leased, counting no attempt.
 // A delivered event that cannot be marked published is redelivered after its
 // lease expires, which is why handlers must be idempotent.
 func (r *Relay) Drain(ctx context.Context) (int, error) {
@@ -142,11 +146,20 @@ func (r *Relay) Drain(ctx context.Context) (int, error) {
 	var errs []error
 	var delivered []Entry
 	for _, e := range entries {
-		if err := r.handler.Handle(ctx, e.Envelope); err != nil {
-			errs = append(errs, r.fail(ctx, e, err))
+		err := r.handler.Handle(ctx, e.Envelope)
+		if err == nil {
+			delivered = append(delivered, e)
 			continue
 		}
-		delivered = append(delivered, e)
+		if errors.Is(err, events.ErrUnavailable) {
+			// The rest of the batch would fail the same way. The undelivered
+			// entries keep their lease and are claimed again when it expires,
+			// with no failed delivery recorded, so an outage never
+			// dead-letters them.
+			errs = append(errs, fmt.Errorf("handle event %s (%s): %w", e.Envelope.ID, e.Envelope.Type, err))
+			break
+		}
+		errs = append(errs, r.fail(ctx, e, err))
 	}
 	if err := r.store.MarkPublished(ctx, clock.Now(), delivered); err != nil {
 		errs = append(errs, fmt.Errorf("mark %d event(s) published: %w", len(delivered), err))

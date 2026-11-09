@@ -121,8 +121,12 @@ func TestValidateRefuses(t *testing.T) {
 			c.Redis.PasswordFile = filepath.Join(t.TempDir(), "absent")
 		}, "redis.password_file"},
 		{"redis CA file missing", func(t *testing.T, c *Config) {
+			c.Redis.TLS = true
 			c.Redis.CAFile = filepath.Join(t.TempDir(), "absent")
-		}, "redis.ca_file"},
+		}, "redis.ca_file: stat"},
+		{"redis CA file without TLS", func(t *testing.T, c *Config) {
+			c.Redis.CAFile = writeFile(t, "ca")
+		}, "redis.ca_file needs redis.tls"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

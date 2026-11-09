@@ -65,7 +65,8 @@ func NewPublisher(c Config) (*Publisher, error) {
 
 // Publish adds the envelopes to the stream. A partial failure returns an
 // error, so the caller retries the whole batch and consumers see duplicates;
-// delivery is at least once.
+// delivery is at least once. Every error comes from Redis, not from the
+// envelopes, so it wraps events.ErrUnavailable.
 func (p *Publisher) Publish(ctx context.Context, envelopes ...events.Envelope) error {
 	if len(envelopes) == 0 {
 		return nil
@@ -82,7 +83,7 @@ func (p *Publisher) Publish(ctx context.Context, envelopes ...events.Envelope) e
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("publish %d event(s) to %s: %w", len(envelopes), p.stream, err)
+		return fmt.Errorf("publish %d event(s) to %s: %w: %w", len(envelopes), p.stream, events.ErrUnavailable, err)
 	}
 	return nil
 }

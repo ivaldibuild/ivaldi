@@ -144,15 +144,18 @@ func (c *Config) validateBootstrap(v *validator) {
 // validateRedis checks the files the Redis connection reads at startup, so a
 // missing one is found then rather than when the relay first publishes.
 func (c *Config) validateRedis(v *validator) {
-	for name, path := range map[string]string{
-		"redis.password_file": c.Redis.PasswordFile,
-		"redis.ca_file":       c.Redis.CAFile,
+	if c.Redis.CAFile != "" && !c.Redis.TLS {
+		v.addf("redis.ca_file needs redis.tls")
+	}
+	for _, f := range []struct{ name, path string }{
+		{"redis.password_file", c.Redis.PasswordFile},
+		{"redis.ca_file", c.Redis.CAFile},
 	} {
-		if path == "" {
+		if f.path == "" {
 			continue
 		}
-		if _, err := os.Stat(path); err != nil {
-			v.addf("%s: %v", name, err)
+		if _, err := os.Stat(f.path); err != nil {
+			v.addf("%s: %v", f.name, err)
 		}
 	}
 }

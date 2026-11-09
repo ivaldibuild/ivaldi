@@ -1,6 +1,16 @@
 package events
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrUnavailable marks a failure of the transport rather than of the events:
+// the connection is down, the server refused the command, or the context
+// ended. The events themselves are fine, so the caller retries them later
+// without counting the failure against them. Publishers wrap their transport
+// errors with it, and a Handler may return it for the same reason.
+var ErrUnavailable = errors.New("events: transport unavailable")
 
 // Publisher sends envelopes to a transport, such as a Redis stream, for
 // handlers in other processes. Domain code sees this interface, never the

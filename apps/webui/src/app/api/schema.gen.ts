@@ -461,10 +461,13 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List the organizations a login session may choose from */
-    get: operations['list-login-organizations'];
+    get?: never;
     put?: never;
-    post?: never;
+    /**
+     * List the organizations a login session may choose from
+     * @description Answers like any step: the organizations with a fresh login_session, or redirect_to when only one remains. A POST, so the sealed values stay out of URLs and access logs.
+     */
+    post: operations['list-login-organizations'];
     delete?: never;
     options?: never;
     head?: never;
@@ -3189,6 +3192,17 @@ export interface components {
       id: string;
       name: string;
       slug: string;
+    };
+    OrganizationsInputBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/OrganizationsInputBody.json
+       */
+      readonly $schema?: string;
+      login_challenge: string;
+      /** @description The login_session the provider sign-in sent the browser back with */
+      login_session: string;
     };
     PasswordInputBody: {
       /**
@@ -6144,16 +6158,16 @@ export interface operations {
   };
   'list-login-organizations': {
     parameters: {
-      query: {
-        login_challenge: string;
-        /** @description The login_session from the step that asked for a choice */
-        login_session: string;
-      };
+      query?: never;
       header?: never;
       path?: never;
       cookie?: never;
     };
-    requestBody?: never;
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['OrganizationsInputBody'];
+      };
+    };
     responses: {
       /** @description OK */
       200: {

@@ -2865,6 +2865,30 @@
         ],
         "type": "object"
       },
+      "OrganizationsInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/OrganizationsInputBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "login_challenge": {
+            "type": "string"
+          },
+          "login_session": {
+            "description": "The login_session the provider sign-in sent the browser back with",
+            "type": "string"
+          }
+        },
+        "required": [
+          "login_challenge",
+          "login_session"
+        ],
+        "type": "object"
+      },
       "PasswordInputBody": {
         "additionalProperties": false,
         "properties": {
@@ -9265,30 +9289,19 @@
       }
     },
     "/v1/auth/login/organizations": {
-      "get": {
+      "post": {
+        "description": "Answers like any step: the organizations with a fresh login_session, or redirect_to when only one remains. A POST, so the sealed values stay out of URLs and access logs.",
         "operationId": "list-login-organizations",
-        "parameters": [
-          {
-            "explode": false,
-            "in": "query",
-            "name": "login_challenge",
-            "required": true,
-            "schema": {
-              "type": "string"
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationsInputBody"
+              }
             }
           },
-          {
-            "description": "The login_session from the step that asked for a choice",
-            "explode": false,
-            "in": "query",
-            "name": "login_session",
-            "required": true,
-            "schema": {
-              "description": "The login_session from the step that asked for a choice",
-              "type": "string"
-            }
-          }
-        ],
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {

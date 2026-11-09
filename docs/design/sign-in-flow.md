@@ -31,9 +31,12 @@ each step    ←  { redirect_to }                           → send the browser
                 POST /v1/auth/login/organization { login_challenge, login_session, organization_id }
 
 A provider callback that needs a choice sends the browser back with only
-login_challenge and login_session; the web app lists the session's
-Organizations with GET /v1/auth/login/organizations?login_challenge=…&login_session=…
-(same 400 as the organization step when they don't match or have expired).
+login_challenge and login_session; the web app continues it with
+POST /v1/auth/login/organizations { login_challenge, login_session }, which
+answers like any step against the memberships as they are now (a choice,
+redirect_to when only one remains, 403 when none does, 400 when the pair
+doesn't match or has expired). It is a POST so the sealed values stay out of
+URLs and access logs.
 
 browser      →  GET  /oauth/authorize/continue?login_verifier=…
              ← 302  <client redirect_uri>?code=…&state=…&iss=…
@@ -58,7 +61,7 @@ After a provider sign-in, the control plane sends the browser either on to
 
 | Query parameters | Meaning |
 |---|---|
-| `login_challenge`, `login_session` | Signed in; choose an Organization. List the choices with `GET /v1/auth/login/organizations?login_challenge=…&login_session=…` and choose with `POST /v1/auth/login/organization`. |
+| `login_challenge`, `login_session` | Signed in; choose an Organization. Continue with `POST /v1/auth/login/organizations { login_challenge, login_session }`, which answers like any step, then choose with `POST /v1/auth/login/organization`. |
 | `login_challenge`, `signup_token`, `email` | Managed cloud only: no account yet. Ask for the Organization's name, then `POST /v1/auth/signup { login_challenge, signup_token, organization_name, organization_slug? }`, which answers like any step. |
 | `login_challenge`, `error` | The sign-in failed; offer another way. |
 | `error` alone | The authorization request itself was invalid (`invalid_request`, with `error_description`), or the sign-in expired; the person must start again from the application. |

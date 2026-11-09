@@ -81,13 +81,6 @@ export const noAccount: Notice = {
   body: 'Ask an owner to add you, or sign in another way.',
 };
 
-/** The organisation step after a provider sign-in, which this page can't offer yet. */
-export const chooseOrganisationUnavailable: Notice = {
-  tone: 'error',
-  title: "We couldn't finish signing you in",
-  body: 'You belong to more than one organisation. Sign in with your email and password to choose one.',
-};
-
 export function providerNotice(error: string): Notice {
   return providerErrors[error] ?? somethingWentWrong;
 }

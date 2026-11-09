@@ -381,10 +381,14 @@ func TestListingALoginSessionOrganizations(t *testing.T) {
 	require.Equal(t, "app.example.com", loc.Host)
 	sessionToken := loc.Query().Get("login_session")
 	require.NotEmpty(t, sessionToken)
+	list := func(challenge, session string) (*httptest.ResponseRecorder, map[string]any) {
+		return r.call(http.MethodPost, "/v1/auth/login/organizations", map[string]any{"login_challenge": challenge, "login_session": session})
+	}
 
-	rec, body := r.call(http.MethodGet, "/v1/auth/login/organizations?login_challenge="+url.QueryEscape(ch)+"&login_session="+url.QueryEscape(sessionToken), nil)
+	rec, body := list(ch, sessionToken)
 
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.NotEmpty(t, body["login_session"], "the answer is a step the frontend can choose from")
 	organizations := body["organizations"].([]any)
 	require.Len(t, organizations, 2)
 	assert.Equal(t, "org_acme", organizations[0].(map[string]any)["id"])
@@ -393,12 +397,23 @@ func TestListingALoginSessionOrganizations(t *testing.T) {
 
 	t.Run("a session from another sign-in", func(t *testing.T) {
 		otherChallenge := r.another().challenge(t, authorizePath)
-		rec, _ := r.call(http.MethodGet, "/v1/auth/login/organizations?login_challenge="+url.QueryEscape(otherChallenge)+"&login_session="+url.QueryEscape(sessionToken), nil)
+		rec, _ := list(otherChallenge, sessionToken)
 		assert.Equal(t, http.StatusBadRequest, rec.Code)
 	})
 	t.Run("forged values", func(t *testing.T) {
-		rec, _ := r.call(http.MethodGet, "/v1/auth/login/organizations?login_challenge=forged&login_session=forged", nil)
+		rec, _ := list("forged", "forged")
 		assert.Equal(t, http.StatusBadRequest, rec.Code)
+	})
+	t.Run("only one organization left finishes the sign-in", func(t *testing.T) {
+		r.auth.memberships["acc_1002"] = []iam.Membership{other}
+		rec, body := list(ch, sessionToken)
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		assert.Equal(t, clientRedir+"?code=c-org_other&state=xyz", r.get(body["redirect_to"].(string)).Header().Get("Location"))
+	})
+	t.Run("no organization left is refused", func(t *testing.T) {
+		r.auth.memberships["acc_1002"] = nil
+		rec, _ := list(ch, sessionToken)
+		assert.Equal(t, http.StatusForbidden, rec.Code)
 	})
 }
 

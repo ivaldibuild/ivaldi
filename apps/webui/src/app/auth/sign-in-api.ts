@@ -62,6 +62,19 @@ export class SignInApi {
     );
   }
 
+  /**
+   * Continues a provider sign-in that came back with a login session: the organisations
+   * to choose from, or `redirect_to` when only one remains.
+   */
+  listOrganizations(loginChallenge: string, loginSession: string): Promise<LoginStep> {
+    return call(
+      this.http.post<LoginStep>(`${this.base}/login/organizations`, {
+        login_challenge: loginChallenge,
+        login_session: loginSession,
+      }),
+    );
+  }
+
   chooseOrganization(
     loginChallenge: string,
     loginSession: string,

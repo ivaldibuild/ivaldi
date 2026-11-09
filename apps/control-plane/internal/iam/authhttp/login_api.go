@@ -47,6 +47,13 @@ type passwordInput struct {
 	}
 }
 
+type organizationsInput struct {
+	Body struct {
+		LoginChallenge string `json:"login_challenge" required:"true"`
+		LoginSession   string `json:"login_session" required:"true" doc:"The login_session the provider sign-in sent the browser back with"`
+	}
+}
+
 type organizationInput struct {
 	Body struct {
 		LoginChallenge string `json:"login_challenge" required:"true"`
@@ -91,6 +98,11 @@ func (h *handlers) RegisterRoutes(api huma.API) {
 		Summary: "Sign in with an email and password",
 	}, h.loginWithPassword)
 	huma.Register(api, huma.Operation{
+		OperationID: "list-login-organizations", Metadata: public, Method: http.MethodPost, Path: "/auth/login/organizations", Tags: tags,
+		Summary:     "List the organizations a login session may choose from",
+		Description: "Answers like any step: the organizations with a fresh login_session, or redirect_to when only one remains. A POST, so the sealed values stay out of URLs and access logs.",
+	}, h.listOrganizations)
+	huma.Register(api, huma.Operation{
 		OperationID: "choose-login-organization", Metadata: public, Method: http.MethodPost, Path: "/auth/login/organization", Tags: tags,
 		Summary: "Choose the organization to sign in to",
 	}, h.chooseOrganization)
@@ -131,13 +143,21 @@ func (h *handlers) loginWithPassword(ctx context.Context, in *passwordInput) (*l
 	return h.step(ctx, ch, signInOf(signedIn), "")
 }
 
-func (h *handlers) chooseOrganization(ctx context.Context, in *organizationInput) (*loginStepOutput, error) {
-	ch, err := h.openChallenge(in.Body.LoginChallenge)
+// listOrganizations continues a login session for a browser the provider
+// sent back with only the challenge and the session. It answers like any
+// step, against the memberships as they are now: a choice, redirect_to when
+// only one remains, or the same refusal when none does.
+func (h *handlers) listOrganizations(ctx context.Context, in *organizationsInput) (*loginStepOutput, error) {
+	ch, s, err := h.openSession(in.Body.LoginChallenge, in.Body.LoginSession)
 	if err != nil {
 		return nil, h.apiError(err)
 	}
-	var s loginSession
-	if err := h.open(sessionName, in.Body.LoginSession, &s, func() string { return s.Nonce }, ch); err != nil {
+	return h.step(ctx, ch, s.SignIn, "")
+}
+
+func (h *handlers) chooseOrganization(ctx context.Context, in *organizationInput) (*loginStepOutput, error) {
+	ch, s, err := h.openSession(in.Body.LoginChallenge, in.Body.LoginSession)
+	if err != nil {
 		return nil, h.apiError(err)
 	}
 	out, err := h.step(ctx, ch, s.SignIn, in.Body.OrganizationID)
@@ -172,6 +192,20 @@ func (h *handlers) signUp(ctx context.Context, in *signUpInput) (*loginStepOutpu
 		return nil, h.apiError(err)
 	}
 	return h.step(ctx, ch, signIn{AccountID: accountID, Method: iam.SignInPlatform}, "")
+}
+
+// openSession opens a login session together with the challenge it was
+// issued for; a mismatched or expired pair fails with errExpired.
+func (h *handlers) openSession(challenge, session string) (loginChallenge, loginSession, error) {
+	ch, err := h.openChallenge(challenge)
+	if err != nil {
+		return loginChallenge{}, loginSession{}, err
+	}
+	var s loginSession
+	if err := h.open(sessionName, session, &s, func() string { return s.Nonce }, ch); err != nil {
+		return loginChallenge{}, loginSession{}, err
+	}
+	return ch, s, nil
 }
 
 func (h *handlers) step(ctx context.Context, ch loginChallenge, s signIn, organization string) (*loginStepOutput, error) {

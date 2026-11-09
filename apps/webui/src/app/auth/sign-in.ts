@@ -11,7 +11,6 @@ import { BrowserLocation } from './browser-location';
 import { SignInNotice } from './sign-in-notice';
 import { LoginRequest, LoginStep, OrganizationOption, SignInApi, SignInError } from './sign-in-api';
 import {
-  chooseOrganisationUnavailable,
   expired,
   failureNotice,
   noAccount,
@@ -133,11 +132,22 @@ export class SignIn {
     }
     this.loginChallenge = challenge;
 
-    if (query.has('login_session')) {
-      // A provider sign-in that still needs an organization. The page has no way to
-      // list the person's organizations for this session, so it offers the password
-      // step, which does.
-      this.notice.set(chooseOrganisationUnavailable);
+    const loginSession = query.get('login_session');
+    if (loginSession) {
+      // A provider sign-in that still needs an organisation. If the session can't
+      // continue, the form below offers another way, with the reason above it.
+      try {
+        if (this.follow(await this.api.listOrganizations(challenge, loginSession))) {
+          return;
+        }
+      } catch (e) {
+        const notice = this.noticeFor(e);
+        if (notice === expired) {
+          this.view.set({ kind: 'ended', notice });
+          return;
+        }
+        this.notice.set(notice);
+      }
     } else if (query.has('signup_token')) {
       this.notice.set(noAccount);
     } else if (error) {
@@ -179,11 +189,12 @@ export class SignIn {
     }
   }
 
-  private follow(step: LoginStep): void {
+  /** Follows a step's answer, or sets a notice and returns false when it has neither. */
+  private follow(step: LoginStep): boolean {
     if (step.redirect_to) {
       this.view.set({ kind: 'redirecting' });
       this.location.assign(step.redirect_to);
-      return;
+      return true;
     }
     if (step.login_session && step.organizations?.length) {
       this.view.set({
@@ -191,9 +202,10 @@ export class SignIn {
         loginSession: step.login_session,
         organizations: step.organizations,
       });
-      return;
+      return true;
     }
     this.notice.set(failureNotice('unavailable'));
+    return false;
   }
 
   private noticeFor(error: unknown): Notice {

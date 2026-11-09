@@ -162,6 +162,45 @@ describe('SignIn', () => {
     expect(assign).toHaveBeenCalledWith('https://cp.test/done');
   });
 
+  it('lists the organisations a provider sign-in came back to choose from', async () => {
+    const fixture = await render({ login_challenge: 'LC', login_session: 'LS' });
+    const req = http.expectOne(`${api}/login/organizations`);
+    expect(req.request.body).toEqual({ login_challenge: 'LC', login_session: 'LS' });
+    req.flush({
+      login_session: 'LS2',
+      organizations: [
+        { id: 'org1', slug: 'northwind', name: 'Northwind' },
+        { id: 'org2', slug: 'contoso', name: 'Contoso' },
+      ],
+    });
+    const el = await settle(fixture);
+
+    expect(el.querySelector('h1')?.textContent).toContain('Choose an organisation');
+    [...el.querySelectorAll('button')].find((b) => b.textContent?.includes('Northwind'))!.click();
+    await settle(fixture);
+
+    expect(http.expectOne(`${api}/login/organization`).request.body).toEqual({
+      login_challenge: 'LC',
+      login_session: 'LS2',
+      organization_id: 'org1',
+    });
+  });
+
+  it('offers another way when the login session has no organisation left', async () => {
+    const fixture = await render({ login_challenge: 'LC', login_session: 'LS' });
+    http
+      .expectOne(`${api}/login/organizations`)
+      .flush({ title: 'Forbidden' }, { status: 403, statusText: 'Forbidden' });
+    await settle(fixture);
+    http.expectOne(`${api}/login?login_challenge=LC`).flush(loginRequest);
+    const el = await settle(fixture);
+
+    expect(el.querySelector('[role="alert"]')?.textContent).toContain(
+      "This account can't sign in here",
+    );
+    expect(el.querySelector('#sign-in-email')).not.toBeNull();
+  });
+
   it('explains a provider refusal above the form', async () => {
     const { el } = await renderForm({ login_challenge: 'LC', error: 'not_admitted' });
 

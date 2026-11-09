@@ -370,6 +370,53 @@ func TestChoosingAnOrganization(t *testing.T) {
 	})
 }
 
+func TestListingALoginSessionOrganizations(t *testing.T) {
+	r, _ := newProviderRig(t, "1002", true, nil)
+	r.auth.memberships["acc_1002"] = []iam.Membership{acme, other}
+	ch := r.challenge(t, authorizePath)
+
+	// A provider sign-in with several organizations sends the browser back
+	// with only the challenge and the login session.
+	loc := location(t, r.viaProvider(t, ch))
+	require.Equal(t, "app.example.com", loc.Host)
+	sessionToken := loc.Query().Get("login_session")
+	require.NotEmpty(t, sessionToken)
+	list := func(challenge, session string) (*httptest.ResponseRecorder, map[string]any) {
+		return r.call(http.MethodPost, "/v1/auth/login/organizations", map[string]any{"login_challenge": challenge, "login_session": session})
+	}
+
+	rec, body := list(ch, sessionToken)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.NotEmpty(t, body["login_session"], "the answer is a step the frontend can choose from")
+	organizations := body["organizations"].([]any)
+	require.Len(t, organizations, 2)
+	assert.Equal(t, "org_acme", organizations[0].(map[string]any)["id"])
+	assert.Equal(t, "acme", organizations[0].(map[string]any)["slug"])
+	assert.Equal(t, "Acme", organizations[0].(map[string]any)["name"])
+
+	t.Run("a session from another sign-in", func(t *testing.T) {
+		otherChallenge := r.another().challenge(t, authorizePath)
+		rec, _ := list(otherChallenge, sessionToken)
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+	})
+	t.Run("forged values", func(t *testing.T) {
+		rec, _ := list("forged", "forged")
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+	})
+	t.Run("only one organization left finishes the sign-in", func(t *testing.T) {
+		r.auth.memberships["acc_1002"] = []iam.Membership{other}
+		rec, body := list(ch, sessionToken)
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		assert.Equal(t, clientRedir+"?code=c-org_other&state=xyz", r.get(body["redirect_to"].(string)).Header().Get("Location"))
+	})
+	t.Run("no organization left is refused", func(t *testing.T) {
+		r.auth.memberships["acc_1002"] = nil
+		rec, _ := list(ch, sessionToken)
+		assert.Equal(t, http.StatusForbidden, rec.Code)
+	})
+}
+
 func newProviderRig(t *testing.T, subject string, platform bool, ob *fakeOnboarding) (*rig, *connectortest.Fake) {
 	t.Helper()
 	gh := &connectortest.Fake{Kind: iam.ProtocolGitHub, Name: "GitHub", Profile: iam.ExternalProfile{Subject: subject, Email: "grace@example.com", EmailVerified: true}}

@@ -10,8 +10,9 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/vcs"
 )
 
-// ConnectionRepository persists Connections. Every method is scoped to an
-// Organization. It returns ErrNotFound when no row matches.
+// ConnectionRepository persists Connections. Every method but
+// GetConnectionByWebhookRouteKey is scoped to an Organization. It returns
+// ErrNotFound when no row matches.
 type ConnectionRepository interface {
 	CreateConnection(ctx context.Context, c *Connection) error
 	GetConnection(ctx context.Context, organizationID, connectionID string) (*Connection, error)
@@ -23,6 +24,17 @@ type ConnectionRepository interface {
 	GetConnectionByWebhookRouteKey(ctx context.Context, routeKey string) (*Connection, error)
 	ListConnections(ctx context.Context, organizationID string, includeArchived bool) ([]*Connection, error)
 	UpdateConnection(ctx context.Context, c *Connection) error
+}
+
+// WebhookDeliveryRepository records handled webhook deliveries for
+// deduplication.
+type WebhookDeliveryRepository interface {
+	// RecordWebhookDelivery inserts the delivery and reports whether it
+	// was new. A duplicate is not an error. Call it inside the transaction
+	// that handles the delivery: recorded on its own, a delivery whose
+	// handling then fails would be treated as handled, and the provider's
+	// redelivery would be dropped as a duplicate.
+	RecordWebhookDelivery(ctx context.Context, d WebhookDelivery) (bool, error)
 }
 
 // ListSourcesQuery lists the Sources under a Project or a Workspace. It

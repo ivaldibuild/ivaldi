@@ -7,6 +7,7 @@ import (
 	"gorm.io/gorm/clause"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/versioncontrol"
+	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/database"
 )
 
@@ -22,12 +23,16 @@ func NewWebhookDeliveryRepository(db *gorm.DB) versioncontrol.WebhookDeliveryRep
 }
 
 func (r *webhookDeliveryRepository) RecordWebhookDelivery(ctx context.Context, d versioncontrol.WebhookDelivery) (bool, error) {
+	receivedAt := d.ReceivedAt
+	if receivedAt.IsZero() {
+		receivedAt = clock.Now()
+	}
 	res := database.Conn(ctx, r.db).Clauses(clause.OnConflict{DoNothing: true}).Create(&webhookDeliveryEntity{
 		Provider:       string(d.Provider),
 		RouteKey:       d.RouteKey,
 		DeliveryID:     d.DeliveryID,
 		OrganizationID: d.OrganizationID,
-		ReceivedAt:     d.ReceivedAt.UTC(),
+		ReceivedAt:     receivedAt.UTC(),
 	})
 	if res.Error != nil {
 		return false, translate(res.Error)

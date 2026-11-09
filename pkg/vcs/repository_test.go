@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestRepositoryKeyNormalizesTheHost(t *testing.T) {
+func TestProviderKeyNormalizesTheHost(t *testing.T) {
 	tests := []struct {
 		name       string
 		provider   ProviderKind
@@ -52,7 +52,7 @@ func TestRepositoryKeyNormalizesTheHost(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, RepositoryKey(tt.provider, tt.hostURL, tt.externalID))
+			assert.Equal(t, tt.want, ProviderKey(tt.provider, tt.hostURL, tt.externalID))
 		})
 	}
 }

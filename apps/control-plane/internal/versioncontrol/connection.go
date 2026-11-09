@@ -162,7 +162,7 @@ func NewConnection(props NewConnectionProps, connectionID *string) (*Connection,
 // webhook route key is unique across the platform, so the account cannot be
 // connected to a second Organization.
 func NewInstalledConnection(organizationID string, createdByPrincipalID *string, in vcs.Installation) (*Connection, error) {
-	routeKey := vcs.RepositoryKey(in.Provider, in.HostURL, in.InstallationID)
+	routeKey := vcs.ProviderKey(in.Provider, in.HostURL, in.InstallationID)
 	return NewConnection(NewConnectionProps{
 		OrganizationID:       organizationID,
 		Provider:             in.Provider,
@@ -245,7 +245,7 @@ func (c *Connection) CheckControlPlaneLookup() error {
 // RepositoryKey is the key a Source connecting the account's repository
 // would have, unique among the Organization's active Sources.
 func (c *Connection) RepositoryKey(externalRepositoryID string) string {
-	return vcs.RepositoryKey(c.provider, c.hostURL, externalRepositoryID)
+	return vcs.ProviderKey(c.provider, c.hostURL, externalRepositoryID)
 }
 
 // Endpoint returns how a provider reaches this account.

@@ -145,8 +145,12 @@
         },
         "visibility": {
           "type": "string",
-          "description": "Repository visibility, such as public, private, or internal.",
-          "maxLength": 50
+          "description": "Repository visibility.",
+          "enum": [
+            "public",
+            "private",
+            "internal"
+          ]
         },
         "clone_url": {
           "type": "string",

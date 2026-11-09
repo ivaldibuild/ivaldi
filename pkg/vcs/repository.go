@@ -5,11 +5,11 @@ import (
 	"strings"
 )
 
-// RepositoryKey identifies something a provider holds, such as a repository
+// ProviderKey identifies something a provider holds, such as a repository
 // or an installation, by the provider, its host, and the provider's stable
 // ID, such as github:github.com:123456. The ID survives renames and
 // transfers.
-func RepositoryKey(provider ProviderKind, hostURL, externalID string) string {
+func ProviderKey(provider ProviderKind, hostURL, externalID string) string {
 	host := hostURL
 	if u, err := url.Parse(hostURL); err == nil && u.Host != "" {
 		host = u.Host

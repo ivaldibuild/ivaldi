@@ -239,9 +239,14 @@ func TestWebhookDeliveriesAreDeduplicated(t *testing.T) {
 	assert.False(t, recorded)
 
 	delivery.DeliveryID = "delivery-2"
+	delivery.ReceivedAt = time.Time{}
 	recorded, err = f.webhooks.RecordWebhookDelivery(f.ctx, delivery)
 	require.NoError(t, err)
 	assert.True(t, recorded)
+
+	var stored webhookDeliveryEntity
+	require.NoError(t, f.db.Where("delivery_id = ?", "delivery-2").Take(&stored).Error)
+	assert.Equal(t, t0, stored.ReceivedAt.UTC(), "a zero ReceivedAt defaults to now")
 }
 
 func TestConnectedRepositoryKeysCountsOnlyActiveSources(t *testing.T) {

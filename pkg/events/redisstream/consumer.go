@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,6 +30,14 @@ const (
 	// DefaultMaxDeliveries is how often an entry is delivered before it is
 	// dead-lettered.
 	DefaultMaxDeliveries = 5
+	// DefaultRetryInterval is how long Run waits after a Redis error before
+	// trying again.
+	DefaultRetryInterval = time.Second
+
+	// settleTimeout bounds one acknowledgement or dead letter. Both run even
+	// after shutdown has cancelled the handler's context, so a handler that
+	// finished is not redelivered for want of an XACK.
+	settleTimeout = 5 * time.Second
 )
 
 // ConsumerConfig holds a Consumer's collaborators and tuning. Client, Stream,
@@ -58,12 +67,16 @@ type ConsumerConfig struct {
 	// Handler receives each delivery.
 	Handler events.DeliveryHandler
 	// ManualAck means the consumer does not acknowledge a delivery itself.
-	// The handler must call Delivery.Ack. With the default, the consumer
-	// acknowledges after the handler returns nil. A Router does not call Ack,
-	// so use auto-ack with one, or wrap it in a handler that acknowledges.
+	// The handler must call Delivery.Ack within ClaimIdleTimeout. With the
+	// default, the consumer acknowledges after the handler returns nil. A
+	// Router does not call Ack, so use auto-ack with one, or wrap it in a
+	// handler that acknowledges. A delivery left unacknowledged is redelivered
+	// and, after MaxDeliveries, dead-lettered.
 	ManualAck bool
 
-	// Batch is the most entries one read or claim takes. Default DefaultBatch.
+	// Batch is the most entries one read or claim takes. A read or claim never
+	// takes more entries than there are free handler slots, so an entry starts
+	// as soon as it is read. Default DefaultBatch.
 	Batch int
 	// Concurrency is how many deliveries are handled at once. Default
 	// DefaultConcurrency.
@@ -76,8 +89,14 @@ type ConsumerConfig struct {
 	// Default DefaultClaimIdleTimeout.
 	ClaimIdleTimeout time.Duration
 	// MaxDeliveries is how many times an entry is delivered before it is
-	// dead-lettered. Default DefaultMaxDeliveries.
+	// dead-lettered. An entry whose earlier deliveries never finished, because
+	// the process stopped or a manual-ack handler never acknowledged, is
+	// dead-lettered without reaching the handler once it is delivered more
+	// often than this. Default DefaultMaxDeliveries.
 	MaxDeliveries int
+	// RetryInterval is how long Run waits after a Redis error before trying
+	// again. Default DefaultRetryInterval.
+	RetryInterval time.Duration
 	// DeadLetterStream receives entries this consumer gives up on. It must
 	// differ from Stream.
 	DeadLetterStream string
@@ -85,8 +104,8 @@ type ConsumerConfig struct {
 	// zero means no trimming, so operators do not lose events silently.
 	DeadLetterMaxLen int64
 
-	// Logger reports retries and dead letters. It may be nil, in which case
-	// the consumer is silent.
+	// Logger reports Redis errors, retries, panics, and dead letters. It may
+	// be nil, in which case the consumer is silent.
 	Logger logging.Logger
 }
 
@@ -112,6 +131,7 @@ type Consumer struct {
 	blockTimeout         time.Duration
 	claimIdle            time.Duration
 	maxDeliveries        int
+	retryInterval        time.Duration
 	deadLetterStream     string
 	deadLetterMaxLen     int64
 	logger               logging.Logger
@@ -168,6 +188,10 @@ func NewConsumer(c ConsumerConfig) (*Consumer, error) {
 	if maxDeliveries == 0 {
 		maxDeliveries = DefaultMaxDeliveries
 	}
+	retryInterval := c.RetryInterval
+	if retryInterval == 0 {
+		retryInterval = DefaultRetryInterval
+	}
 
 	invalid := []struct {
 		name string
@@ -178,6 +202,7 @@ func NewConsumer(c ConsumerConfig) (*Consumer, error) {
 		{"BlockTimeout", blockTimeout < 0},
 		{"ClaimIdleTimeout", claimIdle < 0},
 		{"MaxDeliveries", maxDeliveries < 0},
+		{"RetryInterval", retryInterval < 0},
 		{"DeadLetterMaxLen", c.DeadLetterMaxLen < 0},
 	}
 	for _, v := range invalid {
@@ -199,6 +224,7 @@ func NewConsumer(c ConsumerConfig) (*Consumer, error) {
 		blockTimeout:         blockTimeout,
 		claimIdle:            claimIdle,
 		maxDeliveries:        maxDeliveries,
+		retryInterval:        retryInterval,
 		deadLetterStream:     c.DeadLetterStream,
 		deadLetterMaxLen:     c.DeadLetterMaxLen,
 		logger:               c.Logger,
@@ -207,12 +233,15 @@ func NewConsumer(c ConsumerConfig) (*Consumer, error) {
 
 // Run consumes entries until ctx is done. It first drains this consumer's
 // pending entries left by an earlier run, then reads new entries while
-// claiming entries other consumers left idle. It stops reading on ctx
-// cancellation and waits for in-flight handlers. It never deletes the group
-// or this consumer's pending list, which is how a restart recovers them.
+// claiming entries other consumers left idle. It returns an error only when
+// the group cannot be created or found at startup; after that it logs Redis
+// errors and tries again after RetryInterval. It stops reading on ctx
+// cancellation and waits for in-flight handlers, whose context is cancelled
+// too. It never deletes the group or this consumer's pending list, which is
+// how a restart recovers them.
 func (c *Consumer) Run(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(ctx)
-	r := &runner{c: c, sem: make(chan struct{}, c.concurrency)}
+	r := &runner{c: c, sem: make(chan struct{}, c.concurrency), drainFrom: "-"}
 	defer func() {
 		cancel()
 		r.wg.Wait()
@@ -221,35 +250,25 @@ func (c *Consumer) Run(ctx context.Context) error {
 	if err := c.ensureGroup(runCtx); err != nil {
 		return err
 	}
-	if err := r.drainPending(runCtx); err != nil {
-		if runCtx.Err() != nil {
-			return nil
-		}
-		return err
-	}
-
-	for {
-		if runCtx.Err() != nil {
-			return nil
-		}
-		if err := r.reclaim(runCtx); err != nil {
-			if runCtx.Err() != nil {
-				return nil
-			}
-			return err
-		}
-		entries, err := c.read(runCtx)
-		if errors.Is(err, redis.Nil) {
+	for runCtx.Err() == nil {
+		err := r.step(runCtx)
+		if err == nil || runCtx.Err() != nil {
 			continue
 		}
-		if err != nil {
-			if runCtx.Err() != nil {
-				return nil
-			}
-			return fmt.Errorf("redisstream: read %s: %w", c.stream, err)
+		if c.logger != nil {
+			c.logger.Error("redisstream: consumer will retry after a Redis error",
+				logging.F("stream", c.stream),
+				logging.F("group", c.group),
+				logging.F("consumer", c.consumer),
+				logging.F("retry_in", c.retryInterval.String()),
+				logging.F("error", err.Error()))
 		}
-		r.dispatch(runCtx, entries, nil)
+		select {
+		case <-runCtx.Done():
+		case <-time.After(c.retryInterval):
+		}
 	}
+	return nil
 }
 
 // Progress reports where the consumer group is in the stream. It is
@@ -301,12 +320,12 @@ func (c *Consumer) ensureGroup(ctx context.Context) error {
 	return nil
 }
 
-func (c *Consumer) read(ctx context.Context) ([]redis.XMessage, error) {
+func (c *Consumer) read(ctx context.Context, count int) ([]redis.XMessage, error) {
 	streams, err := c.client.XReadGroup(ctx, &redis.XReadGroupArgs{
 		Group:    c.group,
 		Consumer: c.consumer,
 		Streams:  []string{c.stream, ">"},
-		Count:    int64(c.batch),
+		Count:    int64(count),
 		Block:    c.blockTimeout,
 	}).Result()
 	if err != nil {
@@ -337,7 +356,15 @@ func (c *Consumer) claim(ctx context.Context, ids []string, minIdle time.Duratio
 	return entries, nil
 }
 
+// settleContext keeps ctx's values but not its cancellation, so the outcome
+// of a handler that finished is recorded even when shutdown has begun.
+func settleContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), settleTimeout)
+}
+
 func (c *Consumer) acknowledge(ctx context.Context, entryID string) error {
+	ctx, cancel := settleContext(ctx)
+	defer cancel()
 	if err := c.client.XAck(ctx, c.stream, c.group, entryID).Err(); err != nil {
 		return fmt.Errorf("acknowledge entry %s: %w", entryID, err)
 	}
@@ -345,6 +372,8 @@ func (c *Consumer) acknowledge(ctx context.Context, entryID string) error {
 }
 
 func (c *Consumer) deadLetter(ctx context.Context, entry redis.XMessage, deliveries int64, cause error) {
+	ctx, cancel := settleContext(ctx)
+	defer cancel()
 	values := deadLetterValues(entry.Values, entry.ID, c.stream, c.group, c.consumer, deliveries, cause)
 	args := &redis.XAddArgs{Stream: c.deadLetterStream, Values: values}
 	if c.deadLetterMaxLen > 0 {
@@ -379,7 +408,7 @@ func (c *Consumer) logError(msg string, entry redis.XMessage, deliveries int64, 
 	if c.logger == nil {
 		return
 	}
-	fields := append(c.logFields(entry, deliveries, extra...), logging.F("error", err))
+	fields := append(c.logFields(entry, deliveries, extra...), logging.F("error", err.Error()))
 	c.logger.Error(msg, fields...)
 }
 
@@ -404,29 +433,78 @@ type runner struct {
 	c   *Consumer
 	sem chan struct{}
 	wg  sync.WaitGroup
+
+	// drainFrom is where drainPending resumes in this consumer's pending
+	// list, kept across retries so an entry already claimed in this run is
+	// not claimed again while its handler runs. drained is set once the
+	// list has been walked.
+	drainFrom string
+	drained   bool
+	// lastReclaim is when reclaim last looked for idle entries.
+	lastReclaim time.Time
+}
+
+// step does one unit of work: it drains this consumer's pending entries until
+// none are left, and after that reclaims idle entries and reads new ones.
+func (r *runner) step(ctx context.Context) error {
+	if !r.drained {
+		return r.drainPending(ctx)
+	}
+	if err := r.reclaim(ctx); err != nil {
+		return err
+	}
+	count, ok := r.free(ctx)
+	if !ok {
+		return nil
+	}
+	entries, err := r.c.read(ctx, count)
+	if errors.Is(err, redis.Nil) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("redisstream: read %s: %w", r.c.stream, err)
+	}
+	r.dispatch(ctx, entries, nil)
+	return nil
+}
+
+// free waits until a handler slot is free and returns how many are, at most
+// the batch size. Reading or claiming no more than that keeps an entry from
+// sitting in the pending list, growing idle, while it waits for a slot,
+// which would let another consumer claim it before it starts. Only the Run
+// goroutine takes slots, so the count can only grow before dispatch.
+func (r *runner) free(ctx context.Context) (int, bool) {
+	select {
+	case r.sem <- struct{}{}:
+		<-r.sem
+	case <-ctx.Done():
+		return 0, false
+	}
+	return min(cap(r.sem)-len(r.sem), r.c.batch), true
 }
 
 // drainPending claims this consumer's own pending entries from earlier runs.
 // It walks the pending list with an exclusive cursor so entries already
 // claimed in this run are not claimed again before their handlers finish.
 func (r *runner) drainPending(ctx context.Context) error {
-	start := "-"
 	for {
-		if ctx.Err() != nil {
+		count, ok := r.free(ctx)
+		if !ok {
 			return nil
 		}
 		pending, err := r.c.client.XPendingExt(ctx, &redis.XPendingExtArgs{
 			Stream:   r.c.stream,
 			Group:    r.c.group,
-			Start:    start,
+			Start:    r.drainFrom,
 			End:      "+",
-			Count:    int64(r.c.batch),
+			Count:    int64(count),
 			Consumer: r.c.consumer,
 		}).Result()
 		if err != nil {
 			return fmt.Errorf("redisstream: inspect pending entries of %s: %w", r.c.consumer, err)
 		}
 		if len(pending) == 0 {
+			r.drained = true
 			return nil
 		}
 
@@ -436,27 +514,33 @@ func (r *runner) drainPending(ctx context.Context) error {
 			ids[i] = p.ID
 			deliveries[p.ID] = p.RetryCount + 1
 		}
-		entries, err := r.c.claim(ctx, ids, 0)
-		if err != nil {
-			return err
-		}
-		r.dispatch(ctx, entries, deliveries)
-
 		next, err := nextStreamID(pending[len(pending)-1].ID)
 		if err != nil {
 			return err
 		}
-		start = next
+		entries, err := r.c.claim(ctx, ids, 0)
+		if err != nil {
+			return err
+		}
+		r.drainFrom = next
+		r.dispatch(ctx, entries, deliveries)
 	}
 }
 
-// reclaim claims pending entries left idle by any consumer. XCLAIM resets
-// their idle time, so repeated calls drain the idle set rather than returning
-// the same entries.
+// reclaim claims pending entries left idle by any consumer, at most every
+// half ClaimIdleTimeout: an entry becomes claimable only after that long, so
+// looking more often finds little and costs a pending-list scan per read.
+// XCLAIM resets the idle time of what it claims, so repeated passes drain the
+// idle set rather than returning the same entries.
 func (r *runner) reclaim(ctx context.Context) error {
+	if !r.lastReclaim.IsZero() && time.Since(r.lastReclaim) < r.c.claimIdle/2 {
+		return nil
+	}
+	r.lastReclaim = time.Now()
 	seen := make(map[string]struct{})
 	for {
-		if ctx.Err() != nil {
+		count, ok := r.free(ctx)
+		if !ok {
 			return nil
 		}
 		pending, err := r.c.client.XPendingExt(ctx, &redis.XPendingExtArgs{
@@ -465,7 +549,7 @@ func (r *runner) reclaim(ctx context.Context) error {
 			Idle:   r.c.claimIdle,
 			Start:  "-",
 			End:    "+",
-			Count:  int64(r.c.batch),
+			Count:  int64(count),
 		}).Result()
 		if err != nil {
 			return fmt.Errorf("redisstream: inspect idle pending entries of %s: %w", r.c.stream, err)
@@ -527,6 +611,15 @@ func (r *runner) handle(ctx context.Context, entry redis.XMessage, deliveries in
 		c.deadLetter(ctx, entry, deliveries, fmt.Errorf("decode entry %s: %w", entry.ID, err))
 		return
 	}
+	if deliveries > int64(c.maxDeliveries) {
+		// Every earlier delivery ended without an outcome: the process
+		// stopped, perhaps because the handler crashed it, or a manual-ack
+		// handler never acknowledged. Give up rather than hand the entry
+		// back to a handler that may stop the process again.
+		c.deadLetter(ctx, entry, deliveries,
+			fmt.Errorf("no outcome after %d deliveries", deliveries-1))
+		return
+	}
 
 	d := &delivery{
 		envelope:   envelope,
@@ -536,11 +629,11 @@ func (r *runner) handle(ctx context.Context, entry redis.XMessage, deliveries in
 			return c.acknowledge(ctx, entry.ID)
 		},
 	}
-	handleErr := c.handler.HandleDelivery(ctx, d)
+	handleErr := r.call(ctx, entry, d)
 	if handleErr == nil {
 		if c.manualAck {
 			if !d.isAcked() {
-				c.logInfo("redisstream: delivery returned without acknowledgement", entry, deliveries)
+				c.logInfo("redisstream: delivery returned without acknowledgement; it will be redelivered", entry, deliveries)
 			}
 			return
 		}
@@ -564,6 +657,26 @@ func (r *runner) handle(ctx context.Context, entry redis.XMessage, deliveries in
 		return
 	}
 	c.logError("redisstream: event will be retried", entry, deliveries, handleErr)
+}
+
+// call runs the handler and turns a panic into an error, so one bad event
+// cannot stop the process; the entry is then retried and dead-lettered like
+// any other failure. The stack goes to the log, not the dead letter.
+func (r *runner) call(ctx context.Context, entry redis.XMessage, d *delivery) (err error) {
+	defer func() {
+		p := recover()
+		if p == nil {
+			return
+		}
+		err = fmt.Errorf("handler panicked: %v", p)
+		if r.c.logger != nil {
+			r.c.logger.Error("redisstream: handler panicked",
+				r.c.logFields(entry, d.deliveries,
+					logging.F("panic", fmt.Sprint(p)),
+					logging.F("stack", string(debug.Stack())))...)
+		}
+	}()
+	return r.c.handler.HandleDelivery(ctx, d)
 }
 
 // delivery is the transport's events.Delivery. It acknowledges through the

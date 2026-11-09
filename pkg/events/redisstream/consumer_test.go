@@ -48,6 +48,7 @@ func TestNewConsumerRequiresSettings(t *testing.T) {
 		{"negative block timeout", func(c *ConsumerConfig) { c.BlockTimeout = -1 }, "BlockTimeout"},
 		{"negative claim idle timeout", func(c *ConsumerConfig) { c.ClaimIdleTimeout = -1 }, "ClaimIdleTimeout"},
 		{"negative max deliveries", func(c *ConsumerConfig) { c.MaxDeliveries = -1 }, "MaxDeliveries"},
+		{"negative retry interval", func(c *ConsumerConfig) { c.RetryInterval = -1 }, "RetryInterval"},
 		{"negative dead letter max length", func(c *ConsumerConfig) { c.DeadLetterMaxLen = -1 }, "DeadLetterMaxLen"},
 	}
 	for _, tt := range tests {
@@ -73,6 +74,7 @@ func TestNewConsumerDefaults(t *testing.T) {
 	assert.Equal(t, DefaultBlockTimeout, c.blockTimeout)
 	assert.Equal(t, DefaultClaimIdleTimeout, c.claimIdle)
 	assert.Equal(t, DefaultMaxDeliveries, c.maxDeliveries)
+	assert.Equal(t, DefaultRetryInterval, c.retryInterval)
 	assert.Zero(t, c.deadLetterMaxLen)
 }
 
@@ -215,6 +217,7 @@ func newTestConsumer(t *testing.T, client *redis.Client, stream, group, consumer
 		BlockTimeout:     50 * time.Millisecond,
 		ClaimIdleTimeout: 200 * time.Millisecond,
 		MaxDeliveries:    5,
+		RetryInterval:    50 * time.Millisecond,
 	}
 	for _, f := range tune {
 		f(&cfg)
@@ -646,6 +649,159 @@ func TestConsumerRequiresAnExistingGroupWhenCreationIsDisabled(t *testing.T) {
 	err = c.Run(ctx)
 
 	assert.ErrorContains(t, err, "does not exist")
+}
+
+func TestConsumerSurvivesAPanickingHandler(t *testing.T) {
+	client := redisClient(t)
+	stream, group, dead := testStreamNames(t, client)
+	publishEnvelope(t, client, stream, testEnvelope(t, "wid_1"))
+
+	c := newTestConsumer(t, client, stream, group, "replica-1", dead,
+		events.DeliveryHandlerFunc(func(context.Context, events.Delivery) error {
+			panic("boom")
+		}), func(c *ConsumerConfig) {
+			c.ClaimIdleTimeout = 100 * time.Millisecond
+			c.MaxDeliveries = 2
+		})
+	stop := runConsumer(t, c)
+
+	msgs := requireStreamLen(t, client, dead, 1)
+	assert.Equal(t, "handler panicked: boom", msgs[0].Values["error"])
+	requirePending(t, client, stream, group, 0)
+	stop()
+}
+
+func TestConsumerDeadLettersAnEntryWhoseDeliveriesNeverFinished(t *testing.T) {
+	client := redisClient(t)
+	stream, group, dead := testStreamNames(t, client)
+	ctx := context.Background()
+	require.NoError(t, client.XGroupCreateMkStream(ctx, stream, group, "0").Err())
+	publishEnvelope(t, client, stream, testEnvelope(t, "wid_1"))
+
+	// Simulate five runs that each read the entry and then crashed.
+	read, err := client.XReadGroup(ctx, &redis.XReadGroupArgs{
+		Group:    group,
+		Consumer: "replica-1",
+		Streams:  []string{stream, ">"},
+		Count:    1,
+		Block:    -1,
+	}).Result()
+	require.NoError(t, err)
+	entryID := read[0].Messages[0].ID
+	require.NoError(t, client.Do(ctx, "XCLAIM", stream, group, "replica-1", "0", entryID, "RETRYCOUNT", "5").Err())
+
+	var handled atomic.Int64
+	c := newTestConsumer(t, client, stream, group, "replica-1", dead,
+		events.DeliveryHandlerFunc(func(context.Context, events.Delivery) error {
+			handled.Add(1)
+			return nil
+		}))
+	stop := runConsumer(t, c)
+
+	msgs := requireStreamLen(t, client, dead, 1)
+	assert.Zero(t, handled.Load(), "the entry is not handed to a handler that may crash again")
+	assert.Equal(t, "no outcome after 5 deliveries", msgs[0].Values["error"])
+	assert.Equal(t, entryID, msgs[0].Values["source_entry_id"])
+	requirePending(t, client, stream, group, 0)
+	stop()
+}
+
+func TestConsumerAcknowledgesAHandlerThatFinishesDuringShutdown(t *testing.T) {
+	client := redisClient(t)
+	stream, group, dead := testStreamNames(t, client)
+	publishEnvelope(t, client, stream, testEnvelope(t, "wid_1"))
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	c := newTestConsumer(t, client, stream, group, "replica-1", dead,
+		events.DeliveryHandlerFunc(func(context.Context, events.Delivery) error {
+			close(started)
+			<-release // work that does not watch ctx, such as a committed transaction
+			return nil
+		}))
+	stop := runConsumer(t, c)
+
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("consumer did not handle the event")
+	}
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		close(release)
+	}()
+	stop()
+
+	n, err := pendingCount(context.Background(), client, stream, group)
+	require.NoError(t, err)
+	assert.Zero(t, n, "a handler that finished is acknowledged though shutdown began")
+}
+
+func TestConsumerReadsNoMoreThanItsFreeSlots(t *testing.T) {
+	client := redisClient(t)
+	stream, group, dead := testStreamNames(t, client)
+	for i := 0; i < 3; i++ {
+		publishEnvelope(t, client, stream, testEnvelope(t, "wid_"+strconv.Itoa(i)))
+	}
+
+	started := make(chan struct{}, 3)
+	release := make(chan struct{})
+	c := newTestConsumer(t, client, stream, group, "replica-1", dead,
+		events.DeliveryHandlerFunc(func(context.Context, events.Delivery) error {
+			started <- struct{}{}
+			<-release
+			return nil
+		}), func(c *ConsumerConfig) {
+			c.Batch = 10
+			c.Concurrency = 1
+			c.ClaimIdleTimeout = 5 * time.Second
+		})
+	stop := runConsumer(t, c)
+
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("consumer did not handle the event")
+	}
+	time.Sleep(100 * time.Millisecond)
+	requirePending(t, client, stream, group, 1)
+
+	close(release)
+	requirePending(t, client, stream, group, 0)
+	assert.Len(t, started, 2, "the other entries are read once a slot frees")
+	stop()
+}
+
+func TestConsumerKeepsRunningAfterARedisError(t *testing.T) {
+	client := redisClient(t)
+	stream, group, dead := testStreamNames(t, client)
+
+	received := make(chan string, 1)
+	c := newTestConsumer(t, client, stream, group, "replica-1", dead,
+		events.DeliveryHandlerFunc(func(_ context.Context, d events.Delivery) error {
+			received <- d.Envelope().ID
+			return nil
+		}))
+	stop := runConsumer(t, c)
+
+	// Reads fail with NOGROUP until the group is back.
+	ctx := context.Background()
+	require.Eventually(t, func() bool {
+		n, err := client.XGroupDestroy(ctx, stream, group).Result()
+		return err == nil && n == 1
+	}, 3*time.Second, 10*time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
+	require.NoError(t, client.XGroupCreate(ctx, stream, group, "0").Err())
+
+	envelope := testEnvelope(t, "wid_1")
+	publishEnvelope(t, client, stream, envelope)
+	select {
+	case id := <-received:
+		assert.Equal(t, envelope.ID, id)
+	case <-time.After(3 * time.Second):
+		t.Fatal("consumer did not resume after the error")
+	}
+	stop()
 }
 
 func streamLen(t *testing.T, client *redis.Client, stream string) int64 {

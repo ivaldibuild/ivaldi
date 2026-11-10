@@ -22,6 +22,7 @@ type connectionEntity struct {
 	LookupPool           *string    `gorm:"column:lookup_pool"`
 	Status               string     `gorm:"column:status"`
 	CreatedByPrincipalID *string    `gorm:"column:created_by_principal_id"`
+	ProviderUpdatedAt    *time.Time `gorm:"column:provider_updated_at"`
 	CreatedAt            time.Time  `gorm:"column:created_at;autoCreateTime:false"`
 	UpdatedAt            time.Time  `gorm:"column:updated_at;autoUpdateTime:false"`
 	DeletedAt            *time.Time `gorm:"column:deleted_at"`
@@ -44,6 +45,7 @@ type sourceEntity struct {
 	WebURL               *string    `gorm:"column:web_url"`
 	CreatedByPrincipalID *string    `gorm:"column:created_by_principal_id"`
 	UpstreamArchivedAt   *time.Time `gorm:"column:upstream_archived_at"`
+	ProviderUpdatedAt    *time.Time `gorm:"column:provider_updated_at"`
 	CreatedAt            time.Time  `gorm:"column:created_at;autoCreateTime:false"`
 	UpdatedAt            time.Time  `gorm:"column:updated_at;autoUpdateTime:false"`
 	ArchivedAt           *time.Time `gorm:"column:archived_at"`

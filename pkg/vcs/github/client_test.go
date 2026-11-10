@@ -60,7 +60,7 @@ func TestRepositoryAndCommitsBetween(t *testing.T) {
 			_, _ = w.Write([]byte(`{
 				"id": 99, "full_name": "acme/api", "default_branch": "main",
 				"visibility": "private", "clone_url": "https://github.com/acme/api.git",
-				"html_url": "https://github.com/acme/api"
+				"html_url": "https://github.com/acme/api", "updated_at": "2026-11-08T08:30:00+01:00"
 			}`))
 		case "/repositories/99/compare/aaa...bbb":
 			if r.URL.Query().Get("page") == "" {
@@ -88,6 +88,7 @@ func TestRepositoryAndCommitsBetween(t *testing.T) {
 	assert.Equal(t, "acme/api", repo.FullName)
 	assert.Equal(t, "private", repo.Visibility)
 	assert.Equal(t, "99", repo.ExternalID)
+	assert.Equal(t, time.Date(2026, 11, 8, 7, 30, 0, 0, time.UTC), repo.UpdatedAt, "in UTC")
 
 	commits, err := client.CommitsBetween(ctx, endpoint(server), repo, "aaa", "bbb")
 	require.NoError(t, err)

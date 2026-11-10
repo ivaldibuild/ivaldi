@@ -39,11 +39,13 @@ erDiagram
   - `lookup_from` and `lookup_pool` say where lookups run ([ADR 0008](../adr/0008-reaching-customer-systems.md)).
   - `status` is `active`, `suspended` (for example, the provider suspended the installation), or `revoked` (the app was uninstalled or the token revoked). A Connection that is not active cannot be used for lookups, and its Sources show as disconnected.
   - `created_by_principal_id` records who connected it. Connections are soft-deleted with `deleted_at`.
+  - `provider_updated_at` is the provider's timestamp of the newest webhook applied to the Connection, which orders its webhooks (see Receiving a webhook).
 - **sources** — one repository, connected through a Connection and placed under one Project.
   - `external_repo_id` is the provider's stable repository ID, and `repository_key` combines it with the provider and host (for example `github:github.com:123456`). `repository_key` is unique among an Organization's active Sources, so the same repository cannot be connected twice, even through two Connections.
   - `full_name` (such as `acme/checkout`), `default_branch`, `visibility` (`public`, `private`, or `internal`), `clone_url`, and `web_url` are kept up to date from provider events.
   - `project_id` is the Project the Source belongs to, and `workspace_id` is copied from it. Projects never move between Workspaces, so the copy stays correct ([workspace data model](workspace-data-model.md)).
   - `upstream_archived_at` records when the provider archived the repository. `archived_at` records when it was disconnected from Ivaldi.
+  - `provider_updated_at` is the provider's timestamp of the newest webhook applied to the Source, which orders its webhooks (see Receiving a webhook).
   - Sources are never hard-deleted, because Builds, Changes, and audit records refer to them.
 
 ## How the main flows work
@@ -54,13 +56,15 @@ erDiagram
 
 **Receiving a webhook.** The gateway checks the signature with the provider's webhook secret (the GitHub App's secret for now), resolves `webhook_route_key` to the Organization and Connection, and maps the payload's repository ID to a Source by `repository_key`. Events for repositories that are not connected Sources are acknowledged and dropped. Repository events (renamed, transferred, default branch changed, archived) update the Source. Installation events (suspended, uninstalled) update the Connection's `status`.
 
+Webhooks can be handled out of order: a provider's redelivery can arrive late, and the control plane handles several events at once. Each Source and Connection therefore keeps `provider_updated_at`, the provider's timestamp (GitHub's `updated_at` on the repository or installation) of the newest webhook applied to it, and ignores a webhook older than that. The timestamp moves even when the webhook changed nothing else, so an unarchive handled before the archive it followed still refuses that archive. Equal timestamps are not refused, because providers report whole seconds and two events can share one. A webhook without a timestamp is applied without being ordered. A Source starts from the provider's `updated_at` of the repository it was connected from, and a refresh (below) is ordered the same way, so a webhook from before either cannot undo it.
+
 **Choosing a repository.** To connect a Source, the web app lists the repositories a Connection's account lets Ivaldi read (`GET /v1/connections/{id}/repositories`, which needs `connection.read`). The list is asked of the provider each time and never stored, because Ivaldi does not mirror the provider and the list changes whenever someone changes the installation's repository access.
 
 **Comparing commits.** Delivery, or any other capability, asks for the commits between two SHAs in a Source. The request goes through `pkg/vcs` and the Connection's lookup path, and returns commit IDs, authors, and messages only ([ADR 0008](../adr/0008-reaching-customer-systems.md)).
 
 **Connection status.** A provider can suspend an installation or revoke it. `POST /v1/connections/{id}/suspend` and `/revoke` record those states, and `/reactivate` makes a suspended Connection usable again. A suspended or revoked Connection cannot be used for lookups, so Sources that use it cannot be refreshed or restored until it is active; their own state does not change. Revoking is final: a revoked Connection can only be archived, which frees its account to be connected again. Provider webhook events apply these transitions too, and an administrator can still call them directly.
 
-**Refreshing a Source.** `POST /v1/sources/{id}/refresh` re-reads the repository from the provider and updates its full name, default branch, visibility, and URLs. This handles renames and default-branch changes until provider webhooks update them automatically. The Source keeps its ID because it is keyed by the provider's stable repository ID.
+**Refreshing a Source.** `POST /v1/sources/{id}/refresh` re-reads the repository from the provider and updates its full name, default branch, visibility, and URLs. It recovers from a webhook the provider failed to deliver. The provider's `updated_at` orders it with webhooks: a refresh older than a webhook already applied changes nothing, and one that changes the Source moves `provider_updated_at`. A refresh that finds nothing to change saves nothing. The Source keeps its ID because it is keyed by the provider's stable repository ID.
 
 **Archiving.** This capability registers with the workspace capability as a dependent: a Project with active Sources cannot be archived ([workspace data model](workspace-data-model.md)). Disconnecting a Source sets `archived_at` and soft-deletes its IAM resource. Records that refer to it keep working, because the row stays.
 

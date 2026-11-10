@@ -88,6 +88,7 @@ func (r *sourceRepository) UpdateSource(ctx context.Context, s *versioncontrol.S
 			"clone_url":            e.CloneURL,
 			"web_url":              e.WebURL,
 			"upstream_archived_at": e.UpstreamArchivedAt,
+			"provider_updated_at":  e.ProviderUpdatedAt,
 			"updated_at":           e.UpdatedAt,
 			"archived_at":          e.ArchivedAt,
 		}))

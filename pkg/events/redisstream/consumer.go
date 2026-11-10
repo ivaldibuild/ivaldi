@@ -89,7 +89,8 @@ type ConsumerConfig struct {
 	// Default DefaultClaimIdleTimeout.
 	ClaimIdleTimeout time.Duration
 	// MaxDeliveries is how many times an entry is delivered before it is
-	// dead-lettered. An entry whose earlier deliveries never finished, because
+	// dead-lettered. A handler error matching events.ErrPermanent
+	// dead-letters the entry at its first delivery. An entry whose earlier deliveries never finished, because
 	// the process stopped or a manual-ack handler never acknowledged, is
 	// dead-lettered without reaching the handler once it is delivered more
 	// often than this. Default DefaultMaxDeliveries.
@@ -652,7 +653,7 @@ func (r *runner) handle(ctx context.Context, entry redis.XMessage, deliveries in
 		// next run rather than dead-lettering it for a cancellation.
 		return
 	}
-	if deliveries >= int64(c.maxDeliveries) {
+	if deliveries >= int64(c.maxDeliveries) || errors.Is(handleErr, events.ErrPermanent) {
 		c.deadLetter(ctx, entry, deliveries, handleErr)
 		return
 	}

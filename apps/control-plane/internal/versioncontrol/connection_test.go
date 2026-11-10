@@ -2,6 +2,7 @@ package versioncontrol
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -47,4 +48,51 @@ func TestConnectionStatusTransitions(t *testing.T) {
 
 	connection.Archive()
 	assert.ErrorIs(t, connection.Revoke(), ErrArchived)
+}
+
+func TestConnectionApplyProviderStatusRefusesAnOlderReport(t *testing.T) {
+	// The installation was suspended at 10:00 and unsuspended at 11:00, and
+	// the unsuspend is handled first. It changes nothing, because the
+	// Connection was active, but it must still refuse the suspension.
+	connection := testConnection(t)
+	suspendedAt := time.Date(2026, 11, 9, 10, 0, 0, 0, time.UTC)
+
+	applied, err := connection.ApplyProviderStatus(StatusActive, suspendedAt.Add(time.Hour))
+	require.NoError(t, err)
+	assert.True(t, applied)
+	assert.Empty(t, connection.PullEvents())
+
+	applied, err = connection.ApplyProviderStatus(StatusSuspended, suspendedAt)
+	require.NoError(t, err)
+	assert.False(t, applied)
+	assert.Equal(t, StatusActive, connection.Status())
+	assert.Empty(t, connection.PullEvents())
+}
+
+func TestConnectionApplyProviderStatusAppliesNewerReports(t *testing.T) {
+	connection := testConnection(t)
+	at := time.Date(2026, 11, 9, 10, 0, 0, 0, time.UTC)
+
+	applied, err := connection.ApplyProviderStatus(StatusSuspended, at)
+	require.NoError(t, err)
+	assert.True(t, applied)
+	assert.Equal(t, StatusSuspended, connection.Status())
+	assert.Len(t, connection.PullEvents(), 1)
+
+	applied, err = connection.ApplyProviderStatus(StatusActive, at.Add(time.Hour))
+	require.NoError(t, err)
+	assert.True(t, applied)
+	assert.Equal(t, StatusActive, connection.Status())
+	assert.Equal(t, at.Add(time.Hour), *connection.Snapshot().ProviderUpdatedAt)
+}
+
+func TestConnectionApplyProviderStatusRefusedTransitionMovesNothing(t *testing.T) {
+	connection := testConnection(t)
+	at := time.Date(2026, 11, 9, 10, 0, 0, 0, time.UTC)
+	require.NoError(t, connection.Revoke())
+
+	applied, err := connection.ApplyProviderStatus(StatusActive, at)
+	assert.ErrorIs(t, err, ErrInvalid)
+	assert.False(t, applied)
+	assert.Nil(t, connection.Snapshot().ProviderUpdatedAt)
 }

@@ -24,13 +24,14 @@ type Config struct {
 }
 
 // Logging is the gateway's logging configuration, with the same keys as the
-// control plane's.
+// control plane's except file_prefix: the control plane's prefix in a shared
+// file would send both processes' logs to one rotated file, so the gateway's
+// is gateway.log_file_prefix.
 type Logging struct {
 	Level         string `yaml:"level" env:"IVALDI_LOG_LEVEL" envDefault:"info"`
 	Output        string `yaml:"output" env:"IVALDI_LOG_OUTPUT" envDefault:"console"`
 	Format        string `yaml:"format" env:"IVALDI_LOG_FORMAT" envDefault:"json"`
 	Directory     string `yaml:"directory" env:"IVALDI_LOG_DIRECTORY" envDefault:"logs"`
-	FilePrefix    string `yaml:"file_prefix" env:"IVALDI_LOG_FILE_PREFIX" envDefault:"ivaldi-gateway"`
 	MaxFileSizeMB int    `yaml:"max_file_size_mb" env:"IVALDI_LOG_MAX_FILE_SIZE_MB" envDefault:"50"`
 	MaxAgeDays    int    `yaml:"max_age_days" env:"IVALDI_LOG_MAX_AGE_DAYS" envDefault:"7"`
 }
@@ -89,6 +90,7 @@ type Gateway struct {
 	Host                        string        `yaml:"host" env:"IVALDI_GATEWAY_HOST"`
 	Port                        int           `yaml:"port" env:"IVALDI_GATEWAY_PORT" envDefault:"8663"`
 	ShutdownTimeout             time.Duration `yaml:"shutdown_timeout" env:"IVALDI_GATEWAY_SHUTDOWN_TIMEOUT" envDefault:"30s"`
+	LogFilePrefix               string        `yaml:"log_file_prefix" env:"IVALDI_GATEWAY_LOG_FILE_PREFIX" envDefault:"ivaldi-gateway"`
 	ControlPlaneURL             string        `yaml:"control_plane_url" env:"IVALDI_GATEWAY_CONTROL_PLANE_URL" envDefault:"http://localhost:8660"`
 	WebhookRouteLookupTokenFile string        `yaml:"webhook_route_lookup_token_file" env:"IVALDI_GATEWAY_WEBHOOK_ROUTE_LOOKUP_TOKEN_FILE"`
 	RouteCacheTTL               time.Duration `yaml:"route_cache_ttl" env:"IVALDI_GATEWAY_ROUTE_CACHE_TTL" envDefault:"5m"`

@@ -29,6 +29,7 @@ type Source struct {
 	webURL               *string
 	createdBy            *string
 	upstreamArchivedAt   *time.Time
+	providerUpdatedAt    *time.Time
 	createdAt            time.Time
 	updatedAt            time.Time
 	archivedAt           *time.Time
@@ -54,6 +55,11 @@ type SourceSnapshot struct {
 	CreatedAt            time.Time  `json:"created_at"`
 	UpdatedAt            time.Time  `json:"updated_at"`
 	ArchivedAt           *time.Time `json:"archived_at"`
+
+	// ProviderUpdatedAt is the provider's timestamp of the newest webhook
+	// applied, which orders webhooks. It is bookkeeping, not part of the
+	// contract.
+	ProviderUpdatedAt *time.Time `json:"-"`
 }
 
 // NewSourceProps describes a Source. A new one leaves the timestamps nil; a
@@ -71,6 +77,7 @@ type NewSourceProps struct {
 	Repository           vcs.Repository
 	CreatedByPrincipalID *string
 	UpstreamArchivedAt   *time.Time
+	ProviderUpdatedAt    *time.Time
 	CreatedAt            *time.Time
 	UpdatedAt            *time.Time
 	ArchivedAt           *time.Time
@@ -125,11 +132,17 @@ func NewSource(props NewSourceProps, sourceID *string) (*Source, error) {
 		webURL:               optional.Of(repo.WebURL),
 		createdBy:            optional.OfPtr(props.CreatedByPrincipalID),
 		upstreamArchivedAt:   clock.CopyTime(props.UpstreamArchivedAt),
+		providerUpdatedAt:    clock.CopyTime(props.ProviderUpdatedAt),
 		createdAt:            timeOr(props.CreatedAt, now),
 		updatedAt:            timeOr(props.UpdatedAt, now),
 		archivedAt:           clock.CopyTime(props.ArchivedAt),
 	}
 	if s.IsNew() {
+		// The provider's view the Source was created from orders the
+		// webhooks that follow, so an older one cannot undo it.
+		if s.providerUpdatedAt == nil {
+			s.providerUpdatedAt = clock.CopyTime(newestProviderEvent(nil, providerTime(repo.UpdatedAt)))
+		}
 		s.RecordEvent(SourceCreated{s.Snapshot()})
 	}
 	return s, nil
@@ -172,6 +185,7 @@ func (s *Source) Snapshot() SourceSnapshot {
 		WebURL:               copyString(s.webURL),
 		CreatedByPrincipalID: copyString(s.createdBy),
 		UpstreamArchivedAt:   clock.CopyTime(s.upstreamArchivedAt),
+		ProviderUpdatedAt:    clock.CopyTime(s.providerUpdatedAt),
 		CreatedAt:            s.createdAt,
 		UpdatedAt:            s.updatedAt,
 		ArchivedAt:           clock.CopyTime(s.archivedAt),
@@ -211,21 +225,29 @@ func (s *Source) Describes(repository vcs.Repository) bool {
 }
 
 // Refresh updates an active Source from the provider's current view of the
-// repository, such as after a rename or a default-branch change. Refreshing
-// from metadata the Source already holds does nothing.
-func (s *Source) Refresh(repository vcs.Repository) error {
+// repository, such as after a rename or a default-branch change, and reports
+// whether it changed anything. The view is ordered by repository.UpdatedAt
+// like a webhook (see provider_order.go): a view older than one already
+// applied, which a provider's API can briefly serve, changes nothing. A view
+// that changes the metadata moves the provider timestamp, so a webhook from
+// before the refresh that arrives after it cannot undo it. Refreshing from
+// metadata the Source already holds changes nothing, not even the timestamp,
+// so it needs no save.
+func (s *Source) Refresh(repository vcs.Repository) (bool, error) {
 	if s.Archived() {
-		return fmt.Errorf("%w: source %s", ErrArchived, s.ID())
+		return false, fmt.Errorf("%w: source %s", ErrArchived, s.ID())
 	}
 	if repository.ExternalID != s.externalRepositoryID {
-		return NewErrInvalidInput(fmt.Sprintf("repository %s is not source %s", repository.ExternalID, s.ID()))
+		return false, NewErrInvalidInput(fmt.Sprintf("repository %s is not source %s", repository.ExternalID, s.ID()))
 	}
 	if err := validateRepository(repository); err != nil {
-		return err
+		return false, err
 	}
-	if s.Describes(repository) {
-		return nil
+	at := providerTime(repository.UpdatedAt)
+	if s.Describes(repository) || staleProviderEvent(s.providerUpdatedAt, at) {
+		return false, nil
 	}
+	s.providerUpdatedAt = clock.CopyTime(newestProviderEvent(s.providerUpdatedAt, at))
 	s.fullName = repository.FullName
 	s.defaultBranch = repository.DefaultBranch
 	s.visibility = Visibility(repository.Visibility)
@@ -233,30 +255,37 @@ func (s *Source) Refresh(repository vcs.Repository) error {
 	s.webURL = optional.Of(repository.WebURL)
 	s.updatedAt = clock.Now()
 	s.RecordEvent(SourceUpdated{s.Snapshot()})
-	return nil
+	return true, nil
 }
 
 // ApplyProviderView updates an active Source from the provider's view of the
-// repository. archived is nil to leave upstream archival unchanged, true to
-// mark the repository archived at occurredAt, and false to clear it.
-// occurredAt is the provider's timestamp, not Ivaldi's clock; when it is zero,
-// a Source that is not archived yet is marked at the current time. It records
-// one SourceUpdated event only when something changed.
-func (s *Source) ApplyProviderView(repository vcs.Repository, archived *bool, occurredAt time.Time) error {
+// repository at occurredAt, the provider's timestamp. archived is nil to
+// leave upstream archival unchanged, true to mark the repository archived,
+// and false to clear it. A view older than one already applied changes
+// nothing and returns false (see provider_order.go); otherwise it returns
+// true, and the Source must be saved even when it records no event, because
+// it moved its provider timestamp. It records one SourceUpdated event only
+// when the metadata or archival changed.
+func (s *Source) ApplyProviderView(repository vcs.Repository, archived *bool, occurredAt time.Time) (bool, error) {
 	if s.Archived() {
-		return fmt.Errorf("%w: source %s", ErrArchived, s.ID())
+		return false, fmt.Errorf("%w: source %s", ErrArchived, s.ID())
 	}
 	if repository.ExternalID != s.externalRepositoryID {
-		return NewErrInvalidInput(fmt.Sprintf("repository %s is not source %s", repository.ExternalID, s.ID()))
+		return false, NewErrInvalidInput(fmt.Sprintf("repository %s is not source %s", repository.ExternalID, s.ID()))
 	}
 	if err := validateRepository(repository); err != nil {
-		return err
+		return false, err
 	}
+	at := providerTime(occurredAt)
+	if staleProviderEvent(s.providerUpdatedAt, at) {
+		return false, nil
+	}
+	s.providerUpdatedAt = clock.CopyTime(newestProviderEvent(s.providerUpdatedAt, at))
 
 	metadataChanged := !s.Describes(repository)
-	archiveChanged := s.applyUpstreamArchive(archived, occurredAt)
+	archiveChanged := s.applyUpstreamArchive(archived, at)
 	if !metadataChanged && !archiveChanged {
-		return nil
+		return true, nil
 	}
 	if metadataChanged {
 		s.fullName = repository.FullName
@@ -267,29 +296,28 @@ func (s *Source) ApplyProviderView(repository vcs.Repository, archived *bool, oc
 	}
 	s.updatedAt = clock.Now()
 	s.RecordEvent(SourceUpdated{s.Snapshot()})
-	return nil
+	return true, nil
 }
 
-// applyUpstreamArchive moves upstreamArchivedAt to the provider's view and
-// reports whether it changed. An older provider timestamp does not move the
-// stored one backwards.
-func (s *Source) applyUpstreamArchive(archived *bool, occurredAt time.Time) bool {
-	if archived == nil {
+// applyUpstreamArchive moves upstreamArchivedAt to the provider's view, which
+// is not older than any view applied before, and reports whether it changed.
+// upstreamArchivedAt is when the repository was archived, so a view that
+// still reports it archived keeps the stored time. A zero at, when the
+// provider gave no time, marks it at the current time.
+func (s *Source) applyUpstreamArchive(archived *bool, at time.Time) bool {
+	switch {
+	case archived == nil:
 		return false
-	}
-	if !*archived {
+	case !*archived:
 		if s.upstreamArchivedAt == nil {
 			return false
 		}
 		s.upstreamArchivedAt = nil
 		return true
+	case s.upstreamArchivedAt != nil:
+		return false
 	}
-	at := occurredAt.UTC().Truncate(time.Microsecond)
-	if s.upstreamArchivedAt != nil {
-		if at.IsZero() || !at.After(*s.upstreamArchivedAt) {
-			return false
-		}
-	} else if at.IsZero() {
+	if at.IsZero() {
 		at = clock.Now()
 	}
 	s.upstreamArchivedAt = clock.CopyTime(&at)

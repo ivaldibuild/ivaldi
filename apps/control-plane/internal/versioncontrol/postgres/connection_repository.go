@@ -91,6 +91,7 @@ func (r *connectionRepository) UpdateConnection(ctx context.Context, c *versionc
 			"lookup_from":           e.LookupFrom,
 			"lookup_pool":           e.LookupPool,
 			"status":                e.Status,
+			"provider_updated_at":   e.ProviderUpdatedAt,
 			"updated_at":            e.UpdatedAt,
 			"deleted_at":            e.DeletedAt,
 		}))

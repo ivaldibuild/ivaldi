@@ -9,6 +9,13 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 )
 
+// ErrPermanent marks a handler error that no retry can fix, such as an event
+// whose payload breaks the handler's contract. A consumer gives up on the
+// event at once (a Redis Streams consumer dead-letters it) instead of
+// redelivering it until its delivery limit. Wrap it: fmt.Errorf("%w: ...",
+// events.ErrPermanent).
+var ErrPermanent = errors.New("events: permanent failure")
+
 // Handler reacts to events. An event may be delivered more than once and out
 // of order, so handling an event already handled must change nothing.
 type Handler interface {

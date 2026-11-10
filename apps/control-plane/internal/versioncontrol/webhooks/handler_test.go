@@ -230,6 +230,8 @@ func TestRepositoryRenameUpdatesTheSource(t *testing.T) {
 	require.Len(t, f.audit.events, 1)
 	assert.Equal(t, versioncontrol.EventSourceUpdated, f.audit.events[0].Type)
 	assert.Equal(t, identity.ActorSystem, f.audit.events[0].Actor.Kind)
+	assert.True(t, f.audit.events[0].OccurredAt.IsZero(),
+		"the recorder stamps Ivaldi's time, not the provider's")
 }
 
 func TestRepositoryArchivedSetsTheUpstreamTimestamp(t *testing.T) {
@@ -255,6 +257,7 @@ func TestRepositoryUnarchivedClearsTheUpstreamTimestamp(t *testing.T) {
 		ExternalID: "99", FullName: "acme/api", DefaultBranch: "main", Visibility: "private",
 	})
 	unarchive.DeliveryID = "delivery-2"
+	unarchive.OccurredAt = occurredAt.Add(time.Hour)
 	require.NoError(t, handleRepository(t, f, unarchive))
 	assert.Nil(t, f.sources.source.UpstreamArchivedAt())
 }
@@ -269,6 +272,7 @@ func TestRepositoryChangedCarriesTheArchiveState(t *testing.T) {
 
 	event.DeliveryID = "delivery-2"
 	event.Repository.Archived = false
+	event.OccurredAt = occurredAt.Add(time.Hour)
 	require.NoError(t, handleRepository(t, f, event))
 	assert.Nil(t, f.sources.source.UpstreamArchivedAt())
 }
@@ -330,10 +334,10 @@ func TestMissingRepositoryOrInstallationIsAPoisonEvent(t *testing.T) {
 		ExternalID: "99", FullName: "acme/api", DefaultBranch: "main", Visibility: "private",
 	})
 	event.Repository = nil
-	assert.Error(t, handleRepository(t, f, event))
+	assert.ErrorIs(t, handleRepository(t, f, event), events.ErrPermanent)
 
 	installation := f.installationEvent(vcs.WebhookInstallationSuspended, "")
-	assert.Error(t, handleInstallation(t, f, installation))
+	assert.ErrorIs(t, handleInstallation(t, f, installation), events.ErrPermanent)
 }
 
 func TestInvalidRepositoryMetadataIsAPoisonEvent(t *testing.T) {
@@ -341,7 +345,7 @@ func TestInvalidRepositoryMetadataIsAPoisonEvent(t *testing.T) {
 	event := f.repositoryEvent(vcs.WebhookRepositoryChanged, vcs.WebhookRepository{
 		ExternalID: "99", FullName: "", DefaultBranch: "main", Visibility: "private",
 	})
-	assert.Error(t, handleRepository(t, f, event))
+	assert.ErrorIs(t, handleRepository(t, f, event), events.ErrPermanent)
 }
 
 func TestInstallationTransitions(t *testing.T) {
@@ -408,10 +412,48 @@ func TestInvalidInstallationTransitionIsDropped(t *testing.T) {
 	assert.Empty(t, f.audit.events)
 }
 
-func TestNoOpInstallationTransitionWritesNothing(t *testing.T) {
+func TestNoOpInstallationTransitionKeepsOnlyItsTime(t *testing.T) {
 	f := newFixture(t)
 	require.NoError(t, handleInstallation(t, f, f.installationEvent(vcs.WebhookInstallationUnsuspended, "42")))
+	assert.Equal(t, 1, f.connections.updated, "the Connection keeps the event's time to refuse older ones")
+	assert.Equal(t, occurredAt, *f.connections.connection.Snapshot().ProviderUpdatedAt)
+	assert.Empty(t, f.outbox.events)
+	assert.Empty(t, f.audit.events)
+}
+
+func TestOlderInstallationEventIsDropped(t *testing.T) {
+	// The unsuspend was handled before the older suspension it followed.
+	f := newFixture(t)
+	require.NoError(t, handleInstallation(t, f, f.installationEvent(vcs.WebhookInstallationUnsuspended, "42")))
+	f.connections.updated = 0
+
+	suspend := f.installationEvent(vcs.WebhookInstallationSuspended, "42")
+	suspend.DeliveryID = "delivery-2"
+	suspend.OccurredAt = occurredAt.Add(-time.Hour)
+	require.NoError(t, handleInstallation(t, f, suspend))
+	assert.Equal(t, versioncontrol.StatusActive, f.connections.connection.Status())
 	assert.Zero(t, f.connections.updated)
+	assert.Empty(t, f.outbox.events)
+	assert.Empty(t, f.audit.events)
+}
+
+func TestOlderRepositoryEventIsDropped(t *testing.T) {
+	// The unarchive was handled before the older archive it followed.
+	f := newFixture(t)
+	unarchive := f.repositoryEvent(vcs.WebhookRepositoryUnarchived, vcs.WebhookRepository{
+		ExternalID: "99", FullName: "acme/api", DefaultBranch: "main", Visibility: "private",
+	})
+	require.NoError(t, handleRepository(t, f, unarchive))
+	f.sources.updated = 0
+
+	archive := f.repositoryEvent(vcs.WebhookRepositoryArchived, vcs.WebhookRepository{
+		ExternalID: "99", FullName: "acme/api", DefaultBranch: "main", Visibility: "private", Archived: true,
+	})
+	archive.DeliveryID = "delivery-2"
+	archive.OccurredAt = occurredAt.Add(-time.Hour)
+	require.NoError(t, handleRepository(t, f, archive))
+	assert.Nil(t, f.sources.source.UpstreamArchivedAt())
+	assert.Zero(t, f.sources.updated)
 	assert.Empty(t, f.outbox.events)
 	assert.Empty(t, f.audit.events)
 }
@@ -422,5 +464,7 @@ func TestTransientErrorsAreReturned(t *testing.T) {
 	event := f.repositoryEvent(vcs.WebhookRepositoryChanged, vcs.WebhookRepository{
 		ExternalID: "99", FullName: "acme/api", DefaultBranch: "main", Visibility: "private",
 	})
-	assert.Error(t, handleRepository(t, f, event))
+	err := handleRepository(t, f, event)
+	assert.Error(t, err)
+	assert.NotErrorIs(t, err, events.ErrPermanent, "a transient error is retried")
 }

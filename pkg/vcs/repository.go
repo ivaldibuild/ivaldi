@@ -3,6 +3,7 @@ package vcs
 import (
 	"net/url"
 	"strings"
+	"time"
 )
 
 // ProviderKey identifies something a provider holds, such as a repository
@@ -27,4 +28,9 @@ type Repository struct {
 	Visibility    string       `json:"visibility"`
 	CloneURL      string       `json:"clone_url"`
 	WebURL        string       `json:"web_url"`
+	// UpdatedAt is when the provider last changed the repository, by the
+	// provider's clock. Ivaldi orders a repository's updates by it, so an
+	// older view never overwrites a newer one. It is zero when the provider
+	// did not say.
+	UpdatedAt time.Time `json:"updated_at,omitzero"`
 }

@@ -47,16 +47,52 @@ func TestResolverCachesAHit(t *testing.T) {
 	assert.Equal(t, 1, lookup.calls)
 }
 
-func TestResolverCachesNotFound(t *testing.T) {
+func TestResolverDoesNotCacheNotFound(t *testing.T) {
 	lookup := &fakeRouteLookup{err: ErrRouteNotFound}
 	resolver, err := NewResolver(lookup, time.Minute)
 	require.NoError(t, err)
 
 	_, err = resolver.Resolve(context.Background(), "github:github.com:42")
 	assert.ErrorIs(t, err, ErrRouteNotFound)
-	_, err = resolver.Resolve(context.Background(), "github:github.com:42")
-	assert.ErrorIs(t, err, ErrRouteNotFound)
-	assert.Equal(t, 1, lookup.calls)
+
+	// The Connection is created; the next webhook must find it.
+	lookup.err = nil
+	lookup.route = testRoute
+	route, err := resolver.Resolve(context.Background(), "github:github.com:42")
+	require.NoError(t, err)
+	assert.Equal(t, testRoute, route)
+	assert.Equal(t, 2, lookup.calls)
+}
+
+func TestResolverLookupOutlivesTheCallerThatStartedIt(t *testing.T) {
+	lookup := &ctxRouteLookup{}
+	resolver, err := NewResolver(lookup, time.Minute)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	// The caller has gone, so it may or may not see the answer; the lookup it
+	// started must still complete for the next caller.
+	_, _ = resolver.Resolve(ctx, "github:github.com:42")
+
+	route, err := resolver.Resolve(context.Background(), "github:github.com:42")
+	require.NoError(t, err)
+	assert.Equal(t, testRoute, route)
+	assert.NoError(t, lookup.lastErr, "the lookup ran with a live context")
+}
+
+// ctxRouteLookup answers testRoute and records whether the context it got was
+// already cancelled.
+type ctxRouteLookup struct {
+	lastErr error
+}
+
+func (f *ctxRouteLookup) Lookup(ctx context.Context, _ string) (vcs.WebhookRoute, error) {
+	f.lastErr = ctx.Err()
+	if f.lastErr != nil {
+		return vcs.WebhookRoute{}, f.lastErr
+	}
+	return testRoute, nil
 }
 
 func TestResolverDoesNotCacheAnUnavailableLookup(t *testing.T) {

@@ -39,6 +39,7 @@ redis:
 #   webhook_route_lookup_token_file: .local/gateway-lookup-token
 #   route_cache_ttl: 5m
 #   max_body_bytes: 26214400
+#   log_file_prefix: ivaldi-gateway
 #   github:
 #     webhook_secret_file: .local/github-webhook-secret
 #     path: /webhooks/github

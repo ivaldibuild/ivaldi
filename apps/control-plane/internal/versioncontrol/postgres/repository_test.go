@@ -319,3 +319,47 @@ func TestConnectionAndSourceLookupsForUpdate(t *testing.T) {
 	_, err = f.sources.GetSourceByRepositoryKeyForUpdate(f.ctx, orgA, source.RepositoryKey())
 	assert.ErrorIs(t, err, versioncontrol.ErrNotFound)
 }
+
+func TestProviderUpdatedAtIsSaved(t *testing.T) {
+	f := newFixture(t)
+	routeKey := "github:github.com:42"
+	connection := must(versioncontrol.NewConnection(versioncontrol.NewConnectionProps{
+		OrganizationID:    orgA,
+		Provider:          vcs.ProviderGitHub,
+		HostURL:           "https://github.com",
+		AuthKind:          versioncontrol.AuthKindAppInstallation,
+		ExternalAccountID: "42",
+		WebhookRouteKey:   &routeKey,
+		LookupFrom:        vcs.LookupFromControlPlane,
+		Status:            versioncontrol.StatusActive,
+	}, nil))
+	require.NoError(t, f.connections.CreateConnection(f.ctx, connection))
+	source := newSource(t, connection, "99")
+	require.NoError(t, f.sources.CreateSource(f.ctx, source))
+
+	// A no-op event moves only the provider timestamp, which must persist.
+	applied, err := connection.ApplyProviderStatus(versioncontrol.StatusActive, t0)
+	require.NoError(t, err)
+	require.True(t, applied)
+	require.NoError(t, f.connections.UpdateConnection(f.ctx, connection))
+
+	view := vcs.Repository{
+		ExternalID: source.ExternalRepositoryID(), FullName: source.FullName(),
+		DefaultBranch: source.DefaultBranch(), Visibility: string(source.Visibility()),
+		CloneURL: deref(source.CloneURL()), WebURL: deref(source.WebURL()),
+	}
+	applied, err = source.ApplyProviderView(view, nil, t0)
+	require.NoError(t, err)
+	require.True(t, applied)
+	require.NoError(t, f.sources.UpdateSource(f.ctx, source))
+
+	gotConnection, err := f.connections.GetConnectionByWebhookRouteKey(f.ctx, routeKey)
+	require.NoError(t, err)
+	require.NotNil(t, gotConnection.Snapshot().ProviderUpdatedAt)
+	assert.Equal(t, t0, *gotConnection.Snapshot().ProviderUpdatedAt)
+
+	gotSource, err := f.sources.GetSource(f.ctx, orgA, source.ID())
+	require.NoError(t, err)
+	require.NotNil(t, gotSource.Snapshot().ProviderUpdatedAt)
+	assert.Equal(t, t0, *gotSource.Snapshot().ProviderUpdatedAt)
+}

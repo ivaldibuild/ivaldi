@@ -45,6 +45,7 @@ type Connection struct {
 	lookupPool          *string
 	status              Status
 	createdBy           *string
+	providerUpdatedAt   *time.Time
 	createdAt           time.Time
 	updatedAt           time.Time
 	deletedAt           *time.Time
@@ -70,6 +71,11 @@ type ConnectionSnapshot struct {
 	CreatedAt            time.Time        `json:"created_at"`
 	UpdatedAt            time.Time        `json:"updated_at"`
 	DeletedAt            *time.Time       `json:"deleted_at"`
+
+	// ProviderUpdatedAt is the provider's timestamp of the newest webhook
+	// applied, which orders webhooks. It is bookkeeping, not part of the
+	// contract.
+	ProviderUpdatedAt *time.Time `json:"-"`
 }
 
 // NewConnectionProps describes a Connection. A new one leaves the timestamps
@@ -89,6 +95,7 @@ type NewConnectionProps struct {
 	LookupPool           *string
 	Status               Status
 	CreatedByPrincipalID *string
+	ProviderUpdatedAt    *time.Time
 	CreatedAt            *time.Time
 	UpdatedAt            *time.Time
 	DeletedAt            *time.Time
@@ -147,6 +154,7 @@ func NewConnection(props NewConnectionProps, connectionID *string) (*Connection,
 		lookupPool:          optional.OfPtr(props.LookupPool),
 		status:              props.Status,
 		createdBy:           optional.OfPtr(props.CreatedByPrincipalID),
+		providerUpdatedAt:   clock.CopyTime(props.ProviderUpdatedAt),
 		createdAt:           timeOr(props.CreatedAt, now),
 		updatedAt:           timeOr(props.UpdatedAt, now),
 		deletedAt:           clock.CopyTime(props.DeletedAt),
@@ -276,6 +284,7 @@ func (c *Connection) Snapshot() ConnectionSnapshot {
 		CreatedAt:            c.createdAt,
 		UpdatedAt:            c.updatedAt,
 		DeletedAt:            clock.CopyTime(c.deletedAt),
+		ProviderUpdatedAt:    clock.CopyTime(c.providerUpdatedAt),
 	}
 }
 
@@ -339,6 +348,39 @@ func (c *Connection) Reactivate() error {
 	c.setStatus(StatusActive)
 	c.RecordEvent(ConnectionReactivated{c.Snapshot()})
 	return nil
+}
+
+// ApplyProviderStatus moves the Connection to the status its provider
+// reported at occurredAt, the provider's timestamp: suspended, active again,
+// or revoked when the app was uninstalled. A report older than one already
+// applied changes nothing and returns false (see provider_order.go);
+// otherwise it returns true, and the Connection must be saved even when it
+// records no event, because it moved its provider timestamp. A transition the
+// status rules refuse returns their error and moves nothing.
+func (c *Connection) ApplyProviderStatus(status Status, occurredAt time.Time) (bool, error) {
+	if c.Archived() {
+		return false, fmt.Errorf("%w: connection %s", ErrArchived, c.ID())
+	}
+	at := providerTime(occurredAt)
+	if staleProviderEvent(c.providerUpdatedAt, at) {
+		return false, nil
+	}
+	var err error
+	switch status {
+	case StatusActive:
+		err = c.Reactivate()
+	case StatusSuspended:
+		err = c.Suspend()
+	case StatusRevoked:
+		err = c.Revoke()
+	default:
+		err = NewErrInvalidInput(fmt.Sprintf("status %q is not a connection status", status))
+	}
+	if err != nil {
+		return false, err
+	}
+	c.providerUpdatedAt = clock.CopyTime(newestProviderEvent(c.providerUpdatedAt, at))
+	return true, nil
 }
 
 func (c *Connection) setStatus(status Status) {

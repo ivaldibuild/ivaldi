@@ -261,10 +261,14 @@ func (s *service) RefreshSource(ctx context.Context, actor identity.Actor, organ
 			return s.sources.GetSourceForUpdate(ctx, organizationID, sourceID)
 		},
 		Apply: func(_ context.Context, source *versioncontrol.Source) error {
-			if source.Describes(repository) && !source.Archived() {
+			changed, err := source.Refresh(repository)
+			if err != nil {
+				return err
+			}
+			if !changed {
 				return change.ErrUnchanged
 			}
-			return source.Refresh(repository)
+			return nil
 		},
 		Save:     s.sources.UpdateSource,
 		Snapshot: func(source *versioncontrol.Source) any { return source.Snapshot() },

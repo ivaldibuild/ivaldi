@@ -72,8 +72,13 @@ func NewHandler(c HandlerConfig) (*Handler, error) {
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, h.maxBodyBytes))
 	if err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeError(w, http.StatusRequestEntityTooLarge, "the request body is too large")
+			return
+		}
 		h.logger.Warn("webhook body could not be read", logging.F("error", err.Error()))
-		writeError(w, http.StatusRequestEntityTooLarge, "the request body is too large")
+		writeError(w, http.StatusBadRequest, "the request body could not be read")
 		return
 	}
 	// Verify before parsing, so a caller without the secret learns nothing
@@ -107,7 +112,20 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Normalize before resolving the route, so an action the gateway does not
+	// publish (such as installation.created, which arrives before its
+	// Connection exists) is acknowledged without a lookup.
 	routeKey := h.normalizer.RouteKey(installationID)
+	event, handled, err := h.normalizer.Normalize(eventName, payload, routeKey, deliveryID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !handled {
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+
 	route, err := h.resolver.Resolve(r.Context(), routeKey)
 	if errors.Is(err, ErrRouteNotFound) {
 		writeError(w, http.StatusNotFound, "no active route has that key")
@@ -127,16 +145,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			logging.F("route_provider", string(route.Provider)),
 			logging.F("route_host_url", route.HostURL))
 		writeError(w, http.StatusNotFound, "no active route has that key")
-		return
-	}
-
-	event, handled, err := h.normalizer.Normalize(eventName, payload, routeKey, deliveryID)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if !handled {
-		w.WriteHeader(http.StatusAccepted)
 		return
 	}
 

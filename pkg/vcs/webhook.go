@@ -31,7 +31,10 @@ type WebhookEvent struct {
 	Action         WebhookAction      `json:"action"`
 	InstallationID string             `json:"installation_id,omitempty"`
 	Repository     *WebhookRepository `json:"repository,omitempty"`
-	OccurredAt     time.Time          `json:"occurred_at"`
+	// OccurredAt is the provider's timestamp for the change, which orders a
+	// repository's or installation's events. It is zero when the provider
+	// gave none; such an event applies without being ordered.
+	OccurredAt time.Time `json:"occurred_at"`
 }
 
 // WebhookRepository is the repository a webhook event reports.

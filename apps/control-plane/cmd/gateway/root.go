@@ -51,7 +51,7 @@ func run(cmd *cobra.Command) error {
 		return err
 	}
 
-	logger, err := newLogger(cfg.Logging)
+	logger, err := newLogger(cfg.Logging, cfg.Gateway.LogFilePrefix)
 	if err != nil {
 		return fmt.Errorf("create logger: %w", err)
 	}
@@ -167,13 +167,14 @@ func run(cmd *cobra.Command) error {
 	return nil
 }
 
-// newLogger builds the gateway's logger from the shared logging settings.
-func newLogger(c gatewayconfig.Logging) (logging.Logger, error) {
+// newLogger builds the gateway's logger from the shared logging settings and
+// the gateway's own file prefix.
+func newLogger(c gatewayconfig.Logging, filePrefix string) (logging.Logger, error) {
 	opts := logging.NewLoggerOptions().
 		SetLogLevel(c.Level).
 		SetLogOutput(c.Output).
 		SetLogFormat(c.Format).
-		SetLogFilePrefix(c.FilePrefix).
+		SetLogFilePrefix(filePrefix).
 		SetLogDirectory(c.Directory).
 		SetMaxFileSize(c.MaxFileSizeMB).
 		SetMaxAge(c.MaxAgeDays)

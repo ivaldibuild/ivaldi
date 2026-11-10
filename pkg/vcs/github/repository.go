@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"time"
 
 	"github.com/ivaldibuild/ivaldi/pkg/vcs"
 )
@@ -68,6 +69,9 @@ type repositoryResponse struct {
 	Visibility    string `json:"visibility"`
 	CloneURL      string `json:"clone_url"`
 	HTMLURL       string `json:"html_url"`
+	// UpdatedAt is GitHub's last change to the repository's metadata, the
+	// same updated_at its repository webhooks carry.
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 func (r repositoryResponse) repository(at vcs.Endpoint) vcs.Repository {
@@ -80,5 +84,6 @@ func (r repositoryResponse) repository(at vcs.Endpoint) vcs.Repository {
 		Visibility:    r.Visibility,
 		CloneURL:      r.CloneURL,
 		WebURL:        r.HTMLURL,
+		UpdatedAt:     r.UpdatedAt.UTC().Truncate(time.Microsecond),
 	}
 }

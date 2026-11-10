@@ -7,12 +7,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/audit"
-	"github.com/ivaldibuild/ivaldi-control-plane/internal/change"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/outbox"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/versioncontrol"
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/events"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
 	"github.com/ivaldibuild/ivaldi/pkg/logging"
@@ -114,15 +113,15 @@ func (h *Handler) HandleRepositoryChanged(ctx context.Context, _ events.Envelope
 		return err
 	}
 	if e.Repository == nil {
-		return fmt.Errorf("webhook %s: a repository event needs a repository", e.DeliveryID)
+		return permanent("webhook %s: a repository event needs a repository", e.DeliveryID)
 	}
 	if e.Repository.ExternalID == "" {
-		return fmt.Errorf("webhook %s: a repository event needs an external repository ID", e.DeliveryID)
+		return permanent("webhook %s: a repository event needs an external repository ID", e.DeliveryID)
 	}
 	switch e.Action {
 	case vcs.WebhookRepositoryChanged, vcs.WebhookRepositoryArchived, vcs.WebhookRepositoryUnarchived:
 	default:
-		return fmt.Errorf("webhook %s: %q is not a repository action", e.DeliveryID, e.Action)
+		return permanent("webhook %s: %q is not a repository action", e.DeliveryID, e.Action)
 	}
 
 	return h.withConnection(ctx, e, func(ctx context.Context, connection *versioncontrol.Connection) error {
@@ -150,7 +149,8 @@ func (h *Handler) HandleRepositoryChanged(ctx context.Context, _ events.Envelope
 			CloneURL:      e.Repository.CloneURL,
 			WebURL:        e.Repository.WebURL,
 		}
-		if err := source.ApplyProviderView(repository, archivedFrom(e), e.OccurredAt); err != nil {
+		applied, err := source.ApplyProviderView(repository, archivedFrom(e), e.OccurredAt)
+		if err != nil {
 			if errors.Is(err, versioncontrol.ErrArchived) {
 				h.logger.Info("webhook repository change does not apply",
 					logging.F("delivery_id", e.DeliveryID),
@@ -158,17 +158,35 @@ func (h *Handler) HandleRepositoryChanged(ctx context.Context, _ events.Envelope
 					logging.F("error", err.Error()))
 				return nil
 			}
+			if errors.Is(err, versioncontrol.ErrInvalid) {
+				// The provider's metadata breaks a Source rule; it will
+				// not pass on a retry either.
+				return fmt.Errorf("%w: apply provider view: %w", events.ErrPermanent, err)
+			}
 			return fmt.Errorf("apply provider view: %w", err)
 		}
-
-		after := source.Snapshot()
-		if reflect.DeepEqual(before, after) {
+		if !applied {
+			h.logger.Info("webhook repository event is older than one already applied",
+				logging.F("delivery_id", e.DeliveryID),
+				logging.F("source_id", source.ID()),
+				logging.F("occurred_at", e.OccurredAt))
 			return nil
 		}
+
+		// Save even when nothing else changed: the Source moved its provider
+		// timestamp, which refuses older events that arrive later.
 		if err := h.sources.UpdateSource(ctx, source); err != nil {
 			return fmt.Errorf("update source: %w", err)
 		}
-		if err := h.recordEvents(ctx, versioncontrol.AggregateSource, source.ID(), source); err != nil {
+		changes := source.PullEvents()
+		if len(changes) == 0 {
+			return nil
+		}
+		if err := h.recordEvents(ctx, events.Source{
+			OrganizationID: source.OrganizationID(),
+			AggregateType:  versioncontrol.AggregateSource,
+			AggregateID:    source.ID(),
+		}, changes); err != nil {
 			return err
 		}
 		return h.recordAudit(ctx, audit.Event{
@@ -176,8 +194,7 @@ func (h *Handler) HandleRepositoryChanged(ctx context.Context, _ events.Envelope
 			OrganizationID: source.OrganizationID(),
 			ResourceID:     source.ID(),
 			Before:         before,
-			After:          after,
-			OccurredAt:     e.OccurredAt,
+			After:          source.Snapshot(),
 		})
 	})
 }
@@ -190,18 +207,21 @@ func (h *Handler) HandleInstallationChanged(ctx context.Context, _ events.Envelo
 		return err
 	}
 	if e.InstallationID == "" {
-		return fmt.Errorf("webhook %s: an installation event needs an installation ID", e.DeliveryID)
+		return permanent("webhook %s: an installation event needs an installation ID", e.DeliveryID)
 	}
-	var eventType string
+	var (
+		status    versioncontrol.Status
+		eventType string
+	)
 	switch e.Action {
 	case vcs.WebhookInstallationSuspended:
-		eventType = versioncontrol.EventConnectionSuspended
+		status, eventType = versioncontrol.StatusSuspended, versioncontrol.EventConnectionSuspended
 	case vcs.WebhookInstallationUnsuspended:
-		eventType = versioncontrol.EventConnectionReactivated
+		status, eventType = versioncontrol.StatusActive, versioncontrol.EventConnectionReactivated
 	case vcs.WebhookInstallationDeleted:
-		eventType = versioncontrol.EventConnectionRevoked
+		status, eventType = versioncontrol.StatusRevoked, versioncontrol.EventConnectionRevoked
 	default:
-		return fmt.Errorf("webhook %s: %q is not an installation action", e.DeliveryID, e.Action)
+		return permanent("webhook %s: %q is not an installation action", e.DeliveryID, e.Action)
 	}
 
 	return h.withConnection(ctx, e, func(ctx context.Context, connection *versioncontrol.Connection) error {
@@ -215,15 +235,7 @@ func (h *Handler) HandleInstallationChanged(ctx context.Context, _ events.Envelo
 		}
 
 		before := connection.Snapshot()
-		var err error
-		switch e.Action {
-		case vcs.WebhookInstallationSuspended:
-			err = connection.Suspend()
-		case vcs.WebhookInstallationUnsuspended:
-			err = connection.Reactivate()
-		case vcs.WebhookInstallationDeleted:
-			err = connection.Revoke()
-		}
+		applied, err := connection.ApplyProviderStatus(status, e.OccurredAt)
 		if err != nil {
 			if errors.Is(err, versioncontrol.ErrArchived) || errors.Is(err, versioncontrol.ErrInvalid) {
 				h.logger.Info("webhook installation change does not apply",
@@ -234,15 +246,29 @@ func (h *Handler) HandleInstallationChanged(ctx context.Context, _ events.Envelo
 			}
 			return fmt.Errorf("apply installation status: %w", err)
 		}
-
-		after := connection.Snapshot()
-		if reflect.DeepEqual(before, after) {
+		if !applied {
+			h.logger.Info("webhook installation event is older than one already applied",
+				logging.F("delivery_id", e.DeliveryID),
+				logging.F("connection_id", connection.ID()),
+				logging.F("occurred_at", e.OccurredAt))
 			return nil
 		}
+
+		// Save even when the status did not change: the Connection moved
+		// its provider timestamp, which refuses older events that arrive
+		// later.
 		if err := h.connections.UpdateConnection(ctx, connection); err != nil {
 			return fmt.Errorf("update connection: %w", err)
 		}
-		if err := h.recordEvents(ctx, versioncontrol.AggregateConnection, connection.ID(), connection); err != nil {
+		changes := connection.PullEvents()
+		if len(changes) == 0 {
+			return nil
+		}
+		if err := h.recordEvents(ctx, events.Source{
+			OrganizationID: connection.OrganizationID(),
+			AggregateType:  versioncontrol.AggregateConnection,
+			AggregateID:    connection.ID(),
+		}, changes); err != nil {
 			return err
 		}
 		return h.recordAudit(ctx, audit.Event{
@@ -250,8 +276,7 @@ func (h *Handler) HandleInstallationChanged(ctx context.Context, _ events.Envelo
 			OrganizationID: connection.OrganizationID(),
 			ResourceID:     connection.ID(),
 			Before:         before,
-			After:          after,
-			OccurredAt:     e.OccurredAt,
+			After:          connection.Snapshot(),
 		})
 	})
 }
@@ -300,24 +325,22 @@ func (h *Handler) withConnection(ctx context.Context, event vcs.WebhookEvent, ap
 	})
 }
 
-// recordEvents writes an aggregate's events to the outbox in the caller's
-// transaction.
-func (h *Handler) recordEvents(ctx context.Context, aggregateType, aggregateID string, obj change.Aggregate) error {
-	envelopes, err := events.Wrap(ctx, events.Source{
-		OrganizationID: obj.OrganizationID(),
-		AggregateType:  aggregateType,
-		AggregateID:    aggregateID,
-	}, obj.PullEvents()...)
+// recordEvents writes events an aggregate raised to the outbox in the
+// caller's transaction.
+func (h *Handler) recordEvents(ctx context.Context, source events.Source, raised []aggregate.Event) error {
+	envelopes, err := events.Wrap(ctx, source, raised...)
 	if err != nil {
-		return fmt.Errorf("wrap %s events: %w", aggregateType, err)
+		return fmt.Errorf("wrap %s events: %w", source.AggregateType, err)
 	}
 	if err := h.outbox.Record(ctx, envelopes...); err != nil {
-		return fmt.Errorf("record %s events: %w", aggregateType, err)
+		return fmt.Errorf("record %s events: %w", source.AggregateType, err)
 	}
 	return nil
 }
 
-// recordAudit writes the system's audit record for the change.
+// recordAudit writes the system's audit record for the change. Its time is
+// when Ivaldi applied the change: the provider's timestamp can be much older,
+// such as installation.updated_at on an uninstall.
 func (h *Handler) recordAudit(ctx context.Context, e audit.Event) error {
 	e.Actor = identity.Actor{Kind: identity.ActorSystem}
 	if err := h.audit.Record(ctx, e); err != nil {
@@ -337,13 +360,19 @@ func validateCommon(event vcs.WebhookEvent) error {
 		{"host URL", event.HostURL},
 	} {
 		if f.value == "" {
-			return fmt.Errorf("webhook event has no %s", f.name)
+			return permanent("webhook event has no %s", f.name)
 		}
 	}
 	if !event.Provider.Valid() {
-		return fmt.Errorf("webhook event has invalid provider %q", event.Provider)
+		return permanent("webhook event has invalid provider %q", event.Provider)
 	}
 	return nil
+}
+
+// permanent returns an error that no retry can fix, so the consumer
+// dead-letters the event at once.
+func permanent(format string, args ...any) error {
+	return fmt.Errorf("%w: %s", events.ErrPermanent, fmt.Sprintf(format, args...))
 }
 
 // archivedFrom returns the upstream archival state a repository action

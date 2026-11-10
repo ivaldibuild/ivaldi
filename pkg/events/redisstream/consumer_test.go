@@ -3,6 +3,7 @@ package redisstream
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strconv"
 	"sync"
@@ -427,6 +428,29 @@ func TestConsumerDeadLettersAfterMaxDeliveries(t *testing.T) {
 	assert.Equal(t, "2", msgs[0].Values["deliveries"])
 	assert.Equal(t, stream, msgs[0].Values["source_stream"])
 	assert.Equal(t, group, msgs[0].Values["consumer_group"])
+	requirePending(t, client, stream, group, 0)
+	stop()
+}
+
+func TestConsumerDeadLettersAPermanentFailureAtOnce(t *testing.T) {
+	client := redisClient(t)
+	stream, group, dead := testStreamNames(t, client)
+	publishEnvelope(t, client, stream, testEnvelope(t, "wid_1"))
+
+	var handled atomic.Int64
+	c := newTestConsumer(t, client, stream, group, "replica-1", dead,
+		events.DeliveryHandlerFunc(func(context.Context, events.Delivery) error {
+			handled.Add(1)
+			return fmt.Errorf("%w: widget has no name", events.ErrPermanent)
+		}), func(c *ConsumerConfig) {
+			c.ClaimIdleTimeout = 100 * time.Millisecond
+			c.MaxDeliveries = 5
+		})
+	stop := runConsumer(t, c)
+
+	msgs := requireStreamLen(t, client, dead, 1)
+	assert.Equal(t, int64(1), handled.Load())
+	assert.Equal(t, "1", msgs[0].Values["deliveries"])
 	requirePending(t, client, stream, group, 0)
 	stop()
 }

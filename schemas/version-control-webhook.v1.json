@@ -64,7 +64,7 @@
     },
     "occurred_at": {
       "type": "string",
-      "description": "When the provider says the event occurred, as RFC 3339 in UTC.",
+      "description": "When the provider says the event occurred, as RFC 3339 in UTC. The control plane orders a repository's or installation's events by it and ignores one older than an event it already applied. 0001-01-01T00:00:00Z means the provider gave no time; such an event applies without being ordered.",
       "format": "date-time"
     }
   },

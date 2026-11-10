@@ -329,9 +329,10 @@ func (a *app) wireOutbox(cfg *config.Config, logger logging.Logger) error {
 // Each delivery is handled in one transaction, so the delivery record and the
 // change commit together.
 func (a *app) wireWebhooks(cfg *config.Config, logger logging.Logger) error {
+	connections := versioncontrolpg.NewConnectionRepository(a.db)
 	handler, err := webhooks.NewHandler(
 		webhooks.WithTransactor(a.tx),
-		webhooks.WithConnectionRepo(versioncontrolpg.NewConnectionRepository(a.db)),
+		webhooks.WithConnectionRepo(connections),
 		webhooks.WithSourceRepo(versioncontrolpg.NewSourceRepository(a.db)),
 		webhooks.WithDeliveryRepo(versioncontrolpg.NewWebhookDeliveryRepository(a.db)),
 		webhooks.WithOutbox(a.outbox),
@@ -351,8 +352,7 @@ func (a *app) wireWebhooks(cfg *config.Config, logger logging.Logger) error {
 		return err
 	}
 	if token != "" {
-		lookup, err := webhookroutes.New(
-			versioncontrolpg.NewConnectionRepository(a.db), token.Reveal(), logger)
+		lookup, err := webhookroutes.New(connections, token.Reveal(), logger)
 		if err != nil {
 			return err
 		}

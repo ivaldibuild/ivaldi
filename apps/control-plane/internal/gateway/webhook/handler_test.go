@@ -149,6 +149,21 @@ func TestHandlerAcknowledgesPingWithoutARoute(t *testing.T) {
 	assert.Zero(t, f.publisher.calls)
 }
 
+func TestHandlerAcknowledgesAnUnhandledActionWithoutARoute(t *testing.T) {
+	// installation.created arrives before its Connection exists, so looking
+	// up its route would fail the delivery.
+	f := newTestHandler(t, func(c *HandlerConfig) {
+		c.Resolver = &fakeResolver{err: ErrRouteNotFound}
+	})
+	body := []byte(`{"action":"created","installation":{"id":42}}`)
+	rec := httptest.NewRecorder()
+	f.handler.ServeHTTP(rec, webhookRequest(eventInstallation, "delivery-1", sign(t, testSecret, body), body))
+
+	assert.Equal(t, http.StatusAccepted, rec.Code)
+	assert.Zero(t, f.resolver.calls)
+	assert.Zero(t, f.publisher.calls)
+}
+
 func TestHandlerRejectsABadSignatureBeforeParsing(t *testing.T) {
 	f := newTestHandler(t, func(c *HandlerConfig) {
 		c.Verifier = fakeVerifier{err: ErrInvalidSignature}

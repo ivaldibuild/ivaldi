@@ -87,7 +87,9 @@ func (c *LookupClient) Lookup(ctx context.Context, routeKey string) (vcs.Webhook
 }
 
 // Resolver caches route lookups and collapses concurrent misses for the same
-// key.
+// key. Only found routes are cached: a key with no route yet may get one
+// moments later, when its Connection is created, and a cached miss would drop
+// that installation's webhooks until it expired.
 type Resolver struct {
 	lookup RouteLookup
 	ttl    time.Duration
@@ -100,13 +102,7 @@ type Resolver struct {
 
 type cacheEntry struct {
 	route   vcs.WebhookRoute
-	err     error
 	expires time.Time
-}
-
-type lookupResult struct {
-	route vcs.WebhookRoute
-	err   error
 }
 
 // NewResolver returns a Resolver over lookup with a positive TTL.
@@ -126,43 +122,51 @@ func NewResolver(lookup RouteLookup, ttl time.Duration) (*Resolver, error) {
 }
 
 func (r *Resolver) Resolve(ctx context.Context, routeKey string) (vcs.WebhookRoute, error) {
-	if route, err, ok := r.cached(routeKey); ok {
-		return route, err
+	if route, ok := r.cached(routeKey); ok {
+		return route, nil
 	}
-	v, err, _ := r.group.Do(routeKey, func() (any, error) {
-		if route, err, ok := r.cached(routeKey); ok {
-			return lookupResult{route: route, err: err}, nil
+	// The shared lookup must not end when the request that started it does,
+	// or every caller waiting on it would fail too. The lookup client's own
+	// timeout bounds it; each caller still stops waiting when its request
+	// ends.
+	results := r.group.DoChan(routeKey, func() (any, error) {
+		if route, ok := r.cached(routeKey); ok {
+			return route, nil
 		}
-		route, err := r.lookup.Lookup(ctx, routeKey)
-		if err != nil && !errors.Is(err, ErrRouteNotFound) {
+		route, err := r.lookup.Lookup(context.WithoutCancel(ctx), routeKey)
+		if err != nil {
 			return nil, err
 		}
-		r.store(routeKey, route, err)
-		return lookupResult{route: route, err: err}, nil
+		r.store(routeKey, route)
+		return route, nil
 	})
-	if err != nil {
-		return vcs.WebhookRoute{}, err
+	select {
+	case result := <-results:
+		if result.Err != nil {
+			return vcs.WebhookRoute{}, result.Err
+		}
+		return result.Val.(vcs.WebhookRoute), nil
+	case <-ctx.Done():
+		return vcs.WebhookRoute{}, fmt.Errorf("%w: %w", ErrLookupUnavailable, ctx.Err())
 	}
-	result := v.(lookupResult)
-	return result.route, result.err
 }
 
-func (r *Resolver) cached(routeKey string) (vcs.WebhookRoute, error, bool) {
+func (r *Resolver) cached(routeKey string) (vcs.WebhookRoute, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	entry, ok := r.cache[routeKey]
 	if !ok {
-		return vcs.WebhookRoute{}, nil, false
+		return vcs.WebhookRoute{}, false
 	}
 	if !r.now().Before(entry.expires) {
 		delete(r.cache, routeKey)
-		return vcs.WebhookRoute{}, nil, false
+		return vcs.WebhookRoute{}, false
 	}
-	return entry.route, entry.err, true
+	return entry.route, true
 }
 
-func (r *Resolver) store(routeKey string, route vcs.WebhookRoute, err error) {
+func (r *Resolver) store(routeKey string, route vcs.WebhookRoute) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.cache[routeKey] = cacheEntry{route: route, err: err, expires: r.now().Add(r.ttl)}
+	r.cache[routeKey] = cacheEntry{route: route, expires: r.now().Add(r.ttl)}
 }

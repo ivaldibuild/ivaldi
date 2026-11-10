@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/vcs"
 )
 
@@ -117,16 +116,16 @@ func TestNormalizerFallsBackToTheBooleanVisibility(t *testing.T) {
 	assert.Equal(t, "private", event.Repository.Visibility)
 }
 
-func TestNormalizerDefaultsTheOccurredAt(t *testing.T) {
-	now := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
-	clock.Fix(t, now)
+func TestNormalizerLeavesAMissingOccurredAtZero(t *testing.T) {
+	// The control plane orders events by the provider's time, so the
+	// gateway's clock must not stand in for it.
 	normalizer := testNormalizer(t)
 	payload := repositoryPayload("renamed")
 	payload.Repository.UpdatedAt = time.Time{}
 
 	event, _, err := normalizer.Normalize(eventRepository, payload, "github:github.com:42", "delivery-1")
 	require.NoError(t, err)
-	assert.Equal(t, now, event.OccurredAt)
+	assert.True(t, event.OccurredAt.IsZero())
 }
 
 func TestNormalizerRejectsMalformedPayloads(t *testing.T) {

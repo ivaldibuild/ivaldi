@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/vcs"
 )
 
@@ -130,11 +129,13 @@ func visibility(repository *githubRepository) string {
 	return "public"
 }
 
-// providerTime returns the provider's timestamp, or the current time when the
-// payload has none.
+// providerTime returns the provider's timestamp, or zero when the payload has
+// none. The control plane orders a repository's or installation's events by
+// this time, so the gateway never substitutes its own clock: a zero time
+// tells the control plane the event cannot be ordered.
 func providerTime(t time.Time) time.Time {
 	if t.IsZero() {
-		return clock.Now()
+		return time.Time{}
 	}
 	return t.UTC().Truncate(time.Microsecond)
 }

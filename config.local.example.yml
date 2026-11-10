@@ -26,6 +26,23 @@ redis:
   address: 127.0.0.1:6379
   password_file: .local/valkey-password
 
+# The integration gateway. The control plane reads only
+# gateway.webhook_route_lookup_token_file; the gateway reads the rest, so both
+# commands can use this file. Uncomment this section and run
+# `make local_gateway` (or `ivaldi gateway --config config.local.yml`) to
+# receive GitHub webhooks locally. The GitHub App's webhook secret must be the
+# value in .local/github-webhook-secret.
+# gateway:
+#   host: 127.0.0.1
+#   port: 8663
+#   control_plane_url: http://localhost:8660
+#   webhook_route_lookup_token_file: .local/gateway-lookup-token
+#   route_cache_ttl: 5m
+#   max_body_bytes: 26214400
+#   github:
+#     webhook_secret_file: .local/github-webhook-secret
+#     path: /webhooks/github
+
 # The relay publishes the control plane's domain events to this stream. It is
 # separate from the gateway's events stream.
 # outbox:

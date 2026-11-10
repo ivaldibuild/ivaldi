@@ -44,6 +44,11 @@ func (r *connectionRepository) GetConnectionByWebhookRouteKey(ctx context.Contex
 	return r.get(r.conn(ctx).Where("webhook_route_key = ? AND deleted_at IS NULL", routeKey))
 }
 
+func (r *connectionRepository) GetConnectionByWebhookRouteKeyForUpdate(ctx context.Context, routeKey string) (*versioncontrol.Connection, error) {
+	return r.get(r.conn(ctx).Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate}).
+		Where("webhook_route_key = ? AND deleted_at IS NULL", routeKey))
+}
+
 func (r *connectionRepository) get(q *gorm.DB) (*versioncontrol.Connection, error) {
 	var entity connectionEntity
 	if err := q.Take(&entity).Error; err != nil {

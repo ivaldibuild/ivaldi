@@ -10,18 +10,22 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/vcs"
 )
 
-// ConnectionRepository persists Connections. Every method but
-// GetConnectionByWebhookRouteKey is scoped to an Organization. It returns
-// ErrNotFound when no row matches.
+// ConnectionRepository persists Connections. Every method but the
+// webhook-route lookups is scoped to an Organization. It returns ErrNotFound
+// when no row matches.
 type ConnectionRepository interface {
 	CreateConnection(ctx context.Context, c *Connection) error
 	GetConnection(ctx context.Context, organizationID, connectionID string) (*Connection, error)
 	// GetConnectionForUpdate locks the Connection until the transaction ends.
 	GetConnectionForUpdate(ctx context.Context, organizationID, connectionID string) (*Connection, error)
 	// GetConnectionByWebhookRouteKey returns the Connection with the
-	// platform-wide webhook route key. It is the one lookup not scoped to an
-	// Organization. Archived Connections are not returned.
+	// platform-wide webhook route key. Archived Connections are not
+	// returned.
 	GetConnectionByWebhookRouteKey(ctx context.Context, routeKey string) (*Connection, error)
+	// GetConnectionByWebhookRouteKeyForUpdate is
+	// GetConnectionByWebhookRouteKey with the Connection locked until the
+	// transaction ends.
+	GetConnectionByWebhookRouteKeyForUpdate(ctx context.Context, routeKey string) (*Connection, error)
 	ListConnections(ctx context.Context, organizationID string, includeArchived bool) ([]*Connection, error)
 	UpdateConnection(ctx context.Context, c *Connection) error
 }
@@ -58,6 +62,9 @@ type SourceRepository interface {
 	GetSourceForUpdate(ctx context.Context, organizationID, sourceID string) (*Source, error)
 	// GetSourceByRepositoryKey returns the active Source with the key.
 	GetSourceByRepositoryKey(ctx context.Context, organizationID, repositoryKey string) (*Source, error)
+	// GetSourceByRepositoryKeyForUpdate is GetSourceByRepositoryKey with the
+	// Source locked until the transaction ends.
+	GetSourceByRepositoryKeyForUpdate(ctx context.Context, organizationID, repositoryKey string) (*Source, error)
 	ListSources(ctx context.Context, query ListSourcesQuery) (*pagination.Result[*Source], error)
 	UpdateSource(ctx context.Context, s *Source) error
 	ConnectedRepositories

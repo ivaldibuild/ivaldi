@@ -61,6 +61,9 @@ func (s *connectionStore) GetConnectionForUpdate(context.Context, string, string
 func (s *connectionStore) GetConnectionByWebhookRouteKey(context.Context, string) (*versioncontrol.Connection, error) {
 	return nil, versioncontrol.ErrNotFound
 }
+func (s *connectionStore) GetConnectionByWebhookRouteKeyForUpdate(context.Context, string) (*versioncontrol.Connection, error) {
+	return nil, versioncontrol.ErrNotFound
+}
 func (s *connectionStore) ListConnections(context.Context, string, bool) ([]*versioncontrol.Connection, error) {
 	return nil, nil
 }

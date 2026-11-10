@@ -72,6 +72,9 @@ func (s *sourceStore) GetSourceForUpdate(context.Context, string, string) (*vers
 func (s *sourceStore) GetSourceByRepositoryKey(context.Context, string, string) (*versioncontrol.Source, error) {
 	return s.created, nil
 }
+func (s *sourceStore) GetSourceByRepositoryKeyForUpdate(context.Context, string, string) (*versioncontrol.Source, error) {
+	return s.created, nil
+}
 func (s *sourceStore) ListSources(context.Context, versioncontrol.ListSourcesQuery) (*pagination.Result[*versioncontrol.Source], error) {
 	return nil, nil
 }
@@ -94,6 +97,9 @@ func (s connectionStore) GetConnectionForUpdate(context.Context, string, string)
 	return s.connection, nil
 }
 func (s connectionStore) GetConnectionByWebhookRouteKey(context.Context, string) (*versioncontrol.Connection, error) {
+	return s.connection, nil
+}
+func (s connectionStore) GetConnectionByWebhookRouteKeyForUpdate(context.Context, string) (*versioncontrol.Connection, error) {
 	return s.connection, nil
 }
 func (s connectionStore) ListConnections(context.Context, string, bool) ([]*versioncontrol.Connection, error) {

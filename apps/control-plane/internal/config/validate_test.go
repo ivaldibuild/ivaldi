@@ -57,6 +57,12 @@ func TestValidateAcceptsAValidConfig(t *testing.T) {
 
 		assert.NoError(t, c.Validate())
 	})
+	t.Run("with the gateway lookup token", func(t *testing.T) {
+		c := validConfig(t)
+		c.Gateway.WebhookRouteLookupTokenFile = writeFile(t, "lookup-token\n")
+
+		assert.NoError(t, c.Validate())
+	})
 }
 
 func TestValidateRefuses(t *testing.T) {
@@ -127,6 +133,12 @@ func TestValidateRefuses(t *testing.T) {
 		{"redis CA file without TLS", func(t *testing.T, c *Config) {
 			c.Redis.CAFile = writeFile(t, "ca")
 		}, "redis.ca_file needs redis.tls"},
+		{"gateway lookup token file missing", func(t *testing.T, c *Config) {
+			c.Gateway.WebhookRouteLookupTokenFile = filepath.Join(t.TempDir(), "absent")
+		}, "gateway: read the webhook route lookup token"},
+		{"gateway lookup token file empty", func(t *testing.T, c *Config) {
+			c.Gateway.WebhookRouteLookupTokenFile = writeFile(t, "\n")
+		}, "gateway: the webhook route lookup token file is empty"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

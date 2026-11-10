@@ -1,14 +1,10 @@
 package server
 
 import (
-	"crypto/tls"
-	"crypto/x509"
-	"fmt"
-	"os"
-
 	"github.com/redis/go-redis/v9"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/config"
+	"github.com/ivaldibuild/ivaldi/pkg/redisconn"
 )
 
 // openRedis returns a client for the control plane's Redis connection. It does
@@ -29,41 +25,13 @@ func redisOptions(cfg config.Redis) (*redis.Options, error) {
 	if err != nil {
 		return nil, err
 	}
-	opts := &redis.Options{
-		Addr:        cfg.Address,
+	return redisconn.Options(redisconn.Config{
+		Address:     cfg.Address,
 		Username:    cfg.Username,
 		Password:    password.Reveal(),
-		DB:          cfg.Database,
+		Database:    cfg.Database,
+		TLS:         cfg.TLS,
+		CAFile:      cfg.CAFile,
 		DialTimeout: cfg.DialTimeout,
-	}
-	opts.TLSConfig, err = redisTLSConfig(cfg)
-	if err != nil {
-		return nil, err
-	}
-	return opts, nil
-}
-
-// redisTLSConfig returns the TLS settings for the connection, or nil when TLS
-// is off.
-func redisTLSConfig(cfg config.Redis) (*tls.Config, error) {
-	if !cfg.TLS {
-		return nil, nil
-	}
-	roots, err := x509.SystemCertPool()
-	if err != nil {
-		return nil, fmt.Errorf("redis: load system certificates: %w", err)
-	}
-	if roots == nil {
-		roots = x509.NewCertPool()
-	}
-	if cfg.CAFile != "" {
-		pem, err := os.ReadFile(cfg.CAFile)
-		if err != nil {
-			return nil, fmt.Errorf("redis: read CA file: %w", err)
-		}
-		if !roots.AppendCertsFromPEM(pem) {
-			return nil, fmt.Errorf("redis: CA file %s has no PEM certificates", cfg.CAFile)
-		}
-	}
-	return &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}, nil
+	})
 }

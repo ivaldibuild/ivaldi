@@ -1,0 +1,150 @@
+package webhook
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/ivaldibuild/ivaldi/pkg/vcs"
+)
+
+var testRoute = vcs.WebhookRoute{
+	OrganizationID: "org_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+	ConnectionID:   "vcn_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+	Provider:       vcs.ProviderGitHub,
+	HostURL:        "https://github.com",
+}
+
+type fakeRouteLookup struct {
+	calls int
+	route vcs.WebhookRoute
+	err   error
+}
+
+func (f *fakeRouteLookup) Lookup(context.Context, string) (vcs.WebhookRoute, error) {
+	f.calls++
+	return f.route, f.err
+}
+
+func TestResolverCachesAHit(t *testing.T) {
+	lookup := &fakeRouteLookup{route: testRoute}
+	resolver, err := NewResolver(lookup, time.Minute)
+	require.NoError(t, err)
+
+	first, err := resolver.Resolve(context.Background(), "github:github.com:42")
+	require.NoError(t, err)
+	second, err := resolver.Resolve(context.Background(), "github:github.com:42")
+	require.NoError(t, err)
+
+	assert.Equal(t, first, second)
+	assert.Equal(t, 1, lookup.calls)
+}
+
+func TestResolverCachesNotFound(t *testing.T) {
+	lookup := &fakeRouteLookup{err: ErrRouteNotFound}
+	resolver, err := NewResolver(lookup, time.Minute)
+	require.NoError(t, err)
+
+	_, err = resolver.Resolve(context.Background(), "github:github.com:42")
+	assert.ErrorIs(t, err, ErrRouteNotFound)
+	_, err = resolver.Resolve(context.Background(), "github:github.com:42")
+	assert.ErrorIs(t, err, ErrRouteNotFound)
+	assert.Equal(t, 1, lookup.calls)
+}
+
+func TestResolverDoesNotCacheAnUnavailableLookup(t *testing.T) {
+	lookup := &fakeRouteLookup{err: ErrLookupUnavailable}
+	resolver, err := NewResolver(lookup, time.Minute)
+	require.NoError(t, err)
+
+	_, _ = resolver.Resolve(context.Background(), "github:github.com:42")
+	_, _ = resolver.Resolve(context.Background(), "github:github.com:42")
+	assert.Equal(t, 2, lookup.calls)
+}
+
+func TestResolverExpiresTheCache(t *testing.T) {
+	lookup := &fakeRouteLookup{route: testRoute}
+	resolver, err := NewResolver(lookup, time.Minute)
+	require.NoError(t, err)
+	now := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
+	resolver.now = func() time.Time { return now }
+
+	_, err = resolver.Resolve(context.Background(), "github:github.com:42")
+	require.NoError(t, err)
+	_, err = resolver.Resolve(context.Background(), "github:github.com:42")
+	require.NoError(t, err)
+	assert.Equal(t, 1, lookup.calls)
+
+	now = now.Add(2 * time.Minute)
+	_, err = resolver.Resolve(context.Background(), "github:github.com:42")
+	require.NoError(t, err)
+	assert.Equal(t, 2, lookup.calls)
+}
+
+func TestNewResolverValidatesItsInput(t *testing.T) {
+	_, err := NewResolver(nil, time.Minute)
+	assert.Error(t, err)
+	_, err = NewResolver(&fakeRouteLookup{}, 0)
+	assert.Error(t, err)
+}
+
+func TestLookupClientCallsTheInternalEndpoint(t *testing.T) {
+	var gotPath, gotToken string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotToken = r.Header.Get("X-Ivaldi-Gateway-Token")
+		w.Header().Set("Content-Type", "application/json")
+		require.NoError(t, json.NewEncoder(w).Encode(testRoute))
+	}))
+	defer server.Close()
+
+	client, err := NewLookupClient(server.URL, "lookup-token", server.Client())
+	require.NoError(t, err)
+	route, err := client.Lookup(context.Background(), "github:github.com:42")
+	require.NoError(t, err)
+	assert.Equal(t, testRoute, route)
+	assert.Equal(t, "/internal/webhook-routes/github:github.com:42", gotPath)
+	assert.Equal(t, "lookup-token", gotToken)
+}
+
+func TestLookupClientMapsTheControlPlaneAnswers(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+		want   error
+	}{
+		{"not found", http.StatusNotFound, ErrRouteNotFound},
+		{"unavailable", http.StatusServiceUnavailable, ErrLookupUnavailable},
+		{"unauthorized", http.StatusUnauthorized, ErrLookupUnavailable},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tt.status)
+			}))
+			defer server.Close()
+			client, err := NewLookupClient(server.URL, "token", server.Client())
+			require.NoError(t, err)
+			_, err = client.Lookup(context.Background(), "github:github.com:42")
+			assert.True(t, errors.Is(err, tt.want), "got %v", err)
+		})
+	}
+}
+
+func TestLookupClientRejectsBadJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("not json"))
+	}))
+	defer server.Close()
+	client, err := NewLookupClient(server.URL, "token", server.Client())
+	require.NoError(t, err)
+	_, err = client.Lookup(context.Background(), "github:github.com:42")
+	assert.ErrorIs(t, err, ErrLookupUnavailable)
+}

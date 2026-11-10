@@ -43,6 +43,7 @@ func (c *Config) Validate() error {
 	c.validateBootstrap(v)
 	c.validateVersionControl(v)
 	c.validateRedis(v)
+	c.validateGateway(v)
 
 	if len(v.problems) > 0 {
 		return &ValidationError{Problems: v.problems}
@@ -157,6 +158,18 @@ func (c *Config) validateRedis(v *validator) {
 		if _, err := os.Stat(f.path); err != nil {
 			v.addf("%s: %v", f.name, err)
 		}
+	}
+}
+
+// validateGateway checks the lookup token file when the gateway lookup is
+// configured. Leaving it out disables the lookup, so a control plane without
+// a gateway still starts.
+func (c *Config) validateGateway(v *validator) {
+	if c.Gateway.WebhookRouteLookupTokenFile == "" {
+		return
+	}
+	if _, err := c.Gateway.WebhookRouteLookupToken(); err != nil {
+		v.addf("%v", err)
 	}
 }
 

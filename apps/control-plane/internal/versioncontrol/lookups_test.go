@@ -29,6 +29,9 @@ func (f fakeSources) GetSourceForUpdate(context.Context, string, string) (*Sourc
 func (f fakeSources) GetSourceByRepositoryKey(context.Context, string, string) (*Source, error) {
 	return f.source, nil
 }
+func (f fakeSources) GetSourceByRepositoryKeyForUpdate(context.Context, string, string) (*Source, error) {
+	return f.source, nil
+}
 func (f fakeSources) ListSources(context.Context, ListSourcesQuery) (*pagination.Result[*Source], error) {
 	return nil, nil
 }
@@ -46,6 +49,9 @@ func (f fakeConnections) GetConnectionForUpdate(context.Context, string, string)
 	return f.connection, nil
 }
 func (f fakeConnections) GetConnectionByWebhookRouteKey(context.Context, string) (*Connection, error) {
+	return f.connection, nil
+}
+func (f fakeConnections) GetConnectionByWebhookRouteKeyForUpdate(context.Context, string) (*Connection, error) {
 	return f.connection, nil
 }
 func (f fakeConnections) ListConnections(context.Context, string, bool) ([]*Connection, error) {

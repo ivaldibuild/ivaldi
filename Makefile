@@ -33,7 +33,7 @@ PG_PASSWORD ?= brokandsindri
 LOCAL_DATABASE_URL ?= postgres://ivaldi_db_user:$(PG_PASSWORD)@127.0.0.1:5433/ivaldi?sslmode=disable
 
 .PHONY: help prepare build build-cli build-server openapi openapi_check migration_generate migrate_up migrate_down migrate_version check_capability check_database_url \
-	local local_up local_stack local_secrets local_database local_migrate local_serve local_down local_reset
+	local local_up local_stack local_secrets local_database local_migrate local_serve local_gateway local_down local_reset
 
 help:
 	@echo "Build (into bin/, version $(VERSION))"
@@ -56,6 +56,8 @@ help:
 	@echo "Local development ($(LOCAL_CONFIG))"
 	@echo "  make local                                         Start PostgreSQL and Valkey, generate secrets, migrate"
 	@echo "  make local_serve                                   Run the control plane on http://localhost:8660"
+	@echo "  make local_gateway                                 Run the gateway on http://localhost:8663; uncomment the"
+	@echo "                                                     gateway section in $(LOCAL_CONFIG) first"
 	@echo "  make local_stack                                   Run everything in containers (docker-compose.yml): the"
 	@echo "                                                     web app on http://localhost:8670, the control plane on 8660"
 	@echo "  make local_down                                    Stop the containers (data stays in volumes/)"
@@ -151,7 +153,8 @@ local_stack: $(LOCAL_CONFIG) local_secrets
 
 # Secrets are generated once and kept, so tokens and the admin password
 # survive restarts.
-local_secrets: $(LOCAL_DIR)/signing.pem $(LOCAL_DIR)/admin-password $(LOCAL_DIR)/valkey-password
+local_secrets: $(LOCAL_DIR)/signing.pem $(LOCAL_DIR)/admin-password $(LOCAL_DIR)/valkey-password \
+	$(LOCAL_DIR)/gateway-lookup-token $(LOCAL_DIR)/github-webhook-secret
 
 $(LOCAL_DIR):
 	@mkdir -p $@ && chmod 700 $@
@@ -167,6 +170,14 @@ $(LOCAL_DIR)/admin-password: | $(LOCAL_DIR)
 $(LOCAL_DIR)/valkey-password: conf/valkey.conf | $(LOCAL_DIR)
 	@sed -n 's/^requirepass //p' conf/valkey.conf > $@ && chmod 600 $@
 
+$(LOCAL_DIR)/gateway-lookup-token: | $(LOCAL_DIR)
+	@openssl rand -hex 32 > $@ && chmod 600 $@
+	@echo "Generated the gateway route lookup token in $@"
+
+$(LOCAL_DIR)/github-webhook-secret: | $(LOCAL_DIR)
+	@openssl rand -hex 32 > $@ && chmod 600 $@
+	@echo "Generated a GitHub webhook secret in $@; set the same value in the GitHub App"
+
 # A fresh volume creates the database itself (POSTGRES_DB); an older one may
 # not have it.
 local_database:
@@ -178,6 +189,9 @@ local_migrate:
 
 local_serve: $(LOCAL_CONFIG)
 	@go run $(LDFLAGS) ./apps/control-plane/cmd serve --config $(LOCAL_CONFIG)
+
+local_gateway: $(LOCAL_CONFIG) local_secrets
+	@go run $(LDFLAGS) ./apps/control-plane/cmd gateway --config $(LOCAL_CONFIG)
 
 local_down:
 	@docker compose down

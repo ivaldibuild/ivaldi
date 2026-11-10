@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ivaldi.dev/schemas/version-control-webhook-route.v1.json",
+  "title": "Ivaldi version-control webhook route v1",
+  "description": "The answer the control plane gives the gateway when it resolves a platform-wide webhook route key. The gateway caches it and uses it to route a normalized provider event.",
+  "type": "object",
+  "required": [
+    "organization_id",
+    "connection_id",
+    "provider",
+    "host_url"
+  ],
+  "properties": {
+    "organization_id": {
+      "type": "string",
+      "description": "ID of the Organization the route key belongs to.",
+      "minLength": 1,
+      "maxLength": 30
+    },
+    "connection_id": {
+      "type": "string",
+      "description": "ID of the Connection the route key belongs to.",
+      "minLength": 1,
+      "maxLength": 30
+    },
+    "provider": {
+      "type": "string",
+      "description": "Version-control provider of the Connection.",
+      "enum": [
+        "github",
+        "gitlab",
+        "bitbucket",
+        "gitea",
+        "azure_devops"
+      ]
+    },
+    "host_url": {
+      "type": "string",
+      "description": "Address of the provider, such as https://github.com or a self-hosted server.",
+      "minLength": 1,
+      "maxLength": 2048
+    }
+  },
+  "additionalProperties": false
+}

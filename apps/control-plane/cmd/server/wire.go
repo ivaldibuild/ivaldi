@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -38,6 +39,9 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/provenance"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/team"
 	teampg "github.com/ivaldibuild/ivaldi-control-plane/internal/team/postgres"
+	versioncontrolpg "github.com/ivaldibuild/ivaldi-control-plane/internal/versioncontrol/postgres"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/versioncontrol/webhookroutes"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/versioncontrol/webhooks"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/database"
@@ -58,6 +62,7 @@ type app struct {
 	outbox     outbox.Store
 	redis      *redis.Client
 	relay      *outbox.Relay
+	events     events.Consumer
 	iam        iamRepositories
 	onboarding iam.Onboarding
 	auth       iam.Authentication
@@ -256,6 +261,9 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 	if err := a.wireVersionControl(cfg); err != nil {
 		return nil, nil, err
 	}
+	if err := a.wireWebhooks(cfg, logger); err != nil {
+		return nil, nil, err
+	}
 	if err := a.wireProvenance(); err != nil {
 		return nil, nil, err
 	}
@@ -314,6 +322,76 @@ func (a *app) wireOutbox(cfg *config.Config, logger logging.Logger) error {
 		return fmt.Errorf("outbox relay: %w", err)
 	}
 	logger.Info("outbox relay configured", logging.F("stream", cfg.Outbox.Stream))
+	return nil
+}
+
+// wireWebhooks applies the normalized provider events the gateway publishes.
+// Each delivery is handled in one transaction, so the delivery record and the
+// change commit together.
+func (a *app) wireWebhooks(cfg *config.Config, logger logging.Logger) error {
+	handler, err := webhooks.NewHandler(
+		webhooks.WithTransactor(a.tx),
+		webhooks.WithConnectionRepo(versioncontrolpg.NewConnectionRepository(a.db)),
+		webhooks.WithSourceRepo(versioncontrolpg.NewSourceRepository(a.db)),
+		webhooks.WithDeliveryRepo(versioncontrolpg.NewWebhookDeliveryRepository(a.db)),
+		webhooks.WithOutbox(a.outbox),
+		webhooks.WithAudit(a.audit),
+		webhooks.WithLogger(logger),
+	)
+	if err != nil {
+		return err
+	}
+
+	var router events.Router
+	events.On(&router, handler.HandleRepositoryChanged)
+	events.On(&router, handler.HandleInstallationChanged)
+
+	token, err := cfg.Gateway.WebhookRouteLookupToken()
+	if err != nil {
+		return err
+	}
+	if token != "" {
+		lookup, err := webhookroutes.New(
+			versioncontrolpg.NewConnectionRepository(a.db), token.Reveal(), logger)
+		if err != nil {
+			return err
+		}
+		a.handlers = append(a.handlers, lookup)
+		logger.Info("webhook route lookup enabled")
+	} else {
+		logger.Info("webhook route lookup disabled: gateway.webhook_route_lookup_token_file is not set")
+	}
+
+	consumerName := cfg.Events.ConsumerName
+	if consumerName == "" {
+		consumerName, err = os.Hostname()
+		if err != nil {
+			return fmt.Errorf("consumer name: %w", err)
+		}
+	}
+	a.events, err = redisstream.NewConsumer(redisstream.ConsumerConfig{
+		Client:           a.redis,
+		Stream:           cfg.Events.Stream,
+		Group:            cfg.Events.ConsumerGroup,
+		Consumer:         consumerName,
+		Handler:          &router,
+		ManualAck:        false,
+		Batch:            100,
+		Concurrency:      cfg.Events.Concurrency,
+		BlockTimeout:     cfg.Events.BlockTimeout,
+		ClaimIdleTimeout: cfg.Events.ClaimIdleTimeout,
+		MaxDeliveries:    cfg.Events.MaxDeliveries,
+		DeadLetterStream: cfg.Events.DeadLetterStream,
+		Logger:           logger,
+	})
+	if err != nil {
+		return fmt.Errorf("webhook consumer: %w", err)
+	}
+	logger.Info("webhook consumer configured",
+		logging.F("stream", cfg.Events.Stream),
+		logging.F("group", cfg.Events.ConsumerGroup),
+		logging.F("consumer", consumerName),
+	)
 	return nil
 }
 

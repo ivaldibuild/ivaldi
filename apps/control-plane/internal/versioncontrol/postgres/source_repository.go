@@ -43,6 +43,11 @@ func (r *sourceRepository) GetSourceByRepositoryKey(ctx context.Context, organiz
 	return r.get(r.conn(ctx).Where("organization_id = ? AND repository_key = ? AND archived_at IS NULL", organizationID, repositoryKey))
 }
 
+func (r *sourceRepository) GetSourceByRepositoryKeyForUpdate(ctx context.Context, organizationID, repositoryKey string) (*versioncontrol.Source, error) {
+	return r.get(r.conn(ctx).Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate}).
+		Where("organization_id = ? AND repository_key = ? AND archived_at IS NULL", organizationID, repositoryKey))
+}
+
 func (r *sourceRepository) get(q *gorm.DB) (*versioncontrol.Source, error) {
 	var entity sourceEntity
 	if err := q.Take(&entity).Error; err != nil {

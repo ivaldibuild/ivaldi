@@ -45,6 +45,26 @@ type WebhookRepository struct {
 	Archived      bool   `json:"archived"`
 }
 
+// ProviderRepositoryChanged is the payload of a normalized repository event.
+// Its JSON shape is WebhookEvent's.
+type ProviderRepositoryChanged struct {
+	WebhookEvent
+}
+
+func (ProviderRepositoryChanged) EventName() string {
+	return EventProviderRepositoryChanged
+}
+
+// ProviderInstallationChanged is the payload of a normalized installation
+// event. Its JSON shape is WebhookEvent's.
+type ProviderInstallationChanged struct {
+	WebhookEvent
+}
+
+func (ProviderInstallationChanged) EventName() string {
+	return EventProviderInstallationChanged
+}
+
 // WebhookRoute is where a platform-wide webhook route key resolves.
 type WebhookRoute struct {
 	OrganizationID string       `json:"organization_id"`

@@ -74,6 +74,7 @@ func runServe(cmd *cobra.Command, version string) error {
 	// stop before the deferred close releases the database and Redis.
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return a.relay.Run(gctx) })
+	g.Go(func() error { return a.events.Run(gctx) })
 	g.Go(func() error { return srv.Run(gctx) })
 	if err := g.Wait(); err != nil && !errors.Is(err, context.Canceled) {
 		return err

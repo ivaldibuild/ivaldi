@@ -236,6 +236,66 @@ func (s *Source) Refresh(repository vcs.Repository) error {
 	return nil
 }
 
+// ApplyProviderView updates an active Source from the provider's view of the
+// repository. archived is nil to leave upstream archival unchanged, true to
+// mark the repository archived at occurredAt, and false to clear it.
+// occurredAt is the provider's timestamp, not Ivaldi's clock; when it is zero,
+// a Source that is not archived yet is marked at the current time. It records
+// one SourceUpdated event only when something changed.
+func (s *Source) ApplyProviderView(repository vcs.Repository, archived *bool, occurredAt time.Time) error {
+	if s.Archived() {
+		return fmt.Errorf("%w: source %s", ErrArchived, s.ID())
+	}
+	if repository.ExternalID != s.externalRepositoryID {
+		return NewErrInvalidInput(fmt.Sprintf("repository %s is not source %s", repository.ExternalID, s.ID()))
+	}
+	if err := validateRepository(repository); err != nil {
+		return err
+	}
+
+	metadataChanged := !s.Describes(repository)
+	archiveChanged := s.applyUpstreamArchive(archived, occurredAt)
+	if !metadataChanged && !archiveChanged {
+		return nil
+	}
+	if metadataChanged {
+		s.fullName = repository.FullName
+		s.defaultBranch = repository.DefaultBranch
+		s.visibility = Visibility(repository.Visibility)
+		s.cloneURL = optional.Of(repository.CloneURL)
+		s.webURL = optional.Of(repository.WebURL)
+	}
+	s.updatedAt = clock.Now()
+	s.RecordEvent(SourceUpdated{s.Snapshot()})
+	return nil
+}
+
+// applyUpstreamArchive moves upstreamArchivedAt to the provider's view and
+// reports whether it changed. An older provider timestamp does not move the
+// stored one backwards.
+func (s *Source) applyUpstreamArchive(archived *bool, occurredAt time.Time) bool {
+	if archived == nil {
+		return false
+	}
+	if !*archived {
+		if s.upstreamArchivedAt == nil {
+			return false
+		}
+		s.upstreamArchivedAt = nil
+		return true
+	}
+	at := occurredAt.UTC().Truncate(time.Microsecond)
+	if s.upstreamArchivedAt != nil {
+		if at.IsZero() || !at.After(*s.upstreamArchivedAt) {
+			return false
+		}
+	} else if at.IsZero() {
+		at = clock.Now()
+	}
+	s.upstreamArchivedAt = clock.CopyTime(&at)
+	return true
+}
+
 // validateRepository checks the repository metadata a Source stores.
 func validateRepository(repository vcs.Repository) error {
 	if err := validateText("external repository ID", repository.ExternalID, maxExternalIDLength, true); err != nil {

@@ -12,6 +12,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/versioncontrol"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/versioncontrol/migrations"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
+	"github.com/ivaldibuild/ivaldi/pkg/database"
 	"github.com/ivaldibuild/ivaldi/pkg/database/databasetest"
 	"github.com/ivaldibuild/ivaldi/pkg/vcs"
 )
@@ -268,4 +269,53 @@ func TestConnectedRepositoryKeysCountsOnlyActiveSources(t *testing.T) {
 	other, err := f.sources.ConnectedRepositoryKeys(f.ctx, orgB, keys)
 	require.NoError(t, err)
 	assert.Empty(t, other, "another Organization's Sources do not count")
+}
+
+func TestConnectionAndSourceLookupsForUpdate(t *testing.T) {
+	f := newFixture(t)
+	routeKey := "github:github.com:42"
+	connection := must(versioncontrol.NewConnection(versioncontrol.NewConnectionProps{
+		OrganizationID:    orgA,
+		Provider:          vcs.ProviderGitHub,
+		HostURL:           "https://github.com",
+		AuthKind:          versioncontrol.AuthKindAppInstallation,
+		ExternalAccountID: "42",
+		WebhookRouteKey:   &routeKey,
+		LookupFrom:        vcs.LookupFromControlPlane,
+		Status:            versioncontrol.StatusActive,
+	}, nil))
+	require.NoError(t, f.connections.CreateConnection(f.ctx, connection))
+	source := newSource(t, connection, "99")
+	require.NoError(t, f.sources.CreateSource(f.ctx, source))
+
+	require.NoError(t, database.NewTransactor(f.db).WithinTx(f.ctx, func(ctx context.Context) error {
+		gotConnection, err := f.connections.GetConnectionByWebhookRouteKeyForUpdate(ctx, routeKey)
+		if err != nil {
+			return err
+		}
+		assert.Equal(t, connection.Snapshot(), gotConnection.Snapshot())
+
+		gotSource, err := f.sources.GetSourceByRepositoryKeyForUpdate(ctx, orgA, source.RepositoryKey())
+		if err != nil {
+			return err
+		}
+		assert.Equal(t, source.Snapshot(), gotSource.Snapshot())
+
+		_, err = f.sources.GetSourceByRepositoryKeyForUpdate(ctx, orgB, source.RepositoryKey())
+		assert.ErrorIs(t, err, versioncontrol.ErrNotFound, "another Organization does not resolve")
+		return nil
+	}))
+
+	_, err := f.connections.GetConnectionByWebhookRouteKeyForUpdate(f.ctx, "github:github.com:43")
+	assert.ErrorIs(t, err, versioncontrol.ErrNotFound)
+
+	connection.Archive()
+	require.NoError(t, f.connections.UpdateConnection(f.ctx, connection))
+	_, err = f.connections.GetConnectionByWebhookRouteKeyForUpdate(f.ctx, routeKey)
+	assert.ErrorIs(t, err, versioncontrol.ErrNotFound)
+
+	source.Archive()
+	require.NoError(t, f.sources.UpdateSource(f.ctx, source))
+	_, err = f.sources.GetSourceByRepositoryKeyForUpdate(f.ctx, orgA, source.RepositoryKey())
+	assert.ErrorIs(t, err, versioncontrol.ErrNotFound)
 }

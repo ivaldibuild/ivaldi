@@ -98,8 +98,9 @@ func TestAgentRepositoryList(t *testing.T) {
 	other := f.writeOrg(t, "other")
 
 	release := newAgent(org.ID(), "release-agent")
-	release.Rename("Release helper")
+	require.NoError(t, release.Rename("Release helper"))
 	triage := newAgent(org.ID(), "triage-agent")
+	require.NoError(t, triage.Rename("Triage helper"))
 	require.NoError(t, agents.Write(ctx, release))
 	require.NoError(t, agents.Write(ctx, triage))
 	require.NoError(t, agents.Write(ctx, newAgent(other.ID(), "release-agent")))

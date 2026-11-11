@@ -1,6 +1,7 @@
 package connections
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -30,8 +31,14 @@ func (s *service) ListRepositories(ctx context.Context, _ identity.Actor, organi
 	if err != nil {
 		return nil, translateListError(err)
 	}
+	// Names that differ only in case, such as during a transfer, fall back to
+	// the exact name and then the provider's ID, so the order never varies.
 	slices.SortFunc(repositories, func(a, b vcs.Repository) int {
-		return strings.Compare(strings.ToLower(a.FullName), strings.ToLower(b.FullName))
+		return cmp.Or(
+			strings.Compare(strings.ToLower(a.FullName), strings.ToLower(b.FullName)),
+			strings.Compare(a.FullName, b.FullName),
+			strings.Compare(a.ExternalID, b.ExternalID),
+		)
 	})
 
 	keys := make([]string, 0, len(repositories))
@@ -42,9 +49,14 @@ func (s *service) ListRepositories(ctx context.Context, _ identity.Actor, organi
 	if err != nil {
 		return nil, fmt.Errorf("read connected repositories: %w", err)
 	}
+	isConnected := make(map[string]struct{}, len(connected))
+	for _, key := range connected {
+		isConnected[key] = struct{}{}
+	}
 	out := make([]versioncontrol.AvailableRepository, 0, len(repositories))
 	for i, r := range repositories {
-		out = append(out, versioncontrol.AvailableRepository{Repository: r, Connected: slices.Contains(connected, keys[i])})
+		_, ok := isConnected[keys[i]]
+		out = append(out, versioncontrol.AvailableRepository{Repository: r, Connected: ok})
 	}
 	return out, nil
 }

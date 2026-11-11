@@ -88,6 +88,22 @@ func TestListRepositoriesSortsByNameAndMarksConnectedOnes(t *testing.T) {
 	assert.False(t, repositories[1].Connected)
 }
 
+func TestListRepositoriesOrdersNamesDifferingOnlyInCase(t *testing.T) {
+	provider := &repositoryProvider{repositories: []vcs.Repository{
+		{ExternalID: "3", FullName: "acme/api"},
+		{ExternalID: "2", FullName: "Acme/API"},
+		{ExternalID: "1", FullName: "acme/api"},
+	}}
+	repositories, err := listService(t, vcs.LookupFromControlPlane, provider).
+		ListRepositories(context.Background(), ada, orgID, "vcn_1")
+	require.NoError(t, err)
+	var ids []string
+	for _, r := range repositories {
+		ids = append(ids, r.Repository.ExternalID)
+	}
+	assert.Equal(t, []string{"2", "1", "3"}, ids)
+}
+
 func TestListRepositoriesNeverContactsADataPlaneConnection(t *testing.T) {
 	provider := &repositoryProvider{}
 	_, err := listService(t, vcs.LookupFromDataPlane, provider).

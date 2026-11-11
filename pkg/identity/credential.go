@@ -9,15 +9,17 @@ import (
 // Internal credential prefixes the API middleware uses to pass non-bearer
 // workload credentials to the verifier chain.
 const (
-	MTLSCredentialPrefix       = "mtls:"
-	KubernetesCredentialPrefix = "k8s:"
+	MTLSCredentialPrefix        = "mtls:"
+	KubernetesCredentialPrefix  = "k8s:"
+	WorkloadKeyCredentialPrefix = "wkey:"
 )
 
 // HasInternalCredentialPrefix reports whether s starts with one of the
 // internal credential prefixes. A credential received from a client, such as
 // a bearer token, must never carry one: the verifier trusts these encodings.
 func HasInternalCredentialPrefix(s string) bool {
-	return strings.HasPrefix(s, MTLSCredentialPrefix) || strings.HasPrefix(s, KubernetesCredentialPrefix)
+	return strings.HasPrefix(s, MTLSCredentialPrefix) || strings.HasPrefix(s, KubernetesCredentialPrefix) ||
+		strings.HasPrefix(s, WorkloadKeyCredentialPrefix)
 }
 
 // MTLSCredential encodes a verified client certificate as a credential
@@ -45,4 +47,10 @@ func ParseMTLSCredential(credential string) (fingerprint string, notAfter time.T
 // credential string.
 func KubernetesCredential(token string) string {
 	return KubernetesCredentialPrefix + token
+}
+
+// WorkloadKeyCredential encodes an assertion signed with a workload's key as
+// a credential string.
+func WorkloadKeyCredential(assertion string) string {
+	return WorkloadKeyCredentialPrefix + assertion
 }

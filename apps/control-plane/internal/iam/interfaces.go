@@ -64,6 +64,11 @@ type APITokenRepository interface {
 // WorkloadRepository stores enrolled data-plane workloads.
 type WorkloadRepository interface {
 	Get(ctx context.Context, organizationID, principalID string) (*Workload, error)
+	// GetPlatform returns a platform workload, which belongs to no
+	// Organization (ADR 0015).
+	GetPlatform(ctx context.Context, principalID string) (*Workload, error)
+	// ListPlatform returns every platform workload, by name.
+	ListPlatform(ctx context.Context) ([]*Workload, error)
 	// Write inserts the workload and its principal, or updates them when the
 	// principal ID is stored. It updates the principal's status and the
 	// workload's last-seen time.
@@ -95,6 +100,8 @@ type WorkloadCredentialRepository interface {
 	// whose identifier matches and that are not revoked.
 	ListActiveByIdentity(ctx context.Context, organizationID string, kind WorkloadCredentialKind, identifier string) ([]*WorkloadCredential, error)
 	ListByPrincipal(ctx context.Context, organizationID, principalID string) ([]*WorkloadCredential, error)
+	// ListPlatformByPrincipal returns a platform workload's credentials.
+	ListPlatformByPrincipal(ctx context.Context, principalID string) ([]*WorkloadCredential, error)
 }
 
 // ServiceAccountService manages service accounts, the non-human principals

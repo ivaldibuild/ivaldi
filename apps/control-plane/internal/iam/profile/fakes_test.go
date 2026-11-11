@@ -145,5 +145,13 @@ func (s *store) authorizer() authorization.Authorizer {
 		denied = append(denied, mock.Anything)
 	}
 	logger.On("Debug", denied...).Maybe()
-	return must(authorizer.New(authorizer.WithAccessRepo(access{s}), authorizer.WithLogger(logger)))
+	return must(authorizer.New(authorizer.WithAccessRepo(access{s}),
+		authorizer.WithPlatformWorkloads(noPlatformWorkloads{}), authorizer.WithLogger(logger)))
+}
+
+// noPlatformWorkloads is a deployment with no platform workloads.
+type noPlatformWorkloads struct{}
+
+func (noPlatformWorkloads) GetPlatform(context.Context, string) (*iam.Workload, error) {
+	return nil, iam.ErrNotFound
 }

@@ -25,6 +25,7 @@ import (
 func (a *app) wireAccess(logger logging.Logger) error {
 	authz, err := authorizer.New(
 		authorizer.WithAccessRepo(iampg.NewAccessRepository(a.db)),
+		authorizer.WithPlatformWorkloads(iampg.NewWorkloadRepository(a.db)),
 		authorizer.WithLogger(logger),
 	)
 	if err != nil {

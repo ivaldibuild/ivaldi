@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ivaldibuild/ivaldi/pkg/identity"
 	"github.com/ivaldibuild/ivaldi/pkg/vcs"
 )
 
@@ -132,22 +133,26 @@ func TestNewResolverValidatesItsInput(t *testing.T) {
 }
 
 func TestLookupClientCallsTheInternalEndpoint(t *testing.T) {
-	var gotPath, gotToken string
+	var gotPath, gotAuthorization, gotKind string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
-		gotToken = r.Header.Get("X-Ivaldi-Gateway-Token")
+		gotAuthorization = r.Header.Get("Authorization")
+		gotKind = r.Header.Get(identity.CredentialHeader)
 		w.Header().Set("Content-Type", "application/json")
 		require.NoError(t, json.NewEncoder(w).Encode(testRoute))
 	}))
 	defer server.Close()
 
-	client, err := NewLookupClient(server.URL, "lookup-token", server.Client())
+	signer := &fakeSigner{}
+	client, err := NewLookupClient(server.URL, signer, server.Client())
 	require.NoError(t, err)
 	route, err := client.Lookup(context.Background(), "github:github.com:42")
 	require.NoError(t, err)
 	assert.Equal(t, testRoute, route)
 	assert.Equal(t, "/internal/webhook-routes/github:github.com:42", gotPath)
-	assert.Equal(t, "lookup-token", gotToken)
+	assert.Equal(t, "Bearer assertion-for-"+identity.AudienceControlPlane, gotAuthorization,
+		"each call carries an assertion the gateway signed for the control plane")
+	assert.Equal(t, identity.CredentialHeaderWorkloadKey, gotKind)
 }
 
 func TestLookupClientMapsTheControlPlaneAnswers(t *testing.T) {
@@ -166,7 +171,7 @@ func TestLookupClientMapsTheControlPlaneAnswers(t *testing.T) {
 				w.WriteHeader(tt.status)
 			}))
 			defer server.Close()
-			client, err := NewLookupClient(server.URL, "token", server.Client())
+			client, err := NewLookupClient(server.URL, &fakeSigner{}, server.Client())
 			require.NoError(t, err)
 			_, err = client.Lookup(context.Background(), "github:github.com:42")
 			assert.True(t, errors.Is(err, tt.want), "got %v", err)
@@ -179,7 +184,22 @@ func TestLookupClientRejectsBadJSON(t *testing.T) {
 		_, _ = w.Write([]byte("not json"))
 	}))
 	defer server.Close()
-	client, err := NewLookupClient(server.URL, "token", server.Client())
+	client, err := NewLookupClient(server.URL, &fakeSigner{}, server.Client())
+	require.NoError(t, err)
+	_, err = client.Lookup(context.Background(), "github:github.com:42")
+	assert.ErrorIs(t, err, ErrLookupUnavailable)
+}
+
+// fakeSigner signs an assertion that names its audience.
+type fakeSigner struct{ err error }
+
+func (f *fakeSigner) Sign(audience string) (string, error) {
+	return "assertion-for-" + audience, f.err
+}
+func (f *fakeSigner) KeyID() string { return "test-key" }
+
+func TestLookupClientReportsASigningFailureAsUnavailable(t *testing.T) {
+	client, err := NewLookupClient("http://control-plane", &fakeSigner{err: errors.New("no key")}, nil)
 	require.NoError(t, err)
 	_, err = client.Lookup(context.Background(), "github:github.com:42")
 	assert.ErrorIs(t, err, ErrLookupUnavailable)

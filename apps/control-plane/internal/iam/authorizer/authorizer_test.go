@@ -45,19 +45,37 @@ func request(permission string) authorization.Request {
 	}
 }
 
+// fakePlatform holds the platform workloads platform requests come from.
+type fakePlatform map[string]*iam.Workload
+
+func (f fakePlatform) GetPlatform(_ context.Context, principalID string) (*iam.Workload, error) {
+	w, ok := f[principalID]
+	if !ok {
+		return nil, iam.ErrNotFound
+	}
+	return w, nil
+}
+
 func newAuthorizer(t *testing.T, access *fakeAccess) authorization.Authorizer {
+	t.Helper()
+	return newAuthorizerWith(t, access, fakePlatform{})
+}
+
+func newAuthorizerWith(t *testing.T, access *fakeAccess, platform fakePlatform) authorization.Authorizer {
 	t.Helper()
 	logger := logging.NewMockLogger()
 	logger.On("Debug", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Maybe()
-	a, err := New(WithAccessRepo(access), WithLogger(logger))
+	a, err := New(WithAccessRepo(access), WithPlatformWorkloads(platform), WithLogger(logger))
 	require.NoError(t, err)
 	return a
 }
 
 func TestNewRequiresItsDependencies(t *testing.T) {
-	_, err := New(WithLogger(logging.NewMockLogger()))
+	_, err := New(WithLogger(logging.NewMockLogger()), WithPlatformWorkloads(fakePlatform{}))
 	assert.Error(t, err)
-	_, err = New(WithAccessRepo(&fakeAccess{}))
+	_, err = New(WithAccessRepo(&fakeAccess{}), WithPlatformWorkloads(fakePlatform{}))
+	assert.Error(t, err)
+	_, err = New(WithAccessRepo(&fakeAccess{}), WithLogger(logging.NewMockLogger()))
 	assert.Error(t, err)
 }
 

@@ -2,7 +2,8 @@
 #
 #   make local_stack   Everything in containers: PostgreSQL, Valkey, the
 #                      migrations, the control plane on http://localhost:8660,
-#                      and the web app on http://localhost:8670
+#                      the gateway on http://localhost:8663, and the web app
+#                      on http://localhost:8670
 #   make local         Only PostgreSQL and Valkey, for `make local_serve`
 #
 # Both create config.local.yml from config.local.example.yml when it is
@@ -80,6 +81,8 @@ services:
 
   control-plane:
     container_name: ivaldi_control_plane
+    # The gateway runs the same image.
+    image: ivaldi-local
     build:
       context: .
       dockerfile: apps/control-plane/Dockerfile
@@ -108,6 +111,39 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+    restart: unless-stopped
+
+  # The integration gateway (`ivaldi gateway`): it receives GitHub webhooks on
+  # http://localhost:8663/webhooks/github and calls the control plane as the
+  # platform workload config.local.yml lists (ADR 0015). GitHub cannot reach
+  # localhost, so expose it with `tailscale funnel --bg 8663` (see
+  # docs/self-hosting/version-control.md).
+  gateway:
+    container_name: ivaldi_gateway
+    image: ivaldi-local
+    build:
+      context: .
+      dockerfile: apps/control-plane/Dockerfile
+    working_dir: /ivaldi
+    command: ["gateway", "--config", "config.local.yml"]
+    user: "${IVALDI_UID:-1000}:${IVALDI_GID:-1000}"
+    ports:
+      - "127.0.0.1:8663:8663"
+    volumes:
+      - ./config.local.yml:/ivaldi/config.local.yml:ro
+      - ./.local:/ivaldi/.local:ro
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Only what differs inside the compose network: the gateway listens on
+      # every interface so the published port reaches it.
+      IVALDI_GATEWAY_HOST: 0.0.0.0
+      IVALDI_GATEWAY_CONTROL_PLANE_URL: http://control-plane:8660
+      IVALDI_REDIS_ADDRESS: redis:6379
+    depends_on:
+      - control-plane
+      - redis
     restart: unless-stopped
 
   webui:

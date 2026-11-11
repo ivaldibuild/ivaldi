@@ -52,11 +52,16 @@ const (
 	PermissionConnectionManage = "connection.manage"
 	PermissionSourceRead       = "source.read"
 	PermissionSourceManage     = "source.manage"
+	// PermissionWebhookRouteResolve lets a platform workload, the gateway,
+	// resolve a webhook route key across every Organization (ADR 0015). IAM
+	// lists it under the gateway component; no role holds it.
+	PermissionWebhookRouteResolve = "version_control.webhook_route.resolve"
 )
 
 // Actions name what an actor asks the authorizer to allow.
 const (
 	ActionConnectionArchive          = "connection.archive"
+	ActionWebhookRouteResolve        = "webhook_route.resolve"
 	ActionConnectionCreate           = "connection.create"
 	ActionConnectionInstall          = "connection.install"
 	ActionConnectionList             = "connection.list"

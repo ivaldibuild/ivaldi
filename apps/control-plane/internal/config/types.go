@@ -37,7 +37,7 @@ type Config struct {
 	Encryption Encryption `yaml:"encryption"`
 	Redis      Redis      `yaml:"redis"`
 	Events     Events     `yaml:"events"`
-	Gateway    Gateway    `yaml:"gateway"`
+	Platform   Platform   `yaml:"platform"`
 	Outbox     Outbox     `yaml:"outbox"`
 	Telemetry  Telemetry  `yaml:"telemetry"`
 

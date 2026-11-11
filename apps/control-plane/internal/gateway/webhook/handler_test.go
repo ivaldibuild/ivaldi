@@ -1,10 +1,12 @@
 package webhook
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -63,6 +65,7 @@ func newTestHandler(t *testing.T, options ...func(*HandlerConfig)) *handlerFixtu
 		Normalizer:   normalizer,
 		Publisher:    &fakePublisher{},
 		MaxBodyBytes: 1 << 20,
+		Timeout:      time.Minute,
 		Logger:       logging.Nop(),
 	}
 	for _, option := range options {
@@ -256,7 +259,60 @@ func TestNewHandlerValidatesItsInput(t *testing.T) {
 	assert.Error(t, err)
 	_, err = NewHandler(HandlerConfig{
 		Verifier: fakeVerifier{}, Resolver: &fakeResolver{}, Normalizer: normalizer,
-		Publisher: &fakePublisher{}, MaxBodyBytes: 1, Logger: logging.Nop(),
+		Publisher: &fakePublisher{}, MaxBodyBytes: 1, Timeout: time.Second, Logger: logging.Nop(),
 	})
 	assert.NoError(t, err)
+}
+
+// deadlineResolver records whether the lookup ran under a deadline.
+type deadlineResolver struct {
+	hasDeadline bool
+}
+
+func (d *deadlineResolver) Resolve(ctx context.Context, _ string) (vcs.WebhookRoute, error) {
+	_, d.hasDeadline = ctx.Deadline()
+	return testRoute, nil
+}
+
+func TestHandlerBoundsTheDeliveryItself(t *testing.T) {
+	resolver := &deadlineResolver{}
+	normalizer, err := NewNormalizer(vcs.ProviderGitHub, "https://github.com")
+	require.NoError(t, err)
+	handler, err := NewHandler(HandlerConfig{
+		Verifier: fakeVerifier{}, Resolver: resolver, Normalizer: normalizer,
+		Publisher: &fakePublisher{}, MaxBodyBytes: 1 << 20, Timeout: time.Minute, Logger: logging.Nop(),
+	})
+	require.NoError(t, err)
+
+	body := []byte(repositoryBody)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, webhookRequest(eventRepository, "delivery-1", sign(t, testSecret, body), body))
+	assert.Equal(t, http.StatusAccepted, rec.Code)
+	assert.True(t, resolver.hasDeadline, "the route lookup runs under the delivery's deadline")
+}
+
+func TestHandlerCutsOffAStalledBody(t *testing.T) {
+	// The gateway's server has no read timeout, so the handler's own
+	// deadline must stop a client that stops sending its body.
+	normalizer, err := NewNormalizer(vcs.ProviderGitHub, "https://github.com")
+	require.NoError(t, err)
+	handler, err := NewHandler(HandlerConfig{
+		Verifier: fakeVerifier{}, Resolver: &fakeResolver{route: testRoute}, Normalizer: normalizer,
+		Publisher: &fakePublisher{}, MaxBodyBytes: 1 << 20, Timeout: 100 * time.Millisecond, Logger: logging.Nop(),
+	})
+	require.NoError(t, err)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	conn, err := net.Dial("tcp", server.Listener.Addr().String())
+	require.NoError(t, err)
+	defer conn.Close()
+	_, err = conn.Write([]byte("POST / HTTP/1.1\r\nHost: gateway\r\nContent-Length: 100\r\n\r\n{\"action\""))
+	require.NoError(t, err)
+
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
+	res, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	require.NoError(t, err, "the server answered instead of waiting for the body")
+	defer res.Body.Close()
+	assert.Equal(t, http.StatusBadRequest, res.StatusCode)
 }

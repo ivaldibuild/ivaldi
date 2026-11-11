@@ -271,17 +271,20 @@ var (
 // requestCredential returns the credential the authenticator verifies: a
 // bearer token when present, otherwise a verified client certificate.
 //
-// The verifier trusts the internal mTLS and Kubernetes encodings because only
-// this function builds them, so a bearer token that already carries one of
-// their prefixes is refused rather than passed on: otherwise a client could
+// The verifier trusts the internal mTLS, Kubernetes, and workload-key
+// encodings because only this function builds them, so a bearer token that
+// already carries one of their prefixes is refused rather than passed on: otherwise a client could
 // claim any certificate fingerprint without presenting the certificate.
 func requestCredential(ctx huma.Context) (string, error) {
 	if token, ok := bearerToken(ctx.Header("Authorization")); ok {
 		if identity.HasInternalCredentialPrefix(token) {
 			return "", errReservedCredential
 		}
-		if strings.EqualFold(ctx.Header("X-Ivaldi-Credential"), "kubernetes") {
+		switch kind := ctx.Header(identity.CredentialHeader); {
+		case strings.EqualFold(kind, identity.CredentialHeaderKubernetes):
 			return identity.KubernetesCredential(token), nil
+		case strings.EqualFold(kind, identity.CredentialHeaderWorkloadKey):
+			return identity.WorkloadKeyCredential(token), nil
 		}
 		return token, nil
 	}

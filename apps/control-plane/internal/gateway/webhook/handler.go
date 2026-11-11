@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/ivaldibuild/ivaldi/pkg/events"
 	"github.com/ivaldibuild/ivaldi/pkg/logging"
@@ -22,6 +23,10 @@ const (
 	headerSignature = "X-Hub-Signature-256"
 )
 
+// writeGrace is how long after a delivery's deadline its response may still
+// be written, so a delivery that ran out of time still gets its error.
+const writeGrace = 5 * time.Second
+
 // Handler receives GitHub webhooks, verifies them, resolves their route, and
 // publishes the normalized event.
 type Handler struct {
@@ -30,6 +35,7 @@ type Handler struct {
 	normalizer   *Normalizer
 	publisher    events.Publisher
 	maxBodyBytes int64
+	timeout      time.Duration
 	logger       logging.Logger
 }
 
@@ -40,7 +46,10 @@ type HandlerConfig struct {
 	Normalizer   *Normalizer
 	Publisher    events.Publisher
 	MaxBodyBytes int64
-	Logger       logging.Logger
+	// Timeout bounds one delivery: reading its body, resolving its route,
+	// and publishing it.
+	Timeout time.Duration
+	Logger  logging.Logger
 }
 
 // NewHandler returns a Handler, or an error naming a missing dependency.
@@ -56,6 +65,8 @@ func NewHandler(c HandlerConfig) (*Handler, error) {
 		return nil, errors.New("webhook handler: a publisher is required")
 	case c.MaxBodyBytes <= 0:
 		return nil, errors.New("webhook handler: the body limit must be positive")
+	case c.Timeout <= 0:
+		return nil, errors.New("webhook handler: the timeout must be positive")
 	case c.Logger == nil:
 		return nil, errors.New("webhook handler: a logger is required")
 	}
@@ -65,11 +76,27 @@ func NewHandler(c HandlerConfig) (*Handler, error) {
 		normalizer:   c.Normalizer,
 		publisher:    c.Publisher,
 		maxBodyBytes: c.MaxBodyBytes,
+		timeout:      c.Timeout,
 		logger:       c.Logger,
 	}, nil
 }
 
+// ServeHTTP bounds the delivery itself. The gateway's server sets no read or
+// write timeout, because other modules, such as MCP, keep connections open
+// for long streams.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	deadline := time.Now().Add(h.timeout)
+	// A ResponseWriter that cannot take deadlines, such as a test recorder,
+	// reports http.ErrNotSupported; the context below still bounds the work.
+	rc := http.NewResponseController(w)
+	_ = rc.SetReadDeadline(deadline)
+	_ = rc.SetWriteDeadline(deadline.Add(writeGrace))
+	ctx, cancel := context.WithDeadline(r.Context(), deadline)
+	defer cancel()
+	h.serve(w, r.WithContext(ctx))
+}
+
+func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, h.maxBodyBytes))
 	if err != nil {
 		var tooLarge *http.MaxBytesError

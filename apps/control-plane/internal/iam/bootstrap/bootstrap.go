@@ -1,7 +1,8 @@
 // Package bootstrap brings IAM's stored state in line with the control
-// plane's configuration at start: the first-party OAuth clients everywhere,
-// and in a self-hosted installation its Organization, its configured
-// identity providers, and optionally its administrator's password.
+// plane's configuration at start: the first-party OAuth clients and platform
+// workloads everywhere, and in a self-hosted installation its Organization,
+// its configured identity providers, and optionally its administrator's
+// password.
 package bootstrap
 
 import (
@@ -49,6 +50,9 @@ type Settings struct {
 	Mode Mode
 	// Clients are the first-party OAuth clients, applied in every mode.
 	Clients []ClientSettings
+	// PlatformWorkloads are the components that serve every Organization,
+	// such as the gateway (ADR 0015), applied in every mode.
+	PlatformWorkloads []PlatformWorkloadSettings
 	// The rest applies to a self-hosted installation only.
 	Organization OrganizationSettings
 	// AdminEmail becomes the Organization's owner on first sign-in.
@@ -66,6 +70,15 @@ type ClientSettings struct {
 	ClientID     string
 	Name         string
 	RedirectURIs []string
+}
+
+// PlatformWorkloadSettings is a configured platform workload.
+type PlatformWorkloadSettings struct {
+	// Name identifies it among platform workloads.
+	Name      string
+	Component iam.WorkloadComponent
+	// PublicKeys are the keys it may sign requests with, DER-encoded (PKIX).
+	PublicKeys [][]byte
 }
 
 // OrganizationSettings name a self-hosted installation's Organization.
@@ -115,6 +128,12 @@ func WithGrantRepo(r iam.GrantRepository) Option { return func(b *bootstrapper) 
 func WithOAuthClientRepo(r iam.OAuthClientRepository) Option {
 	return func(b *bootstrapper) { b.clients = r }
 }
+func WithWorkloadRepo(r iam.WorkloadRepository) Option {
+	return func(b *bootstrapper) { b.workloads = r }
+}
+func WithWorkloadCredentialRepo(r iam.WorkloadCredentialRepository) Option {
+	return func(b *bootstrapper) { b.credentials = r }
+}
 func WithPasswordHasher(h hasher.PasswordHasher) Option {
 	return func(b *bootstrapper) { b.hasher = h }
 }
@@ -125,20 +144,22 @@ func WithLocker(l transaction.Locker) Option      { return func(b *bootstrapper)
 func WithOutboxRecorder(o outbox.Recorder) Option { return func(b *bootstrapper) { b.outbox = o } }
 
 type bootstrapper struct {
-	settings   Settings
-	logger     logging.Logger
-	onboarding iam.Onboarding
-	orgs       iam.OrganizationRepository
-	providers  iam.IdentityProviderRepository
-	accounts   iam.AccountRepository
-	passwords  iam.PasswordCredentialRepository
-	users      iam.UserRepository
-	grants     iam.GrantRepository
-	clients    iam.OAuthClientRepository
-	hasher     hasher.PasswordHasher
-	tx         transaction.Transactor
-	locker     transaction.Locker
-	outbox     outbox.Recorder
+	settings    Settings
+	logger      logging.Logger
+	onboarding  iam.Onboarding
+	orgs        iam.OrganizationRepository
+	providers   iam.IdentityProviderRepository
+	accounts    iam.AccountRepository
+	passwords   iam.PasswordCredentialRepository
+	users       iam.UserRepository
+	grants      iam.GrantRepository
+	clients     iam.OAuthClientRepository
+	workloads   iam.WorkloadRepository
+	credentials iam.WorkloadCredentialRepository
+	hasher      hasher.PasswordHasher
+	tx          transaction.Transactor
+	locker      transaction.Locker
+	outbox      outbox.Recorder
 }
 
 // New returns a Bootstrapper, or an error naming a missing dependency.
@@ -160,6 +181,8 @@ func New(opts ...Option) (Bootstrapper, error) {
 		{"UserRepo", b.users != nil},
 		{"GrantRepo", b.grants != nil},
 		{"OAuthClientRepo", b.clients != nil},
+		{"WorkloadRepo", b.workloads != nil},
+		{"WorkloadCredentialRepo", b.credentials != nil},
 		{"PasswordHasher", b.hasher != nil},
 		{"Transactor", b.tx != nil},
 		{"Locker", b.locker != nil},
@@ -185,6 +208,9 @@ func (b *bootstrapper) Bootstrap(ctx context.Context) (*Installation, error) {
 			return err
 		}
 		if err := b.applyClients(ctx); err != nil {
+			return err
+		}
+		if err := b.applyPlatformWorkloads(ctx); err != nil {
 			return err
 		}
 		if b.settings.Mode == ModeCloud {
@@ -250,6 +276,118 @@ func (b *bootstrapper) applyClients(ctx context.Context) error {
 		b.logger.Info("registered first-party OAuth client", logging.F("client_id", cs.ClientID))
 	}
 	return nil
+}
+
+// applyPlatformWorkloads makes the platform workloads match the
+// configuration, which is their only source: a configured one is created or
+// reactivated, its listed keys are added and unlisted ones revoked, and one
+// no longer configured is suspended, so its keys stop working.
+func (b *bootstrapper) applyPlatformWorkloads(ctx context.Context) error {
+	existing, err := b.workloads.ListPlatform(ctx)
+	if err != nil {
+		return err
+	}
+	byName := make(map[string]*iam.Workload, len(existing))
+	for _, w := range existing {
+		byName[w.DisplayName()] = w
+	}
+
+	for _, ws := range b.settings.PlatformWorkloads {
+		w, ok := byName[ws.Name]
+		if ok {
+			delete(byName, ws.Name)
+			if w.Component() != ws.Component {
+				return fmt.Errorf("bootstrap: platform workload %q is a %s, not a %s; give the %s another name",
+					ws.Name, w.Component(), ws.Component, ws.Component)
+			}
+			if err := w.Reactivate(); err != nil {
+				return fmt.Errorf("platform workload %s: %w", ws.Name, err)
+			}
+		} else {
+			if w, err = iam.NewPlatformWorkload(ws.Name, ws.Component); err != nil {
+				return fmt.Errorf("platform workload %s: %w", ws.Name, err)
+			}
+		}
+		if err := b.saveWorkload(ctx, w); err != nil {
+			return err
+		}
+		if err := b.applyPlatformKeys(ctx, w, ws.PublicKeys); err != nil {
+			return err
+		}
+	}
+	for _, w := range byName {
+		if !w.Active() {
+			continue
+		}
+		if err := w.Suspend(); err != nil {
+			return fmt.Errorf("platform workload %s: %w", w.DisplayName(), err)
+		}
+		if err := b.saveWorkload(ctx, w); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// applyPlatformKeys adds the listed keys a platform workload lacks and
+// revokes its active keys that are no longer listed.
+func (b *bootstrapper) applyPlatformKeys(ctx context.Context, w *iam.Workload, keys [][]byte) error {
+	stored, err := b.credentials.ListPlatformByPrincipal(ctx, w.ID())
+	if err != nil {
+		return err
+	}
+	unlisted := map[string]*iam.WorkloadCredential{}
+	for _, c := range stored {
+		if c.Kind() == iam.CredentialPublicKey && !c.Revoked() {
+			unlisted[c.Identifier()] = c
+		}
+	}
+	for _, der := range keys {
+		c, err := iam.NewPlatformKeyCredential(w.ID(), der)
+		if err != nil {
+			return fmt.Errorf("platform workload %s: key: %w", w.DisplayName(), err)
+		}
+		if _, ok := unlisted[c.Identifier()]; ok {
+			delete(unlisted, c.Identifier())
+			continue
+		}
+		if err := b.saveCredential(ctx, c); err != nil {
+			return err
+		}
+		b.logger.Info("added platform workload key",
+			logging.F("workload", w.DisplayName()), logging.F("key_id", c.Identifier()))
+	}
+	for _, c := range unlisted {
+		c.Revoke()
+		if err := b.saveCredential(ctx, c); err != nil {
+			return err
+		}
+		b.logger.Info("revoked platform workload key",
+			logging.F("workload", w.DisplayName()), logging.F("key_id", c.Identifier()))
+	}
+	return nil
+}
+
+// saveWorkload writes a platform workload only when it changed. Platform
+// workloads belong to no Organization, so neither do their events.
+func (b *bootstrapper) saveWorkload(ctx context.Context, w *iam.Workload) error {
+	raised := w.PullEvents()
+	if len(raised) == 0 {
+		return nil
+	}
+	if err := b.workloads.Write(ctx, w); err != nil {
+		return fmt.Errorf("write platform workload %s: %w", w.DisplayName(), err)
+	}
+	b.logger.Info("applied platform workload",
+		logging.F("workload", w.DisplayName()), logging.F("status", string(w.Status())))
+	return b.record(ctx, "", iam.AggregateWorkload, w.ID(), raised)
+}
+
+func (b *bootstrapper) saveCredential(ctx context.Context, c *iam.WorkloadCredential) error {
+	if err := b.credentials.Write(ctx, c); err != nil {
+		return fmt.Errorf("write platform workload key: %w", err)
+	}
+	return b.record(ctx, "", iam.AggregateWorkloadCredential, c.ID(), c.PullEvents())
 }
 
 // installationOrganization returns the installation's one Organization,

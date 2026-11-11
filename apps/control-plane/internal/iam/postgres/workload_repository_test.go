@@ -1,6 +1,8 @@
 package postgres
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"testing"
 	"time"
 
@@ -9,6 +11,7 @@ import (
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
+	"github.com/ivaldibuild/ivaldi/pkg/identity"
 )
 
 func TestWorkloadRepository(t *testing.T) {
@@ -167,4 +170,60 @@ func TestWorkloadCredentialRepositoryReenrolment(t *testing.T) {
 		Identifier: "same-fingerprint", NotAfter: &nextExpiry,
 	}, nil))
 	assert.ErrorIs(t, credentials.Write(f.ctx, clash), iam.ErrAlreadyExists)
+}
+
+func TestPlatformWorkloads(t *testing.T) {
+	f := newFixture(t)
+	clock.Fix(t, t0)
+	workloads := NewWorkloadRepository(f.db)
+	credentials := NewWorkloadCredentialRepository(f.db)
+	org := f.writeOrg(t, "acme")
+
+	gateway := must(iam.NewPlatformWorkload("gateway", iam.ComponentGateway))
+	require.NoError(t, workloads.Write(f.ctx, gateway))
+	got, err := workloads.GetPlatform(f.ctx, gateway.ID())
+	require.NoError(t, err)
+	assert.Equal(t, gateway.Snapshot(), got.Snapshot())
+	assert.True(t, got.Platform())
+
+	listed, err := workloads.ListPlatform(f.ctx)
+	require.NoError(t, err)
+	require.Len(t, listed, 1)
+	assert.Equal(t, gateway.ID(), listed[0].ID())
+
+	_, err = workloads.Get(f.ctx, org.ID(), gateway.ID())
+	assert.ErrorIs(t, err, iam.ErrNotFound, "an Organization never sees a platform workload")
+
+	clock.Fix(t, t0.Add(time.Minute))
+	gateway.Seen()
+	require.NoError(t, workloads.UpdateLastSeen(f.ctx, gateway))
+	got, err = workloads.GetPlatform(f.ctx, gateway.ID())
+	require.NoError(t, err)
+	assert.Equal(t, gateway.LastSeenAt(), got.LastSeenAt())
+
+	key := must(iam.NewPlatformKeyCredential(gateway.ID(), publicKeyDER(t)))
+	require.NoError(t, credentials.Write(f.ctx, key))
+	byKey, err := credentials.GetByKindAndIdentifier(f.ctx, iam.CredentialPublicKey, key.Identifier())
+	require.NoError(t, err)
+	assert.Equal(t, key.Snapshot(), byKey.Snapshot())
+	platformKeys, err := credentials.ListPlatformByPrincipal(f.ctx, gateway.ID())
+	require.NoError(t, err)
+	require.Len(t, platformKeys, 1)
+	orgKeys, err := credentials.ListByPrincipal(f.ctx, org.ID(), gateway.ID())
+	require.NoError(t, err)
+	assert.Empty(t, orgKeys)
+
+	t.Run("names are unique among platform workloads", func(t *testing.T) {
+		twin := must(iam.NewPlatformWorkload("gateway", iam.ComponentGateway))
+		assert.Error(t, workloads.Write(f.ctx, twin))
+	})
+}
+
+func publicKeyDER(t *testing.T) []byte {
+	t.Helper()
+	public, _, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	der, err := identity.MarshalWorkloadPublicKeyDER(public)
+	require.NoError(t, err)
+	return der
 }

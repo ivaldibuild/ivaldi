@@ -652,7 +652,7 @@ func TestSnapshotJSONKeys(t *testing.T) {
 		{ServiceAccountSnapshot{}, append(slices.Clone(principal), "description", "created_by_principal_id")},
 		{AgentSnapshot{}, append(slices.Clone(principal), "slug")},
 		{AgentSessionSnapshot{}, append(slices.Clone(principal), "session_id", "work_item_id", "delegator_principal_id", "expires_at", "revoked_at", "scope_resource_ids")},
-		{WorkloadSnapshot{}, append(slices.Clone(principal), "component", "pool", "enrolled_at", "last_seen_at")},
+		{WorkloadSnapshot{}, append(slices.Clone(principal), "platform", "component", "pool", "enrolled_at", "last_seen_at")},
 		{APITokenSnapshot{}, []string{"id", "organization_id", "principal_id", "name", "token_prefix", "expires_at", "last_used_at", "revoked_at", "created_at"}},
 		{ExternalIdentitySnapshot{}, []string{"id", "organization_id", "principal_id", "identity_provider_id", "subject", "last_login_at", "created_at"}},
 		{AccountIdentitySnapshot{}, []string{"id", "account_id", "provider", "subject", "last_login_at", "created_at"}},
@@ -668,7 +668,7 @@ func TestSnapshotJSONKeys(t *testing.T) {
 		{PasswordCredentialSnapshot{}, []string{"account_id", "updated_at"}},
 		{RoleSnapshot{}, []string{"id", "organization_id", "key", "name", "created_at"}},
 		{SigningKeySnapshot{}, []string{"kid", "organization_id", "algorithm", "public_jwk", "private_key_ref", "status", "created_at", "not_after"}},
-		{WorkloadCredentialSnapshot{}, []string{"id", "organization_id", "principal_id", "kind", "identifier", "not_after", "revoked_at", "replaced_by", "created_at"}},
+		{WorkloadCredentialSnapshot{}, []string{"id", "platform", "organization_id", "principal_id", "kind", "identifier", "not_after", "revoked_at", "replaced_by", "created_at"}},
 		{WorkloadEnrollmentTokenSnapshot{}, []string{"id", "organization_id", "pool", "target_id", "credential_kind", "created_by_principal_id", "expires_at", "used_at", "used_by_principal_id", "created_at"}},
 	}
 	for _, tt := range tests {

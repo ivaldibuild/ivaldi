@@ -7,6 +7,7 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
+	"github.com/ivaldibuild/ivaldi/pkg/identity"
 	"github.com/ivaldibuild/ivaldi/pkg/optional"
 )
 
@@ -24,17 +25,24 @@ const (
 	// CredentialBearerToken identifies the Workload by an opaque bearer
 	// token. Only its hash is stored.
 	CredentialBearerToken WorkloadCredentialKind = "bearer_token"
+	// CredentialPublicKey identifies the Workload by a key pair: it signs
+	// each request, and only its public key is stored. The identifier is
+	// the key's JWK thumbprint. Only platform workloads hold one so far
+	// (ADR 0015).
+	CredentialPublicKey WorkloadCredentialKind = "public_key"
 )
 
 // WorkloadCredential is one way an enrolled Workload authenticates. Each
 // (kind, identifier) belongs to one Workload.
 type WorkloadCredential struct {
 	aggregate.Root
+	platform       bool
 	organizationID string
 	principalID    string
 	kind           WorkloadCredentialKind
 	identifier     string
 	secretHash     []byte
+	publicKey      []byte
 	notAfter       *time.Time
 	revokedAt      *time.Time
 	replacedBy     *string
@@ -46,20 +54,26 @@ type WorkloadCredential struct {
 // WorkloadCredential events' contract.
 type WorkloadCredentialSnapshot struct {
 	ID             string                 `json:"id"`
+	Platform       bool                   `json:"platform"`
 	OrganizationID string                 `json:"organization_id"`
 	PrincipalID    string                 `json:"principal_id"`
 	Kind           WorkloadCredentialKind `json:"kind"`
 	Identifier     string                 `json:"identifier"`
 	SecretHash     []byte                 `json:"-"`
-	NotAfter       *time.Time             `json:"not_after"`
-	RevokedAt      *time.Time             `json:"revoked_at"`
-	ReplacedBy     *string                `json:"replaced_by"`
-	CreatedAt      time.Time              `json:"created_at"`
+	// PublicKey is a public key credential's key, DER-encoded (PKIX).
+	PublicKey  []byte     `json:"-"`
+	NotAfter   *time.Time `json:"not_after"`
+	RevokedAt  *time.Time `json:"revoked_at"`
+	ReplacedBy *string    `json:"replaced_by"`
+	CreatedAt  time.Time  `json:"created_at"`
 }
 
 // NewWorkloadCredentialProps describes a WorkloadCredential. A new one
 // leaves RevokedAt and CreatedAt nil; a repository loading a stored one sets them.
 type NewWorkloadCredentialProps struct {
+	// Platform marks a platform workload's credential, which has no
+	// OrganizationID.
+	Platform       bool
 	OrganizationID string
 	// PrincipalID is the Workload's.
 	PrincipalID string
@@ -67,6 +81,9 @@ type NewWorkloadCredentialProps struct {
 	Identifier  string
 	// SecretHash is the SHA-256 hash of a bearer token, or nil for other kinds.
 	SecretHash []byte
+	// PublicKey is a public key credential's key, DER-encoded (PKIX), or nil
+	// for other kinds. Identifier must be its thumbprint.
+	PublicKey []byte
 	// NotAfter is when the credential stops being accepted, such as a
 	// certificate's expiry; nil means it does not expire.
 	NotAfter  *time.Time
@@ -79,7 +96,11 @@ type NewWorkloadCredentialProps struct {
 // NewWorkloadCredential returns a WorkloadCredential, with a new ID unless
 // credentialID gives a stored one.
 func NewWorkloadCredential(props NewWorkloadCredentialProps, credentialID *string) (*WorkloadCredential, error) {
-	if err := validateID("organization ID", Organization{}.Prefix(), props.OrganizationID); err != nil {
+	if props.Platform {
+		if props.OrganizationID != "" {
+			return nil, NewErrInvalidInput("a platform workload's credential belongs to no organization")
+		}
+	} else if err := validateID("organization ID", Organization{}.Prefix(), props.OrganizationID); err != nil {
 		return nil, err
 	}
 	root, err := newRoot(WorkloadCredential{}.Prefix(), credentialID)
@@ -89,17 +110,27 @@ func NewWorkloadCredential(props NewWorkloadCredentialProps, credentialID *strin
 	if err := validateID("principal ID", principalPrefix, props.PrincipalID); err != nil {
 		return nil, err
 	}
+	if props.Kind != CredentialBearerToken && len(props.SecretHash) != 0 {
+		return nil, NewErrInvalidInput("only a bearer token credential has a secret hash")
+	}
+	if props.Kind != CredentialPublicKey && len(props.PublicKey) != 0 {
+		return nil, NewErrInvalidInput("only a public key credential has a public key")
+	}
 	switch props.Kind {
 	case CredentialMTLSCertificate, CredentialKubernetesServiceAccount:
-		if len(props.SecretHash) != 0 {
-			return nil, NewErrInvalidInput("only a bearer token credential has a secret hash")
-		}
 	case CredentialBearerToken:
 		if err := validateTokenHash("secret hash", props.SecretHash); err != nil {
 			return nil, err
 		}
+	case CredentialPublicKey:
+		if !props.Platform {
+			return nil, NewErrInvalidInput("only a platform workload authenticates with a public key")
+		}
+		if err := validatePublicKey(props.PublicKey, props.Identifier); err != nil {
+			return nil, err
+		}
 	default:
-		return nil, NewErrInvalidInput(fmt.Sprintf("workload credential kind %q must be mtls_certificate, kubernetes_service_account, or bearer_token", props.Kind))
+		return nil, NewErrInvalidInput(fmt.Sprintf("workload credential kind %q must be mtls_certificate, kubernetes_service_account, bearer_token, or public_key", props.Kind))
 	}
 	if err := validateRequired("identifier", props.Identifier); err != nil {
 		return nil, err
@@ -114,11 +145,13 @@ func NewWorkloadCredential(props NewWorkloadCredentialProps, credentialID *strin
 
 	c := &WorkloadCredential{
 		Root:           root,
+		platform:       props.Platform,
 		organizationID: props.OrganizationID,
 		principalID:    props.PrincipalID,
 		kind:           props.Kind,
 		identifier:     props.Identifier,
 		secretHash:     copyBytes(props.SecretHash),
+		publicKey:      copyBytes(props.PublicKey),
 		notAfter:       clock.CopyTime(props.NotAfter),
 		revokedAt:      clock.CopyTime(props.RevokedAt),
 		replacedBy:     optional.OfPtr(props.ReplacedBy),
@@ -132,6 +165,8 @@ func NewWorkloadCredential(props NewWorkloadCredentialProps, credentialID *strin
 
 func (WorkloadCredential) Prefix() string                  { return "wcr" }
 func (c *WorkloadCredential) OrganizationID() string       { return c.organizationID }
+func (c *WorkloadCredential) Platform() bool               { return c.platform }
+func (c *WorkloadCredential) PublicKey() []byte            { return copyBytes(c.publicKey) }
 func (c *WorkloadCredential) PrincipalID() string          { return c.principalID }
 func (c *WorkloadCredential) Kind() WorkloadCredentialKind { return c.kind }
 func (c *WorkloadCredential) Identifier() string           { return c.identifier }
@@ -161,11 +196,13 @@ func (c *WorkloadCredential) CheckUsable() error {
 func (c *WorkloadCredential) Snapshot() WorkloadCredentialSnapshot {
 	return WorkloadCredentialSnapshot{
 		ID:             c.ID(),
+		Platform:       c.platform,
 		OrganizationID: c.organizationID,
 		PrincipalID:    c.principalID,
 		Kind:           c.kind,
 		Identifier:     c.identifier,
 		SecretHash:     copyBytes(c.secretHash),
+		PublicKey:      copyBytes(c.publicKey),
 		NotAfter:       clock.CopyTime(c.notAfter),
 		RevokedAt:      clock.CopyTime(c.revokedAt),
 		ReplacedBy:     copyString(c.replacedBy),
@@ -214,5 +251,45 @@ func (c *WorkloadCredential) Supersede(replacedBy string, graceUntil time.Time) 
 		c.notAfter = clock.CopyTime(&graceUntil)
 	}
 	c.RecordEvent(WorkloadCredentialReplaced{WorkloadCredential: c.Snapshot(), PreviousNotAfter: previous})
+	return nil
+}
+
+// NewPlatformKeyCredential returns a public key credential for a platform
+// workload, from its DER-encoded (PKIX) public key.
+func NewPlatformKeyCredential(principalID string, publicKeyDER []byte) (*WorkloadCredential, error) {
+	public, err := identity.ParseWorkloadPublicKeyDER(publicKeyDER)
+	if err != nil {
+		return nil, NewErrInvalidInput(err.Error())
+	}
+	thumbprint, err := identity.WorkloadKeyThumbprint(public)
+	if err != nil {
+		return nil, NewErrInvalidInput(err.Error())
+	}
+	return NewWorkloadCredential(NewWorkloadCredentialProps{
+		Platform:    true,
+		PrincipalID: principalID,
+		Kind:        CredentialPublicKey,
+		Identifier:  thumbprint,
+		PublicKey:   publicKeyDER,
+	}, nil)
+}
+
+// validatePublicKey checks a public key credential's key and that its
+// identifier is the key's thumbprint, so verification finds the right key.
+func validatePublicKey(der []byte, identifier string) error {
+	if len(der) == 0 {
+		return NewErrInvalidInput("a public key credential needs its public key")
+	}
+	public, err := identity.ParseWorkloadPublicKeyDER(der)
+	if err != nil {
+		return NewErrInvalidInput(err.Error())
+	}
+	thumbprint, err := identity.WorkloadKeyThumbprint(public)
+	if err != nil {
+		return NewErrInvalidInput(err.Error())
+	}
+	if identifier != thumbprint {
+		return NewErrInvalidInput("a public key credential's identifier must be its key's thumbprint")
+	}
 	return nil
 }

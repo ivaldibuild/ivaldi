@@ -15,12 +15,8 @@ import (
 	"github.com/spf13/cobra"
 
 	gatewayconfig "github.com/ivaldibuild/ivaldi-control-plane/internal/gateway/config"
-	"github.com/ivaldibuild/ivaldi-control-plane/internal/gateway/webhook"
 	"github.com/ivaldibuild/ivaldi/pkg/env"
-	"github.com/ivaldibuild/ivaldi/pkg/events/redisstream"
 	"github.com/ivaldibuild/ivaldi/pkg/logging"
-	"github.com/ivaldibuild/ivaldi/pkg/redisconn"
-	"github.com/ivaldibuild/ivaldi/pkg/vcs"
 )
 
 // NewGatewayCommand starts the integration gateway.
@@ -60,92 +56,31 @@ func run(cmd *cobra.Command) error {
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	lookupToken, err := cfg.LookupToken()
-	if err != nil {
-		return err
-	}
-	webhookSecret, err := cfg.WebhookSecret()
-	if err != nil {
-		return err
-	}
-	controlPlaneURL, err := cfg.Gateway.ControlPlaneBaseURL()
-	if err != nil {
-		return err
-	}
-
-	password, err := cfg.Redis.Password()
-	if err != nil {
-		return err
-	}
-	redisClient, err := redisconn.New(redisconn.Config{
-		Address:     cfg.Redis.Address,
-		Username:    cfg.Redis.Username,
-		Password:    password,
-		Database:    cfg.Redis.Database,
-		TLS:         cfg.Redis.TLS,
-		CAFile:      cfg.Redis.CAFile,
-		DialTimeout: cfg.Redis.DialTimeout,
-	})
-	if err != nil {
-		return fmt.Errorf("redis: %w", err)
-	}
-	defer func() { _ = redisClient.Close() }()
-
-	publisher, err := redisstream.NewPublisher(redisstream.Config{
-		Client: redisClient,
-		Stream: cfg.Events.Stream,
-	})
-	if err != nil {
-		return fmt.Errorf("event publisher: %w", err)
-	}
-
-	lookup, err := webhook.NewLookupClient(controlPlaneURL, lookupToken, nil)
-	if err != nil {
-		return err
-	}
-	resolver, err := webhook.NewResolver(lookup, cfg.Gateway.RouteCacheTTL)
-	if err != nil {
-		return err
-	}
-	verifier, err := webhook.NewGitHubSignatureVerifier(webhookSecret)
-	if err != nil {
-		return err
-	}
-	normalizer, err := webhook.NewNormalizer(vcs.ProviderGitHub, cfg.VersionControl.GitHub.Host())
-	if err != nil {
-		return err
-	}
-	handler, err := webhook.NewHandler(webhook.HandlerConfig{
-		Verifier:     verifier,
-		Resolver:     resolver,
-		Normalizer:   normalizer,
-		Publisher:    publisher,
-		MaxBodyBytes: cfg.Gateway.MaxBodyBytes,
-		Logger:       logger,
-	})
-	if err != nil {
-		return err
-	}
-
 	mux := http.NewServeMux()
-	mux.Handle("POST "+cfg.Gateway.GitHub.Path, handler)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
+	// Each enabled module adds its routes to the shared server. Validate has
+	// already refused a configuration with no module enabled.
+	if cfg.Gateway.Webhooks.Enabled {
+		closeWebhooks, err := mountWebhooks(&cfg, logger, mux)
+		if err != nil {
+			return fmt.Errorf("webhooks: %w", err)
+		}
+		defer closeWebhooks()
+	}
 
 	// The listener is plain HTTP; a proxy in front of the gateway terminates
-	// TLS for providers that require it.
+	// TLS for providers that require it. The server sets no read or write
+	// timeout: modules such as MCP keep responses open for long streams, so
+	// each module bounds its own requests (the webhook handler does).
 	srv := &http.Server{
 		Addr:              net.JoinHostPort(cfg.Gateway.Host, strconv.Itoa(cfg.Gateway.Port)),
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
-	logger.Info("gateway listening",
-		logging.F("addr", srv.Addr),
-		logging.F("stream", cfg.Events.Stream))
+	logger.Info("gateway listening", logging.F("addr", srv.Addr))
 
 	served := make(chan error, 1)
 	go func() { served <- srv.ListenAndServe() }()

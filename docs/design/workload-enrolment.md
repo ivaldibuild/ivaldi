@@ -76,6 +76,10 @@ while the current credential remains valid.
 - `iwt_…` → bearer credential by SHA-256 hash.
 - `k8s:<token>` → Kubernetes OIDC verification, then
   `kubernetes_service_account` credential.
+- `wkey:<assertion>` → a JWT a platform workload signed with its key
+  ([ADR 0015](../adr/0015-platform-workloads.md)): its `kid` names an active
+  `public_key` credential, whose stored public key verifies it. The workload
+  sends it as a bearer token with `X-Ivaldi-Credential: workload-key`.
 - anything else → existing API-token/access-token verifier.
 
 Kubernetes tokens are verified through the issuer's OIDC discovery/JWKS. The

@@ -43,7 +43,7 @@ func (c *Config) Validate() error {
 	c.validateBootstrap(v)
 	c.validateVersionControl(v)
 	c.validateRedis(v)
-	c.validateGateway(v)
+	c.validatePlatform(v)
 
 	if len(v.problems) > 0 {
 		return &ValidationError{Problems: v.problems}
@@ -161,15 +161,28 @@ func (c *Config) validateRedis(v *validator) {
 	}
 }
 
-// validateGateway checks the lookup token file when the gateway lookup is
-// configured. Leaving it out disables the lookup, so a control plane without
-// a gateway still starts.
-func (c *Config) validateGateway(v *validator) {
-	if c.Gateway.WebhookRouteLookupTokenFile == "" {
-		return
-	}
-	if _, err := c.Gateway.WebhookRouteLookupToken(); err != nil {
-		v.addf("%v", err)
+// validatePlatform checks each platform workload's name, component, and
+// keys. Which components may be platform workloads is IAM's rule, checked
+// when bootstrap applies them.
+func (c *Config) validatePlatform(v *validator) {
+	names := map[string]bool{}
+	for i, w := range c.Platform.Workloads {
+		switch {
+		case w.Name == "":
+			v.addf("platform.workloads[%d].name is required", i)
+		case names[w.Name]:
+			v.addf("platform.workloads: the name %q is used twice", w.Name)
+		}
+		names[w.Name] = true
+		if w.Component == "" {
+			v.addf("platform.workloads[%d].component is required", i)
+		}
+		if len(w.PublicKeyFiles) == 0 {
+			v.addf("platform.workloads[%d].public_key_files needs at least one key", i)
+		}
+		if _, err := w.PublicKeys(); err != nil {
+			v.addf("%v", err)
+		}
 	}
 }
 

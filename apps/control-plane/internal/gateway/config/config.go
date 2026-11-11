@@ -9,6 +9,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/ivaldibuild/ivaldi/pkg/identity"
 )
 
 // Config is the gateway's configuration. It reads the same file as the
@@ -85,23 +87,47 @@ func (g GitHub) Host() string {
 	return strings.TrimSuffix(g.WebURL, "/")
 }
 
-// Gateway is the gateway's own configuration.
+// Gateway is the gateway's own configuration. Its top level holds what every
+// module shares: the listener, shutdown, logging, and the control plane's
+// address. Each module, such as webhooks and later MCP, has its own section.
 type Gateway struct {
-	Host                        string        `yaml:"host" env:"IVALDI_GATEWAY_HOST"`
-	Port                        int           `yaml:"port" env:"IVALDI_GATEWAY_PORT" envDefault:"8663"`
-	ShutdownTimeout             time.Duration `yaml:"shutdown_timeout" env:"IVALDI_GATEWAY_SHUTDOWN_TIMEOUT" envDefault:"30s"`
-	LogFilePrefix               string        `yaml:"log_file_prefix" env:"IVALDI_GATEWAY_LOG_FILE_PREFIX" envDefault:"ivaldi-gateway"`
-	ControlPlaneURL             string        `yaml:"control_plane_url" env:"IVALDI_GATEWAY_CONTROL_PLANE_URL" envDefault:"http://localhost:8660"`
-	WebhookRouteLookupTokenFile string        `yaml:"webhook_route_lookup_token_file" env:"IVALDI_GATEWAY_WEBHOOK_ROUTE_LOOKUP_TOKEN_FILE"`
-	RouteCacheTTL               time.Duration `yaml:"route_cache_ttl" env:"IVALDI_GATEWAY_ROUTE_CACHE_TTL" envDefault:"5m"`
-	MaxBodyBytes                int64         `yaml:"max_body_bytes" env:"IVALDI_GATEWAY_MAX_BODY_BYTES" envDefault:"26214400"`
-	GitHub                      GatewayGitHub `yaml:"github"`
+	Host            string        `yaml:"host" env:"IVALDI_GATEWAY_HOST"`
+	Port            int           `yaml:"port" env:"IVALDI_GATEWAY_PORT" envDefault:"8663"`
+	ShutdownTimeout time.Duration `yaml:"shutdown_timeout" env:"IVALDI_GATEWAY_SHUTDOWN_TIMEOUT" envDefault:"30s"`
+	LogFilePrefix   string        `yaml:"log_file_prefix" env:"IVALDI_GATEWAY_LOG_FILE_PREFIX" envDefault:"ivaldi-gateway"`
+	ControlPlaneURL string        `yaml:"control_plane_url" env:"IVALDI_GATEWAY_CONTROL_PLANE_URL" envDefault:"http://localhost:8660"`
+	Identity        Identity      `yaml:"identity"`
+	Webhooks        Webhooks      `yaml:"webhooks"`
 }
 
-// GatewayGitHub is the gateway's GitHub webhook configuration.
-type GatewayGitHub struct {
-	WebhookSecretFile string `yaml:"webhook_secret_file" env:"IVALDI_GATEWAY_GITHUB_WEBHOOK_SECRET_FILE"`
-	Path              string `yaml:"path" env:"IVALDI_GATEWAY_GITHUB_PATH" envDefault:"/webhooks/github"`
+// Identity is who the gateway is when it calls the control plane: a platform
+// workload (ADR 0015) whose public key the control plane's platform.workloads
+// lists. Every module that calls the control plane uses it.
+type Identity struct {
+	// PrivateKeyFile holds the gateway's PEM Ed25519 or ECDSA P-256 private
+	// key, which never leaves the gateway.
+	PrivateKeyFile string `yaml:"private_key_file" env:"IVALDI_GATEWAY_IDENTITY_PRIVATE_KEY_FILE"`
+}
+
+// Webhooks configures the provider webhook module.
+type Webhooks struct {
+	// Enabled serves provider webhooks. A gateway with it off, such as one
+	// serving only MCP, needs none of the settings below, nor Redis.
+	Enabled       bool          `yaml:"enabled" env:"IVALDI_GATEWAY_WEBHOOKS_ENABLED" envDefault:"true"`
+	RouteCacheTTL time.Duration `yaml:"route_cache_ttl" env:"IVALDI_GATEWAY_WEBHOOKS_ROUTE_CACHE_TTL" envDefault:"5m"`
+	MaxBodyBytes  int64         `yaml:"max_body_bytes" env:"IVALDI_GATEWAY_WEBHOOKS_MAX_BODY_BYTES" envDefault:"26214400"`
+	// RequestTimeout bounds one webhook delivery: reading it, resolving its
+	// route, and publishing it. The server sets no overall timeout, because
+	// other modules keep long-lived connections.
+	RequestTimeout time.Duration  `yaml:"request_timeout" env:"IVALDI_GATEWAY_WEBHOOKS_REQUEST_TIMEOUT" envDefault:"30s"`
+	GitHub         WebhooksGitHub `yaml:"github"`
+}
+
+// WebhooksGitHub configures GitHub's webhooks.
+type WebhooksGitHub struct {
+	// SecretFile holds the GitHub App's webhook secret.
+	SecretFile string `yaml:"secret_file" env:"IVALDI_GATEWAY_WEBHOOKS_GITHUB_SECRET_FILE"`
+	Path       string `yaml:"path" env:"IVALDI_GATEWAY_WEBHOOKS_GITHUB_PATH" envDefault:"/webhooks/github"`
 }
 
 // ControlPlaneBaseURL returns the control plane's API base, without a
@@ -115,15 +141,27 @@ func (g Gateway) ControlPlaneBaseURL() (string, error) {
 	return raw, nil
 }
 
-// LookupToken reads the deployment token the gateway presents to the control
-// plane.
-func (c *Config) LookupToken() (string, error) {
-	return readSecret("gateway.webhook_route_lookup_token_file", c.Gateway.WebhookRouteLookupTokenFile)
+// Signer reads the gateway's private key and returns what signs its calls to
+// the control plane.
+func (c *Config) Signer() (identity.WorkloadKeySigner, error) {
+	path := c.Gateway.Identity.PrivateKeyFile
+	if path == "" {
+		return nil, fmt.Errorf("gateway.identity.private_key_file is required")
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("gateway.identity.private_key_file: %w", err)
+	}
+	signer, err := identity.NewWorkloadKeySigner(b)
+	if err != nil {
+		return nil, fmt.Errorf("gateway.identity.private_key_file: %w", err)
+	}
+	return signer, nil
 }
 
 // WebhookSecret reads the GitHub App's webhook signing secret.
 func (c *Config) WebhookSecret() (string, error) {
-	return readSecret("gateway.github.webhook_secret_file", c.Gateway.GitHub.WebhookSecretFile)
+	return readSecret("gateway.webhooks.github.secret_file", c.Gateway.Webhooks.GitHub.SecretFile)
 }
 
 // ValidationError lists every problem with a configuration.
@@ -135,7 +173,9 @@ func (e *ValidationError) Error() string {
 	return "invalid gateway configuration:\n  - " + strings.Join(e.Problems, "\n  - ")
 }
 
-// Validate checks what the gateway needs before it starts.
+// Validate checks what the gateway needs before it starts: the settings every
+// module shares, and each enabled module's own. A disabled module's settings
+// are not checked, so they may be left out.
 func (c *Config) Validate() error {
 	v := &validator{}
 	g := c.Gateway
@@ -146,19 +186,41 @@ func (c *Config) Validate() error {
 	if g.ShutdownTimeout <= 0 {
 		v.addf("gateway.shutdown_timeout must be positive")
 	}
-	if g.RouteCacheTTL <= 0 {
-		v.addf("gateway.route_cache_ttl must be positive")
+	if !g.Webhooks.Enabled {
+		v.addf("no gateway module is enabled: set gateway.webhooks.enabled")
+	} else {
+		c.validateWebhooks(v)
 	}
-	if g.MaxBodyBytes <= 0 {
-		v.addf("gateway.max_body_bytes must be positive")
+
+	if len(v.problems) > 0 {
+		return &ValidationError{Problems: v.problems}
 	}
-	if g.GitHub.Path == "" || !strings.HasPrefix(g.GitHub.Path, "/") {
-		v.addf("gateway.github.path %q must start with /", g.GitHub.Path)
+	return nil
+}
+
+// validateWebhooks checks what the webhook module needs: its own settings,
+// the control plane it resolves routes with, and the Redis stream it
+// publishes to.
+func (c *Config) validateWebhooks(v *validator) {
+	g := c.Gateway
+	if g.Webhooks.RouteCacheTTL <= 0 {
+		v.addf("gateway.webhooks.route_cache_ttl must be positive")
+	}
+	if g.Webhooks.MaxBodyBytes <= 0 {
+		v.addf("gateway.webhooks.max_body_bytes must be positive")
+	}
+	if g.Webhooks.RequestTimeout <= 0 {
+		v.addf("gateway.webhooks.request_timeout must be positive")
+	}
+	if g.Webhooks.GitHub.Path == "" || !strings.HasPrefix(g.Webhooks.GitHub.Path, "/") {
+		v.addf("gateway.webhooks.github.path %q must start with /", g.Webhooks.GitHub.Path)
 	}
 	v.absoluteURL("gateway.control_plane_url", g.ControlPlaneURL)
 	v.httpsURL("version_control.github.web_url", c.VersionControl.GitHub.Host())
-	v.secretFile("gateway.webhook_route_lookup_token_file", g.WebhookRouteLookupTokenFile)
-	v.secretFile("gateway.github.webhook_secret_file", g.GitHub.WebhookSecretFile)
+	if _, err := c.Signer(); err != nil {
+		v.addf("%v", err)
+	}
+	v.secretFile("gateway.webhooks.github.secret_file", g.Webhooks.GitHub.SecretFile)
 	if c.Events.Stream == "" {
 		v.addf("events.stream is required")
 	}
@@ -171,11 +233,6 @@ func (c *Config) Validate() error {
 	if c.Redis.CAFile != "" && !c.Redis.TLS {
 		v.addf("redis.ca_file needs redis.tls")
 	}
-
-	if len(v.problems) > 0 {
-		return &ValidationError{Problems: v.problems}
-	}
-	return nil
 }
 
 type validator struct {

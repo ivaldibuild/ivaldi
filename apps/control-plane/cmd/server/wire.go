@@ -236,6 +236,8 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 		bootstrap.WithUserRepo(a.iam.users),
 		bootstrap.WithGrantRepo(a.iam.grants),
 		bootstrap.WithOAuthClientRepo(a.iam.clients),
+		bootstrap.WithWorkloadRepo(iampg.NewWorkloadRepository(db)),
+		bootstrap.WithWorkloadCredentialRepo(iampg.NewWorkloadCredentialRepository(db)),
 		bootstrap.WithPasswordHasher(passwords),
 		bootstrap.WithTransactor(a.tx),
 		bootstrap.WithLocker(database.NewLocker(db)),
@@ -347,20 +349,14 @@ func (a *app) wireWebhooks(cfg *config.Config, logger logging.Logger) error {
 	events.On(&router, handler.HandleRepositoryChanged)
 	events.On(&router, handler.HandleInstallationChanged)
 
-	token, err := cfg.Gateway.WebhookRouteLookupToken()
+	// The gateway resolves route keys as a platform workload (ADR 0015). The
+	// lookup is always served; with no platform gateway configured, no one
+	// is allowed to call it.
+	lookup, err := webhookroutes.New(connections, a.verifier, a.authz, logger)
 	if err != nil {
 		return err
 	}
-	if token != "" {
-		lookup, err := webhookroutes.New(connections, token.Reveal(), logger)
-		if err != nil {
-			return err
-		}
-		a.handlers = append(a.handlers, lookup)
-		logger.Info("webhook route lookup enabled")
-	} else {
-		logger.Info("webhook route lookup disabled: gateway.webhook_route_lookup_token_file is not set")
-	}
+	a.handlers = append(a.handlers, lookup)
 
 	consumerName := cfg.Events.ConsumerName
 	if consumerName == "" {

@@ -357,6 +357,14 @@ func TestServerVerifiesWorkloadCredentials(t *testing.T) {
 
 	call(true, true, false)
 	assert.Equal(t, "projected", v.credential, "an explicit bearer token wins over a client certificate")
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/secret", nil)
+	req.Header.Set("Authorization", "Bearer signed-assertion")
+	req.Header.Set(identity.CredentialHeader, identity.CredentialHeaderWorkloadKey)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, identity.WorkloadKeyCredential("signed-assertion"), v.credential)
 }
 
 func TestServerRefusesBearerTokensWithInternalCredentialPrefixes(t *testing.T) {
@@ -366,6 +374,7 @@ func TestServerRefusesBearerTokensWithInternalCredentialPrefixes(t *testing.T) {
 	forged := map[string]string{
 		"mtls": identity.MTLSCredential("0011aabb", time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC)),
 		"k8s":  identity.KubernetesCredential("projected"),
+		"wkey": identity.WorkloadKeyCredential("signed-assertion"),
 	}
 	for name, token := range forged {
 		t.Run(name, func(t *testing.T) {

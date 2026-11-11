@@ -59,7 +59,8 @@ help:
 	@echo "  make local_gateway                                 Run the gateway on http://localhost:8663; uncomment the"
 	@echo "                                                     gateway section in $(LOCAL_CONFIG) first"
 	@echo "  make local_stack                                   Run everything in containers (docker-compose.yml): the"
-	@echo "                                                     web app on http://localhost:8670, the control plane on 8660"
+	@echo "                                                     web app on http://localhost:8670, the control plane on 8660,"
+	@echo "                                                     the gateway on 8663"
 	@echo "  make local_down                                    Stop the containers (data stays in volumes/)"
 	@echo "  make local_reset                                   Drop the local database and migrate a fresh one, so"
 	@echo "                                                     the next start bootstraps from $(LOCAL_CONFIG) again"
@@ -154,7 +155,7 @@ local_stack: $(LOCAL_CONFIG) local_secrets
 # Secrets are generated once and kept, so tokens and the admin password
 # survive restarts.
 local_secrets: $(LOCAL_DIR)/signing.pem $(LOCAL_DIR)/admin-password $(LOCAL_DIR)/valkey-password \
-	$(LOCAL_DIR)/gateway-lookup-token $(LOCAL_DIR)/github-webhook-secret
+	$(LOCAL_DIR)/gateway-key.pub $(LOCAL_DIR)/github-webhook-secret
 
 $(LOCAL_DIR):
 	@mkdir -p $@ && chmod 700 $@
@@ -170,9 +171,14 @@ $(LOCAL_DIR)/admin-password: | $(LOCAL_DIR)
 $(LOCAL_DIR)/valkey-password: conf/valkey.conf | $(LOCAL_DIR)
 	@sed -n 's/^requirepass //p' conf/valkey.conf > $@ && chmod 600 $@
 
-$(LOCAL_DIR)/gateway-lookup-token: | $(LOCAL_DIR)
-	@openssl rand -hex 32 > $@ && chmod 600 $@
-	@echo "Generated the gateway route lookup token in $@"
+# The gateway's identity as a platform workload (ADR 0015): it keeps the
+# private key, and the control plane trusts the public key.
+$(LOCAL_DIR)/gateway-key.pem: | $(LOCAL_DIR)
+	@openssl genpkey -algorithm ed25519 -out $@ && chmod 600 $@
+	@echo "Generated the gateway's private key in $@"
+
+$(LOCAL_DIR)/gateway-key.pub: $(LOCAL_DIR)/gateway-key.pem
+	@openssl pkey -in $< -pubout -out $@
 
 $(LOCAL_DIR)/github-webhook-secret: | $(LOCAL_DIR)
 	@openssl rand -hex 32 > $@ && chmod 600 $@

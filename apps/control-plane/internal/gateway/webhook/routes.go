@@ -13,6 +13,7 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
+	"github.com/ivaldibuild/ivaldi/pkg/identity"
 	"github.com/ivaldibuild/ivaldi/pkg/vcs"
 )
 
@@ -35,26 +36,28 @@ type RouteResolver interface {
 	Resolve(ctx context.Context, routeKey string) (vcs.WebhookRoute, error)
 }
 
-// LookupClient calls the control plane's internal route lookup.
+// LookupClient calls the control plane's internal route lookup as the
+// gateway's platform workload (ADR 0015).
 type LookupClient struct {
 	baseURL string
-	token   string
+	signer  identity.WorkloadKeySigner
 	http    *http.Client
 }
 
-// NewLookupClient returns a client for the control plane at baseURL. A nil
-// HTTP client gets a short default timeout.
-func NewLookupClient(baseURL, token string, client *http.Client) (*LookupClient, error) {
+// NewLookupClient returns a client for the control plane at baseURL that
+// signs each call with the gateway's key. A nil HTTP client gets a short
+// default timeout.
+func NewLookupClient(baseURL string, signer identity.WorkloadKeySigner, client *http.Client) (*LookupClient, error) {
 	switch {
 	case baseURL == "":
 		return nil, errors.New("webhook lookup: a control plane URL is required")
-	case token == "":
-		return nil, errors.New("webhook lookup: a token is required")
+	case signer == nil:
+		return nil, errors.New("webhook lookup: a signer is required")
 	}
 	if client == nil {
 		client = &http.Client{Timeout: 5 * time.Second}
 	}
-	return &LookupClient{baseURL: baseURL, token: token, http: client}, nil
+	return &LookupClient{baseURL: baseURL, signer: signer, http: client}, nil
 }
 
 func (c *LookupClient) Lookup(ctx context.Context, routeKey string) (vcs.WebhookRoute, error) {
@@ -63,8 +66,13 @@ func (c *LookupClient) Lookup(ctx context.Context, routeKey string) (vcs.Webhook
 	if err != nil {
 		return vcs.WebhookRoute{}, fmt.Errorf("%w: %w", ErrLookupUnavailable, err)
 	}
+	assertion, err := c.signer.Sign(identity.AudienceControlPlane)
+	if err != nil {
+		return vcs.WebhookRoute{}, fmt.Errorf("%w: %w", ErrLookupUnavailable, err)
+	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-Ivaldi-Gateway-Token", c.token)
+	req.Header.Set("Authorization", "Bearer "+assertion)
+	req.Header.Set(identity.CredentialHeader, identity.CredentialHeaderWorkloadKey)
 
 	res, err := c.http.Do(req)
 	if err != nil {

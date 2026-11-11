@@ -43,6 +43,12 @@ func (f fakeWorkloads) Get(_ context.Context, organizationID, principalID string
 	}
 	return f.w, nil
 }
+func (f fakeWorkloads) GetPlatform(_ context.Context, principalID string) (*iam.Workload, error) {
+	if f.w.ID() != principalID || !f.w.Platform() {
+		return nil, iam.ErrNotFound
+	}
+	return f.w, nil
+}
 func (f fakeWorkloads) UpdateLastSeen(context.Context, *iam.Workload) error { return nil }
 
 type fakeNext struct{ called bool }

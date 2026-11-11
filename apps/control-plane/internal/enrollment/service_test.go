@@ -81,6 +81,10 @@ func (f fakeWorkloads) Write(_ context.Context, w *iam.Workload) error {
 	return nil
 }
 func (f fakeWorkloads) UpdateLastSeen(context.Context, *iam.Workload) error { return nil }
+func (f fakeWorkloads) GetPlatform(context.Context, string) (*iam.Workload, error) {
+	return nil, iam.ErrNotFound
+}
+func (f fakeWorkloads) ListPlatform(context.Context) ([]*iam.Workload, error) { return nil, nil }
 
 type fakeTokens struct{ *store }
 
@@ -135,6 +139,10 @@ func (f fakeCredentials) ListActiveByIdentity(_ context.Context, organizationID 
 	}
 	return out, nil
 }
+func (f fakeCredentials) ListPlatformByPrincipal(context.Context, string) ([]*iam.WorkloadCredential, error) {
+	return nil, nil
+}
+
 func (f fakeCredentials) ListByPrincipal(_ context.Context, organizationID, principalID string) ([]*iam.WorkloadCredential, error) {
 	var out []*iam.WorkloadCredential
 	for _, c := range f.credentials {

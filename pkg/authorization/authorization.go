@@ -24,12 +24,21 @@ const (
 )
 
 // Request asks whether Actor may use Permission on a resource.
+// PlatformResource is the resource of a platform request: one that spans
+// every Organization, such as resolving a webhook route before its
+// Organization is known. Such a request has no OrganizationID.
+const PlatformResource = "platform"
+
 type Request struct {
-	Actor          identity.Actor
-	Permission     string
+	Actor      identity.Actor
+	Permission string
+	// OrganizationID is the Organization the resource belongs to. It is
+	// empty only for a platform request, on PlatformResource.
 	OrganizationID string
 	// ResourceID is the IAM resource the permission is checked on, such as an
-	// Organization, Workspace, or Project ID. Grants on its ancestors apply too.
+	// Organization, Workspace, or Project ID. Grants on its ancestors apply
+	// too. PlatformResource asks about something that spans every
+	// Organization, which only platform workloads may do (ADR 0015).
 	ResourceID string
 	// Action names what is being done, such as "setting.change".
 	Action string

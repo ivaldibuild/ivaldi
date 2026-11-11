@@ -160,7 +160,7 @@ Every step uses indexed lookups bounded by tenant. The results can be cached per
 
 ## Open questions
 
-- **Shared runners in the managed cloud.** Workloads are currently Organization-scoped. Ivaldi-operated runners that serve many tenants would need a platform-level principal that receives per-job, tenant-scoped credentials.
+- **Shared runners in the managed cloud.** Ivaldi-operated runners that serve many tenants would need a platform-level principal that receives per-job, tenant-scoped credentials. *Proposed in [ADR 0015](../adr/0015-platform-workloads.md):* platform workloads, workload principals with no Organization, declared in configuration; the gateway is the first. Per-job tenant-scoped credentials for shared runners are still open.
 - **Issuer and signing keys.** Answered for now by [ADR 0012](../adr/0012-token-issuer-and-signing-keys.md): one platform issuer, signing with keys from the configuration. `signing_keys` is kept for per-Organization keys, which would let a gateway in a customer's data plane trust only that customer's tokens.
 - **Narrowing API tokens.** Should an API token be restrictable to fewer permissions than its owner has, the way GitHub's fine-grained tokens are?
 - **SCIM authentication.** Should SCIM use a dedicated service account with an API token, or a separate SCIM bearer-token table?

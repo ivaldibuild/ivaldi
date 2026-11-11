@@ -32,6 +32,48 @@ If any of these is set, the control plane refuses to start until the required on
 
 Install state is sealed with keys derived from `auth.signing_key_files`, so every replica must have the same signing keys.
 
+## Receiving webhooks
+
+GitHub tells Ivaldi when a repository is renamed, transferred, edited, archived, or unarchived, and when an installation is suspended, unsuspended, or uninstalled. The gateway (`ivaldi gateway`) receives these webhooks, checks their signature, resolves the installation to its Connection by asking the control plane as a platform workload ([ADR 0015](../adr/0015-platform-workloads.md)), and publishes them for the control plane to apply. Without webhooks, Sources change only when someone refreshes them.
+
+In the App's settings on GitHub:
+
+- **Webhook → Active**: on.
+- **Webhook URL**: the gateway's public address and path, such as `https://ivaldi.example.com/webhooks/github`. GitHub must be able to reach it over HTTPS; terminate TLS in front of the gateway.
+- **Webhook secret**: a long random value, such as `openssl rand -hex 32`. The gateway reads the same value from `gateway.webhooks.github.secret_file`.
+- **Subscribe to events**: **Repository**. Installation events are sent to every App without subscribing.
+
+Then give the gateway its identity and the control plane its public key:
+
+1. Generate the gateway's key pair: `openssl genpkey -algorithm ed25519 -out gateway-key.pem` and `openssl pkey -in gateway-key.pem -pubout -out gateway-key.pub`.
+2. On the control plane, list it as a platform workload:
+
+   ```yaml
+   platform:
+     workloads:
+       - name: gateway
+         component: gateway
+         public_key_files: [/etc/ivaldi/gateway-key.pub]
+   ```
+
+3. On the gateway, set `gateway.identity.private_key_file` to the private key, `gateway.control_plane_url` to an address where it reaches the control plane, and `gateway.webhooks.github.secret_file` to the webhook secret. Both read the same `redis` and `events.stream` settings.
+
+To rotate the key, list the new public key beside the old one, restart the control plane, switch the gateway to the new private key, then remove the old public key.
+
+After saving the App's webhook settings, GitHub sends a `ping`; **Advanced → Recent Deliveries** on the App's page should show it answered with `202`. A delivery for an installation no Organization has connected is answered with `404`.
+
+### Locally
+
+`make local_stack` runs the gateway on `http://localhost:8663`, with the key pair and webhook secret that `make local_secrets` generates in `.local/`. To let GitHub reach it, expose it with [Tailscale Funnel](https://tailscale.com/kb/1223/funnel):
+
+```sh
+tailscale funnel --bg 8663     # serves https://<machine>.<tailnet>.ts.net
+tailscale funnel status        # shows the URL
+tailscale funnel reset         # stops it
+```
+
+Funnel must be allowed for the machine in the tailnet's policy, and changing it needs root unless you once run `sudo tailscale set --operator=$USER`. Use `https://<machine>.<tailnet>.ts.net/webhooks/github` as the App's webhook URL and the contents of `.local/github-webhook-secret` as its secret.
+
 ## The install flow
 
 Owners and admins start it from **Organisation settings → Connections → Connect GitHub**. Under the hood:

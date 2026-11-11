@@ -38,9 +38,11 @@ const (
 
 // principal is what every actor in an Organization has in common: the row
 // in principals that grants, group memberships, and audit records point to.
-// User, ServiceAccount, AgentSession, Workload, and Agent embed it.
+// User, ServiceAccount, AgentSession, Workload, and Agent embed it. A
+// platform workload belongs to no Organization (ADR 0015).
 type principal struct {
 	aggregate.Root
+	platform       bool
 	organizationID string
 	kind           PrincipalKind
 	displayName    string
@@ -66,6 +68,10 @@ type PrincipalSnapshot struct {
 // PrincipalProps describes what every principal has. A new one leaves
 // Status and the timestamps empty; a repository loading a stored one sets them.
 type PrincipalProps struct {
+	// Platform marks a principal that belongs to no Organization, such as
+	// the gateway (ADR 0015). Only a workload may be one, and it has no
+	// OrganizationID.
+	Platform       bool
 	OrganizationID string
 	DisplayName    string
 	// Status defaults to PrincipalActive.
@@ -76,8 +82,15 @@ type PrincipalProps struct {
 }
 
 func newPrincipal(kind PrincipalKind, props PrincipalProps, principalID *string) (principal, error) {
-	if err := validateID("organization ID", Organization{}.Prefix(), props.OrganizationID); err != nil {
-		return principal{}, err
+	switch {
+	case props.Platform && kind != PrincipalWorkload:
+		return principal{}, NewErrInvalidInput(fmt.Sprintf("a %s cannot belong to the platform; only a workload can", kind))
+	case props.Platform && props.OrganizationID != "":
+		return principal{}, NewErrInvalidInput("a platform principal belongs to no organization")
+	case !props.Platform:
+		if err := validateID("organization ID", Organization{}.Prefix(), props.OrganizationID); err != nil {
+			return principal{}, err
+		}
 	}
 	root, err := newRoot(principalPrefix, principalID)
 	if err != nil {
@@ -99,6 +112,7 @@ func newPrincipal(kind PrincipalKind, props PrincipalProps, principalID *string)
 	now := clock.Now()
 	p := principal{
 		Root:           root,
+		platform:       props.Platform,
 		organizationID: props.OrganizationID,
 		kind:           kind,
 		displayName:    props.DisplayName,
@@ -120,6 +134,7 @@ func validatePrincipalStatus(s PrincipalStatus) error {
 
 func (principal) Prefix() string                 { return principalPrefix }
 func (p *principal) OrganizationID() string      { return p.organizationID }
+func (p *principal) Platform() bool              { return p.platform }
 func (p *principal) Kind() PrincipalKind         { return p.kind }
 func (p *principal) DisplayName() string         { return p.displayName }
 func (p *principal) Status() PrincipalStatus     { return p.status }

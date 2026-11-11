@@ -34,7 +34,7 @@ The gateway (`ivaldi gateway`, code in `apps/control-plane/internal/gateway`; [A
 
 - **The MCP endpoint is an OAuth 2.1 resource server**, following the MCP authorization specification. It publishes protected-resource metadata (RFC 9728) that points clients to the control plane's authorization server.
 - **Check the token's audience** using resource indicators (RFC 8707).
-- **Never forward the client's token** to the indexer or any other service. The gateway calls internal services with its own workload identity, as the MCP specification requires.
+- **Never forward the client's token** to the indexer or any other service. The gateway calls internal services with its own workload identity, as the MCP specification requires. In Ivaldi's cloud and a self-hosted control plane, that identity is a platform workload ([ADR 0015](0015-platform-workloads.md)), which the webhook module already uses to resolve route keys.
 - **Limit every query and result to the Sources the caller may read**, as decided by the authorizer. Agent Sessions see only their Session's repositories.
 - **Allow or deny individual tools per caller** through policy (for example, cross-repository search).
 - **Include provenance in responses:** every result identifies the repository and the commit or index generation it came from.

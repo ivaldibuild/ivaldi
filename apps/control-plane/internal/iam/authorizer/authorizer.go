@@ -7,6 +7,10 @@
 // half, does not exist yet, so nothing requires approval: a request that
 // carries an ApprovalID is denied, since no approval could have been given.
 // Agent Sessions are denied until their delegator and scope are evaluated.
+//
+// A platform request, on authorization.PlatformResource with no Organization,
+// is allowed only for an active platform workload whose component holds the
+// permission (ADR 0015).
 package authorizer
 
 import (
@@ -31,11 +35,22 @@ func init() { id.MustRegister(decisionPrefix, "authorization.Decision") }
 type Option func(*options)
 
 type options struct {
-	access iam.AccessRepository
-	logger logging.Logger
+	access    iam.AccessRepository
+	workloads PlatformWorkloads
+	logger    logging.Logger
+}
+
+// PlatformWorkloads reads platform workloads. iam.WorkloadRepository
+// provides it.
+type PlatformWorkloads interface {
+	GetPlatform(ctx context.Context, principalID string) (*iam.Workload, error)
 }
 
 func WithAccessRepo(r iam.AccessRepository) Option { return func(o *options) { o.access = r } }
+
+// WithPlatformWorkloads reads the platform workloads that platform requests
+// come from.
+func WithPlatformWorkloads(r PlatformWorkloads) Option { return func(o *options) { o.workloads = r } }
 
 // WithLogger logs each denial at debug level, with its decision ID.
 func WithLogger(l logging.Logger) Option { return func(o *options) { o.logger = l } }
@@ -49,15 +64,18 @@ func New(opts ...Option) (authorization.Authorizer, error) {
 	switch {
 	case o.access == nil:
 		return nil, errors.New("authorizer: AccessRepo is required")
+	case o.workloads == nil:
+		return nil, errors.New("authorizer: PlatformWorkloads is required")
 	case o.logger == nil:
 		return nil, errors.New("authorizer: Logger is required")
 	}
-	return &authorizer{access: o.access, logger: o.logger}, nil
+	return &authorizer{access: o.access, workloads: o.workloads, logger: o.logger}, nil
 }
 
 type authorizer struct {
-	access iam.AccessRepository
-	logger logging.Logger
+	access    iam.AccessRepository
+	workloads PlatformWorkloads
+	logger    logging.Logger
 }
 
 // Authorize decides req. It returns an error only for a malformed request or
@@ -88,6 +106,9 @@ func (a *authorizer) Authorize(ctx context.Context, req authorization.Request) (
 
 // refusal returns why req is refused, or "" when it is allowed.
 func (a *authorizer) refusal(ctx context.Context, req authorization.Request) (string, error) {
+	if req.ResourceID == authorization.PlatformResource {
+		return a.platformRefusal(ctx, req)
+	}
 	switch req.Actor.Kind {
 	case identity.ActorUser, identity.ActorServiceAccount:
 	case identity.ActorAgentSession:
@@ -126,13 +147,47 @@ func (a *authorizer) refusal(ctx context.Context, req authorization.Request) (st
 	return fmt.Sprintf("no role granted on the resource or above it includes %s", req.Permission), nil
 }
 
+// platformRefusal returns why a platform request is refused, or "" when it
+// is allowed: only an active platform workload whose component holds the
+// permission may make one. Platform workloads hold no grants, so nothing
+// else is consulted.
+func (a *authorizer) platformRefusal(ctx context.Context, req authorization.Request) (string, error) {
+	if req.Actor.Kind != identity.ActorWorkload {
+		return fmt.Sprintf("a %q actor cannot make a platform request", req.Actor.Kind), nil
+	}
+	if req.ApprovalID != "" {
+		return "approvals are not available yet", nil
+	}
+	w, err := a.workloads.GetPlatform(ctx, req.Actor.PrincipalID)
+	if errors.Is(err, iam.ErrNotFound) {
+		return "the actor is not a platform workload", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("authorize %s: read platform workload: %w", req.Action, err)
+	}
+	if !w.Active() {
+		return fmt.Sprintf("the platform workload is %s", w.Status()), nil
+	}
+	if !iam.PlatformComponentAllows(w.Component(), req.Permission) {
+		return fmt.Sprintf("a platform %s does not hold %s", w.Component(), req.Permission), nil
+	}
+	return "", nil
+}
+
 // check refuses a request missing what every decision needs: that is a bug in
-// the caller, not something to deny.
+// the caller, not something to deny. A platform request has no Organization,
+// and any other request must not use the platform resource without one.
 func check(req authorization.Request) error {
 	var missing []error
+	platform := req.ResourceID == authorization.PlatformResource
+	switch {
+	case platform && req.OrganizationID != "":
+		missing = append(missing, errors.New("a platform request has no organization ID"))
+	case !platform && req.OrganizationID == "":
+		missing = append(missing, errors.New("organization ID is required"))
+	}
 	for _, f := range []struct{ name, value string }{
 		{"permission", req.Permission},
-		{"organization ID", req.OrganizationID},
 		{"resource ID", req.ResourceID},
 		{"action", req.Action},
 		{"actor principal ID", req.Actor.PrincipalID},

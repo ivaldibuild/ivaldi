@@ -35,6 +35,15 @@ func bootstrapSettings(cfg *config.Config) (bootstrap.Settings, error) {
 	if uris := cfg.Auth.WebClient.RedirectURIs; len(uris) > 0 {
 		s.Clients = append(s.Clients, bootstrap.ClientSettings{ClientID: webClientID, Name: "Ivaldi", RedirectURIs: uris})
 	}
+	for _, w := range cfg.Platform.Workloads {
+		keys, err := w.PublicKeys()
+		if err != nil {
+			return bootstrap.Settings{}, err
+		}
+		s.PlatformWorkloads = append(s.PlatformWorkloads, bootstrap.PlatformWorkloadSettings{
+			Name: w.Name, Component: iam.WorkloadComponent(w.Component), PublicKeys: keys,
+		})
+	}
 	if cfg.Mode() != config.DeploymentModeSelfHosted {
 		return s, nil
 	}

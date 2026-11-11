@@ -1,7 +1,8 @@
-// Package workloadauth authenticates enrolled data-plane workloads with the
-// three credential kinds IAM supports: bearer tokens, client certificates,
-// and Kubernetes service-account tokens. It is the workload half of the API
-// verifier chain.
+// Package workloadauth authenticates workloads with the credential kinds IAM
+// supports: bearer tokens, client certificates, and Kubernetes
+// service-account tokens for enrolled data-plane workloads, and assertions
+// signed with a key pair for platform workloads (ADR 0015). It is the
+// workload half of the API verifier chain.
 package workloadauth
 
 import (
@@ -21,6 +22,7 @@ const (
 	ClientBearer     = "workload_bearer"
 	ClientMTLS       = "workload_mtls"
 	ClientKubernetes = "workload_kubernetes"
+	ClientKey        = "workload_key"
 
 	lastSeenInterval = time.Minute
 )
@@ -36,6 +38,7 @@ type Credentials interface {
 // iam.WorkloadRepository provides it.
 type Workloads interface {
 	Get(ctx context.Context, organizationID, principalID string) (*iam.Workload, error)
+	GetPlatform(ctx context.Context, principalID string) (*iam.Workload, error)
 	UpdateLastSeen(ctx context.Context, w *iam.Workload) error
 }
 
@@ -78,6 +81,8 @@ func (v *verifier) Verify(ctx context.Context, credential string) (*identity.Cla
 		}
 		return v.fromCredential(ctx, iam.CredentialKubernetesServiceAccount,
 			KubernetesIdentifier(kubeIdentity), ClientKubernetes, kubeIdentity.ExpiresAt)
+	case strings.HasPrefix(credential, identity.WorkloadKeyCredentialPrefix):
+		return v.fromKeyAssertion(ctx, strings.TrimPrefix(credential, identity.WorkloadKeyCredentialPrefix))
 	case iam.IsWorkloadToken(credential):
 		c, err := v.credentials.GetBySecretHash(ctx, iam.HashWorkloadToken(credential))
 		if errors.Is(err, iam.ErrNotFound) {
@@ -89,6 +94,32 @@ func (v *verifier) Verify(ctx context.Context, credential string) (*identity.Cla
 		return v.fromCredentialRecord(ctx, c, ClientBearer, time.Time{})
 	}
 	return v.next.Verify(ctx, credential)
+}
+
+// fromKeyAssertion verifies an assertion a workload signed with its key: the
+// key named by its kid must be an active public key credential, and the
+// assertion must be for the control plane and still valid.
+func (v *verifier) fromKeyAssertion(ctx context.Context, assertion string) (*identity.Claims, error) {
+	keyID, err := identity.WorkloadKeyID(assertion)
+	if err != nil {
+		return nil, err
+	}
+	c, err := v.credentials.GetByKindAndIdentifier(ctx, iam.CredentialPublicKey, keyID)
+	if errors.Is(err, iam.ErrNotFound) {
+		return nil, fmt.Errorf("%w: unknown workload key", identity.ErrInvalidToken)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("find workload key: %w", err)
+	}
+	public, err := identity.ParseWorkloadPublicKeyDER(c.PublicKey())
+	if err != nil {
+		return nil, fmt.Errorf("workload key %s: %w", c.ID(), err)
+	}
+	verified, err := identity.VerifyWorkloadKeyAssertion(assertion, public, identity.AudienceControlPlane, clock.Now())
+	if err != nil {
+		return nil, err
+	}
+	return v.fromCredentialRecord(ctx, c, ClientKey, verified.ExpiresAt)
 }
 
 func (v *verifier) fromCredential(ctx context.Context, kind iam.WorkloadCredentialKind, identifier, clientID string, expiresAt time.Time) (*identity.Claims, error) {
@@ -109,7 +140,13 @@ func (v *verifier) fromCredentialRecord(ctx context.Context, c *iam.WorkloadCred
 		}
 		return nil, fmt.Errorf("%w: %w", identity.ErrInvalidToken, err)
 	}
-	w, err := v.workloads.Get(ctx, c.OrganizationID(), c.PrincipalID())
+	var w *iam.Workload
+	var err error
+	if c.Platform() {
+		w, err = v.workloads.GetPlatform(ctx, c.PrincipalID())
+	} else {
+		w, err = v.workloads.Get(ctx, c.OrganizationID(), c.PrincipalID())
+	}
 	if errors.Is(err, iam.ErrNotFound) {
 		return nil, fmt.Errorf("%w: the workload no longer exists", identity.ErrInvalidToken)
 	}

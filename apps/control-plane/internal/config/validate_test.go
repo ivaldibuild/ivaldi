@@ -1,6 +1,10 @@
 package config
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
 	"os"
 	"path/filepath"
 	"testing"
@@ -57,9 +61,11 @@ func TestValidateAcceptsAValidConfig(t *testing.T) {
 
 		assert.NoError(t, c.Validate())
 	})
-	t.Run("with the gateway lookup token", func(t *testing.T) {
+	t.Run("with a platform workload", func(t *testing.T) {
 		c := validConfig(t)
-		c.Gateway.WebhookRouteLookupTokenFile = writeFile(t, "lookup-token\n")
+		c.Platform.Workloads = []PlatformWorkload{
+			{Name: "gateway", Component: "gateway", PublicKeyFiles: []string{publicKeyFile(t)}},
+		}
 
 		assert.NoError(t, c.Validate())
 	})
@@ -133,12 +139,19 @@ func TestValidateRefuses(t *testing.T) {
 		{"redis CA file without TLS", func(t *testing.T, c *Config) {
 			c.Redis.CAFile = writeFile(t, "ca")
 		}, "redis.ca_file needs redis.tls"},
-		{"gateway lookup token file missing", func(t *testing.T, c *Config) {
-			c.Gateway.WebhookRouteLookupTokenFile = filepath.Join(t.TempDir(), "absent")
-		}, "gateway: read the webhook route lookup token"},
-		{"gateway lookup token file empty", func(t *testing.T, c *Config) {
-			c.Gateway.WebhookRouteLookupTokenFile = writeFile(t, "\n")
-		}, "gateway: the webhook route lookup token file is empty"},
+		{"platform workload without a name", func(t *testing.T, c *Config) {
+			c.Platform.Workloads = []PlatformWorkload{{Component: "gateway", PublicKeyFiles: []string{publicKeyFile(t)}}}
+		}, "platform.workloads[0].name is required"},
+		{"platform workload named twice", func(t *testing.T, c *Config) {
+			w := PlatformWorkload{Name: "gateway", Component: "gateway", PublicKeyFiles: []string{publicKeyFile(t)}}
+			c.Platform.Workloads = []PlatformWorkload{w, w}
+		}, "the name \"gateway\" is used twice"},
+		{"platform workload without keys", func(t *testing.T, c *Config) {
+			c.Platform.Workloads = []PlatformWorkload{{Name: "gateway", Component: "gateway"}}
+		}, "public_key_files needs at least one key"},
+		{"platform workload key that is not a key", func(t *testing.T, c *Config) {
+			c.Platform.Workloads = []PlatformWorkload{{Name: "gateway", Component: "gateway", PublicKeyFiles: []string{writeFile(t, "nope")}}}
+		}, "expected a PEM"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -202,4 +215,14 @@ func TestGitHubInstallCallbackURL(t *testing.T) {
 			assert.Equal(t, tc.want, tc.cfg.GitHubInstallCallbackURL())
 		})
 	}
+}
+
+// publicKeyFile writes a PEM Ed25519 public key and returns its path.
+func publicKeyFile(t *testing.T) string {
+	t.Helper()
+	public, _, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	der, err := x509.MarshalPKIXPublicKey(public)
+	require.NoError(t, err)
+	return writeFile(t, string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})))
 }

@@ -32,6 +32,9 @@ type Workload struct {
 // and events. Its JSON form is part of the Workload events' contract.
 type WorkloadSnapshot struct {
 	PrincipalSnapshot
+	// Platform is true for a workload that belongs to no Organization; its
+	// OrganizationID is then empty.
+	Platform   bool              `json:"platform"`
 	Component  WorkloadComponent `json:"component"`
 	Pool       string            `json:"pool"`
 	EnrolledAt time.Time         `json:"enrolled_at"`
@@ -58,6 +61,9 @@ func NewWorkload(props NewWorkloadProps, principalID *string) (*Workload, error)
 	if err := validateComponent(props.Component); err != nil {
 		return nil, err
 	}
+	if props.Platform && !isPlatformComponent(props.Component) {
+		return nil, NewErrInvalidInput(fmt.Sprintf("a %s cannot be a platform workload", props.Component))
+	}
 	if err := validateName("pool", props.Pool, maxPoolLength); err != nil {
 		return nil, err
 	}
@@ -72,6 +78,21 @@ func NewWorkload(props NewWorkloadProps, principalID *string) (*Workload, error)
 		w.RecordEvent(WorkloadCreated{w.Snapshot()})
 	}
 	return w, nil
+}
+
+// PlatformPool is the pool of every platform workload, which has no
+// enrolment token to name one.
+const PlatformPool = "platform"
+
+// NewPlatformWorkload returns a new platform workload: a component that
+// serves every Organization, declared in the control plane's configuration
+// (ADR 0015).
+func NewPlatformWorkload(name string, component WorkloadComponent) (*Workload, error) {
+	return NewWorkload(NewWorkloadProps{
+		PrincipalProps: PrincipalProps{Platform: true, DisplayName: name},
+		Component:      component,
+		Pool:           PlatformPool,
+	}, nil)
 }
 
 func validateComponent(c WorkloadComponent) error {
@@ -90,6 +111,7 @@ func (w *Workload) LastSeenAt() *time.Time       { return clock.CopyTime(w.lastS
 func (w *Workload) Snapshot() WorkloadSnapshot {
 	return WorkloadSnapshot{
 		PrincipalSnapshot: w.snapshot(),
+		Platform:          w.platform,
 		Component:         w.component,
 		Pool:              w.pool,
 		EnrolledAt:        w.enrolledAt,

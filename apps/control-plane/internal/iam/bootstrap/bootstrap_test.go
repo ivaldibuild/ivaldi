@@ -96,6 +96,8 @@ func (e *env) bootstrapper(t *testing.T, s Settings) Bootstrapper {
 		WithUserRepo(iampg.NewUserRepository(e.db)),
 		WithGrantRepo(grants),
 		WithOAuthClientRepo(iampg.NewOAuthClientRepository(e.db)),
+		WithWorkloadRepo(iampg.NewWorkloadRepository(e.db)),
+		WithWorkloadCredentialRepo(iampg.NewWorkloadCredentialRepository(e.db)),
 		WithPasswordHasher(e.hasher),
 		WithTransactor(tx),
 		WithLocker(database.NewLocker(e.db)),

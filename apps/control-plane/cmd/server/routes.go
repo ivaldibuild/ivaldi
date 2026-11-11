@@ -16,6 +16,7 @@ import (
 	iamhttp "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/httpapi"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/organizations"
 	peopleapi "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/people"
+	principalsapi "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/principals"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/profile"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/serviceaccounts"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/orchestration"
@@ -50,6 +51,7 @@ type services struct {
 	profile         iam.ProfileService
 	organizations   iam.OrganizationService
 	people          iam.PeopleService
+	principals      iam.PrincipalService
 	grants          iam.GrantService
 	serviceAccounts iam.ServiceAccountService
 	teams           team.TeamService
@@ -77,6 +79,7 @@ func (s services) routes(describe bool) []api.Routes {
 		profile.NewProfileController(s.profile),
 		organizations.NewOrganizationController(s.organizations),
 		peopleapi.NewPeopleController(s.people),
+		principalsapi.NewController(s.principals),
 		grants.NewGrantController(s.grants),
 		serviceaccounts.NewController(s.serviceAccounts),
 		teams.NewTeamController(s.teams),

@@ -1164,6 +1164,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/principals': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Name principals by ID
+     * @description Names the requested principals of the caller's Organization, whatever their kind: users, service accounts, Agents, agent Sessions, and workloads. An Agent also names its Teams. IDs that name no principal of the Organization are left out rather than refused, so a page does not fail because one principal was deleted.
+     */
+    get: operations['list-principals'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/projects/{project_id}': {
     parameters: {
       query?: never;
@@ -3137,6 +3157,16 @@ export interface components {
       granted: string[];
       resource_id: string;
     };
+    NamedPrincipal: {
+      display_name: string;
+      id: string;
+      /** @enum {string} */
+      kind: 'user' | 'service_account' | 'agent' | 'agent_session' | 'workload';
+      /** @enum {string} */
+      status: 'active' | 'suspended' | 'deactivated';
+      /** @description The active Teams an Agent belongs to, by display name; empty for every other kind */
+      teams: components['schemas']['PrincipalTeam'][];
+    };
     OnboardingHttpRequestBody: {
       /**
        * Format: uri
@@ -3267,6 +3297,11 @@ export interface components {
       id: string;
       kind: string;
       status: string;
+    };
+    PrincipalTeam: {
+      display_name: string;
+      id: string;
+      slug: string;
     };
     ProjectSnapshot: {
       /** Format: date-time */
@@ -3845,6 +3880,20 @@ export interface components {
       readonly $schema?: string;
       /** @description Response payload, always present: an empty list is [], not omitted */
       data: components['schemas']['DeploymentSnapshot'][];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
+    ResponseListNamedPrincipal: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseListNamedPrincipal.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['NamedPrincipal'][];
       /** @description Human-readable message */
       message?: string;
       /** @description Request status */
@@ -7803,6 +7852,38 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ResponseResultPerson'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'list-principals': {
+    parameters: {
+      query: {
+        /** @description The principal IDs to name, comma-separated, such as prn_a,prn_b; at most 100 distinct IDs */
+        ids: string[];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseListNamedPrincipal'];
         };
       };
       /** @description Error */

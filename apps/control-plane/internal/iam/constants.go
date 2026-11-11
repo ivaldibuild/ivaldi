@@ -48,6 +48,9 @@ const (
 	PermissionOrganizationManage = "organization.manage"
 	// PermissionUserRead lists the Organization's people, with their emails.
 	PermissionUserRead = "user.read"
+	// PermissionPrincipalRead names principals by ID, whatever their kind,
+	// with no emails or credentials.
+	PermissionPrincipalRead = "principal.read"
 	// PermissionGrantRead lists the grants on a resource; PermissionGrantManage
 	// grants and removes roles on it. Granting or removing the owner role
 	// also needs PermissionOwnerManage, which only owners hold.
@@ -72,6 +75,7 @@ const (
 	ActionOrganizationRead   = "organization.read"
 	ActionOrganizationUpdate = "organization.update"
 	ActionPeopleList         = "people.list"
+	ActionPrincipalList      = "principal.list"
 	ActionGrantList          = "grant.list"
 	ActionGrantCreate        = "grant.create"
 	ActionGrantRemove        = "grant.remove"

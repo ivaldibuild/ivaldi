@@ -27,6 +27,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/organizations"
 	peopleapi "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/people"
 	iampg "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/postgres"
+	principalsapi "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/principals"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/profile"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/serviceaccounts"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/signin"
@@ -426,11 +427,24 @@ func (a *app) wireOrganization() error {
 }
 
 // wireAccessAPI serves who is in the Organization and what they may do:
-// GET /v1/people, and granting and removing roles at /v1/grants.
+// GET /v1/people, GET /v1/principals, and granting and removing roles at
+// /v1/grants.
 func (a *app) wireAccessAPI() error {
 	people, err := peopleapi.NewPeopleService(
 		peopleapi.WithPeopleRepo(iampg.NewPeopleRepository(a.db)),
 		peopleapi.WithAuthorizer(a.authz),
+	)
+	if err != nil {
+		return err
+	}
+	principalTeams, err := team.NewPrincipalTeamSource(a.teams)
+	if err != nil {
+		return err
+	}
+	principals, err := principalsapi.NewPrincipalService(
+		principalsapi.WithPrincipalReader(iampg.NewPrincipalReader(a.db)),
+		principalsapi.WithPrincipalTeamSource(principalTeams),
+		principalsapi.WithAuthorizer(a.authz),
 	)
 	if err != nil {
 		return err
@@ -455,7 +469,7 @@ func (a *app) wireAccessAPI() error {
 	if err != nil {
 		return err
 	}
-	a.services.people, a.services.grants = people, grantSvc
+	a.services.people, a.services.principals, a.services.grants = people, principals, grantSvc
 	return nil
 }
 

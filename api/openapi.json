@@ -2721,6 +2721,50 @@
         ],
         "type": "object"
       },
+      "NamedPrincipal": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "user",
+              "service_account",
+              "agent",
+              "agent_session",
+              "workload"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "suspended",
+              "deactivated"
+            ],
+            "type": "string"
+          },
+          "teams": {
+            "description": "The active Teams an Agent belongs to, by display name; empty for every other kind",
+            "items": {
+              "$ref": "#/components/schemas/PrincipalTeam"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "display_name",
+          "status",
+          "teams"
+        ],
+        "type": "object"
+      },
       "OnboardingHttpRequestBody": {
         "additionalProperties": false,
         "properties": {
@@ -3076,6 +3120,26 @@
           "kind",
           "display_name",
           "status"
+        ],
+        "type": "object"
+      },
+      "PrincipalTeam": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "display_name"
         ],
         "type": "object"
       },
@@ -4543,6 +4607,38 @@
             "description": "Response payload, always present: an empty list is [], not omitted",
             "items": {
               "$ref": "#/components/schemas/DeploymentSnapshot"
+            },
+            "type": "array"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ResponseListNamedPrincipal": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseListNamedPrincipal.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "description": "Response payload, always present: an empty list is [], not omitted",
+            "items": {
+              "$ref": "#/components/schemas/NamedPrincipal"
             },
             "type": "array"
           },
@@ -11933,6 +12029,60 @@
         "summary": "List the Organization's people",
         "tags": [
           "people"
+        ]
+      }
+    },
+    "/v1/principals": {
+      "get": {
+        "description": "Names the requested principals of the caller's Organization, whatever their kind: users, service accounts, Agents, agent Sessions, and workloads. An Agent also names its Teams. IDs that name no principal of the Organization are left out rather than refused, so a page does not fail because one principal was deleted.",
+        "operationId": "list-principals",
+        "parameters": [
+          {
+            "description": "The principal IDs to name, comma-separated, such as prn_a,prn_b; at most 100 distinct IDs",
+            "explode": false,
+            "in": "query",
+            "name": "ids",
+            "required": true,
+            "schema": {
+              "description": "The principal IDs to name, comma-separated, such as prn_a,prn_b; at most 100 distinct IDs",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseListNamedPrincipal"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Name principals by ID",
+        "tags": [
+          "principals"
         ]
       }
     },

@@ -155,6 +155,16 @@ type PeopleRepository interface {
 	ListPeople(ctx context.Context, query ListPeopleQuery) (*pagination.Result[Person], error)
 }
 
+// PrincipalService names principals by ID, whatever their kind: users,
+// service accounts, Agents, agent Sessions, and workloads. Any member may
+// read it: it exposes display names and kinds, as listing people does for
+// users, but no emails or credentials.
+type PrincipalService interface {
+	// ListPrincipals returns the Organization's principals among the query's
+	// IDs, in the order the IDs give them. Unknown IDs are left out.
+	ListPrincipals(ctx context.Context, actor identity.Actor, query ListPrincipalsQuery) ([]PrincipalSummary, error)
+}
+
 // ProfileService tells a signed-in caller who they are. It reads only the
 // caller's own records, so it asks the authorizer nothing, but it refuses
 // with ErrStatus when the caller's principal, Account, or Organization is
@@ -275,6 +285,16 @@ type PrincipalRepository interface {
 	Get(ctx context.Context, organizationID, principalID string) (PrincipalSnapshot, error)
 }
 
+// PrincipalReader reads many principals of an Organization by ID at once,
+// whatever their kind. It is PrincipalRepository.Get for a batch, so a page
+// can name everyone in one call.
+type PrincipalReader interface {
+	// ListByIDs returns the principals among principalIDs. IDs that name no
+	// principal of the Organization are left out rather than refused. The
+	// snapshots carry no Metadata.
+	ListByIDs(ctx context.Context, organizationID string, principalIDs []string) ([]PrincipalSnapshot, error)
+}
+
 // ListAgentsQuery lists an Organization's Agents. It sorts by display_name
 // (the default), slug, or created_at, with the ID breaking ties.
 type ListAgentsQuery struct {
@@ -318,6 +338,16 @@ type TeamGroups interface {
 // of the Organization's is ErrNotFound, and an archived one ErrStatus.
 type TeamGroupSource interface {
 	TeamGroupID(ctx context.Context, organizationID, teamID string) (string, error)
+}
+
+// PrincipalTeamSource names the active Teams principals belong to, so IAM
+// can say who an Agent is accountable to without depending on Teams. The
+// team capability implements it (team.NewPrincipalTeamSource). It does not
+// authorize: the operation that asks has already been authorized.
+type PrincipalTeamSource interface {
+	// ListActiveTeams returns each principal's active Teams, keyed by
+	// principal ID. A principal in no active Team has no entry.
+	ListActiveTeams(ctx context.Context, organizationID string, principalIDs []string) (map[string][]PrincipalTeam, error)
 }
 
 // ResourceRepository reads IAM's resource hierarchy.

@@ -326,6 +326,15 @@ jobs:
     if: needs.changes.outputs.go != 'false' || needs.changes.outputs.webui != 'false'
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 20
+    permissions:
+      contents: read
+      # Pushes to ghcr.io. Pull requests from forks get a read-only token
+      # whatever this says, which is fine: pull requests never push.
+      packages: write
+    env:
+      # Only pushes to main publish images; pull requests and the merge queue
+      # build them to check the Dockerfiles.
+      PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     strategy:
       fail-fast: false
       matrix:
@@ -344,6 +353,35 @@ jobs:
       - name: Checkout repository
         if: matrix.changed != 'false'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The version stamped into ivaldi comes from `git describe`, as `make
+          # build` does, which needs tags.
+          fetch-depth: 0
+      - name: Describe version
+        id: version
+        if: matrix.changed != 'false'
+        run: echo "version=$(git describe --tags --always)" >> "$GITHUB_OUTPUT"
+      # Tags each image with the full commit SHA, and with `main` on main. The
+      # labels include org.opencontainers.image.source, which links the ghcr.io
+      # package to this repository so it inherits the repository's access.
+      - name: Image tags and labels
+        id: meta
+        if: matrix.changed != 'false'
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          tags: |
+            type=sha,format=long
+            type=ref,event=branch
+          labels: |
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+      - name: Log in to ghcr.io
+        if: matrix.changed != 'false' && env.PUSH == 'true'
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       # Blacksmith's builder keeps layers and RUN --mount=type=cache contents
       # (the Go module and build caches) on a sticky disk per cache key, so no
       # cache-from or cache-to is needed. One key per Dockerfile keeps the two
@@ -353,15 +391,17 @@ jobs:
         uses: useblacksmith/setup-docker-builder@06dd9c83a5d541274d2e3ac67625560979275267 # v2.3.0
         with:
           cache-key: ${{ matrix.file }}
-      # Built to check the Dockerfile still works; nothing is pushed.
       - name: Build ${{ matrix.image }}
         if: matrix.changed != 'false'
         uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2.3.0
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.file }}
-          push: false
-          tags: ${{ matrix.image }}:ci
+          push: ${{ env.PUSH == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Only the control plane's Dockerfile takes a VERSION.
+          build-args: ${{ matrix.image == 'ivaldi' && format('VERSION={0}', steps.version.outputs.version) || '' }}
 
   charts:
     name: Helm charts

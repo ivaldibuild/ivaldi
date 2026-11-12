@@ -340,14 +340,14 @@ type TeamGroupSource interface {
 	TeamGroupID(ctx context.Context, organizationID, teamID string) (string, error)
 }
 
-// PrincipalTeamSource names the active Teams principals belong to, so IAM
+// PrincipalTeamSource names the Teams principals belong to, so IAM
 // can say who an Agent is accountable to without depending on Teams. The
 // team capability implements it (team.NewPrincipalTeamSource). It does not
 // authorize: the operation that asks has already been authorized.
 type PrincipalTeamSource interface {
-	// ListActiveTeams returns each principal's active Teams, keyed by
-	// principal ID. A principal in no active Team has no entry.
-	ListActiveTeams(ctx context.Context, organizationID string, principalIDs []string) (map[string][]PrincipalTeam, error)
+	// ListTeams returns each principal's Teams, archived ones included,
+	// keyed by principal ID. A principal in no Team has no entry.
+	ListTeams(ctx context.Context, organizationID string, principalIDs []string) (map[string][]PrincipalTeam, error)
 }
 
 // ResourceRepository reads IAM's resource hierarchy.

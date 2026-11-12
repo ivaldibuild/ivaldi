@@ -1,5 +1,7 @@
 package iam
 
+import "time"
+
 // ListPrincipalsQuery names principals by ID, whatever their kind.
 type ListPrincipalsQuery struct {
 	OrganizationID string
@@ -14,8 +16,8 @@ type ListPrincipalsQuery struct {
 // who created or acted on something without asking each kind's capability.
 type PrincipalSummary struct {
 	Principal PrincipalSnapshot
-	// Teams are the active Teams an Agent belongs to, by display name. Every
-	// other kind has none.
+	// Teams are the Teams an Agent belongs to, archived ones included with
+	// their ArchivedAt. Every other kind has none.
 	Teams []PrincipalTeam
 }
 
@@ -25,4 +27,6 @@ type PrincipalTeam struct {
 	ID          string `json:"id"`
 	Slug        string `json:"slug"`
 	DisplayName string `json:"display_name"`
+	// ArchivedAt is when the Team was archived; nil while it is active.
+	ArchivedAt *time.Time `json:"archived_at"`
 }

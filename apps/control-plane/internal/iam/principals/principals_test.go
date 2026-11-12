@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -58,7 +59,7 @@ type directory struct {
 	err   error
 }
 
-func (d *directory) ListActiveTeams(_ context.Context, _ string, principalIDs []string) (map[string][]iam.PrincipalTeam, error) {
+func (d *directory) ListTeams(_ context.Context, _ string, principalIDs []string) (map[string][]iam.PrincipalTeam, error) {
 	d.asked = principalIDs
 	if d.err != nil {
 		return nil, d.err
@@ -127,7 +128,7 @@ func TestListPrincipals(t *testing.T) {
 	assert.Equal(t, releaseAgent, found[0].Principal.ID, "the caller's order is kept")
 	assert.Equal(t, ada, found[1].Principal.ID)
 	assert.Equal(t, []iam.PrincipalTeam{{ID: "tem_platform", Slug: "platform", DisplayName: "Platform"}}, found[0].Teams,
-		"an Agent names its active Teams")
+		"an Agent names its Teams")
 	assert.Empty(t, found[1].Teams, "a user has no Teams here")
 	assert.Equal(t, []string{releaseAgent, ada, "prn_missing"}, r.askedIDs, "every distinct ID is asked for; the reader leaves out the unknown")
 	assert.Equal(t, org, r.askedOrg)
@@ -184,8 +185,12 @@ func TestListPrincipalsOverHTTP(t *testing.T) {
 		ada:          principal(ada, iam.PrincipalUser, "Ada Lovelace"),
 		releaseAgent: principal(releaseAgent, iam.PrincipalAgent, "Release assistant"),
 	}}
+	archivedAt := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 	d := &directory{teams: map[string][]iam.PrincipalTeam{
-		releaseAgent: {{ID: "tem_platform", Slug: "platform", DisplayName: "Platform"}},
+		releaseAgent: {
+			{ID: "tem_platform", Slug: "platform", DisplayName: "Platform"},
+			{ID: "tem_old", Slug: "old", DisplayName: "Old", ArchivedAt: &archivedAt},
+		},
 	}}
 
 	t.Run("needs a token", func(t *testing.T) {
@@ -205,7 +210,10 @@ func TestListPrincipalsOverHTTP(t *testing.T) {
 		assert.Equal(t, "agent", agent["kind"])
 		assert.Equal(t, "Release assistant", agent["display_name"])
 		assert.Equal(t, "active", agent["status"])
-		assert.Equal(t, []any{map[string]any{"id": "tem_platform", "slug": "platform", "display_name": "Platform"}}, agent["teams"])
+		assert.Equal(t, []any{
+			map[string]any{"id": "tem_platform", "slug": "platform", "display_name": "Platform", "archived_at": nil},
+			map[string]any{"id": "tem_old", "slug": "old", "display_name": "Old", "archived_at": "2026-03-01T12:00:00Z"},
+		}, agent["teams"], "archived Teams are named with when they were archived")
 
 		user := items[1].(map[string]any)
 		assert.Equal(t, ada, user["id"])

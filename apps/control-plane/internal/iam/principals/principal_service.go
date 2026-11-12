@@ -32,7 +32,7 @@ func WithPrincipalReader(r iam.PrincipalReader) PrincipalServiceOption {
 	return func(o *options) { o.principals = r }
 }
 
-// WithPrincipalTeamSource names an Agent's active Teams.
+// WithPrincipalTeamSource names an Agent's Teams.
 func WithPrincipalTeamSource(s iam.PrincipalTeamSource) PrincipalServiceOption {
 	return func(o *options) { o.teams = s }
 }
@@ -118,7 +118,7 @@ func (s *service) ListPrincipals(ctx context.Context, _ identity.Actor, q iam.Li
 		return out, nil
 	}
 
-	teams, err := s.teams.ListActiveTeams(ctx, q.OrganizationID, agentIDs)
+	teams, err := s.teams.ListTeams(ctx, q.OrganizationID, agentIDs)
 	if err != nil {
 		return nil, err
 	}

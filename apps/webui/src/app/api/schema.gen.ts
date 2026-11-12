@@ -1173,7 +1173,7 @@ export interface paths {
     };
     /**
      * Name principals by ID
-     * @description Names the requested principals of the caller's Organization, whatever their kind: users, service accounts, Agents, agent Sessions, and workloads. An Agent also names its Teams. IDs that name no principal of the Organization are left out rather than refused, so a page does not fail because one principal was deleted.
+     * @description Names the requested principals of the caller's Organization, whatever their kind: users, service accounts, Agents, agent Sessions, and workloads. An Agent also names its Teams, archived ones included. IDs that name no principal of the Organization are left out rather than refused, so a page does not fail because one principal was deleted.
      */
     get: operations['list-principals'];
     put?: never;
@@ -3164,7 +3164,7 @@ export interface components {
       kind: 'user' | 'service_account' | 'agent' | 'agent_session' | 'workload';
       /** @enum {string} */
       status: 'active' | 'suspended' | 'deactivated';
-      /** @description The active Teams an Agent belongs to, by display name; empty for every other kind */
+      /** @description The Teams an Agent belongs to, archived ones included with their archived_at; empty for every other kind */
       teams: components['schemas']['PrincipalTeam'][];
     };
     OnboardingHttpRequestBody: {
@@ -3299,6 +3299,8 @@ export interface components {
       status: string;
     };
     PrincipalTeam: {
+      /** Format: date-time */
+      archived_at: string | null;
       display_name: string;
       id: string;
       slug: string;

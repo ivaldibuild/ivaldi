@@ -31,7 +31,7 @@ func (c *Controller) RegisterRoutes(h huma.API) {
 		Path:        "/principals",
 		Summary:     "Name principals by ID",
 		Description: "Names the requested principals of the caller's Organization, whatever their kind: users, " +
-			"service accounts, Agents, agent Sessions, and workloads. An Agent also names its Teams. " +
+			"service accounts, Agents, agent Sessions, and workloads. An Agent also names its Teams, archived ones included. " +
 			"IDs that name no principal of the Organization are left out rather than refused, so a page does not " +
 			"fail because one principal was deleted.",
 		Tags:     []string{"principals"},
@@ -54,9 +54,9 @@ type NamedPrincipal struct {
 	Kind        iam.PrincipalKind   `json:"kind" enum:"user,service_account,agent,agent_session,workload"`
 	DisplayName string              `json:"display_name"`
 	Status      iam.PrincipalStatus `json:"status" enum:"active,suspended,deactivated"`
-	// Teams are the active Teams an Agent belongs to, by display name; every
-	// other kind has none. An Agent is accountable to its Teams (ADR 0007).
-	Teams []iam.PrincipalTeam `json:"teams" doc:"The active Teams an Agent belongs to, by display name; empty for every other kind"`
+	// Teams are the Teams an Agent belongs to, archived ones included with
+	// their archived_at; every other kind has none. An Agent is accountable to its Teams (ADR 0007).
+	Teams []iam.PrincipalTeam `json:"teams" doc:"The Teams an Agent belongs to, archived ones included with their archived_at; empty for every other kind"`
 }
 
 func (c *Controller) ListPrincipals(ctx context.Context, req *ListPrincipalsRequest) (*ListPrincipalsResponse, error) {

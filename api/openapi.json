@@ -2749,7 +2749,7 @@
             "type": "string"
           },
           "teams": {
-            "description": "The active Teams an Agent belongs to, by display name; empty for every other kind",
+            "description": "The Teams an Agent belongs to, archived ones included with their archived_at; empty for every other kind",
             "items": {
               "$ref": "#/components/schemas/PrincipalTeam"
             },
@@ -3126,6 +3126,11 @@
       "PrincipalTeam": {
         "additionalProperties": false,
         "properties": {
+          "archived_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
           "display_name": {
             "type": "string"
           },
@@ -3139,7 +3144,8 @@
         "required": [
           "id",
           "slug",
-          "display_name"
+          "display_name",
+          "archived_at"
         ],
         "type": "object"
       },
@@ -12034,7 +12040,7 @@
     },
     "/v1/principals": {
       "get": {
-        "description": "Names the requested principals of the caller's Organization, whatever their kind: users, service accounts, Agents, agent Sessions, and workloads. An Agent also names its Teams. IDs that name no principal of the Organization are left out rather than refused, so a page does not fail because one principal was deleted.",
+        "description": "Names the requested principals of the caller's Organization, whatever their kind: users, service accounts, Agents, agent Sessions, and workloads. An Agent also names its Teams, archived ones included. IDs that name no principal of the Organization are left out rather than refused, so a page does not fail because one principal was deleted.",
         "operationId": "list-principals",
         "parameters": [
           {

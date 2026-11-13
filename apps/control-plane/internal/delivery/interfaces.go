@@ -49,6 +49,10 @@ type EnvironmentRepository interface {
 	GetEnvironments(ctx context.Context, organizationID string, environmentIDs []string) ([]*Environment, error)
 	// ListEnvironments lists environments based on the provided query parameters.
 	ListEnvironments(ctx context.Context, query ListEnvironmentsQuery) (*pagination.Result[*Environment], error)
+	// ListActiveEnvironments returns a Workspace's active Environments,
+	// ordered by creation time and then ID. They are few, so they are
+	// returned whole rather than paged.
+	ListActiveEnvironments(ctx context.Context, organizationID, workspaceID string) ([]*Environment, error)
 	// UpdateEnvironment writes the environment's state.
 	UpdateEnvironment(ctx context.Context, env *Environment) error
 	// CountActiveEnvironments counts a workspace's active environments.
@@ -179,6 +183,11 @@ type ApplicationRepository interface {
 	CreatePlacement(ctx context.Context, p *Placement) error
 	GetPlacement(ctx context.Context, organizationID, applicationID, targetID string) (*Placement, error)
 	ListPlacements(ctx context.Context, organizationID, applicationID string) ([]*Placement, error)
+	// ListRunsOn reads where the Applications run: each placement with its
+	// Target, Environment, and current Release and Deployment. Archived
+	// Targets and Environments are left out. It is a read model, so it
+	// returns one row per placement rather than domain objects.
+	ListRunsOn(ctx context.Context, organizationID string, applicationIDs []string) ([]PlacementRunsOn, error)
 	// UpdatePlacement writes the placement's configuration. It leaves the
 	// current Deployment and Release alone.
 	UpdatePlacement(ctx context.Context, p *Placement) error
@@ -352,6 +361,10 @@ type ApplicationService interface {
 
 	CreatePlacement(ctx context.Context, actor identity.Actor, in CreatePlacementInput) (*Placement, error)
 	ListPlacements(ctx context.Context, actor identity.Actor, organizationID, applicationID string) ([]*Placement, error)
+	// RunsOn reads where the Workspace's Applications run, page by
+	// Application: their Project and owning Team names, and the Targets each
+	// is placed on with the Release and Deployment current there.
+	RunsOn(ctx context.Context, actor identity.Actor, query RunsOnQuery) (*RunsOnPage, error)
 	// ConfigurePlacement sets how Releases are applied to the Target; nil
 	// removes it, so Deployments there are tracked only.
 	ConfigurePlacement(ctx context.Context, actor identity.Actor, organizationID, applicationID, targetID string, config *ApplyConfig) (*Placement, error)

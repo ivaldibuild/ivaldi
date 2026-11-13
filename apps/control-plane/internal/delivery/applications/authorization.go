@@ -130,6 +130,27 @@ func (a *authorized) ListApplications(ctx context.Context, actor identity.Actor,
 	return a.next.ListApplications(ctx, actor, query)
 }
 
+// RunsOn is checked once: on the Project when the read is narrowed to one,
+// or else on the Workspace. It is one read, not an operation on each
+// Application.
+func (a *authorized) RunsOn(ctx context.Context, actor identity.Actor, query delivery.RunsOnQuery) (*delivery.RunsOnPage, error) {
+	resource := query.ProjectID
+	if resource == "" {
+		resource = query.WorkspaceID
+	}
+	if resource == "" {
+		return nil, delivery.NewErrInvalidInput("reading where Applications run needs a project or a workspace")
+	}
+	ctx, err := a.allow(ctx, authorization.Request{
+		Actor: actor, Permission: delivery.PermissionApplicationRead, OrganizationID: query.OrganizationID,
+		ResourceID: resource, Action: delivery.ActionApplicationRunsOn,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return a.next.RunsOn(ctx, actor, query)
+}
+
 func (a *authorized) UpdateApplication(ctx context.Context, actor identity.Actor, organizationID, application string, props delivery.UpdateApplicationProps) (*delivery.Application, error) {
 	ctx, id, err := a.manage(ctx, actor, delivery.ActionApplicationUpdate, organizationID, application, props)
 	if err != nil {

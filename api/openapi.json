@@ -5786,6 +5786,35 @@
         ],
         "type": "object"
       },
+      "ResponseWorkspaceRunsOn": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseWorkspaceRunsOn.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/WorkspaceRunsOn",
+            "description": "Response payload, always present: an empty list is [], not omitted"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
       "ResponseWorkspaceSnapshot": {
         "additionalProperties": false,
         "properties": {
@@ -6392,6 +6421,125 @@
         "required": [
           "kind",
           "config"
+        ],
+        "type": "object"
+      },
+      "RunsOnApplication": {
+        "additionalProperties": false,
+        "properties": {
+          "application": {
+            "$ref": "#/components/schemas/ApplicationSnapshot"
+          },
+          "owner_team": {
+            "$ref": "#/components/schemas/RunsOnTeam"
+          },
+          "project": {
+            "$ref": "#/components/schemas/RunsOnProject"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/RunsOnTarget"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "application",
+          "project",
+          "owner_team",
+          "targets"
+        ],
+        "type": "object"
+      },
+      "RunsOnProject": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "owner_team": {
+            "$ref": "#/components/schemas/RunsOnTeam"
+          }
+        },
+        "required": [
+          "id",
+          "display_name",
+          "owner_team"
+        ],
+        "type": "object"
+      },
+      "RunsOnTarget": {
+        "additionalProperties": false,
+        "properties": {
+          "deployment_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "deployment_status": {
+            "enum": [
+              "pending",
+              "awaiting_approval",
+              "rejected",
+              "cancelled",
+              "applying",
+              "progressing",
+              "healthy",
+              "degraded",
+              "failed",
+              "superseded"
+            ],
+            "nullable": true,
+            "type": "string"
+          },
+          "environment_display_name": {
+            "type": "string"
+          },
+          "environment_id": {
+            "type": "string"
+          },
+          "release_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "release_version": {
+            "nullable": true,
+            "type": "string"
+          },
+          "target_display_name": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_id",
+          "target_display_name",
+          "environment_id",
+          "environment_display_name",
+          "release_id",
+          "release_version",
+          "deployment_id",
+          "deployment_status"
+        ],
+        "type": "object"
+      },
+      "RunsOnTeam": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "display_name"
         ],
         "type": "object"
       },
@@ -7312,6 +7460,51 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "WorkspaceRunsOn": {
+        "additionalProperties": false,
+        "properties": {
+          "environments": {
+            "items": {
+              "$ref": "#/components/schemas/EnvironmentSnapshot"
+            },
+            "type": "array"
+          },
+          "has_next": {
+            "type": "boolean"
+          },
+          "has_previous": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RunsOnApplication"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "nullable": true,
+            "type": "string"
+          },
+          "previous_cursor": {
+            "nullable": true,
+            "type": "string"
+          },
+          "total_count": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total_count",
+          "has_next",
+          "has_previous",
+          "next_cursor",
+          "previous_cursor",
+          "environments"
+        ],
         "type": "object"
       },
       "WorkspaceSnapshot": {
@@ -16623,6 +16816,141 @@
         "summary": "Restore an archived Workspace",
         "tags": [
           "workspaces"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/runs-on": {
+      "get": {
+        "operationId": "list-workspace-runs-on",
+        "parameters": [
+          {
+            "description": "The Workspace to read where its Applications run",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "description": "The Workspace to read where its Applications run",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only this Project's Applications",
+            "explode": false,
+            "in": "query",
+            "name": "project_id",
+            "schema": {
+              "description": "Only this Project's Applications",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only the Applications this Team owns",
+            "explode": false,
+            "in": "query",
+            "name": "owner_team_id",
+            "schema": {
+              "description": "Only the Applications this Team owns",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Include archived Applications",
+            "explode": false,
+            "in": "query",
+            "name": "include_archived",
+            "schema": {
+              "description": "Include archived Applications",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Most items to return",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "Most items to return",
+              "format": "int64",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Field to sort by",
+            "explode": false,
+            "in": "query",
+            "name": "sort_by",
+            "schema": {
+              "description": "Field to sort by",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Sort direction",
+            "explode": false,
+            "in": "query",
+            "name": "sort_order",
+            "schema": {
+              "description": "Sort direction",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Cursor from a previous page's next_cursor",
+            "explode": false,
+            "in": "query",
+            "name": "next_cursor",
+            "schema": {
+              "description": "Cursor from a previous page's next_cursor",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Cursor from a previous page's previous_cursor",
+            "explode": false,
+            "in": "query",
+            "name": "previous_cursor",
+            "schema": {
+              "description": "Cursor from a previous page's previous_cursor",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseWorkspaceRunsOn"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Read where each of a Workspace's Applications runs",
+        "tags": [
+          "applications"
         ]
       }
     },

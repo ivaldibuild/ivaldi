@@ -79,6 +79,19 @@ type ListWorkspaceApplicationsRequest struct {
 	ApplicationFilter
 }
 
+// RunsOnFilter narrows a "what runs where" read.
+type RunsOnFilter struct {
+	ProjectID       string `query:"project_id" doc:"Only this Project's Applications"`
+	OwnerTeamID     string `query:"owner_team_id" doc:"Only the Applications this Team owns"`
+	IncludeArchived bool   `query:"include_archived" doc:"Include archived Applications"`
+	PageParams
+}
+
+type RunsOnRequest struct {
+	WorkspaceID string `path:"workspace_id" doc:"The Workspace to read where its Applications run"`
+	RunsOnFilter
+}
+
 type ApplicationRequest struct {
 	ApplicationIdentifier string `path:"application" doc:"The Application's ID, or the slug of an active Application"`
 }

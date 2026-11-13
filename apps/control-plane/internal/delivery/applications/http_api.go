@@ -31,6 +31,7 @@ func (c *ApplicationController) RegisterRoutes(h huma.API) {
 	register(h, "create-application", http.MethodPost, "/projects/{project_id}/applications", "Create an Application in a Project, with its default Channel", http.StatusCreated, c.CreateApplication)
 	register(h, "list-applications", http.MethodGet, "/projects/{project_id}/applications", "List a Project's Applications", 0, c.ListApplications)
 	register(h, "list-workspace-applications", http.MethodGet, "/workspaces/{workspace_id}/applications", "List a Workspace's Applications", 0, c.ListWorkspaceApplications)
+	register(h, "list-workspace-runs-on", http.MethodGet, "/workspaces/{workspace_id}/runs-on", "Read where each of a Workspace's Applications runs", 0, c.RunsOn)
 	register(h, "get-application", http.MethodGet, "/applications/{application}", "Get an Application", 0, c.GetApplication)
 	register(h, "update-application", http.MethodPatch, "/applications/{application}", "Change an Application", 0, c.UpdateApplication)
 	register(h, "link-application-source", http.MethodPut, "/applications/{application}/source", "Link or unlink the Source an Application is built from", 0, c.LinkApplicationSource)
@@ -131,6 +132,21 @@ func (c *ApplicationController) list(ctx context.Context, q delivery.ListApplica
 		return c.service.ListApplications(ctx, who.Actor, q)
 	}, func(page *pagination.Result[*delivery.Application]) *ApplicationListResponse {
 		return &ApplicationListResponse{Body: api.SuccessResponse(nil, snapshots(page, (*delivery.Application).Snapshot))}
+	})
+}
+
+func (c *ApplicationController) RunsOn(ctx context.Context, req *RunsOnRequest) (*WorkspaceRunsOnResponse, error) {
+	return call(ctx, func(who identity.Caller) (*delivery.RunsOnPage, error) {
+		return c.service.RunsOn(ctx, who.Actor, delivery.RunsOnQuery{
+			OrganizationID:  who.OrganizationID,
+			WorkspaceID:     req.WorkspaceID,
+			ProjectID:       req.ProjectID,
+			OwnerTeamID:     req.OwnerTeamID,
+			IncludeArchived: req.IncludeArchived,
+			Page:            req.query(),
+		})
+	}, func(page *delivery.RunsOnPage) *WorkspaceRunsOnResponse {
+		return &WorkspaceRunsOnResponse{Body: api.SuccessResponse(nil, runsOnView(page))}
 	})
 }
 

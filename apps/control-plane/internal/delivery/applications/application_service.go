@@ -44,10 +44,19 @@ type TargetLookup interface {
 	GetTarget(ctx context.Context, organizationID, targetID string) (*delivery.Target, error)
 }
 
-// EnvironmentLookup reads a Target's Environment, which says its Workspace.
+// EnvironmentLookup reads a Target's Environment, which says its Workspace,
+// and a Workspace's Environments for a grid's columns.
 // delivery.EnvironmentRepository provides it.
 type EnvironmentLookup interface {
 	GetEnvironment(ctx context.Context, organizationID, environmentID string) (*delivery.Environment, error)
+	ListActiveEnvironments(ctx context.Context, organizationID, workspaceID string) ([]*delivery.Environment, error)
+}
+
+// ProjectLookup reads the Projects Applications belong to, for labelling a
+// "what runs where" read with Project names. workspace.NewLookups provides
+// it.
+type ProjectLookup interface {
+	LookupProjects(ctx context.Context, organizationID string, projectIDs []string) ([]*workspace.Project, error)
 }
 
 type ApplicationServiceOption func(*options)
@@ -58,6 +67,7 @@ type options struct {
 	registries   RegistryLookup
 	targets      TargetLookup
 	environments EnvironmentLookup
+	projects     ProjectLookup
 	workspaces   delivery.Workspaces
 	settings     workspace.SettingResolver
 	teams        team.Directory
@@ -79,6 +89,11 @@ func WithTargetLookup(t TargetLookup) ApplicationServiceOption {
 }
 func WithEnvironmentLookup(e EnvironmentLookup) ApplicationServiceOption {
 	return func(o *options) { o.environments = e }
+}
+
+// WithProjectLookup labels a "what runs where" read with Project names.
+func WithProjectLookup(p ProjectLookup) ApplicationServiceOption {
+	return func(o *options) { o.projects = p }
 }
 func WithWorkspaces(w delivery.Workspaces) ApplicationServiceOption {
 	return func(o *options) { o.workspaces = w }
@@ -128,6 +143,7 @@ func NewApplicationService(opts ...ApplicationServiceOption) (delivery.Applicati
 		{"RegistryLookup", o.registries != nil},
 		{"TargetLookup", o.targets != nil},
 		{"EnvironmentLookup", o.environments != nil},
+		{"ProjectLookup", o.projects != nil},
 		{"Workspaces", o.workspaces != nil},
 		{"SettingResolver", o.settings != nil},
 		{"TeamDirectory", o.teams != nil},
@@ -147,6 +163,7 @@ func NewApplicationService(opts ...ApplicationServiceOption) (delivery.Applicati
 		registries:   o.registries,
 		targets:      o.targets,
 		environments: o.environments,
+		projects:     o.projects,
 		workspaces:   o.workspaces,
 		settings:     o.settings,
 		teams:        o.teams,
@@ -164,6 +181,7 @@ type service struct {
 	registries   RegistryLookup
 	targets      TargetLookup
 	environments EnvironmentLookup
+	projects     ProjectLookup
 	workspaces   delivery.Workspaces
 	settings     workspace.SettingResolver
 	teams        team.Directory

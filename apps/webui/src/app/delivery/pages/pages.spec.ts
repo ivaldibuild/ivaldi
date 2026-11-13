@@ -156,27 +156,42 @@ describe('delivery pages', () => {
 
   afterEach(() => http.verify());
 
-  it('shows the version deployed to each Target the Application is placed on', async () => {
+  it('shows the version and status on each Target the Application is placed on', async () => {
     const { fixture, el } = render(ApplicationsPage);
     await settle(fixture);
-    http.expectOne(`${v1}/workspaces/wsp_1/applications`).flush(page([application]));
-    http.expectOne(`${v1}/workspaces/wsp_1/environments`).flush(page(environments));
-    http.expectOne(projectList).flush(page([project]));
-    http.expectOne(`${v1}/teams`).flush(page([team]));
-    await settle(fixture);
-    flushTargets();
-    http.expectOne(`${v1}/applications/app_1/placements`).flush(
-      ok([
-        {
-          application_id: 'app_1',
-          target_id: 'tgt_stg',
-          source: 'configured',
-          current_release_id: 'rel_1',
-        },
-      ]),
+    http.expectOne(`${v1}/workspaces/wsp_1/runs-on?limit=100`).flush(
+      ok({
+        items: [
+          {
+            application,
+            project: {
+              id: 'prj_1',
+              display_name: 'Payments',
+              owner_team: { id: 'team_1', display_name: 'Payments' },
+            },
+            owner_team: { id: 'team_1', display_name: 'Payments' },
+            targets: [
+              {
+                target_id: 'tgt_stg',
+                target_display_name: 'staging-eu-1',
+                environment_id: 'env_stg',
+                environment_display_name: 'Staging',
+                release_id: 'rel_1',
+                release_version: '1.4.0',
+                deployment_id: 'dep_1',
+                deployment_status: 'healthy',
+              },
+            ],
+          },
+        ],
+        environments,
+        total_count: 1,
+        has_next: false,
+        has_previous: false,
+        next_cursor: null,
+        previous_cursor: null,
+      }),
     );
-    await settle(fixture);
-    http.expectOne(`${v1}/releases/rel_1`).flush(ok({ id: 'rel_1', version: '1.4.0', builds: [] }));
     await settle(fixture);
 
     const headers = [...el.querySelectorAll('thead th')].map((th) => th.textContent?.trim());
@@ -184,7 +199,7 @@ describe('delivery pages', () => {
     const cells = [...el.querySelectorAll('tbody td')].map((td) =>
       td.textContent?.replace(/\s+/g, ' ').trim(),
     );
-    expect(cells).toEqual(['1.4.0staging-eu-1', 'Not placed']);
+    expect(cells).toEqual(['1.4.0staging-eu-1Healthy', 'Not placed']);
     const group = el.querySelector('th[scope="rowgroup"]');
     expect(group?.querySelector('a')?.textContent?.trim()).toBe('Payments');
     expect(group?.querySelector('a')?.getAttribute('href')).toBe('/projects/prj_1');

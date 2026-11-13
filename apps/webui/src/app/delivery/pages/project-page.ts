@@ -8,7 +8,7 @@ import { HlmButtonImports } from '@spartan-ng/helm/button';
 import { HlmSpinnerImports } from '@spartan-ng/helm/spinner';
 import { ApiError } from '../../api/api-client';
 import { RequestStatus } from '../../shared/request-status';
-import { ApplicationGrid, GridGroup, placementRows } from '../application-grid';
+import { ApplicationGrid, GridGroup, runsOnGroups } from '../application-grid';
 import { DeliveryApi } from '../delivery-api';
 import { PageHeader } from '../page-header';
 import { ProjectSources } from '../project-sources';
@@ -43,13 +43,16 @@ export class ProjectPage {
     params: () => this.id(),
     loader: async ({ params: id }) => {
       const project = await this.projects.project(id);
-      const [teams, applications, environments] = await Promise.all([
+      const [teams, page] = await Promise.all([
         this.delivery.teams(),
-        this.projects.applications(id),
-        this.delivery.environments(project.workspace_id),
+        this.delivery.runsOn(project.workspace_id, { projectId: id }),
       ]);
-      const rows = await placementRows(this.delivery, environments, applications, teams, [project]);
-      return { project, teams, environments, rows };
+      return {
+        project,
+        teams,
+        environments: page.environments,
+        groups: runsOnGroups(page),
+      };
     },
   });
 
@@ -68,11 +71,10 @@ export class ProjectPage {
     return d?.teams.find((t) => t.id === d.project.owner_team_id)?.display_name ?? '';
   });
   protected readonly environments = computed(() => this.loaded()?.environments ?? []);
-  protected readonly groups = computed<GridGroup[]>(() => {
-    const d = this.loaded();
-    return d ? [{ project: d.project, team: this.team(), rows: d.rows }] : [];
-  });
-  protected readonly hasApplications = computed(() => (this.loaded()?.rows.length ?? 0) > 0);
+  protected readonly groups = computed<GridGroup[]>(() => this.loaded()?.groups ?? []);
+  protected readonly hasApplications = computed(
+    () => (this.loaded()?.groups.flatMap((group) => group.rows).length ?? 0) > 0,
+  );
 
   protected readonly failure = computed(() => {
     const error = this.details.error();

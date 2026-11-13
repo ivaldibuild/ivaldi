@@ -54,6 +54,27 @@ func (r *teamRepository) GetTeamBySlug(ctx context.Context, organizationID, slug
 	return r.get(r.conn(ctx), organizationID, false, "slug = ? AND archived_at IS NULL", slug)
 }
 
+// GetTeamNames returns the Teams with the IDs without reading their members,
+// for capabilities that only label records with the Team's name.
+func (r *teamRepository) GetTeamNames(ctx context.Context, organizationID string, teamIDs []string) ([]team.TeamName, error) {
+	if len(teamIDs) == 0 {
+		return nil, nil
+	}
+	var entities []teamEntity
+	err := r.conn(ctx).
+		Select("id, slug, display_name").
+		Where("organization_id = ? AND id IN ?", organizationID, teamIDs).
+		Find(&entities).Error
+	if err != nil {
+		return nil, translate(err)
+	}
+	names := make([]team.TeamName, 0, len(entities))
+	for _, e := range entities {
+		names = append(names, team.TeamName{ID: e.ID, Slug: e.Slug, DisplayName: e.DisplayName})
+	}
+	return names, nil
+}
+
 func (r *teamRepository) get(db *gorm.DB, organizationID string, lock bool, where string, args ...any) (*team.Team, error) {
 	q := db.Where("organization_id = ?", organizationID).Where(where, args...)
 	if lock {

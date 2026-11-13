@@ -267,6 +267,40 @@ describe('project pages', () => {
     const environments = [
       { id: 'env_stg', slug: 'staging', display_name: 'Staging', tier: 'staging' },
     ];
+    const runsOn = (placed: boolean) =>
+      ok({
+        items: [
+          {
+            application,
+            project: {
+              id: 'prj_1',
+              display_name: 'Payments',
+              owner_team: { id: 'team_1', display_name: 'Payments' },
+            },
+            owner_team: { id: 'team_2', display_name: 'Core' },
+            targets: placed
+              ? [
+                  {
+                    target_id: 'tgt_1',
+                    target_display_name: 'staging-eu-1',
+                    environment_id: 'env_stg',
+                    environment_display_name: 'Staging',
+                    release_id: null,
+                    release_version: null,
+                    deployment_id: null,
+                    deployment_status: null,
+                  },
+                ]
+              : [],
+          },
+        ],
+        environments,
+        total_count: 1,
+        has_next: false,
+        has_previous: false,
+        next_cursor: null,
+        previous_cursor: null,
+      });
 
     async function renderProject(project: typeof payments | typeof legacy = payments) {
       const rendered = render(ProjectPage, { id: 'prj_1' });
@@ -274,15 +308,7 @@ describe('project pages', () => {
       expect1('/projects/prj_1').flush(ok({ ...project, id: 'prj_1' }));
       await settle(rendered.fixture);
       expect1('/teams').flush(page(teams));
-      expect1('/projects/prj_1/applications?limit=100').flush(page([application]));
-      expect1('/workspaces/wsp_1/environments').flush(page(environments));
-      await settle(rendered.fixture);
-      expect1('/environments/env_stg/targets').flush(
-        page([{ id: 'tgt_1', environment_id: 'env_stg', display_name: 'staging-eu-1' }]),
-      );
-      expect1('/applications/app_1/placements').flush(
-        ok([{ application_id: 'app_1', target_id: 'tgt_1', source: 'configured' }]),
-      );
+      expect1('/workspaces/wsp_1/runs-on?limit=100&project_id=prj_1').flush(runsOn(true));
       await settle(rendered.fixture);
       return rendered;
     }
@@ -328,11 +354,7 @@ describe('project pages', () => {
       expect1('/projects/prj_1').flush(ok(payments));
       await settle(fixture);
       expect1('/teams').flush(page(teams));
-      expect1('/projects/prj_1/applications?limit=100').flush(page([application]));
-      expect1('/workspaces/wsp_1/environments').flush(page(environments));
-      await settle(fixture);
-      expect1('/environments/env_stg/targets').flush(page([]));
-      expect1('/applications/app_1/placements').flush(ok([]));
+      expect1('/workspaces/wsp_1/runs-on?limit=100&project_id=prj_1').flush(runsOn(true));
       await settle(fixture);
     }
 

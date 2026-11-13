@@ -12,6 +12,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
+	"github.com/ivaldibuild/ivaldi/pkg/release"
 )
 
 func TestNewApplicationServiceRequiresEveryDependency(t *testing.T) {
@@ -99,6 +100,14 @@ func authzCases() []authzCase {
 		}},
 		{"ListApplications in a workspace", read, delivery.ActionApplicationList, wsActive, none, func(f *full) error {
 			_, err := f.svc.ListApplications(ctx, ada, delivery.ListApplicationsQuery{OrganizationID: org, WorkspaceID: wsActive})
+			return err
+		}},
+		{"RunsOn", read, delivery.ActionApplicationRunsOn, wsActive, none, func(f *full) error {
+			_, err := f.svc.RunsOn(ctx, ada, delivery.RunsOnQuery{OrganizationID: org, WorkspaceID: wsActive})
+			return err
+		}},
+		{"RunsOn in a project", read, delivery.ActionApplicationRunsOn, "", none, func(f *full) error {
+			_, err := f.svc.RunsOn(ctx, ada, delivery.RunsOnQuery{OrganizationID: org, WorkspaceID: wsActive, ProjectID: prjActive})
 			return err
 		}},
 		{"UpdateApplication", manage, delivery.ActionApplicationUpdate, "", func(*full) any { return delivery.UpdateApplicationProps{DisplayName: ptr("API")} }, func(f *full) error {
@@ -527,6 +536,69 @@ func TestGetAndListApplications(t *testing.T) {
 	got, err = w.svc.GetApplication(ctx, ada, org, api.ID())
 	require.ErrorIs(t, err, authorization.ErrDenied)
 	assert.Nil(t, got)
+}
+
+func TestRunsOn(t *testing.T) {
+	ctx := context.Background()
+	w := newWorld(t)
+	l := w.lifecycle(t, wsActive, "l", false)
+	env := w.env(t, wsActive, "staging")
+	target := w.target(t, env, "web")
+	api, _ := w.app(t, prjActive, "api", l)
+	worker, _ := w.app(t, prjActive, "worker", l)
+	_, err := w.svc.TransferApplication(ctx, ada, org, worker.ID(), teamOther)
+	require.NoError(t, err)
+	w.placement(t, api, target, nil)
+	releaseID, deploymentID := "rel_1", "dep_1"
+	placement := w.placements[placementKey(api.ID(), target.ID())]
+	placement.CurrentReleaseID = &releaseID
+	placement.CurrentDeploymentID = &deploymentID
+	w.placements[placementKey(api.ID(), target.ID())] = placement
+	w.releaseVersions[releaseID] = "1.4.0"
+	w.deploymentStatuses[deploymentID] = release.DeploymentHealthy
+
+	page, err := w.svc.RunsOn(ctx, ada, delivery.RunsOnQuery{OrganizationID: org, WorkspaceID: wsActive})
+	require.NoError(t, err)
+	require.Len(t, page.Environments, 1)
+	assert.Equal(t, env.ID(), page.Environments[0].ID())
+	require.Len(t, page.Applications.Items, 2)
+
+	rows := map[string]*delivery.ApplicationRunsOn{}
+	for _, row := range page.Applications.Items {
+		rows[row.Application.ID()] = row
+	}
+	apiRow := rows[api.ID()]
+	require.NotNil(t, apiRow)
+	assert.Equal(t, "checkout", apiRow.ProjectName)
+	assert.Equal(t, teamOwner, apiRow.ProjectOwnerTeamID)
+	assert.Equal(t, "Checkout", apiRow.ProjectOwnerTeamName)
+	assert.Equal(t, "Checkout", apiRow.OwnerTeamName)
+	require.Len(t, apiRow.Targets, 1)
+	assert.Equal(t, target.ID(), apiRow.Targets[0].TargetID)
+	assert.Equal(t, "web", apiRow.Targets[0].TargetName)
+	assert.Equal(t, env.ID(), apiRow.Targets[0].EnvironmentID)
+	assert.Equal(t, "staging", apiRow.Targets[0].EnvironmentName)
+	assert.Equal(t, "1.4.0", *apiRow.Targets[0].ReleaseVersion)
+	assert.Equal(t, release.DeploymentHealthy, *apiRow.Targets[0].DeploymentStatus)
+
+	workerRow := rows[worker.ID()]
+	require.NotNil(t, workerRow)
+	assert.Equal(t, "Data", workerRow.OwnerTeamName)
+	assert.Empty(t, workerRow.Targets, "an unplaced Application still has a row")
+
+	gone, _ := w.app(t, prjActive, "gone", l)
+	w.archiveApp(t, gone)
+	w.reset()
+	page, err = w.svc.RunsOn(ctx, ada, delivery.RunsOnQuery{OrganizationID: org, WorkspaceID: wsActive})
+	require.NoError(t, err)
+	assert.Len(t, page.Applications.Items, 2, "archived Applications are left out by default")
+
+	page, err = w.svc.RunsOn(ctx, ada, delivery.RunsOnQuery{OrganizationID: org, WorkspaceID: wsActive, ProjectID: prjActive})
+	require.NoError(t, err)
+	assert.Len(t, page.Applications.Items, 2, "a project keeps its own Applications")
+	page, err = w.svc.RunsOn(ctx, ada, delivery.RunsOnQuery{OrganizationID: org, WorkspaceID: wsActive, ProjectID: prjOther})
+	require.NoError(t, err)
+	assert.Empty(t, page.Applications.Items, "another project's Applications are left out")
 }
 
 func TestChangeApplication(t *testing.T) {

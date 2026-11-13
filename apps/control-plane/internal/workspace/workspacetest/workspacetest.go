@@ -223,6 +223,18 @@ func (s *Store) GetProject(_ context.Context, organizationID, projectID string) 
 	return RebuildProject(d), nil
 }
 
+func (s *Store) GetProjects(_ context.Context, organizationID string, projectIDs []string) ([]*workspace.Project, error) {
+	out := make([]*workspace.Project, 0, len(projectIDs))
+	for _, id := range projectIDs {
+		d, ok := s.Projects[id]
+		if !ok || d.OrganizationID != organizationID {
+			continue
+		}
+		out = append(out, RebuildProject(d))
+	}
+	return out, nil
+}
+
 // ListProjects filters as the PostgreSQL repository does and returns every
 // match on one page, sorted by slug; it does not page.
 func (s *Store) ListProjects(_ context.Context, q workspace.ListProjectsQuery) (*pagination.Result[*workspace.Project], error) {
@@ -361,6 +373,16 @@ func (s *Store) IsActiveTeam(_ context.Context, organizationID, teamID string) (
 
 func (s *Store) ListTeamsForMembers(context.Context, string, []string) (map[string][]team.Membership, error) {
 	return map[string][]team.Membership{}, nil
+}
+
+func (s *Store) LookupTeams(_ context.Context, organizationID string, teamIDs []string) (map[string]team.TeamName, error) {
+	out := map[string]team.TeamName{}
+	for _, id := range teamIDs {
+		if s.Teams[organizationID+"/"+id] {
+			out[id] = team.TeamName{ID: id}
+		}
+	}
+	return out, nil
 }
 
 // Recorders.

@@ -145,6 +145,16 @@ func (s *store) GetTeamBySlug(_ context.Context, organizationID, slug string) (*
 	return nil, team.ErrNotFound
 }
 
+func (s *store) GetTeamNames(_ context.Context, organizationID string, teamIDs []string) ([]team.TeamName, error) {
+	var out []team.TeamName
+	for _, id := range teamIDs {
+		if snap, ok := s.teams[id]; ok && snap.OrganizationID == organizationID {
+			out = append(out, team.TeamName{ID: snap.ID, Slug: snap.Slug, DisplayName: snap.DisplayName})
+		}
+	}
+	return out, nil
+}
+
 func (s *store) ListTeams(_ context.Context, q team.ListTeamsQuery) (*pagination.Result[*team.Team], error) {
 	out := &pagination.Result[*team.Team]{}
 	for _, snap := range s.teams {

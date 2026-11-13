@@ -111,6 +111,14 @@ func (d directory) ListTeamsForMembers(_ context.Context, _ string, principalIDs
 	return out, nil
 }
 
+func (d directory) LookupTeams(_ context.Context, _ string, teamIDs []string) (map[string]team.TeamName, error) {
+	out := make(map[string]team.TeamName, len(teamIDs))
+	for _, id := range teamIDs {
+		out[id] = team.TeamName{ID: id}
+	}
+	return out, nil
+}
+
 type teams struct{ *store }
 
 func (t teams) CreateAgent(_ context.Context, _ identity.Actor, in team.CreateAgentInput) (*team.CreatedAgent, error) {

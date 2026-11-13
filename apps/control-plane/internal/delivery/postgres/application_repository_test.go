@@ -740,6 +740,50 @@ func TestPlacementRepository(t *testing.T) {
 	})
 }
 
+func TestApplicationRepositoryListRunsOn(t *testing.T) {
+	f := newFixture(t)
+	ctx := f.ctx
+	env := f.createEnv(t, orgA, wsA, "runs-staging")
+	target := f.createTarget(t, orgA, env.ID(), "runs-web")
+	archivedTarget := f.createTarget(t, orgA, env.ID(), "runs-old")
+	archivedTarget.Archive()
+	require.NoError(t, f.targets.UpdateTarget(ctx, archivedTarget))
+	app := f.createApp(t, orgA, wsA, projA, "runs-api")
+	other := f.createApp(t, orgA, wsA, projA, "runs-worker")
+
+	placement := newPlacement(orgA, app.ID(), target.ID(), nil)
+	require.NoError(t, f.apps.CreatePlacement(ctx, placement))
+	require.NoError(t, f.apps.CreatePlacement(ctx, newPlacement(orgA, app.ID(), archivedTarget.ID(), nil)))
+
+	lfc := f.createLifecycle(t, orgA, wsA, "runs-mainline")
+	ch := f.createChannel(t, orgA, app.ID(), lfc.ID(), "default", true)
+	releaseID, deploymentID := "rel_"+id.ULID(), "dep_"+id.ULID()
+	require.NoError(t, f.db.Exec(`INSERT INTO delivery.releases (id, organization_id, application_id, channel_id, version, status, source)
+		VALUES (?, ?, ?, ?, '2.0.0', 'published', 'manual')`, releaseID, orgA, app.ID(), ch.ID()).Error)
+	require.NoError(t, f.db.Exec(`INSERT INTO delivery.deployments (id, organization_id, application_id, release_id, environment_id, target_id, source, reason, status)
+		VALUES (?, ?, ?, ?, ?, ?, 'executed', 'rollout', 'healthy')`, deploymentID, orgA, app.ID(), releaseID, env.ID(), target.ID()).Error)
+	require.NoError(t, f.db.Exec(`UPDATE delivery.application_targets SET current_release_id = ?, current_deployment_id = ? WHERE application_id = ? AND target_id = ?`,
+		releaseID, deploymentID, app.ID(), target.ID()).Error)
+
+	got, err := f.apps.ListRunsOn(ctx, orgA, []string{app.ID(), other.ID()})
+	require.NoError(t, err)
+	require.Len(t, got, 1, "only active Targets are returned")
+	row := got[0]
+	assert.Equal(t, app.ID(), row.ApplicationID)
+	assert.Equal(t, target.ID(), row.TargetID)
+	assert.Equal(t, "Target runs-web", row.TargetName)
+	assert.Equal(t, env.ID(), row.EnvironmentID)
+	assert.Equal(t, "Env runs-staging", row.EnvironmentName)
+	assert.Equal(t, releaseID, *row.ReleaseID)
+	assert.Equal(t, "2.0.0", *row.ReleaseVersion)
+	assert.Equal(t, deploymentID, *row.DeploymentID)
+	assert.Equal(t, release.DeploymentHealthy, *row.DeploymentStatus)
+
+	got, err = f.apps.ListRunsOn(ctx, orgB, []string{app.ID()})
+	require.NoError(t, err)
+	assert.Empty(t, got, "another organization sees nothing")
+}
+
 func TestChannelRuleUpsertStaysInItsChannel(t *testing.T) {
 
 	f := newFixture(t)

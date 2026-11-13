@@ -109,6 +109,24 @@ func TestTeamRepository(t *testing.T) {
 		assert.Equal(t, team.RoleLead, got[agent][1].Role)
 	})
 
+	t.Run("gets names without reading members", func(t *testing.T) {
+		one := f.createTeam(t, orgA, "names-one", member(alice, team.RoleLead))
+		two := f.createTeam(t, orgA, "names-two")
+		names, err := f.teams.GetTeamNames(ctx, orgA, []string{one.ID(), two.ID(), "tem_missing"})
+		require.NoError(t, err)
+		byID := map[string]team.TeamName{}
+		for _, name := range names {
+			byID[name.ID] = name
+		}
+		assert.Equal(t, "names-one", byID[one.ID()].Slug)
+		assert.Equal(t, "Team names-two", byID[two.ID()].DisplayName)
+		assert.NotContains(t, byID, "tem_missing")
+
+		names, err = f.teams.GetTeamNames(ctx, orgB, []string{one.ID()})
+		require.NoError(t, err)
+		assert.Empty(t, names, "another organization sees nothing")
+	})
+
 	t.Run("update missing", func(t *testing.T) {
 		assert.ErrorIs(t, f.teams.UpdateTeam(ctx, newTeam(orgA, "never-stored", member(carol, team.RoleLead))), team.ErrNotFound)
 		assert.Zero(t, f.count(t, "SELECT count(*) FROM team.team_members WHERE principal_id = ?", carol))

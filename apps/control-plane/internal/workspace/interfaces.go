@@ -36,6 +36,9 @@ type Repository interface {
 
 	CreateProject(ctx context.Context, p *Project) error
 	GetProject(ctx context.Context, organizationID, projectID string) (*Project, error)
+	// GetProjects returns the Projects with the IDs, in no particular order,
+	// leaving out IDs that match none. Archived Projects are included.
+	GetProjects(ctx context.Context, organizationID string, projectIDs []string) ([]*Project, error)
 	// ListProjects pages a Workspace's Projects. An invalid sort or cursor
 	// fails with ErrInvalid.
 	ListProjects(ctx context.Context, query ListProjectsQuery) (*pagination.Result[*Project], error)

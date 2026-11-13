@@ -34,6 +34,12 @@ export type LifecyclePhase = Schemas['LifecyclePhaseSnapshot'];
 export type Lifecycle = Schemas['LifecycleSnapshot'];
 
 export type Application = Schemas['ApplicationSnapshot'];
+/** Where a Workspace's Applications run, from `GET /v1/workspaces/{id}/runs-on`. */
+export type WorkspaceRunsOn = Schemas['WorkspaceRunsOn'];
+export type RunsOnApplication = Schemas['RunsOnApplication'];
+export type RunsOnProject = Schemas['RunsOnProject'];
+export type RunsOnTeam = Schemas['RunsOnTeam'];
+export type RunsOnTarget = Schemas['RunsOnTarget'];
 export type Artifact = Schemas['ArtifactSnapshot'];
 export type ArtifactKind = Artifact['artifact_kind'];
 export type ChannelRule = Schemas['ChannelRuleSnapshot'];

@@ -211,6 +211,42 @@ describe('delivery pages', () => {
     expect(row?.textContent?.trim()).toBe('payments-api');
   });
 
+  it('follows every page of where the Applications run', async () => {
+    const { fixture, el } = render(ApplicationsPage);
+    await settle(fixture);
+    const item = (id: string, name: string) => ({
+      application: { ...application, id, display_name: name, slug: name },
+      project: {
+        id: 'prj_1',
+        display_name: 'Payments',
+        owner_team: { id: 'team_1', display_name: 'Payments' },
+      },
+      owner_team: { id: 'team_1', display_name: 'Payments' },
+      targets: [],
+    });
+    const runsOnPage = (items: unknown[], next_cursor: string | null) =>
+      ok({
+        items,
+        environments,
+        total_count: 2,
+        has_next: !!next_cursor,
+        has_previous: false,
+        next_cursor,
+        previous_cursor: null,
+      });
+    http
+      .expectOne(`${v1}/workspaces/wsp_1/runs-on?limit=100`)
+      .flush(runsOnPage([item('app_1', 'payments-api')], 'c2'));
+    await settle(fixture);
+    http
+      .expectOne(`${v1}/workspaces/wsp_1/runs-on?limit=100&next_cursor=c2`)
+      .flush(runsOnPage([item('app_2', 'payments-worker')], null));
+    await settle(fixture);
+
+    const rows = [...el.querySelectorAll('th[scope="row"]')].map((th) => th.textContent?.trim());
+    expect(rows).toEqual(['payments-api', 'payments-worker']);
+  });
+
   it('starts from the Project it was opened from', async () => {
     const other = { ...project, id: 'prj_2', owner_team_id: 'team_2', display_name: 'Core' };
     const { fixture, el } = render(NewApplicationPage, { project: 'prj_2' });

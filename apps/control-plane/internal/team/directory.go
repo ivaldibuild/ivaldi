@@ -16,12 +16,11 @@ type Membership struct {
 	ArchivedAt  *time.Time `json:"archived_at"`
 }
 
-// TeamName identifies a Team by its ID, slug, and display name, for
+// TeamName identifies a Team by its ID and display name, for
 // capabilities that label their records with the Team without reading its
 // members.
 type TeamName struct {
 	ID          string
-	Slug        string
 	DisplayName string
 }
 

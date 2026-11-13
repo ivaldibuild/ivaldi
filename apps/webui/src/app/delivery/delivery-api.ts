@@ -70,18 +70,30 @@ export class DeliveryApi {
   }
 
   /**
-   * Where the Workspace's Applications run, page by Application: their Project and owning Team,
-   * and the Targets each is placed on by Environment with the version and status current there.
+   * Where the Workspace's Applications run: their Project and owning Team, and the Targets each is
+   * placed on by Environment with the version and status current there. It follows every page, so
+   * the result holds all the Applications; the Environments are the last page's.
    */
-  runsOn(
+  async runsOn(
     workspaceId: string,
-    options: { projectId?: string; limit?: number } = {},
+    options: { projectId?: string } = {},
   ): Promise<WorkspaceRunsOn> {
-    const query = new URLSearchParams({ limit: String(options.limit ?? 100) });
-    if (options.projectId) {
-      query.set('project_id', options.projectId);
-    }
-    return this.api.get(`/workspaces/${workspaceId}/runs-on?${query}`);
+    const items: WorkspaceRunsOn['items'] = [];
+    let cursor: string | null = null;
+    let page: WorkspaceRunsOn;
+    do {
+      const query = new URLSearchParams({ limit: '100' });
+      if (options.projectId) {
+        query.set('project_id', options.projectId);
+      }
+      if (cursor) {
+        query.set('next_cursor', cursor);
+      }
+      page = await this.api.get<WorkspaceRunsOn>(`/workspaces/${workspaceId}/runs-on?${query}`);
+      items.push(...page.items);
+      cursor = page.has_next ? page.next_cursor : null;
+    } while (cursor);
+    return { ...page, items, total_count: items.length, has_next: false, next_cursor: null };
   }
 
   application(id: string): Promise<Application> {

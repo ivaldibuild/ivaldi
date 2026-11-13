@@ -118,7 +118,7 @@ func TestTeamRepository(t *testing.T) {
 		for _, name := range names {
 			byID[name.ID] = name
 		}
-		assert.Equal(t, "names-one", byID[one.ID()].Slug)
+		assert.Equal(t, "Team names-one", byID[one.ID()].DisplayName)
 		assert.Equal(t, "Team names-two", byID[two.ID()].DisplayName)
 		assert.NotContains(t, byID, "tem_missing")
 

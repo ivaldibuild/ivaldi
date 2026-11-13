@@ -596,9 +596,16 @@ func TestRunsOn(t *testing.T) {
 	page, err = w.svc.RunsOn(ctx, ada, delivery.RunsOnQuery{OrganizationID: org, WorkspaceID: wsActive, ProjectID: prjActive})
 	require.NoError(t, err)
 	assert.Len(t, page.Applications.Items, 2, "a project keeps its own Applications")
-	page, err = w.svc.RunsOn(ctx, ada, delivery.RunsOnQuery{OrganizationID: org, WorkspaceID: wsActive, ProjectID: prjOther})
+	page, err = w.svc.RunsOn(ctx, ada, delivery.RunsOnQuery{OrganizationID: org, WorkspaceID: wsOther, ProjectID: prjOther})
 	require.NoError(t, err)
 	assert.Empty(t, page.Applications.Items, "another project's Applications are left out")
+
+	_, err = w.svc.RunsOn(ctx, ada, delivery.RunsOnQuery{OrganizationID: org, WorkspaceID: wsActive, ProjectID: prjOther})
+	require.ErrorIs(t, err, delivery.ErrNotFound, "a project in another workspace does not unlock this one")
+	_, err = w.svc.RunsOn(ctx, ada, delivery.RunsOnQuery{OrganizationID: org, WorkspaceID: wsActive, ProjectID: "prj_01JZ0000000000000000000099"})
+	require.ErrorIs(t, err, delivery.ErrNotFound)
+	_, err = w.svc.RunsOn(ctx, ada, delivery.RunsOnQuery{OrganizationID: org, WorkspaceID: "wsp_01JZ0000000000000000000099"})
+	require.ErrorIs(t, err, delivery.ErrNotFound)
 }
 
 func TestChangeApplication(t *testing.T) {

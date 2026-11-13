@@ -29,13 +29,8 @@ type ApplicationListResponse struct {
 // WorkspaceRunsOn is one page of a Workspace's Applications and where each
 // one runs. Environments come whole so a grid can draw every column.
 type WorkspaceRunsOn struct {
-	Items          []RunsOnApplication            `json:"items"`
-	TotalCount     int                            `json:"total_count"`
-	HasNext        bool                           `json:"has_next"`
-	HasPrevious    bool                           `json:"has_previous"`
-	NextCursor     *string                        `json:"next_cursor"`
-	PreviousCursor *string                        `json:"previous_cursor"`
-	Environments   []delivery.EnvironmentSnapshot `json:"environments"`
+	pagination.Result[RunsOnApplication]
+	Environments []delivery.EnvironmentSnapshot `json:"environments"`
 }
 
 // RunsOnApplication is one Application's row: its Project and owning Team
@@ -80,47 +75,42 @@ type WorkspaceRunsOnResponse struct {
 }
 
 func runsOnView(page *delivery.RunsOnPage) WorkspaceRunsOn {
-	out := WorkspaceRunsOn{
-		Items:          make([]RunsOnApplication, 0, len(page.Applications.Items)),
-		TotalCount:     page.Applications.TotalCount,
-		HasNext:        page.Applications.HasNext,
-		HasPrevious:    page.Applications.HasPrevious,
-		NextCursor:     page.Applications.NextCursor,
-		PreviousCursor: page.Applications.PreviousCursor,
-		Environments:   snapshotAll(page.Environments, (*delivery.Environment).Snapshot),
+	return WorkspaceRunsOn{
+		Result:       snapshots(page.Applications, runsOnApplicationView),
+		Environments: snapshotAll(page.Environments, (*delivery.Environment).Snapshot),
 	}
-	for _, row := range page.Applications.Items {
-		app := RunsOnApplication{
-			Application: row.Application.Snapshot(),
-			Project: RunsOnProject{
-				ID:          row.Application.ProjectID(),
-				DisplayName: row.ProjectName,
-				OwnerTeam: RunsOnTeam{
-					ID:          row.ProjectOwnerTeamID,
-					DisplayName: row.ProjectOwnerTeamName,
-				},
-			},
+}
+
+func runsOnApplicationView(row *delivery.ApplicationRunsOn) RunsOnApplication {
+	app := RunsOnApplication{
+		Application: row.Application.Snapshot(),
+		Project: RunsOnProject{
+			ID:          row.Application.ProjectID(),
+			DisplayName: row.ProjectName,
 			OwnerTeam: RunsOnTeam{
-				ID:          row.Application.OwnerTeamID(),
-				DisplayName: row.OwnerTeamName,
+				ID:          row.ProjectOwnerTeamID,
+				DisplayName: row.ProjectOwnerTeamName,
 			},
-			Targets: make([]RunsOnTarget, 0, len(row.Targets)),
-		}
-		for _, target := range row.Targets {
-			app.Targets = append(app.Targets, RunsOnTarget{
-				TargetID:               target.TargetID,
-				TargetDisplayName:      target.TargetName,
-				EnvironmentID:          target.EnvironmentID,
-				EnvironmentDisplayName: target.EnvironmentName,
-				ReleaseID:              target.ReleaseID,
-				ReleaseVersion:         target.ReleaseVersion,
-				DeploymentID:           target.DeploymentID,
-				DeploymentStatus:       target.DeploymentStatus,
-			})
-		}
-		out.Items = append(out.Items, app)
+		},
+		OwnerTeam: RunsOnTeam{
+			ID:          row.Application.OwnerTeamID(),
+			DisplayName: row.OwnerTeamName,
+		},
+		Targets: make([]RunsOnTarget, 0, len(row.Targets)),
 	}
-	return out
+	for _, target := range row.Targets {
+		app.Targets = append(app.Targets, RunsOnTarget{
+			TargetID:               target.TargetID,
+			TargetDisplayName:      target.TargetName,
+			EnvironmentID:          target.EnvironmentID,
+			EnvironmentDisplayName: target.EnvironmentName,
+			ReleaseID:              target.ReleaseID,
+			ReleaseVersion:         target.ReleaseVersion,
+			DeploymentID:           target.DeploymentID,
+			DeploymentStatus:       target.DeploymentStatus,
+		})
+	}
+	return app
 }
 
 type ArtifactResponse struct {

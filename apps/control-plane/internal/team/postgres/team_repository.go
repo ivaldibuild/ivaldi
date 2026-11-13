@@ -62,7 +62,7 @@ func (r *teamRepository) GetTeamNames(ctx context.Context, organizationID string
 	}
 	var entities []teamEntity
 	err := r.conn(ctx).
-		Select("id, slug, display_name").
+		Select("id, display_name").
 		Where("organization_id = ? AND id IN ?", organizationID, teamIDs).
 		Find(&entities).Error
 	if err != nil {
@@ -70,7 +70,7 @@ func (r *teamRepository) GetTeamNames(ctx context.Context, organizationID string
 	}
 	names := make([]team.TeamName, 0, len(entities))
 	for _, e := range entities {
-		names = append(names, team.TeamName{ID: e.ID, Slug: e.Slug, DisplayName: e.DisplayName})
+		names = append(names, team.TeamName{ID: e.ID, DisplayName: e.DisplayName})
 	}
 	return names, nil
 }

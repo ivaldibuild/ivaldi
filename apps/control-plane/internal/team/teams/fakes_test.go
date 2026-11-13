@@ -149,7 +149,7 @@ func (s *store) GetTeamNames(_ context.Context, organizationID string, teamIDs [
 	var out []team.TeamName
 	for _, id := range teamIDs {
 		if snap, ok := s.teams[id]; ok && snap.OrganizationID == organizationID {
-			out = append(out, team.TeamName{ID: snap.ID, Slug: snap.Slug, DisplayName: snap.DisplayName})
+			out = append(out, team.TeamName{ID: snap.ID, DisplayName: snap.DisplayName})
 		}
 	}
 	return out, nil

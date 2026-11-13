@@ -7497,13 +7497,13 @@
           }
         },
         "required": [
+          "environments",
           "items",
           "total_count",
           "has_next",
           "has_previous",
           "next_cursor",
-          "previous_cursor",
-          "environments"
+          "previous_cursor"
         ],
         "type": "object"
       },

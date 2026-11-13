@@ -307,7 +307,6 @@ describe('project pages', () => {
       await settle(rendered.fixture);
       expect1('/projects/prj_1').flush(ok({ ...project, id: 'prj_1' }));
       await settle(rendered.fixture);
-      expect1('/teams').flush(page(teams));
       expect1('/workspaces/wsp_1/runs-on?limit=100&project_id=prj_1').flush(runsOn(true));
       await settle(rendered.fixture);
       return rendered;
@@ -326,6 +325,28 @@ describe('project pages', () => {
         a.textContent?.includes('Edit project'),
       );
       expect(edit?.getAttribute('href')).toBe('/projects/prj_1/edit');
+    });
+
+    it('names the owning Team when the Project has no Applications', async () => {
+      const { fixture, el } = render(ProjectPage, { id: 'prj_1' });
+      await settle(fixture);
+      expect1('/projects/prj_1').flush(ok(payments));
+      await settle(fixture);
+      expect1('/workspaces/wsp_1/runs-on?limit=100&project_id=prj_1').flush(
+        ok({
+          items: [],
+          environments,
+          total_count: 0,
+          has_next: false,
+          has_previous: false,
+          next_cursor: null,
+          previous_cursor: null,
+        }),
+      );
+      await settle(fixture);
+      expect1('/teams/team_1').flush(ok(teams[0]));
+      await settle(fixture);
+      expect(el.textContent).toContain('Owned by Payments');
     });
 
     it('opens a new Application in this Project', async () => {
@@ -353,7 +374,6 @@ describe('project pages', () => {
       await settle(fixture);
       expect1('/projects/prj_1').flush(ok(payments));
       await settle(fixture);
-      expect1('/teams').flush(page(teams));
       expect1('/workspaces/wsp_1/runs-on?limit=100&project_id=prj_1').flush(runsOn(true));
       await settle(fixture);
     }

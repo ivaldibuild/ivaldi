@@ -375,11 +375,15 @@ func (s *Store) ListTeamsForMembers(context.Context, string, []string) (map[stri
 	return map[string][]team.Membership{}, nil
 }
 
+// TeamDisplayName is the display name LookupTeams gives the Team with the
+// ID, distinct for each Team so tests can tell which one labelled a record.
+func TeamDisplayName(id string) string { return "Team " + id }
+
 func (s *Store) LookupTeams(_ context.Context, organizationID string, teamIDs []string) (map[string]team.TeamName, error) {
 	out := map[string]team.TeamName{}
 	for _, id := range teamIDs {
 		if s.Teams[organizationID+"/"+id] {
-			out[id] = team.TeamName{ID: id}
+			out[id] = team.TeamName{ID: id, DisplayName: TeamDisplayName(id)}
 		}
 	}
 	return out, nil

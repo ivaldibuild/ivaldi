@@ -91,6 +91,29 @@ func (r *environmentRepository) ListEnvironments(ctx context.Context, query deli
 	return database.ToResult(p, r.mapper.ToDomain)
 }
 
+// ListActiveEnvironments returns every active Environment in the Workspace,
+// in creation order. Environments are few, so a grid can draw all of its
+// columns from one read.
+func (r *environmentRepository) ListActiveEnvironments(ctx context.Context, organizationID, workspaceID string) ([]*delivery.Environment, error) {
+	var entities []environmentEntity
+	err := r.conn(ctx).
+		Where("organization_id = ? AND workspace_id = ? AND deleted_at IS NULL", organizationID, workspaceID).
+		Order("created_at, id").
+		Find(&entities).Error
+	if err != nil {
+		return nil, translate(err)
+	}
+	environments := make([]*delivery.Environment, 0, len(entities))
+	for i := range entities {
+		env, err := r.mapper.ToDomain(&entities[i])
+		if err != nil {
+			return nil, err
+		}
+		environments = append(environments, env)
+	}
+	return environments, nil
+}
+
 func (r *environmentRepository) UpdateEnvironment(ctx context.Context, env *delivery.Environment) error {
 	e := r.mapper.ToPersistence(env)
 	return updated(r.conn(ctx).Model(&environmentEntity{}).

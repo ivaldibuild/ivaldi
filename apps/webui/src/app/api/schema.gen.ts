@@ -2139,6 +2139,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/workspaces/{workspace_id}/runs-on': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Read where each of a Workspace's Applications runs */
+    get: operations['list-workspace-runs-on'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/workspaces/{workspace_id}/sources': {
     parameters: {
       query?: never;
@@ -4433,6 +4450,20 @@ export interface components {
       /** @description Request status */
       status: string;
     };
+    ResponseWorkspaceRunsOn: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseWorkspaceRunsOn.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['WorkspaceRunsOn'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
     ResponseWorkspaceSnapshot: {
       /**
        * Format: uri
@@ -4593,6 +4624,43 @@ export interface components {
        * @enum {string}
        */
       kind: 'version' | 'git_ref';
+    };
+    RunsOnApplication: {
+      application: components['schemas']['ApplicationSnapshot'];
+      owner_team: components['schemas']['RunsOnTeam'];
+      project: components['schemas']['RunsOnProject'];
+      targets: components['schemas']['RunsOnTarget'][];
+    };
+    RunsOnProject: {
+      display_name: string;
+      id: string;
+      owner_team: components['schemas']['RunsOnTeam'];
+    };
+    RunsOnTarget: {
+      deployment_id: string | null;
+      /** @enum {string|null} */
+      deployment_status:
+        | 'pending'
+        | 'awaiting_approval'
+        | 'rejected'
+        | 'cancelled'
+        | 'applying'
+        | 'progressing'
+        | 'healthy'
+        | 'degraded'
+        | 'failed'
+        | 'superseded'
+        | null;
+      environment_display_name: string;
+      environment_id: string;
+      release_id: string | null;
+      release_version: string | null;
+      target_display_name: string;
+      target_id: string;
+    };
+    RunsOnTeam: {
+      display_name: string;
+      id: string;
     };
     Scope: {
       organization_id: string;
@@ -4980,6 +5048,16 @@ export interface components {
       display_name?: string;
       /** @description New slug */
       slug?: string;
+    };
+    WorkspaceRunsOn: {
+      environments: components['schemas']['EnvironmentSnapshot'][];
+      has_next: boolean;
+      has_previous: boolean;
+      items: components['schemas']['RunsOnApplication'][];
+      next_cursor: string | null;
+      previous_cursor: string | null;
+      /** Format: int64 */
+      total_count: number;
     };
     WorkspaceSnapshot: {
       /** Format: date-time */
@@ -10525,6 +10603,55 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ResponseWorkspaceSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'list-workspace-runs-on': {
+    parameters: {
+      query?: {
+        /** @description Only this Project's Applications */
+        project_id?: string;
+        /** @description Only the Applications this Team owns */
+        owner_team_id?: string;
+        /** @description Include archived Applications */
+        include_archived?: boolean;
+        /** @description Most items to return */
+        limit?: number;
+        /** @description Field to sort by */
+        sort_by?: string;
+        /** @description Sort direction */
+        sort_order?: 'asc' | 'desc';
+        /** @description Cursor from a previous page's next_cursor */
+        next_cursor?: string;
+        /** @description Cursor from a previous page's previous_cursor */
+        previous_cursor?: string;
+      };
+      header?: never;
+      path: {
+        /** @description The Workspace to read where its Applications run */
+        workspace_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseWorkspaceRunsOn'];
         };
       };
       /** @description Error */

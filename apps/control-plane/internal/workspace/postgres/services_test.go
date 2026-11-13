@@ -71,6 +71,14 @@ func (teams) ListTeamsForMembers(context.Context, string, []string) (map[string]
 	return map[string][]teamapi.Membership{}, nil
 }
 
+func (teams) LookupTeams(_ context.Context, _ string, teamIDs []string) (map[string]teamapi.TeamName, error) {
+	out := make(map[string]teamapi.TeamName, len(teamIDs))
+	for _, id := range teamIDs {
+		out[id] = teamapi.TeamName{ID: id}
+	}
+	return out, nil
+}
+
 // stack is the workspace capability wired to PostgreSQL, as the control
 // plane wires it, with the outbox and audit log in the same database.
 type stack struct {
@@ -243,4 +251,38 @@ func TestListProjectsAgainstPostgreSQL(t *testing.T) {
 
 	_, err = s.projects.ListProjects(ctx, alice, workspace.ListProjectsQuery{OrganizationID: org, WorkspaceID: ws.ID(), Page: pagination.Query{SortBy: "owner"}})
 	assert.ErrorIs(t, err, workspace.ErrInvalid)
+}
+
+func TestGetProjectsAgainstPostgreSQL(t *testing.T) {
+	ctx := context.Background()
+	s := newStack(t)
+	require.NoError(t, s.provisioner.ProvisionOrganization(ctx, org))
+	ws, err := s.repo.GetDefaultWorkspace(ctx, org)
+	require.NoError(t, err)
+	create := func(slug string) *workspace.Project {
+		t.Helper()
+		p, err := s.projects.CreateProject(ctx, alice, workspace.CreateProjectInput{
+			OrganizationID: org, WorkspaceID: ws.ID(), OwnerTeamID: team, Slug: slug, DisplayName: slug,
+		})
+		require.NoError(t, err)
+		return p
+	}
+	one := create("get-projects-one")
+	two := create("get-projects-two")
+	_, err = s.projects.ArchiveProject(ctx, alice, org, two.ID())
+	require.NoError(t, err)
+
+	got, err := s.repo.GetProjects(ctx, org, []string{one.ID(), two.ID(), "prj_missing"})
+	require.NoError(t, err)
+	ids := make([]string, len(got))
+	for i, p := range got {
+		ids[i] = p.ID()
+	}
+	assert.Contains(t, ids, one.ID())
+	assert.Contains(t, ids, two.ID(), "archived Projects are returned")
+	assert.NotContains(t, ids, "prj_missing")
+
+	got, err = s.repo.GetProjects(ctx, "org_other", []string{one.ID()})
+	require.NoError(t, err)
+	assert.Empty(t, got, "another Organization sees nothing")
 }

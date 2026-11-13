@@ -10,6 +10,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
 	"github.com/ivaldibuild/ivaldi/pkg/database"
 	"github.com/ivaldibuild/ivaldi/pkg/pagination"
+	"github.com/ivaldibuild/ivaldi/pkg/release"
 )
 
 type applicationRepository struct {
@@ -347,6 +348,68 @@ func (r *applicationRepository) ListPlacements(ctx context.Context, organization
 			return nil, err
 		}
 		out = append(out, p)
+	}
+	return out, nil
+}
+
+// runsOnRow is one placement joined to its Target and Environment, and to
+// the Release and Deployment that are current there.
+type runsOnRow struct {
+	ApplicationID       string  `gorm:"column:application_id"`
+	TargetID            string  `gorm:"column:target_id"`
+	TargetName          string  `gorm:"column:target_name"`
+	EnvironmentID       string  `gorm:"column:environment_id"`
+	EnvironmentName     string  `gorm:"column:environment_name"`
+	CurrentReleaseID    *string `gorm:"column:current_release_id"`
+	ReleaseVersion      *string `gorm:"column:release_version"`
+	CurrentDeploymentID *string `gorm:"column:current_deployment_id"`
+	DeploymentStatus    *string `gorm:"column:deployment_status"`
+}
+
+// ListRunsOn reads where the Applications run in one query over
+// application_targets, joining Targets, Environments, Releases, and
+// Deployments. Archived Targets and Environments are left out, so a grid
+// only shows what still runs somewhere.
+func (r *applicationRepository) ListRunsOn(ctx context.Context, organizationID string, applicationIDs []string) ([]delivery.PlacementRunsOn, error) {
+	if len(applicationIDs) == 0 {
+		return nil, nil
+	}
+	var rows []runsOnRow
+	err := r.conn(ctx).
+		Table("delivery.application_targets AS placement").
+		Select(`placement.application_id,
+			t.id AS target_id, t.display_name AS target_name,
+			e.id AS environment_id, e.display_name AS environment_name,
+			placement.current_release_id, rel.version AS release_version,
+			placement.current_deployment_id, dep.status AS deployment_status`).
+		Joins("JOIN delivery.targets t ON t.organization_id = placement.organization_id AND t.id = placement.target_id").
+		Joins("JOIN delivery.environments e ON e.organization_id = t.organization_id AND e.id = t.environment_id").
+		Joins("LEFT JOIN delivery.releases rel ON rel.organization_id = placement.organization_id AND rel.id = placement.current_release_id").
+		Joins("LEFT JOIN delivery.deployments dep ON dep.organization_id = placement.organization_id AND dep.id = placement.current_deployment_id").
+		Where("placement.organization_id = ? AND placement.application_id IN ?", organizationID, applicationIDs).
+		Where("t.deleted_at IS NULL AND e.deleted_at IS NULL").
+		Order("e.created_at, e.id, t.display_name, t.id").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, translate(err)
+	}
+	out := make([]delivery.PlacementRunsOn, 0, len(rows))
+	for _, row := range rows {
+		item := delivery.PlacementRunsOn{
+			ApplicationID:   row.ApplicationID,
+			TargetID:        row.TargetID,
+			TargetName:      row.TargetName,
+			EnvironmentID:   row.EnvironmentID,
+			EnvironmentName: row.EnvironmentName,
+			ReleaseID:       row.CurrentReleaseID,
+			ReleaseVersion:  row.ReleaseVersion,
+			DeploymentID:    row.CurrentDeploymentID,
+		}
+		if row.DeploymentStatus != nil {
+			status := release.DeploymentStatus(*row.DeploymentStatus)
+			item.DeploymentStatus = &status
+		}
+		out = append(out, item)
 	}
 	return out, nil
 }

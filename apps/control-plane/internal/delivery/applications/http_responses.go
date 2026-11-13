@@ -4,6 +4,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/api"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
 	"github.com/ivaldibuild/ivaldi/pkg/pagination"
+	"github.com/ivaldibuild/ivaldi/pkg/release"
 )
 
 // CreatedApplication is a new Application with the default Channel created
@@ -23,6 +24,93 @@ type ApplicationResponse struct {
 
 type ApplicationListResponse struct {
 	Body api.Response[pagination.Result[delivery.ApplicationSnapshot]]
+}
+
+// WorkspaceRunsOn is one page of a Workspace's Applications and where each
+// one runs. Environments come whole so a grid can draw every column.
+type WorkspaceRunsOn struct {
+	pagination.Result[RunsOnApplication]
+	Environments []delivery.EnvironmentSnapshot `json:"environments"`
+}
+
+// RunsOnApplication is one Application's row: its Project and owning Team
+// names, and the Targets it is placed on.
+type RunsOnApplication struct {
+	Application delivery.ApplicationSnapshot `json:"application"`
+	Project     RunsOnProject                `json:"project"`
+	OwnerTeam   RunsOnTeam                   `json:"owner_team"`
+	Targets     []RunsOnTarget               `json:"targets"`
+}
+
+// RunsOnProject names the Project an Application belongs to and the Team
+// that owns it.
+type RunsOnProject struct {
+	ID          string     `json:"id"`
+	DisplayName string     `json:"display_name"`
+	OwnerTeam   RunsOnTeam `json:"owner_team"`
+}
+
+// RunsOnTeam is a Team's ID and display name, without its members.
+type RunsOnTeam struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name"`
+}
+
+// RunsOnTarget is one Target an Application is placed on, with what runs
+// there now. The Release and Deployment are absent when nothing is deployed
+// yet.
+type RunsOnTarget struct {
+	TargetID               string                    `json:"target_id"`
+	TargetDisplayName      string                    `json:"target_display_name"`
+	EnvironmentID          string                    `json:"environment_id"`
+	EnvironmentDisplayName string                    `json:"environment_display_name"`
+	ReleaseID              *string                   `json:"release_id"`
+	ReleaseVersion         *string                   `json:"release_version"`
+	DeploymentID           *string                   `json:"deployment_id"`
+	DeploymentStatus       *release.DeploymentStatus `json:"deployment_status" enum:"pending,awaiting_approval,rejected,cancelled,applying,progressing,healthy,degraded,failed,superseded"`
+}
+
+type WorkspaceRunsOnResponse struct {
+	Body api.Response[WorkspaceRunsOn]
+}
+
+func runsOnView(page *delivery.RunsOnPage) WorkspaceRunsOn {
+	return WorkspaceRunsOn{
+		Result:       snapshots(page.Applications, runsOnApplicationView),
+		Environments: snapshotAll(page.Environments, (*delivery.Environment).Snapshot),
+	}
+}
+
+func runsOnApplicationView(row *delivery.ApplicationRunsOn) RunsOnApplication {
+	app := RunsOnApplication{
+		Application: row.Application.Snapshot(),
+		Project: RunsOnProject{
+			ID:          row.Application.ProjectID(),
+			DisplayName: row.ProjectName,
+			OwnerTeam: RunsOnTeam{
+				ID:          row.ProjectOwnerTeamID,
+				DisplayName: row.ProjectOwnerTeamName,
+			},
+		},
+		OwnerTeam: RunsOnTeam{
+			ID:          row.Application.OwnerTeamID(),
+			DisplayName: row.OwnerTeamName,
+		},
+		Targets: make([]RunsOnTarget, 0, len(row.Targets)),
+	}
+	for _, target := range row.Targets {
+		app.Targets = append(app.Targets, RunsOnTarget{
+			TargetID:               target.TargetID,
+			TargetDisplayName:      target.TargetName,
+			EnvironmentID:          target.EnvironmentID,
+			EnvironmentDisplayName: target.EnvironmentName,
+			ReleaseID:              target.ReleaseID,
+			ReleaseVersion:         target.ReleaseVersion,
+			DeploymentID:           target.DeploymentID,
+			DeploymentStatus:       target.DeploymentStatus,
+		})
+	}
+	return app
 }
 
 type ArtifactResponse struct {

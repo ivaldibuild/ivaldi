@@ -17,6 +17,7 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
 	"github.com/ivaldibuild/ivaldi/pkg/logging"
+	"github.com/ivaldibuild/ivaldi/pkg/release"
 )
 
 // verifier accepts the token "ada", for Ada in the test Organization.
@@ -66,6 +67,7 @@ func TestEveryOperationNeedsAToken(t *testing.T) {
 		{http.MethodPost, "/projects/" + prjActive + "/applications"},
 		{http.MethodGet, "/projects/" + prjActive + "/applications"},
 		{http.MethodGet, "/workspaces/" + wsActive + "/applications"},
+		{http.MethodGet, "/workspaces/" + wsActive + "/runs-on"},
 		{http.MethodGet, "/applications/app_x"},
 		{http.MethodPatch, "/applications/app_x"},
 		{http.MethodPut, "/applications/app_x/source"},
@@ -242,6 +244,44 @@ func TestApplicationsOverHTTP(t *testing.T) {
 	for _, req := range h.authz.asked {
 		assert.Equal(t, ada, req.Actor)
 	}
+}
+
+func TestRunsOnOverHTTP(t *testing.T) {
+	h := newHTTPWorld(t)
+	l := h.lifecycle(t, wsActive, "mainline", false)
+	env := h.env(t, wsActive, "staging")
+	target := h.target(t, env, "web")
+	app, _ := h.app(t, prjActive, "api", l)
+	h.placement(t, app, target, nil)
+	releaseID, deploymentID := "rel_1", "dep_1"
+	placement := h.placements[placementKey(app.ID(), target.ID())]
+	placement.CurrentReleaseID = &releaseID
+	placement.CurrentDeploymentID = &deploymentID
+	h.placements[placementKey(app.ID(), target.ID())] = placement
+	h.releaseVersions[releaseID] = "1.4.0"
+	h.deploymentStatuses[deploymentID] = release.DeploymentHealthy
+
+	rec, out := h.call(t, http.MethodGet, "/workspaces/"+wsActive+"/runs-on", "ada", "")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	payload := data(out)
+	environments := payload["environments"].([]any)
+	require.Len(t, environments, 1)
+	assert.Equal(t, env.ID(), environments[0].(map[string]any)["id"])
+	items := payload["items"].([]any)
+	require.Len(t, items, 1)
+	row := items[0].(map[string]any)
+	assert.Equal(t, app.ID(), row["application"].(map[string]any)["id"])
+	project := row["project"].(map[string]any)
+	assert.Equal(t, "checkout", project["display_name"])
+	assert.Equal(t, "Checkout", project["owner_team"].(map[string]any)["display_name"])
+	targets := row["targets"].([]any)
+	require.Len(t, targets, 1)
+	placed := targets[0].(map[string]any)
+	assert.Equal(t, target.ID(), placed["target_id"])
+	assert.Equal(t, "web", placed["target_display_name"])
+	assert.Equal(t, env.ID(), placed["environment_id"])
+	assert.Equal(t, "1.4.0", placed["release_version"])
+	assert.Equal(t, "healthy", placed["deployment_status"])
 }
 
 func TestHTTPErrors(t *testing.T) {

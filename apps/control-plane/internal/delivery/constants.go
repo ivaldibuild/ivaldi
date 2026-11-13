@@ -86,6 +86,7 @@ const (
 	ActionApplicationList       = "application.list"
 	ActionApplicationRead       = "application.read"
 	ActionApplicationRestore    = "application.restore"
+	ActionApplicationRunsOn     = "application.runs_on"
 	ActionApplicationTransfer   = "application.transfer"
 	ActionApplicationUpdate     = "application.update"
 	ActionBuildReport           = "build.report"

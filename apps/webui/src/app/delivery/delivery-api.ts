@@ -21,6 +21,7 @@ import {
   Team,
   Tier,
   Workspace,
+  WorkspaceRunsOn,
 } from '../api/models';
 
 /** What an Environment is made from; the slug is derived from the name when left out. */
@@ -66,6 +67,33 @@ export class DeliveryApi {
 
   applications(workspaceId: string): Promise<Application[]> {
     return this.api.list(`/workspaces/${workspaceId}/applications`);
+  }
+
+  /**
+   * Where the Workspace's Applications run: their Project and owning Team, and the Targets each is
+   * placed on by Environment with the version and status current there. It follows every page, so
+   * the result holds all the Applications; the Environments are the last page's.
+   */
+  async runsOn(
+    workspaceId: string,
+    options: { projectId?: string } = {},
+  ): Promise<WorkspaceRunsOn> {
+    const items: WorkspaceRunsOn['items'] = [];
+    let cursor: string | null = null;
+    let page: WorkspaceRunsOn;
+    do {
+      const query = new URLSearchParams({ limit: '100' });
+      if (options.projectId) {
+        query.set('project_id', options.projectId);
+      }
+      if (cursor) {
+        query.set('next_cursor', cursor);
+      }
+      page = await this.api.get<WorkspaceRunsOn>(`/workspaces/${workspaceId}/runs-on?${query}`);
+      items.push(...page.items);
+      cursor = page.has_next ? page.next_cursor : null;
+    } while (cursor);
+    return { ...page, items, total_count: items.length, has_next: false, next_cursor: null };
   }
 
   application(id: string): Promise<Application> {

@@ -68,6 +68,22 @@ func TestEnvironmentRepository(t *testing.T) {
 		assert.Equal(t, env.Snapshot(), got1.Snapshot())
 	})
 
+	t.Run("active environments for a grid", func(t *testing.T) {
+		active := f.createEnv(t, orgA, wsB, "grid-active")
+		archived := f.createEnv(t, orgA, wsB, "grid-archived")
+		archived.Archive()
+		require.NoError(t, f.envs.UpdateEnvironment(ctx, archived))
+		other := f.createEnv(t, orgA, wsA, "grid-other-workspace")
+		f.createEnv(t, orgB, wsB, "grid-other-organization")
+
+		got, err := f.envs.ListActiveEnvironments(ctx, orgA, wsB)
+		require.NoError(t, err)
+		ids := idsOf(got)
+		assert.Contains(t, ids, active.ID())
+		assert.NotContains(t, ids, archived.ID(), "archived environments are left out")
+		assert.NotContains(t, ids, other.ID(), "another workspace's environments are left out")
+	})
+
 	t.Run("get missing", func(t *testing.T) {
 		_, err := f.envs.GetEnvironment(ctx, orgA, id.New("env"))
 		assert.ErrorIs(t, err, delivery.ErrNotFound)

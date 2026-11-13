@@ -7,8 +7,9 @@ import { HlmBadgeImports } from '@spartan-ng/helm/badge';
 import { HlmButtonImports } from '@spartan-ng/helm/button';
 import { HlmSpinnerImports } from '@spartan-ng/helm/spinner';
 import { ApiError } from '../../api/api-client';
+import { TeamsApi } from '../../api/teams-api';
 import { RequestStatus } from '../../shared/request-status';
-import { ApplicationGrid, GridGroup, placementRows } from '../application-grid';
+import { ApplicationGrid, GridGroup, runsOnGroups } from '../application-grid';
 import { DeliveryApi } from '../delivery-api';
 import { PageHeader } from '../page-header';
 import { ProjectSources } from '../project-sources';
@@ -34,6 +35,7 @@ import { ProjectsApi } from '../projects-api';
 export class ProjectPage {
   private readonly projects = inject(ProjectsApi);
   private readonly delivery = inject(DeliveryApi);
+  private readonly teams = inject(TeamsApi);
   private readonly router = inject(Router);
 
   /** The `:id` route parameter. */
@@ -43,13 +45,13 @@ export class ProjectPage {
     params: () => this.id(),
     loader: async ({ params: id }) => {
       const project = await this.projects.project(id);
-      const [teams, applications, environments] = await Promise.all([
-        this.delivery.teams(),
-        this.projects.applications(id),
-        this.delivery.environments(project.workspace_id),
-      ]);
-      const rows = await placementRows(this.delivery, environments, applications, teams, [project]);
-      return { project, teams, environments, rows };
+      const page = await this.delivery.runsOn(project.workspace_id, { projectId: id });
+      return {
+        project,
+        team: page.items[0]?.project.owner_team.display_name ?? (await this.teamName(project)),
+        environments: page.environments,
+        groups: runsOnGroups(page),
+      };
     },
   });
 
@@ -63,21 +65,29 @@ export class ProjectPage {
 
   protected readonly project = computed(() => this.loaded()?.project ?? null);
   protected readonly archived = computed(() => !!this.project()?.archived_at);
-  protected readonly team = computed(() => {
-    const d = this.loaded();
-    return d?.teams.find((t) => t.id === d.project.owner_team_id)?.display_name ?? '';
-  });
+  protected readonly team = computed(() => this.loaded()?.team ?? '');
   protected readonly environments = computed(() => this.loaded()?.environments ?? []);
-  protected readonly groups = computed<GridGroup[]>(() => {
-    const d = this.loaded();
-    return d ? [{ project: d.project, team: this.team(), rows: d.rows }] : [];
-  });
-  protected readonly hasApplications = computed(() => (this.loaded()?.rows.length ?? 0) > 0);
+  protected readonly groups = computed<GridGroup[]>(() => this.loaded()?.groups ?? []);
+  protected readonly hasApplications = computed(
+    () => (this.loaded()?.groups.flatMap((group) => group.rows).length ?? 0) > 0,
+  );
 
   protected readonly failure = computed(() => {
     const error = this.details.error();
     return error ? (error instanceof ApiError ? error.message : 'Something went wrong.') : null;
   });
+
+  /**
+   * The owning Team's name, for a Project with no Applications to carry it. A Team that can't be
+   * read leaves the name out rather than the page.
+   */
+  private async teamName(project: { owner_team_id: string }): Promise<string> {
+    try {
+      return (await this.teams.get(project.owner_team_id)).display_name;
+    } catch {
+      return '';
+    }
+  }
 
   protected readonly restoreStatus = new RequestStatus();
 

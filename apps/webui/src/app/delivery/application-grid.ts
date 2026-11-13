@@ -1,12 +1,19 @@
 import { Component, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { Application, Environment, Project, Team } from '../api/models';
-import { DeliveryApi } from './delivery-api';
+import {
+  Application,
+  DeploymentStatus,
+  Environment,
+  RunsOnApplication,
+  WorkspaceRunsOn,
+} from '../api/models';
+import { DeploymentStatusBadge } from './deployments/deployment-status';
 
-/** A Target an Application is placed on, and the version of the Release deployed there. */
+/** A Target an Application is placed on, and what runs there now. */
 export interface GridPlacement {
   target: string;
   version: string | null;
+  status: DeploymentStatus | null;
 }
 
 /** One Application's row: per Environment, in column order, the Targets it's placed on. */
@@ -17,52 +24,49 @@ export interface GridRow {
   cells: GridPlacement[][];
 }
 
+/** The part of a Project a grid heading needs. */
+export interface GridProject {
+  id: string;
+  display_name: string;
+}
+
 /** A Project's rows, under a heading that links to it. */
 export interface GridGroup {
-  project: Project;
+  project: GridProject;
   team: string;
   rows: GridRow[];
 }
 
-/** The rows for `applications`: where each is placed, by Environment. */
-export async function placementRows(
-  api: DeliveryApi,
-  environments: Environment[],
-  applications: Application[],
-  teams: Team[],
-  projects: Project[],
-): Promise<GridRow[]> {
-  const [targets, placements] = await Promise.all([
-    api.targetsOf(environments),
-    Promise.all(applications.map((a) => api.placements(a.id))),
-  ]);
-  // The version running on each Target, from the Release its placement last deployed.
-  const releaseIds = [
-    ...new Set(
-      placements.flat().flatMap((p) => (p.current_release_id ? [p.current_release_id] : [])),
+/** Groups a "what runs where" read into the grid's rows, one group per Project. */
+export function runsOnGroups(page: WorkspaceRunsOn): GridGroup[] {
+  const groups = new Map<string, GridGroup>();
+  for (const item of page.items) {
+    let group = groups.get(item.project.id);
+    if (!group) {
+      group = { project: item.project, team: item.project.owner_team.display_name, rows: [] };
+      groups.set(item.project.id, group);
+    }
+    group.rows.push(applicationRow(item, page.environments));
+  }
+  return [...groups.values()].sort((a, b) =>
+    a.project.display_name.localeCompare(b.project.display_name),
+  );
+}
+
+function applicationRow(item: RunsOnApplication, environments: Environment[]): GridRow {
+  return {
+    application: item.application,
+    team: item.owner_team.id === item.project.owner_team.id ? '' : item.owner_team.display_name,
+    cells: environments.map((environment) =>
+      item.targets
+        .filter((target) => target.environment_id === environment.id)
+        .map((target) => ({
+          target: target.target_display_name,
+          version: target.release_version,
+          status: target.deployment_status,
+        })),
     ),
-  ];
-  const releases = await Promise.all(releaseIds.map((id) => api.release(id)));
-  const versions = new Map(releases.map((r) => [r.id, r.version]));
-  return applications.map((application, i) => {
-    const placed = placements[i].map((p) => ({
-      target: targets.find((t) => t.id === p.target_id),
-      version: p.current_release_id ? (versions.get(p.current_release_id) ?? null) : null,
-    }));
-    const projectTeam = projects.find((p) => p.id === application.project_id)?.owner_team_id;
-    return {
-      application,
-      team:
-        application.owner_team_id === projectTeam
-          ? ''
-          : (teams.find((t) => t.id === application.owner_team_id)?.display_name ?? ''),
-      cells: environments.map((environment) =>
-        placed
-          .filter((p) => p.target?.environment_id === environment.id)
-          .map((p) => ({ target: p.target!.display_name, version: p.version })),
-      ),
-    };
-  });
+  };
 }
 
 /**
@@ -71,7 +75,7 @@ export async function placementRows(
  */
 @Component({
   selector: 'app-application-grid',
-  imports: [RouterLink],
+  imports: [RouterLink, DeploymentStatusBadge],
   template: `
     <div class="border-border relative overflow-x-auto border">
       <table class="w-full min-w-225 table-fixed border-collapse text-sm">
@@ -166,6 +170,9 @@ export async function placementRows(
                             <span class="text-muted-foreground text-[13px]">{{
                               placed.target
                             }}</span>
+                            @if (placed.status) {
+                              <app-deployment-status class="mt-1" [status]="placed.status" />
+                            }
                           </li>
                         }
                       </ul>

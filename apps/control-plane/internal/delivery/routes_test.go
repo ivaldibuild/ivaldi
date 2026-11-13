@@ -47,5 +47,5 @@ func TestControllersFitTogether(t *testing.T) {
 			assert.NotEmpty(t, op.Security, "%s needs a token", where)
 		}
 	}
-	assert.Len(t, ids, 13+10+8+31+6+8)
+	assert.Len(t, ids, 13+10+8+32+6+8)
 }

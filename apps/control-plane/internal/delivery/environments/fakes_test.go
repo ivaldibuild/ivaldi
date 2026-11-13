@@ -141,6 +141,16 @@ func (s *store) ListEnvironments(_ context.Context, q delivery.ListEnvironmentsQ
 	return out, nil
 }
 
+func (s *store) ListActiveEnvironments(_ context.Context, organizationID, workspaceID string) ([]*delivery.Environment, error) {
+	var out []*delivery.Environment
+	for _, snap := range s.environments {
+		if snap.OrganizationID == organizationID && snap.WorkspaceID == workspaceID && snap.DeletedAt == nil {
+			out = append(out, rebuildEnvironment(snap))
+		}
+	}
+	return out, nil
+}
+
 func (s *store) UpdateEnvironment(_ context.Context, e *delivery.Environment) error {
 	if _, ok := s.environments[e.ID()]; !ok {
 		return delivery.ErrNotFound

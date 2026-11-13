@@ -65,6 +65,12 @@ type store struct {
 	projects   map[string]*workspace.Project
 	// teams says which Teams are active.
 	teams map[string]bool
+	// teamNames labels the Teams.
+	teamNames map[string]string
+	// releaseVersions and deploymentStatuses are what ListRunsOn reports for
+	// the current Release and Deployment IDs.
+	releaseVersions    map[string]string
+	deploymentStatuses map[string]release.DeploymentStatus
 	// inUse names placements ("app/target") that Deployments refer to.
 	inUse map[string]bool
 	// fail makes the named method return the error.
@@ -88,12 +94,15 @@ func newStore() *store {
 			environments: map[string]delivery.EnvironmentSnapshot{},
 			targets:      map[string]delivery.TargetSnapshot{},
 		},
-		workspaces: map[string]*workspace.Workspace{},
-		projects:   map[string]*workspace.Project{},
-		teams:      map[string]bool{},
-		inUse:      map[string]bool{},
-		fail:       map[string]error{},
-		settings:   map[string]map[string]json.RawMessage{},
+		workspaces:         map[string]*workspace.Workspace{},
+		projects:           map[string]*workspace.Project{},
+		teams:              map[string]bool{},
+		teamNames:          map[string]string{},
+		releaseVersions:    map[string]string{},
+		deploymentStatuses: map[string]release.DeploymentStatus{},
+		inUse:              map[string]bool{},
+		fail:               map[string]error{},
+		settings:           map[string]map[string]json.RawMessage{},
 	}
 }
 
@@ -475,6 +484,47 @@ func (s *store) ListPlacements(_ context.Context, organizationID, applicationID 
 	return out, nil
 }
 
+func (s *store) ListRunsOn(_ context.Context, organizationID string, applicationIDs []string) ([]delivery.PlacementRunsOn, error) {
+	wanted := make(map[string]bool, len(applicationIDs))
+	for _, id := range applicationIDs {
+		wanted[id] = true
+	}
+	var out []delivery.PlacementRunsOn
+	for _, placement := range sorted(s.placements, func(p delivery.PlacementSnapshot) bool {
+		return p.OrganizationID == organizationID && wanted[p.ApplicationID]
+	}, func(p delivery.PlacementSnapshot) time.Time { return p.CreatedAt }) {
+		target, ok := s.targets[placement.TargetID]
+		if !ok || target.DeletedAt != nil {
+			continue
+		}
+		environment, ok := s.environments[target.EnvironmentID]
+		if !ok || environment.DeletedAt != nil {
+			continue
+		}
+		item := delivery.PlacementRunsOn{
+			ApplicationID:   placement.ApplicationID,
+			TargetID:        target.ID,
+			TargetName:      target.DisplayName,
+			EnvironmentID:   environment.ID,
+			EnvironmentName: environment.DisplayName,
+			ReleaseID:       placement.CurrentReleaseID,
+			DeploymentID:    placement.CurrentDeploymentID,
+		}
+		if placement.CurrentReleaseID != nil {
+			if version, ok := s.releaseVersions[*placement.CurrentReleaseID]; ok {
+				item.ReleaseVersion = &version
+			}
+		}
+		if placement.CurrentDeploymentID != nil {
+			if status, ok := s.deploymentStatuses[*placement.CurrentDeploymentID]; ok {
+				item.DeploymentStatus = &status
+			}
+		}
+		out = append(out, item)
+	}
+	return out, nil
+}
+
 func (s *store) UpdatePlacement(_ context.Context, p *delivery.Placement) error {
 	k := placementKey(p.ApplicationID(), p.TargetID())
 	if _, ok := s.placements[k]; !ok {
@@ -554,6 +604,20 @@ func (s *store) GetEnvironment(_ context.Context, organizationID, id string) (*d
 	}, &snap.ID)), nil
 }
 
+func (s *store) ListActiveEnvironments(_ context.Context, organizationID, workspaceID string) ([]*delivery.Environment, error) {
+	var out []*delivery.Environment
+	for _, snap := range sorted(s.environments, func(e delivery.EnvironmentSnapshot) bool {
+		return e.OrganizationID == organizationID && e.WorkspaceID == workspaceID && e.DeletedAt == nil
+	}, func(e delivery.EnvironmentSnapshot) time.Time { return e.CreatedAt }) {
+		out = append(out, must(delivery.NewEnvironment(delivery.NewEnvironmentProps{
+			OrganizationID: snap.OrganizationID, WorkspaceID: snap.WorkspaceID, Slug: snap.Slug, DisplayName: snap.DisplayName,
+			Tier: snap.Tier, ExecutionEnabled: snap.ExecutionEnabled,
+			CreatedAt: &snap.CreatedAt, UpdatedAt: &snap.UpdatedAt, DeletedAt: snap.DeletedAt,
+		}, &snap.ID)))
+	}
+	return out, nil
+}
+
 func (s *store) LookupWorkspace(_ context.Context, _, workspaceID string) (*workspace.Workspace, error) {
 	w, ok := s.workspaces[workspaceID]
 	if !ok {
@@ -568,6 +632,26 @@ func (s *store) LookupProject(_ context.Context, _, projectID string) (*workspac
 		return nil, workspace.ErrNotFound
 	}
 	return p, nil
+}
+
+func (s *store) LookupProjects(_ context.Context, organizationID string, projectIDs []string) ([]*workspace.Project, error) {
+	var out []*workspace.Project
+	for _, id := range projectIDs {
+		if p, ok := s.projects[id]; ok && p.OrganizationID() == organizationID {
+			out = append(out, p)
+		}
+	}
+	return out, nil
+}
+
+func (s *store) LookupTeams(_ context.Context, _ string, teamIDs []string) (map[string]team.TeamName, error) {
+	out := make(map[string]team.TeamName, len(teamIDs))
+	for _, id := range teamIDs {
+		if name, ok := s.teamNames[id]; ok {
+			out[id] = team.TeamName{ID: id, DisplayName: name}
+		}
+	}
+	return out, nil
 }
 
 // ResolveSetting resolves a setting as workspace.SettingResolver does, from
@@ -696,6 +780,7 @@ func newWorld(t *testing.T) *world {
 		}, &prjID))
 	}
 	s.teams = map[string]bool{teamOwner: true, teamOther: true, teamGone: false}
+	s.teamNames = map[string]string{teamOwner: "Checkout", teamOther: "Data", teamGone: "Gone"}
 	authz := &authorizer{}
 	svc, err := NewApplicationService(s.options(authz)...)
 	require.NoError(t, err)
@@ -705,7 +790,7 @@ func newWorld(t *testing.T) *world {
 func (s *store) options(authz authorization.Authorizer) []ApplicationServiceOption {
 	return []ApplicationServiceOption{
 		WithApplicationRepo(s), WithLifecycleLookup(s), WithRegistryLookup(s), WithTargetLookup(s),
-		WithEnvironmentLookup(s), WithWorkspaces(s), WithSettingResolver(s), WithTeamDirectory(s), WithAuthorizer(authz),
+		WithEnvironmentLookup(s), WithProjectLookup(s), WithWorkspaces(s), WithSettingResolver(s), WithTeamDirectory(s), WithAuthorizer(authz),
 		WithTransactor(s), WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
 	}
 }

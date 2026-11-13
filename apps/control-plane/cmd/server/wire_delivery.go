@@ -125,6 +125,7 @@ func (a *app) wireDelivery() error {
 		applications.WithRegistryLookup(registryRepo),
 		applications.WithTargetLookup(targetRepo),
 		applications.WithEnvironmentLookup(envRepo),
+		applications.WithProjectLookup(workspaces),
 		applications.WithWorkspaces(workspaces),
 		applications.WithTeamDirectory(a.teams),
 		applications.WithSettingResolver(a.settingResolver),

@@ -159,6 +159,30 @@ func (r *Repository) GetProject(ctx context.Context, organizationID, projectID s
 	return rec.toDomain()
 }
 
+// GetProjects returns the Projects with the IDs, archived ones included, in
+// no particular order. IDs that match nothing are left out.
+func (r *Repository) GetProjects(ctx context.Context, organizationID string, projectIDs []string) ([]*workspace.Project, error) {
+	if len(projectIDs) == 0 {
+		return nil, nil
+	}
+	var recs []projectEntity
+	err := r.conn(ctx).
+		Where("organization_id = ? AND id IN ?", organizationID, projectIDs).
+		Find(&recs).Error
+	if err != nil {
+		return nil, translate(err)
+	}
+	out := make([]*workspace.Project, 0, len(recs))
+	for i := range recs {
+		p, err := recs[i].toDomain()
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, nil
+}
+
 // projectKeyset sorts Projects by "created_at" (the default), "slug", or
 // "display_name", with the ID breaking ties.
 var projectKeyset = database.Keyset[projectEntity]{

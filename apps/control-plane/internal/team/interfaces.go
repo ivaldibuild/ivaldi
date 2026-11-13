@@ -35,6 +35,10 @@ type TeamRepository interface {
 	GetTeamForUpdate(ctx context.Context, organizationID, teamID string) (*Team, error)
 	// GetTeamBySlug returns the active Team with the slug.
 	GetTeamBySlug(ctx context.Context, organizationID, slug string) (*Team, error)
+	// GetTeamNames returns the names of the Teams with the IDs, archived
+	// ones included, in no particular order. IDs that match nothing are left
+	// out. It does not read the Teams' members.
+	GetTeamNames(ctx context.Context, organizationID string, teamIDs []string) ([]TeamName, error)
 	ListTeams(ctx context.Context, query ListTeamsQuery) (*pagination.Result[*Team], error)
 	// UpdateTeam writes the Team's state, including adding, changing, and
 	// removing its members.

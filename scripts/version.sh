@@ -6,12 +6,13 @@
 #   three commits after it   0.4.0-3-gabc1234
 #   with no tag yet          0.0.0-gabc1234
 #
-# A working tree with uncommitted changes adds -dirty, which the control plane
-# treats as not a release build.
+# A working tree with uncommitted changes or untracked files (the build would
+# include them; ignored files do not count) adds -dirty, which the control
+# plane treats as not a release build.
 set -eu
 
 dirty=""
-if [ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
 	dirty="-dirty"
 fi
 

@@ -8,6 +8,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/apiclient"
+	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/secrets"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/state"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/targets"
 )
@@ -80,7 +81,7 @@ func (a *agent) heartbeatLoop(ctx context.Context, tracker targets.Tracker, refr
 		if verr != nil {
 			err = verr
 		} else {
-			err = a.cp.Heartbeat(ctx, set.HeartbeatBody(a.version, deployerNames(a.deployers)))
+			err = a.cp.Heartbeat(ctx, set.HeartbeatBody(a.version, deployerNames(a.deployers), a.secretStoreKinds()))
 		}
 		switch {
 		case ctx.Err() != nil:
@@ -111,8 +112,12 @@ func (a *agent) heartbeatLoop(ctx context.Context, tracker targets.Tracker, refr
 // report nothing once stopped, so it returns promptly.
 func (a *agent) assignmentLoop(ctx context.Context, tracker targets.Tracker) {
 	exec := newExecutor(a.cp, a.deployers, a.reporter, a.log, a.cfg.MaxConcurrentApplies)
+	if a.secrets != nil {
+		exec.withSecrets(a.secrets, a.secretWriter, a.masker)
+	}
 	defer exec.wait()
 	health := newRollouts(tracker, a.reporter, a.log)
+	health.writer = a.secretWriter
 	seen := newObservations(a.cp, tracker.Lister, a.log)
 	for {
 		set := tracker.Current()
@@ -161,6 +166,14 @@ func (a *agent) refresh(ctx context.Context, tracker targets.Tracker) error {
 	a.log.Debug("refreshed the targets", "cluster", set.Cluster.Slug, "targets", len(set.Targets),
 		"watch_mode", set.WatchMode, "unsynced", set.Unsynced)
 	return nil
+}
+
+// secretStoreKinds lists the secret stores the agent can read.
+func (a *agent) secretStoreKinds() []string {
+	if a.secrets == nil {
+		return []string{}
+	}
+	return secrets.Kinds
 }
 
 // handle logs a failed control-plane call, and gives up the credential when

@@ -15,6 +15,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/deploy"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/deploy/status"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/report"
+	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/secrets"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/targets"
 )
 
@@ -55,9 +56,10 @@ func deploymentsWorkloads(objects []*unstructured.Unstructured, deploymentID str
 
 // watched is one Deployment whose health the agent tracks.
 type watched struct {
-	deploymentID string
-	namespace    string
-	selector     map[string]string
+	deploymentID  string
+	applicationID string
+	namespace     string
+	selector      map[string]string
 	// known is the status the control plane gave, or "" for a placement's
 	// current Deployment, whose status the agent does not get.
 	known release.DeploymentStatus
@@ -67,6 +69,9 @@ type watched struct {
 // still progressing, and each placement's current Deployment, whoever
 // applied it.
 type rollouts struct {
+	// writer prunes a Deployment's old secret Secrets once it is healthy;
+	// nil skips pruning.
+	writer   secrets.Writer
 	source   workloadSource
 	reporter report.Reporter
 	health   *status.Tracker
@@ -112,7 +117,7 @@ func toWatch(assignments []apiclient.DeploymentAssignment, set targets.Set) []wa
 		}
 		seen[a.Deployment.Id] = true
 		out = append(out, watched{
-			deploymentID: a.Deployment.Id, namespace: a.Apply.Namespace,
+			deploymentID: a.Deployment.Id, applicationID: a.Deployment.ApplicationId, namespace: a.Apply.Namespace,
 			selector: selector(a.Target.Id, a.Deployment.ApplicationId), known: release.DeploymentProgressing,
 		})
 	}
@@ -122,7 +127,9 @@ func toWatch(assignments []apiclient.DeploymentAssignment, set targets.Set) []wa
 				continue
 			}
 			seen[*app.CurrentDeploymentId] = true
-			item := watched{deploymentID: *app.CurrentDeploymentId, namespace: t.Namespace, selector: selector(t.Id, app.Id)}
+			item := watched{
+				deploymentID: *app.CurrentDeploymentId, applicationID: app.Id, namespace: t.Namespace, selector: selector(t.Id, app.Id),
+			}
 			if app.CurrentDeploymentStatus != nil {
 				// The control plane's status, so an agent that restarts
 				// carries on from degraded rather than assuming healthy.
@@ -180,6 +187,11 @@ func (r *rollouts) check(ctx context.Context, items []watched) {
 		if err == nil {
 			r.health.Moved(item.deploymentID, next)
 			r.log.Info("deployment status changed", "deployment_id", item.deploymentID, "status", next)
+			if next == release.DeploymentHealthy && r.writer != nil && item.applicationID != "" {
+				if err := r.writer.Prune(ctx, item.namespace, item.applicationID, item.deploymentID); err != nil {
+					r.log.Warn("could not prune old secret Secrets", "deployment_id", item.deploymentID, "error", err)
+				}
+			}
 		} else if !apiclient.Transient(err) {
 			// The control plane refused the move, so it knows a status the
 			// agent does not; start over from what the next poll says.

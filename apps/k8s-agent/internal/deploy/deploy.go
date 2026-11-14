@@ -56,6 +56,13 @@ type Assignment struct {
 	Reason string
 	// Restores is the Deployment a rollback replays.
 	Restores string
+	// SecretRefs are the secrets the Deployment uses, as the control plane
+	// names them; the agent resolves them before applying.
+	SecretRefs []apiclient.AssignmentSecret
+	// Secrets are the resolved secrets, and SecretName the Kubernetes
+	// Secret holding those delivered as a Secret.
+	Secrets    []values.Secret
+	SecretName string
 }
 
 // IsRollback reports whether the assignment replays an earlier Deployment.
@@ -87,6 +94,9 @@ type Applied struct {
 	// Ref identifies what was applied in the deployer's own terms, such as
 	// a Helm release and revision.
 	Ref map[string]any
+	// SecretsInValues names the secrets whose values went into the
+	// deployer's values, and so into its own records.
+	SecretsInValues []string
 }
 
 // Deployer applies assignments.
@@ -179,6 +189,7 @@ func FromAPI(a apiclient.DeploymentAssignment, clusterSlug string) Assignment {
 		out.HelmReleaseName = a.Apply.Helm.ReleaseName
 	}
 	out.Reason = string(a.Apply.Reason)
+	out.SecretRefs = a.Apply.Secrets
 	if a.Apply.Restores != nil {
 		out.Restores = *a.Apply.Restores
 	}
@@ -188,9 +199,11 @@ func FromAPI(a apiclient.DeploymentAssignment, clusterSlug string) Assignment {
 // Values builds the assignment's values from its chart's overlay files.
 func (a Assignment) Values(ctx context.Context, overlays []values.Document) (values.Result, error) {
 	return values.Build(ctx, values.Input{
-		Overlays:  overlays,
-		System:    a.System,
-		Variables: a.Variables,
+		Overlays:   overlays,
+		System:     a.System,
+		Variables:  a.Variables,
+		Secrets:    a.Secrets,
+		SecretName: a.SecretName,
 		Generated: values.Generated{
 			Application: a.ApplicationID,
 			Release:     a.ReleaseID,

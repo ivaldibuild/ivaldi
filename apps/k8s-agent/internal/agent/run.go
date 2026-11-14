@@ -16,6 +16,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/auth"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/deploy"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/report"
+	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/secrets"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/targets"
 )
 
@@ -44,9 +45,13 @@ type agent struct {
 	newTracker func() targets.Tracker
 	deployers  map[string]deploy.Deployer
 	reporter   report.Reporter
-	ready      *readiness
-	enrolRetry time.Duration
-	retryBase  time.Duration
+	// secrets is nil in tests that use no secrets.
+	secrets      secrets.Resolver
+	secretWriter secrets.Writer
+	masker       *secrets.Masker
+	ready        *readiness
+	enrolRetry   time.Duration
+	retryBase    time.Duration
 }
 
 // run takes the Lease, enrols, and works until ctx ends. Credentials are

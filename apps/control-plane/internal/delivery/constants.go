@@ -162,7 +162,6 @@ const (
 	ActionRegistrySetLookup     = "registry.set_lookup"
 	ActionRegistryUpdate        = "registry.update"
 	ActionTargetArchive         = "target.archive"
-	ActionTargetAssignAgent     = "target.assign_agent"
 	ActionTargetCreate          = "target.create"
 	ActionTargetList            = "target.list"
 	ActionTargetRead            = "target.read"
@@ -185,11 +184,10 @@ const (
 	EventEnvironmentArchived = "environment.archived"
 	EventEnvironmentRestored = "environment.restored"
 
-	EventTargetCreated       = "target.created"
-	EventTargetUpdated       = "target.updated"
-	EventTargetAgentAssigned = "target.agent_assigned"
-	EventTargetArchived      = "target.archived"
-	EventTargetRestored      = "target.restored"
+	EventTargetCreated  = "target.created"
+	EventTargetUpdated  = "target.updated"
+	EventTargetArchived = "target.archived"
+	EventTargetRestored = "target.restored"
 
 	EventClusterCreated       = "cluster.created"
 	EventClusterUpdated       = "cluster.updated"

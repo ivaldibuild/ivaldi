@@ -35,6 +35,9 @@ var (
 	ErrNotTargetAgent = errors.New("not the target's agent")
 	// ErrNotClusterAgent means the caller is not the runtime agent that serves the Cluster.
 	ErrNotClusterAgent = errors.New("not the cluster's agent")
+	// ErrIdentityInUse means the workload identity enrolling already serves
+	// another active Cluster, which would leave that Cluster without an agent.
+	ErrIdentityInUse = errors.New("workload identity already serves another cluster")
 	// ErrReleaseStatus means the Release's status does not allow the change,
 	// such as publishing a Release that is already published.
 	ErrReleaseStatus = errors.New("not allowed in the release's status")

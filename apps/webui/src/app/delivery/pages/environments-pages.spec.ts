@@ -31,7 +31,7 @@ const target = {
   display_name: 'staging-eu-1',
   runtime: 'kubernetes',
   locator: { cluster: 'eu', namespace: 'payments' },
-  agent_principal_id: null,
+  cluster_id: 'cls_other',
   deleted_at: null,
 };
 

@@ -55,10 +55,10 @@ func TestOverHTTP(t *testing.T) {
 		return rec.Code, out
 	}
 
-	code, _ := call(http.MethodPost, "/targets/"+targetID+"/enrolments", "", `{"method":"bearer"}`)
+	code, _ := call(http.MethodPost, "/clusters/"+clusterID+"/enrolments", "", `{"method":"bearer"}`)
 	assert.Equal(t, http.StatusUnauthorized, code)
 
-	code, out := call(http.MethodPost, "/targets/"+targetID+"/enrolments", "ada", `{"method":"bearer"}`)
+	code, out := call(http.MethodPost, "/clusters/"+clusterID+"/enrolments", "ada", `{"method":"bearer"}`)
 	require.Equal(t, http.StatusCreated, code, out)
 	token := out["data"].(map[string]any)["token"].(string)
 
@@ -67,7 +67,7 @@ func TestOverHTTP(t *testing.T) {
 	data := out["data"].(map[string]any)
 	assert.Contains(t, data["workload_token"], "iwt_")
 
-	code, out = call(http.MethodGet, "/targets/"+targetID+"/agent", "ada", "")
+	code, out = call(http.MethodGet, "/clusters/"+clusterID+"/agent", "ada", "")
 	require.Equal(t, http.StatusOK, code, out)
 	assert.Equal(t, "active", out["data"].(map[string]any)["status"])
 

@@ -11,6 +11,7 @@ package environments
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/outbox"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
+	"github.com/ivaldibuild/ivaldi/pkg/database"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
 	"github.com/ivaldibuild/ivaldi/pkg/pagination"
 	"github.com/ivaldibuild/ivaldi/pkg/transaction"
@@ -31,11 +33,19 @@ type LifecycleUsage interface {
 	CountActiveLifecyclesWithEnvironment(ctx context.Context, organizationID, environmentID string) (int, error)
 }
 
+// Clusters is what Target creation and restore need: the Cluster a locator
+// names, and that Cluster locked so it cannot be archived meanwhile.
+type Clusters interface {
+	GetClusterBySlug(ctx context.Context, organizationID, slug string) (*delivery.Cluster, error)
+	GetClusterForUpdate(ctx context.Context, organizationID, clusterID string) (*delivery.Cluster, error)
+}
+
 type EnvironmentServiceOption func(*options)
 
 type options struct {
 	environments delivery.EnvironmentRepository
 	targets      delivery.TargetRepository
+	clusters     Clusters
 	lifecycles   LifecycleUsage
 	workspaces   delivery.Workspaces
 	resources    iam.ResourceRegistrar
@@ -48,6 +58,9 @@ func WithEnvironmentRepo(r delivery.EnvironmentRepository) EnvironmentServiceOpt
 }
 func WithTargetRepo(r delivery.TargetRepository) EnvironmentServiceOption {
 	return func(o *options) { o.targets = r }
+}
+func WithClusterRepo(r Clusters) EnvironmentServiceOption {
+	return func(o *options) { o.clusters = r }
 }
 func WithLifecycleUsage(l LifecycleUsage) EnvironmentServiceOption {
 	return func(o *options) { o.lifecycles = l }
@@ -91,6 +104,7 @@ func NewEnvironmentService(opts ...EnvironmentServiceOption) (delivery.Environme
 	}{
 		{"EnvironmentRepo", o.environments != nil},
 		{"TargetRepo", o.targets != nil},
+		{"ClusterRepo", o.clusters != nil},
 		{"LifecycleUsage", o.lifecycles != nil},
 		{"Workspaces", o.workspaces != nil},
 		{"ResourceRegistrar", o.resources != nil},
@@ -107,6 +121,7 @@ func NewEnvironmentService(opts ...EnvironmentServiceOption) (delivery.Environme
 	s := &service{
 		environments: o.environments,
 		targets:      o.targets,
+		clusters:     o.clusters,
 		lifecycles:   o.lifecycles,
 		workspaces:   o.workspaces,
 		resources:    o.resources,
@@ -122,6 +137,7 @@ func NewEnvironmentService(opts ...EnvironmentServiceOption) (delivery.Environme
 type service struct {
 	environments delivery.EnvironmentRepository
 	targets      delivery.TargetRepository
+	clusters     Clusters
 	lifecycles   LifecycleUsage
 	workspaces   delivery.Workspaces
 	resources    iam.ResourceRegistrar
@@ -298,16 +314,21 @@ func (s *service) RestoreEnvironments(ctx context.Context, actor identity.Actor,
 	return out, nil
 }
 
-// CreateTarget adds a Target to an active Environment.
+// CreateTarget adds a Target to an active Environment. Its locator names an
+// active Cluster by slug, which becomes the Cluster whose agent serves it.
 func (s *service) CreateTarget(ctx context.Context, actor identity.Actor, in delivery.CreateTargetInput) (*delivery.Target, error) {
+	cluster, err := s.resolveCluster(ctx, in.OrganizationID, in.Locator[delivery.LocatorCluster])
+	if err != nil {
+		return nil, err
+	}
 	t, err := delivery.NewTarget(delivery.NewTargetProps{
-		OrganizationID:   in.OrganizationID,
-		EnvironmentID:    in.EnvironmentID,
-		Slug:             in.Slug,
-		DisplayName:      in.DisplayName,
-		Runtime:          in.Runtime,
-		Locator:          in.Locator,
-		AgentPrincipalID: &in.AgentPrincipalID,
+		OrganizationID: in.OrganizationID,
+		EnvironmentID:  in.EnvironmentID,
+		ClusterID:      cluster.ID(),
+		Slug:           in.Slug,
+		DisplayName:    in.DisplayName,
+		Runtime:        in.Runtime,
+		Locator:        in.Locator,
 	}, nil)
 	if err != nil {
 		return nil, err
@@ -321,8 +342,16 @@ func (s *service) CreateTarget(ctx context.Context, actor identity.Actor, in del
 		if e.Archived() {
 			return fmt.Errorf("%w: environment %s", delivery.ErrArchived, e.ID())
 		}
+		// Locked so the Cluster cannot be archived while the Target is added.
+		locked, err := s.clusters.GetClusterForUpdate(ctx, in.OrganizationID, cluster.ID())
+		if err != nil {
+			return err
+		}
+		if locked.Archived() {
+			return delivery.NewErrInvalidInput(fmt.Sprintf("cluster %q is not an active cluster in this organization", in.Locator[delivery.LocatorCluster]))
+		}
 		if err := s.targets.CreateTarget(ctx, t); err != nil {
-			return fmt.Errorf("create target: %w", err)
+			return s.targetWriteError(ctx, t, err)
 		}
 		if err := s.w.Events(ctx, delivery.AggregateTarget, t.ID(), t); err != nil {
 			return err
@@ -335,6 +364,20 @@ func (s *service) CreateTarget(ctx context.Context, actor identity.Actor, in del
 	return t, nil
 }
 
+// resolveCluster turns the locator's cluster slug into an active Cluster in
+// the Organization. A slug that names nothing is the caller's mistake, not a
+// missing record: it is part of the Target they asked for.
+func (s *service) resolveCluster(ctx context.Context, organizationID, slug string) (*delivery.Cluster, error) {
+	cluster, err := s.clusters.GetClusterBySlug(ctx, organizationID, slug)
+	if errors.Is(err, delivery.ErrNotFound) {
+		return nil, delivery.NewErrInvalidInput(fmt.Sprintf("cluster %q is not an active cluster in this organization", slug))
+	}
+	if err != nil {
+		return nil, err
+	}
+	return cluster, nil
+}
+
 func (s *service) GetTarget(ctx context.Context, _ identity.Actor, organizationID, targetID string) (*delivery.Target, error) {
 	return s.targets.GetTarget(ctx, organizationID, targetID)
 }
@@ -344,7 +387,7 @@ func (s *service) ListTargets(ctx context.Context, _ identity.Actor, query deliv
 }
 
 func (s *service) changeTarget(ctx context.Context, actor identity.Actor, organizationID, targetID, event string, apply func(context.Context, *delivery.Target) error) (*delivery.Target, error) {
-	return change.Run(ctx, s.w, actor, change.Spec[*delivery.Target]{
+	t, err := change.Run(ctx, s.w, actor, change.Spec[*delivery.Target]{
 		AggregateType: delivery.AggregateTarget,
 		AggregateID:   func(t *delivery.Target) string { return t.ID() },
 		Load: func(ctx context.Context) (*delivery.Target, error) {
@@ -357,43 +400,24 @@ func (s *service) changeTarget(ctx context.Context, actor identity.Actor, organi
 			return audit.Event{Type: event, OrganizationID: organizationID, ResourceID: t.ID()}
 		},
 	})
+	if err != nil {
+		if !isNamespaceConflict(err) {
+			return nil, err
+		}
+		// The loaded Target is gone on error, but its ID still names it.
+		attempted, getErr := s.targets.GetTarget(ctx, organizationID, targetID)
+		if getErr != nil {
+			return nil, delivery.NewErrInvalidInput("that namespace already has an active target in this cluster")
+		}
+		return nil, s.namespaceTakenError(ctx, attempted)
+	}
+	return t, nil
 }
 
-// UpdateTarget changes an active Target.
+// UpdateTarget changes an active Target in the Cluster it already names.
 func (s *service) UpdateTarget(ctx context.Context, actor identity.Actor, organizationID, targetID string, props delivery.UpdateTargetProps) (*delivery.Target, error) {
 	return s.changeTarget(ctx, actor, organizationID, targetID, delivery.EventTargetUpdated,
 		func(_ context.Context, t *delivery.Target) error { return t.Update(props) })
-}
-
-// AssignTargetAgent makes principalID the Target's runtime agent, or
-// unassigns the agent when principalID is empty.
-func (s *service) AssignTargetAgent(ctx context.Context, actor identity.Actor, organizationID, targetID, principalID string) (*delivery.Target, error) {
-	return s.changeTarget(ctx, actor, organizationID, targetID, delivery.EventTargetAgentAssigned,
-		func(_ context.Context, t *delivery.Target) error {
-			if principalID == "" {
-				if t.AgentPrincipalID() == nil && !t.Archived() {
-					return change.ErrUnchanged
-				}
-				return t.UnassignAgent()
-			}
-			return t.AssignAgent(principalID)
-		})
-}
-
-// RecordTargetReport notes that the Target's agent is in contact. The domain
-// refuses anyone but the assigned agent. It records no audit event: reports
-// are frequent, and change no configuration.
-func (s *service) RecordTargetReport(ctx context.Context, actor identity.Actor, organizationID, targetID string) error {
-	return s.w.Tx.WithinTx(ctx, func(ctx context.Context) error {
-		t, err := s.targets.GetTarget(ctx, organizationID, targetID)
-		if err != nil {
-			return err
-		}
-		if err := t.RecordReport(actor.PrincipalID); err != nil {
-			return err
-		}
-		return s.targets.UpdateTarget(ctx, t)
-	})
 }
 
 // ArchiveTarget archives a Target. Archiving an archived one does nothing.
@@ -408,7 +432,8 @@ func (s *service) ArchiveTarget(ctx context.Context, actor identity.Actor, organ
 		})
 }
 
-// RestoreTarget restores an archived Target in an active Environment.
+// RestoreTarget restores an archived Target in an active Environment. Its
+// namespace may have been taken by another Target meanwhile.
 func (s *service) RestoreTarget(ctx context.Context, actor identity.Actor, organizationID, targetID string) (*delivery.Target, error) {
 	return s.changeTarget(ctx, actor, organizationID, targetID, delivery.EventTargetRestored,
 		func(ctx context.Context, t *delivery.Target) error {
@@ -422,9 +447,48 @@ func (s *service) RestoreTarget(ctx context.Context, actor identity.Actor, organ
 			if e.Archived() {
 				return fmt.Errorf("%w: environment %s", delivery.ErrArchived, e.ID())
 			}
+			locked, err := s.clusters.GetClusterForUpdate(ctx, organizationID, t.ClusterID())
+			if err != nil {
+				return err
+			}
+			if locked.Archived() {
+				return delivery.NewErrInvalidInput("the target's cluster is archived; restore it first")
+			}
 			t.Restore()
 			return nil
 		})
+}
+
+// targetWriteError turns the namespace uniqueness violation into the
+// explanation the person creating the Target needs. Every other error is
+// returned unchanged.
+func (s *service) targetWriteError(ctx context.Context, t *delivery.Target, err error) error {
+	if !isNamespaceConflict(err) {
+		return err
+	}
+	return s.namespaceTakenError(ctx, t)
+}
+
+func isNamespaceConflict(err error) bool {
+	constraint, ok := database.UniqueViolation(err)
+	return ok && constraint == "idx_targets_cluster_namespace"
+}
+
+// namespaceTakenError names the Target that already has the namespace, so the
+// person does not have to guess which Environment it belongs to.
+func (s *service) namespaceTakenError(ctx context.Context, t *delivery.Target) error {
+	locator := t.Locator()
+	namespace := locator[delivery.LocatorNamespace]
+	existing, err := s.targets.GetTargetByNamespace(ctx, t.OrganizationID(), t.ClusterID(), namespace)
+	if err != nil {
+		return delivery.NewErrInvalidInput(fmt.Sprintf("namespace %s already has an active target in cluster %s", namespace, locator[delivery.LocatorCluster]))
+	}
+	environment := existing.EnvironmentID()
+	if e, err := s.environments.GetEnvironment(ctx, t.OrganizationID(), existing.EnvironmentID()); err == nil {
+		environment = e.Slug()
+	}
+	return delivery.NewErrInvalidInput(fmt.Sprintf("namespace %s in cluster %s is already target %s in environment %s",
+		namespace, locator[delivery.LocatorCluster], existing.Slug(), environment))
 }
 
 // uniqueIDs returns ids without repeats, in their first order.

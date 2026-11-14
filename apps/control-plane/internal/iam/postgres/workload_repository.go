@@ -28,7 +28,7 @@ type workloadEnrollmentTokenEntity struct {
 	OrganizationID       string     `gorm:"column:organization_id"`
 	TokenHash            []byte     `gorm:"column:token_hash"`
 	Pool                 string     `gorm:"column:pool"`
-	TargetID             *string    `gorm:"column:target_id"`
+	ClusterID            *string    `gorm:"column:cluster_id"`
 	CredentialKind       string     `gorm:"column:credential_kind"`
 	CreatedByPrincipalID string     `gorm:"column:created_by_principal_id"`
 	ExpiresAt            time.Time  `gorm:"column:expires_at"`
@@ -207,7 +207,7 @@ func (r *workloadEnrollmentTokenRepository) Write(ctx context.Context, t *iam.Wo
 	s := t.Snapshot()
 	e := &workloadEnrollmentTokenEntity{
 		ID: s.ID, OrganizationID: s.OrganizationID, TokenHash: s.TokenHash, Pool: s.Pool,
-		TargetID: s.TargetID, CredentialKind: string(s.CredentialKind),
+		ClusterID: s.ClusterID, CredentialKind: string(s.CredentialKind),
 		CreatedByPrincipalID: s.CreatedByPrincipalID, ExpiresAt: s.ExpiresAt,
 		UsedAt: s.UsedAt, UsedByPrincipalID: s.UsedByPrincipalID, CreatedAt: s.CreatedAt,
 	}
@@ -226,7 +226,7 @@ func (r *workloadEnrollmentTokenRepository) GetByHashForUpdate(ctx context.Conte
 	}
 	return iam.NewWorkloadEnrollmentToken(iam.NewWorkloadEnrollmentTokenProps{
 		OrganizationID: e.OrganizationID, TokenHash: e.TokenHash, Pool: e.Pool,
-		TargetID: e.TargetID, CredentialKind: iam.WorkloadCredentialKind(e.CredentialKind),
+		ClusterID: e.ClusterID, CredentialKind: iam.WorkloadCredentialKind(e.CredentialKind),
 		CreatedByPrincipalID: e.CreatedByPrincipalID, ExpiresAt: *utc(e.ExpiresAt),
 		UsedAt: utcPtr(e.UsedAt), UsedByPrincipalID: e.UsedByPrincipalID, CreatedAt: utc(e.CreatedAt),
 	}, &e.ID)

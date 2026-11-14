@@ -58,13 +58,13 @@ func TestWorkloadEnrollmentTokenRepository(t *testing.T) {
 	clock.Fix(t, t0)
 	tokens := NewWorkloadEnrollmentTokenRepository(f.db)
 	org := f.writeOrg(t, "acme")
-	target := "tgt_01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	cluster := "cls_01ARZ3NDEKTSV4RRFFQ69G5FAV"
 	creator := newUser(org.ID(), f.writeAccount(t, "ada@example.com").ID())
 	require.NoError(t, f.users.Write(f.ctx, creator))
 	secret := must(iam.NewWorkloadEnrollmentTokenSecret())
 	token := must(iam.NewWorkloadEnrollmentToken(iam.NewWorkloadEnrollmentTokenProps{
-		OrganizationID: org.ID(), TokenHash: secret.Hash, Pool: "target:" + target,
-		TargetID: &target, CredentialKind: iam.CredentialMTLSCertificate,
+		OrganizationID: org.ID(), TokenHash: secret.Hash, Pool: "cluster:" + cluster,
+		ClusterID: &cluster, CredentialKind: iam.CredentialMTLSCertificate,
 		CreatedByPrincipalID: creator.ID(),
 		ExpiresAt:            t0.Add(time.Hour),
 	}, nil))
@@ -74,7 +74,7 @@ func TestWorkloadEnrollmentTokenRepository(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, token.Snapshot(), got.Snapshot())
 	assert.Equal(t, iam.CredentialMTLSCertificate, got.CredentialKind())
-	assert.Equal(t, target, *got.TargetID())
+	assert.Equal(t, cluster, *got.ClusterID())
 }
 
 func TestWorkloadCredentialRepository(t *testing.T) {

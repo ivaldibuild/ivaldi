@@ -201,6 +201,12 @@
             "nullable": true,
             "type": "string"
           },
+          "agent_version": {
+            "type": "string"
+          },
+          "cluster_id": {
+            "type": "string"
+          },
           "component": {
             "type": "string"
           },
@@ -213,7 +219,18 @@
             "nullable": true,
             "type": "string"
           },
+          "kubernetes_version": {
+            "type": "string"
+          },
+          "last_failure": {
+            "$ref": "#/components/schemas/AgentFailure"
+          },
           "last_seen_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "redeemed_at": {
             "format": "date-time",
             "nullable": true,
             "type": "string"
@@ -223,12 +240,14 @@
           }
         },
         "required": [
+          "cluster_id",
           "agent_principal_id",
           "component",
           "credential_kind",
           "credential_expires_at",
           "status",
-          "last_seen_at"
+          "last_seen_at",
+          "redeemed_at"
         ],
         "type": "object"
       },
@@ -499,26 +518,6 @@
           "created_at",
           "updated_at",
           "archived_at"
-        ],
-        "type": "object"
-      },
-      "AssignTargetAgentRequestBody": {
-        "additionalProperties": false,
-        "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "example": "https://example.com/schemas/AssignTargetAgentRequestBody.json",
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
-          "agent_principal_id": {
-            "description": "The runtime agent's principal ID; empty unassigns the agent",
-            "type": "string"
-          }
-        },
-        "required": [
-          "agent_principal_id"
         ],
         "type": "object"
       },
@@ -1804,10 +1803,6 @@
             "readOnly": true,
             "type": "string"
           },
-          "agent_principal_id": {
-            "description": "The runtime agent that serves the target",
-            "type": "string"
-          },
           "display_name": {
             "description": "The display name for the target",
             "minLength": 3,
@@ -2431,6 +2426,9 @@
       "IssuedEnrolment": {
         "additionalProperties": false,
         "properties": {
+          "cluster_id": {
+            "type": "string"
+          },
           "expires_at": {
             "format": "date-time",
             "type": "string"
@@ -2441,15 +2439,12 @@
           "pool": {
             "type": "string"
           },
-          "target_id": {
-            "type": "string"
-          },
           "token": {
             "type": "string"
           }
         },
         "required": [
-          "target_id",
+          "cluster_id",
           "method",
           "token",
           "pool",
@@ -3425,6 +3420,9 @@
       "Redeemed": {
         "additionalProperties": false,
         "properties": {
+          "cluster_id": {
+            "type": "string"
+          },
           "credential_id": {
             "type": "string"
           },
@@ -3436,6 +3434,9 @@
             "nullable": true,
             "type": "string"
           },
+          "organization_id": {
+            "type": "string"
+          },
           "workload_principal_id": {
             "type": "string"
           },
@@ -3444,6 +3445,8 @@
           }
         },
         "required": [
+          "organization_id",
+          "cluster_id",
           "workload_principal_id",
           "credential_id",
           "credential_kind",
@@ -7149,8 +7152,13 @@
       "TargetSnapshot": {
         "additionalProperties": false,
         "properties": {
-          "agent_principal_id": {
-            "nullable": true,
+          "can_execute": {
+            "type": "boolean"
+          },
+          "can_observe": {
+            "type": "boolean"
+          },
+          "cluster_id": {
             "type": "string"
           },
           "created_at": {
@@ -7169,11 +7177,6 @@
             "type": "string"
           },
           "id": {
-            "type": "string"
-          },
-          "last_reported_at": {
-            "format": "date-time",
-            "nullable": true,
             "type": "string"
           },
           "locator": {
@@ -7200,12 +7203,13 @@
           "id",
           "organization_id",
           "environment_id",
+          "cluster_id",
           "slug",
           "display_name",
           "runtime",
           "locator",
-          "agent_principal_id",
-          "last_reported_at",
+          "can_observe",
+          "can_execute",
           "created_at",
           "updated_at",
           "deleted_at"
@@ -7852,7 +7856,7 @@
     },
     "/v1/agent/enrolments/redeem": {
       "post": {
-        "operationId": "redeem-target-enrolment",
+        "operationId": "redeem-cluster-enrolment",
         "requestBody": {
           "content": {
             "application/json": {
@@ -7885,7 +7889,7 @@
             "description": "Error"
           }
         },
-        "summary": "Redeem a Target enrolment token for a workload credential",
+        "summary": "Redeem a Cluster enrolment token for a workload credential",
         "tags": [
           "enrolment"
         ]
@@ -10726,6 +10730,54 @@
         ]
       }
     },
+    "/v1/clusters/{cluster_id}/agent": {
+      "get": {
+        "operationId": "get-cluster-agent",
+        "parameters": [
+          {
+            "description": "The Cluster",
+            "in": "path",
+            "name": "cluster_id",
+            "required": true,
+            "schema": {
+              "description": "The Cluster",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseAgentStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get the Cluster's agent and credential status",
+        "tags": [
+          "enrolment"
+        ]
+      }
+    },
     "/v1/clusters/{cluster_id}/archive": {
       "post": {
         "operationId": "archive-cluster",
@@ -10771,6 +10823,64 @@
         "summary": "Archive a Cluster and revoke its agent",
         "tags": [
           "clusters"
+        ]
+      }
+    },
+    "/v1/clusters/{cluster_id}/enrolments": {
+      "post": {
+        "operationId": "create-cluster-enrolment",
+        "parameters": [
+          {
+            "description": "The Cluster the agent will serve",
+            "in": "path",
+            "name": "cluster_id",
+            "required": true,
+            "schema": {
+              "description": "The Cluster the agent will serve",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRequestBody1"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseIssuedEnrolment"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a single-use enrolment token for a Cluster's runtime agent",
+        "tags": [
+          "enrolment"
         ]
       }
     },
@@ -15297,110 +15407,6 @@
         ]
       }
     },
-    "/v1/targets/{target_id}/agent": {
-      "get": {
-        "operationId": "get-target-agent",
-        "parameters": [
-          {
-            "description": "The Target",
-            "in": "path",
-            "name": "target_id",
-            "required": true,
-            "schema": {
-              "description": "The Target",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ResponseAgentStatus"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Get the Target's assigned agent and credential status",
-        "tags": [
-          "enrolment"
-        ]
-      },
-      "put": {
-        "operationId": "assign-target-agent",
-        "parameters": [
-          {
-            "description": "The Target's ID",
-            "in": "path",
-            "name": "target_id",
-            "required": true,
-            "schema": {
-              "description": "The Target's ID",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AssignTargetAgentRequestBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ResponseTargetSnapshot"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Assign or unassign a Target's runtime agent",
-        "tags": [
-          "environments"
-        ]
-      }
-    },
     "/v1/targets/{target_id}/archive": {
       "post": {
         "operationId": "archive-target",
@@ -15494,64 +15500,6 @@
         "summary": "List the active Deployment assignments for the Target's agent",
         "tags": [
           "deployments"
-        ]
-      }
-    },
-    "/v1/targets/{target_id}/enrolments": {
-      "post": {
-        "operationId": "create-target-enrolment",
-        "parameters": [
-          {
-            "description": "The Target the agent will serve",
-            "in": "path",
-            "name": "target_id",
-            "required": true,
-            "schema": {
-              "description": "The Target the agent will serve",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateRequestBody1"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ResponseIssuedEnrolment"
-                }
-              }
-            },
-            "description": "Created"
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Create a single-use enrolment token for a Target's runtime agent",
-        "tags": [
-          "enrolment"
         ]
       }
     },

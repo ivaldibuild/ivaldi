@@ -110,11 +110,10 @@ func (r *UpdateEnvironmentRequest) props() delivery.UpdateEnvironmentProps {
 type CreateTargetRequest struct {
 	EnvironmentID string `path:"environment_id" doc:"The Environment the Target belongs to"`
 	Body          struct {
-		DisplayName      string            `json:"display_name" required:"true" minLength:"3" doc:"The display name for the target"`
-		Slug             *string           `json:"slug,omitempty" required:"false" doc:"Url slug for the target; derived from the display name when omitted"`
-		Runtime          string            `json:"runtime" required:"true" enum:"kubernetes" doc:"The runtime the target deploys to"`
-		Locator          map[string]string `json:"locator" required:"true" doc:"Where the target is, in the runtime's terms"`
-		AgentPrincipalID *string           `json:"agent_principal_id,omitempty" required:"false" doc:"The runtime agent that serves the target"`
+		DisplayName string            `json:"display_name" required:"true" minLength:"3" doc:"The display name for the target"`
+		Slug        *string           `json:"slug,omitempty" required:"false" doc:"Url slug for the target; derived from the display name when omitted"`
+		Runtime     string            `json:"runtime" required:"true" enum:"kubernetes" doc:"The runtime the target deploys to"`
+		Locator     map[string]string `json:"locator" required:"true" doc:"Where the target is, in the runtime's terms"`
 	}
 }
 
@@ -128,9 +127,6 @@ func (r *CreateTargetRequest) input(organizationID string) delivery.CreateTarget
 	}
 	if r.Body.Slug != nil {
 		in.Slug = *r.Body.Slug
-	}
-	if r.Body.AgentPrincipalID != nil {
-		in.AgentPrincipalID = *r.Body.AgentPrincipalID
 	}
 	return in
 }

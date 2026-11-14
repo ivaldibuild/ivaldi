@@ -36,6 +36,7 @@ type options struct {
 	applications Applications
 	environments Environments
 	targets      Targets
+	clusters     Clusters
 	lifecycles   Lifecycles
 	history      vcs.History
 	changes      provenance.Lookup
@@ -63,6 +64,9 @@ func WithTargets(r Targets) ServiceOption {
 }
 func WithLifecycles(r Lifecycles) ServiceOption {
 	return func(o *options) { o.lifecycles = r }
+}
+func WithClusters(r Clusters) ServiceOption {
+	return func(o *options) { o.clusters = r }
 }
 
 // WithCommitHistory reads the commits between two Builds. The
@@ -107,6 +111,7 @@ func NewService(opts ...ServiceOption) (delivery.DeploymentService, error) {
 		{"Applications", o.applications != nil},
 		{"Environments", o.environments != nil},
 		{"Targets", o.targets != nil},
+		{"Clusters", o.clusters != nil},
 		{"Lifecycles", o.lifecycles != nil},
 		{"CommitHistory", o.history != nil},
 		{"Authorizer", o.authz != nil},
@@ -270,8 +275,8 @@ func (s *service) ListAssignments(ctx context.Context, actor identity.Actor, org
 	if err != nil {
 		return nil, err
 	}
-	if target.AgentPrincipalID() == nil || *target.AgentPrincipalID() != actor.PrincipalID {
-		return nil, fmt.Errorf("%w: %s does not serve target %s", delivery.ErrNotDeploymentAgent, actor.PrincipalID, targetID)
+	if err := s.checkTargetAgent(ctx, organizationID, target, actor.PrincipalID); err != nil {
+		return nil, err
 	}
 	// The statuses are filtered in the query, not after it, so a Target's
 	// finished history never pushes its in-flight work off the page. At most
@@ -309,14 +314,14 @@ func (s *service) ReportDeployment(ctx context.Context, actor identity.Actor, in
 		if err != nil {
 			return err
 		}
-		// The Target is locked because it is written back below: re-enrolment
-		// or an archive committed meanwhile must not be overwritten.
+		// The Target is locked so it cannot be archived mid-report, and the
+		// Cluster so re-enrolment cannot swap the agent mid-report.
 		target, err := s.targets.GetTargetForUpdate(ctx, in.OrganizationID, d.TargetID())
 		if err != nil {
 			return err
 		}
-		if target.AgentPrincipalID() == nil || *target.AgentPrincipalID() != actor.PrincipalID {
-			return fmt.Errorf("%w: %s does not serve target %s", delivery.ErrNotDeploymentAgent, actor.PrincipalID, target.ID())
+		if err := s.checkTargetAgentForUpdate(ctx, in.OrganizationID, target, actor.PrincipalID); err != nil {
+			return err
 		}
 		event, err := delivery.NewDeploymentEvent(delivery.NewDeploymentEventProps{
 			OrganizationID: in.OrganizationID, DeploymentID: d.ID(), Kind: in.Kind, Status: in.Status,
@@ -333,12 +338,6 @@ func (s *service) ReportDeployment(ctx context.Context, actor identity.Actor, in
 		if !inserted {
 			out = d
 			return nil
-		}
-		if err := target.RecordReport(actor.PrincipalID); err != nil {
-			return err
-		}
-		if err := s.targets.UpdateTarget(ctx, target); err != nil {
-			return err
 		}
 		if in.Status == nil {
 			out = d
@@ -365,18 +364,42 @@ func (s *service) ReportDeployment(ctx context.Context, actor identity.Actor, in
 	return s.detail(ctx, out)
 }
 
+// RecordTargetHeartbeat notes that the Target's Cluster agent is in contact.
+// Liveness is the Cluster's now, so this only checks the caller; the
+// cluster-wide heartbeat replaces it.
 func (s *service) RecordTargetHeartbeat(ctx context.Context, actor identity.Actor, organizationID, targetID string) error {
-	return s.writer.Tx.WithinTx(ctx, func(ctx context.Context) error {
-		// Locked for the same reason as in ReportDeployment.
-		t, err := s.targets.GetTargetForUpdate(ctx, organizationID, targetID)
-		if err != nil {
-			return err
-		}
-		if err := t.RecordReport(actor.PrincipalID); err != nil {
-			return err
-		}
-		return s.targets.UpdateTarget(ctx, t)
-	})
+	target, err := s.targets.GetTarget(ctx, organizationID, targetID)
+	if err != nil {
+		return err
+	}
+	return s.checkTargetAgent(ctx, organizationID, target, actor.PrincipalID)
+}
+
+// checkTargetAgent refuses anyone but the agent of the Target's Cluster.
+func (s *service) checkTargetAgent(ctx context.Context, organizationID string, target *delivery.Target, principalID string) error {
+	cluster, err := s.clusters.GetCluster(ctx, organizationID, target.ClusterID())
+	if err != nil {
+		return err
+	}
+	return requireClusterAgent(cluster, target, principalID)
+}
+
+// checkTargetAgentForUpdate is checkTargetAgent that also locks the Cluster,
+// so a re-enrolment cannot change the agent between the check and the write.
+func (s *service) checkTargetAgentForUpdate(ctx context.Context, organizationID string, target *delivery.Target, principalID string) error {
+	cluster, err := s.clusters.GetClusterForUpdate(ctx, organizationID, target.ClusterID())
+	if err != nil {
+		return err
+	}
+	return requireClusterAgent(cluster, target, principalID)
+}
+
+func requireClusterAgent(cluster *delivery.Cluster, target *delivery.Target, principalID string) error {
+	agent := cluster.AgentPrincipalID()
+	if agent == nil || *agent != principalID {
+		return fmt.Errorf("%w: %s does not serve target %s", delivery.ErrNotDeploymentAgent, principalID, target.ID())
+	}
+	return nil
 }
 
 func (s *service) ReleaseChanges(ctx context.Context, _ identity.Actor, organizationID, releaseID, targetID string) (*delivery.ReleaseChanges, error) {
@@ -615,7 +638,11 @@ func (s *service) plan(ctx context.Context, organizationID string, rel *delivery
 			check("apply_config", placement.ApplyConfig() != nil, "the target has no apply config"),
 		)
 	}
-	p.checks = append(p.checks, check("agent_assigned", target.AgentPrincipalID() != nil, "the target has no agent assigned"))
+	cluster, err := s.clusters.GetCluster(ctx, organizationID, target.ClusterID())
+	if err != nil {
+		return nil, err
+	}
+	p.checks = append(p.checks, check("agent_assigned", cluster.AgentPrincipalID() != nil, "the target's cluster has no agent assigned"))
 	inFlight, err := s.deployments.GetInFlightDeployment(ctx, organizationID, rel.ApplicationID(), targetID)
 	if errors.Is(err, delivery.ErrNotFound) {
 		p.checks = append(p.checks, check("no_in_flight", true, ""))

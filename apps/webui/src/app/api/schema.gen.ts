@@ -30,8 +30,8 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Redeem a Target enrolment token for a workload credential */
-    post: operations['redeem-target-enrolment'];
+    /** Redeem a Cluster enrolment token for a workload credential */
+    post: operations['redeem-cluster-enrolment'];
     delete?: never;
     options?: never;
     head?: never;
@@ -682,6 +682,23 @@ export interface paths {
     patch: operations['update-cluster'];
     trace?: never;
   };
+  '/v1/clusters/{cluster_id}/agent': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get the Cluster's agent and credential status */
+    get: operations['get-cluster-agent'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/clusters/{cluster_id}/archive': {
     parameters: {
       query?: never;
@@ -693,6 +710,23 @@ export interface paths {
     put?: never;
     /** Archive a Cluster and revoke its agent */
     post: operations['archive-cluster'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/clusters/{cluster_id}/enrolments': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create a single-use enrolment token for a Cluster's runtime agent */
+    post: operations['create-cluster-enrolment'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1808,24 +1842,6 @@ export interface paths {
     patch: operations['update-target'];
     trace?: never;
   };
-  '/v1/targets/{target_id}/agent': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get the Target's assigned agent and credential status */
-    get: operations['get-target-agent'];
-    /** Assign or unassign a Target's runtime agent */
-    put: operations['assign-target-agent'];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   '/v1/targets/{target_id}/archive': {
     parameters: {
       query?: never;
@@ -1854,23 +1870,6 @@ export interface paths {
     get: operations['list-target-assignments'];
     put?: never;
     post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/v1/targets/{target_id}/enrolments': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Create a single-use enrolment token for a Target's runtime agent */
-    post: operations['create-target-enrolment'];
     delete?: never;
     options?: never;
     head?: never;
@@ -2305,12 +2304,18 @@ export interface components {
     };
     AgentStatus: {
       agent_principal_id: string | null;
+      agent_version?: string;
+      cluster_id: string;
       component: string;
       /** Format: date-time */
       credential_expires_at: string | null;
       credential_kind: string | null;
+      kubernetes_version?: string;
+      last_failure?: components['schemas']['AgentFailure'];
       /** Format: date-time */
       last_seen_at: string | null;
+      /** Format: date-time */
+      redeemed_at: string | null;
       status: string;
     };
     AgentSummary: {
@@ -2385,16 +2390,6 @@ export interface components {
       source: 'declared' | 'observed';
       /** Format: date-time */
       updated_at: string;
-    };
-    AssignTargetAgentRequestBody: {
-      /**
-       * Format: uri
-       * @description A URL to the JSON Schema for this object.
-       * @example https://example.com/schemas/AssignTargetAgentRequestBody.json
-       */
-      readonly $schema?: string;
-      /** @description The runtime agent's principal ID; empty unassigns the agent */
-      agent_principal_id: string;
     };
     AssignmentArtifact: {
       artifact_id: string;
@@ -2923,8 +2918,6 @@ export interface components {
        * @example https://example.com/schemas/CreateTargetRequestBody.json
        */
       readonly $schema?: string;
-      /** @description The runtime agent that serves the target */
-      agent_principal_id?: string;
       /** @description The display name for the target */
       display_name: string;
       /** @description Where the target is, in the runtime's terms */
@@ -3156,11 +3149,11 @@ export interface components {
       url: string;
     };
     IssuedEnrolment: {
+      cluster_id: string;
       /** Format: date-time */
       expires_at: string;
       method: string;
       pool: string;
-      target_id: string;
       token: string;
     };
     IssuedToken: {
@@ -3494,10 +3487,12 @@ export interface components {
       token: string;
     };
     Redeemed: {
+      cluster_id: string;
       credential_id: string;
       credential_kind: string;
       /** Format: date-time */
       expires_at: string | null;
+      organization_id: string;
       workload_principal_id: string;
       workload_token?: string;
     };
@@ -4960,7 +4955,9 @@ export interface components {
       provider: 'github';
     };
     TargetSnapshot: {
-      agent_principal_id: string | null;
+      can_execute: boolean;
+      can_observe: boolean;
+      cluster_id: string;
       /** Format: date-time */
       created_at: string;
       /** Format: date-time */
@@ -4968,8 +4965,6 @@ export interface components {
       display_name: string;
       environment_id: string;
       id: string;
-      /** Format: date-time */
-      last_reported_at: string | null;
       locator: {
         [key: string]: string;
       };
@@ -5275,7 +5270,7 @@ export interface operations {
       };
     };
   };
-  'redeem-target-enrolment': {
+  'redeem-cluster-enrolment': {
     parameters: {
       query?: never;
       header?: never;
@@ -7026,6 +7021,38 @@ export interface operations {
       };
     };
   };
+  'get-cluster-agent': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Cluster */
+        cluster_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseAgentStatus'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
   'archive-cluster': {
     parameters: {
       query?: never;
@@ -7045,6 +7072,42 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ResponseClusterSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'create-cluster-enrolment': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Cluster the agent will serve */
+        cluster_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateRequestBody1'];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseIssuedEnrolment'];
         };
       };
       /** @description Error */
@@ -9801,74 +9864,6 @@ export interface operations {
       };
     };
   };
-  'get-target-agent': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description The Target */
-        target_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ResponseAgentStatus'];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/problem+json': components['schemas']['ErrorModel'];
-        };
-      };
-    };
-  };
-  'assign-target-agent': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description The Target's ID */
-        target_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['AssignTargetAgentRequestBody'];
-      };
-    };
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ResponseTargetSnapshot'];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/problem+json': components['schemas']['ErrorModel'];
-        };
-      };
-    };
-  };
   'archive-target': {
     parameters: {
       query?: never;
@@ -9920,42 +9915,6 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ResponseListDeploymentAssignment'];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/problem+json': components['schemas']['ErrorModel'];
-        };
-      };
-    };
-  };
-  'create-target-enrolment': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description The Target the agent will serve */
-        target_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreateRequestBody1'];
-      };
-    };
-    responses: {
-      /** @description Created */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ResponseIssuedEnrolment'];
         };
       };
       /** @description Error */

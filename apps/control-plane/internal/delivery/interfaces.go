@@ -86,11 +86,13 @@ type LifecycleRepository interface {
 	CountActiveLifecyclesWithEnvironment(ctx context.Context, organizationID, environmentID string) (int, error)
 }
 
-// ListTargetsQuery lists an Environment's Targets. It sorts by "created_at"
-// (the default), "slug", or "display_name".
+// ListTargetsQuery lists Targets in an Environment, a Cluster, or the whole
+// Organization when the other is empty. It sorts by "created_at" (the
+// default), "slug", or "display_name".
 type ListTargetsQuery struct {
 	OrganizationID  string
 	EnvironmentID   string
+	ClusterID       string
 	IncludeArchived bool
 	Page            pagination.Query
 }
@@ -101,10 +103,10 @@ type TargetRepository interface {
 	// GetTargetForUpdate is GetTarget that also locks the row until the
 	// transaction ends.
 	GetTargetForUpdate(ctx context.Context, organizationID, targetID string) (*Target, error)
-	// GetTargetByAgentPrincipalID returns the active Target the workload
-	// principal serves.
-	GetTargetByAgentPrincipalID(ctx context.Context, organizationID, principalID string) (*Target, error)
 	GetTargetBySlug(ctx context.Context, organizationID, environmentID, slug string) (*Target, error)
+	// GetTargetByNamespace returns the active Target in the Cluster's
+	// namespace, which is how a refused duplicate is named.
+	GetTargetByNamespace(ctx context.Context, organizationID, clusterID, namespace string) (*Target, error)
 	ListTargets(ctx context.Context, query ListTargetsQuery) (*pagination.Result[*Target], error)
 	UpdateTarget(ctx context.Context, t *Target) error
 	CountActiveTargets(ctx context.Context, organizationID, environmentID string) (int, error)
@@ -136,6 +138,9 @@ type ClusterRepository interface {
 	ListClusters(ctx context.Context, query ListClustersQuery) (*pagination.Result[*Cluster], error)
 	// UpdateCluster writes the cluster's state.
 	UpdateCluster(ctx context.Context, c *Cluster) error
+	// CountActiveTargets counts the Cluster's active Targets, which keep it
+	// from being archived.
+	CountActiveTargets(ctx context.Context, organizationID, clusterID string) (int, error)
 }
 
 // ListRegistriesQuery lists a Workspace's Registries. It sorts by
@@ -256,11 +261,6 @@ type EnvironmentService interface {
 	GetTarget(ctx context.Context, actor identity.Actor, organizationID, targetID string) (*Target, error)
 	ListTargets(ctx context.Context, actor identity.Actor, query ListTargetsQuery) (*pagination.Result[*Target], error)
 	UpdateTarget(ctx context.Context, actor identity.Actor, organizationID, targetID string, props UpdateTargetProps) (*Target, error)
-	// AssignTargetAgent makes a runtime agent's workload principal the only
-	// one that may report on the Target; an empty principalID unassigns it.
-	AssignTargetAgent(ctx context.Context, actor identity.Actor, organizationID, targetID, principalID string) (*Target, error)
-	// RecordTargetReport notes that the Target's agent, the actor, is in contact.
-	RecordTargetReport(ctx context.Context, actor identity.Actor, organizationID, targetID string) error
 	ArchiveTarget(ctx context.Context, actor identity.Actor, organizationID, targetID string) (*Target, error)
 	RestoreTarget(ctx context.Context, actor identity.Actor, organizationID, targetID string) (*Target, error)
 }
@@ -280,13 +280,14 @@ type CreateEnvironmentInput struct {
 type CreateTargetInput struct {
 	OrganizationID string
 	EnvironmentID  string
+	// ClusterID is the Cluster the Target's locator names. The service checks
+	// it names an active Cluster in the Organization.
+	ClusterID string
 	// Slug is derived from DisplayName when empty.
 	Slug        string
 	DisplayName string
 	Runtime     Runtime
 	Locator     map[string]string
-	// AgentPrincipalID is the runtime agent that serves the Target, if known yet.
-	AgentPrincipalID string
 }
 
 // AgentRevoker suspends a Cluster's former agent and revokes its live

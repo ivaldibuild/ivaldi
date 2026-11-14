@@ -23,6 +23,8 @@ type state struct {
 	audit    []audit.Event
 	events   []events.Envelope
 	revoked  []string
+	// activeTargets is what CountActiveTargets reports for every Cluster.
+	activeTargets int
 }
 
 func (s state) clone() state {
@@ -130,6 +132,10 @@ func (s *store) ListClusters(_ context.Context, query delivery.ListClustersQuery
 		out = append(out, rebuildCluster(snapshot))
 	}
 	return &pagination.Result[*delivery.Cluster]{Items: out, TotalCount: len(out)}, nil
+}
+
+func (s *store) CountActiveTargets(_ context.Context, _, _ string) (int, error) {
+	return s.activeTargets, nil
 }
 
 func (s *store) UpdateCluster(_ context.Context, c *delivery.Cluster) error {

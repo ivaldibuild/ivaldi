@@ -73,7 +73,6 @@ func TestEveryOperationNeedsAToken(t *testing.T) {
 		{http.MethodGet, "/environments/env_x/targets"},
 		{http.MethodGet, "/targets/tgt_x"},
 		{http.MethodPatch, "/targets/tgt_x"},
-		{http.MethodPut, "/targets/tgt_x/agent"},
 		{http.MethodPost, "/targets/tgt_x/archive"},
 		{http.MethodPost, "/targets/tgt_x/restore"},
 	} {
@@ -121,7 +120,7 @@ func TestHTTPErrors(t *testing.T) {
 		}, http.StatusNotFound, false},
 		{"archiving an environment in use", func(h *httpWorld) (string, string, string) {
 			env := h.env(t, wsActive, "staging", false)
-			h.target(t, env.ID(), "web", "", false)
+			h.target(t, env.ID(), "web", false)
 			return http.MethodPost, "/environments/" + env.ID() + "/archive", ""
 		}, http.StatusConflict, false},
 		{"a taken slug", func(h *httpWorld) (string, string, string) {
@@ -155,10 +154,6 @@ func TestTargetsOverHTTP(t *testing.T) {
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 	id := out["data"].(map[string]any)["id"].(string)
 
-	rec, out = h.call(t, http.MethodPut, "/targets/"+id+"/agent", "ada", `{"agent_principal_id": "prn_agent"}`)
-	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-	assert.Equal(t, "prn_agent", out["data"].(map[string]any)["agent_principal_id"])
-
 	rec, out = h.call(t, http.MethodGet, "/environments/"+env.ID()+"/targets", "ada", "")
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	items := out["data"].(map[string]any)["items"].([]any)
@@ -169,5 +164,5 @@ func TestTargetsOverHTTP(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assert.NotNil(t, out["data"].(map[string]any)["deleted_at"])
 
-	assert.Equal(t, []string{delivery.EventTargetCreated, delivery.EventTargetAgentAssigned, delivery.EventTargetArchived}, h.auditTypes())
+	assert.Equal(t, []string{delivery.EventTargetCreated, delivery.EventTargetArchived}, h.auditTypes())
 }

@@ -25,8 +25,7 @@ type options struct {
 	tokens        iam.WorkloadEnrollmentTokenRepository
 	credentials   iam.WorkloadCredentialRepository
 	principals    iam.PrincipalRepository
-	targets       Targets
-	environments  Environments
+	clusters      Clusters
 	kubernetes    workloadauth.KubernetesVerifier
 	authz         authorization.Authorizer
 	writer        change.Writer
@@ -47,11 +46,8 @@ func WithCredentialRepo(r iam.WorkloadCredentialRepository) ServiceOption {
 func WithPrincipalRepo(r iam.PrincipalRepository) ServiceOption {
 	return func(o *options) { o.principals = r }
 }
-func WithTargets(r Targets) ServiceOption {
-	return func(o *options) { o.targets = r }
-}
-func WithEnvironments(r Environments) ServiceOption {
-	return func(o *options) { o.environments = r }
+func WithClusters(r Clusters) ServiceOption {
+	return func(o *options) { o.clusters = r }
 }
 func WithKubernetesVerifier(v workloadauth.KubernetesVerifier) ServiceOption {
 	return func(o *options) { o.kubernetes = v }
@@ -94,10 +90,8 @@ func NewService(opts ...ServiceOption) (Service, error) {
 		return nil, errors.New("enrollment: CredentialRepo is required")
 	case o.principals == nil:
 		return nil, errors.New("enrollment: PrincipalRepo is required")
-	case o.targets == nil:
-		return nil, errors.New("enrollment: Targets is required")
-	case o.environments == nil:
-		return nil, errors.New("enrollment: Environments is required")
+	case o.clusters == nil:
+		return nil, errors.New("enrollment: Clusters is required")
 	case o.authz == nil:
 		return nil, errors.New("enrollment: Authorizer is required")
 	}
@@ -113,7 +107,7 @@ func NewService(opts ...ServiceOption) (Service, error) {
 	if o.grace <= 0 {
 		o.grace = DefaultGracePeriod
 	}
-	return &authorized{next: &service{options: o}, authz: o.authz, targets: o.targets, environments: o.environments}, nil
+	return &authorized{next: &service{options: o}, authz: o.authz}, nil
 }
 
 type service struct{ options }
@@ -122,41 +116,37 @@ func (s *service) Create(ctx context.Context, actor identity.Actor, in CreateInp
 	if !in.Method.Valid() {
 		return nil, delivery.NewErrInvalidInput("credential method must be bearer, mtls, or kubernetes")
 	}
-	target, err := s.targets.GetTarget(ctx, in.OrganizationID, in.TargetID)
-	if err != nil {
-		return nil, err
-	}
-	if target.Archived() {
-		return nil, fmt.Errorf("%w: target %s", delivery.ErrArchived, target.ID())
-	}
-	env, err := s.environments.GetEnvironment(ctx, in.OrganizationID, target.EnvironmentID())
-	if err != nil {
-		return nil, err
-	}
-	if env.Archived() {
-		return nil, fmt.Errorf("%w: environment %s", delivery.ErrArchived, env.ID())
-	}
 	secret, err := iam.NewWorkloadEnrollmentTokenSecret()
 	if err != nil {
 		return nil, err
 	}
 	expires := clock.Now().Add(s.enrolTTL)
-	pool := "target:" + target.ID()
-	token, err := iam.NewWorkloadEnrollmentToken(iam.NewWorkloadEnrollmentTokenProps{
-		OrganizationID: in.OrganizationID, TokenHash: secret.Hash, Pool: pool,
-		TargetID: &in.TargetID, CredentialKind: in.Method.Kind(),
-		CreatedByPrincipalID: actor.PrincipalID, ExpiresAt: expires,
-	}, nil)
-	if err != nil {
-		return nil, err
-	}
+	pool := "cluster:" + in.ClusterID
+	var out *IssuedEnrolment
 	err = s.writer.Tx.WithinTx(ctx, func(ctx context.Context) error {
+		// Locked so the Cluster cannot be archived while its token is minted.
+		cluster, err := s.clusters.GetClusterForUpdate(ctx, in.OrganizationID, in.ClusterID)
+		if err != nil {
+			return err
+		}
+		if cluster.Archived() {
+			return fmt.Errorf("%w: cluster %s", delivery.ErrArchived, cluster.ID())
+		}
+		token, err := iam.NewWorkloadEnrollmentToken(iam.NewWorkloadEnrollmentTokenProps{
+			OrganizationID: in.OrganizationID, TokenHash: secret.Hash, Pool: pool,
+			ClusterID: &in.ClusterID, CredentialKind: in.Method.Kind(),
+			CreatedByPrincipalID: actor.PrincipalID, ExpiresAt: expires,
+		}, nil)
+		if err != nil {
+			return err
+		}
 		if err := s.tokens.Write(ctx, token); err != nil {
 			return err
 		}
 		if err := s.writer.Events(ctx, iam.AggregateWorkloadEnrollmentToken, token.ID(), token); err != nil {
 			return err
 		}
+		out = &IssuedEnrolment{ClusterID: cluster.ID(), Method: in.Method, Token: secret.Secret, Pool: pool, ExpiresAt: expires}
 		return s.writer.AuditRecord(ctx, audit.Event{
 			Type: iam.EventWorkloadEnrollmentCreated, OrganizationID: in.OrganizationID,
 			ResourceID: token.ID(), Actor: actor, After: token.Snapshot(),
@@ -165,7 +155,7 @@ func (s *service) Create(ctx context.Context, actor identity.Actor, in CreateInp
 	if err != nil {
 		return nil, err
 	}
-	return &IssuedEnrolment{TargetID: target.ID(), Method: in.Method, Token: secret.Secret, Pool: pool, ExpiresAt: expires}, nil
+	return out, nil
 }
 
 func (s *service) Redeem(ctx context.Context, in RedeemInput) (*Redeemed, error) {
@@ -181,6 +171,11 @@ func (s *service) Redeem(ctx context.Context, in RedeemInput) (*Redeemed, error)
 	if err != nil {
 		return nil, err
 	}
+	// A refused redeem rolls back, so the refusal is recorded outside the
+	// transaction that refused it, on the Cluster being enrolled.
+	outer := ctx
+	var conflict *identityInUseError
+	var organizationID, clusterID string
 	var out *Redeemed
 	err = s.writer.Tx.WithinTx(ctx, func(ctx context.Context) error {
 		token, err := s.tokens.GetByHashForUpdate(ctx, iam.HashWorkloadEnrollmentToken(in.Token))
@@ -192,27 +187,22 @@ func (s *service) Redeem(ctx context.Context, in RedeemInput) (*Redeemed, error)
 			return fmt.Errorf("%w: enrollment token %s", iam.ErrAlreadyUsed, token.ID())
 		case token.Expired():
 			return fmt.Errorf("%w: enrollment token %s", iam.ErrExpired, token.ID())
-		case token.TargetID() == nil:
-			return delivery.NewErrInvalidInput("enrollment token is not bound to a target")
+		case token.ClusterID() == nil:
+			return delivery.NewErrInvalidInput("enrollment token is not bound to a cluster")
 		case token.CredentialKind() != in.Method.Kind():
 			return delivery.NewErrInvalidInput("enrollment token is for another credential method")
 		}
-		target, err := s.targets.GetTargetForUpdate(ctx, token.OrganizationID(), *token.TargetID())
+		organizationID, clusterID = token.OrganizationID(), *token.ClusterID()
+		// Locked so an archive cannot land between the check and the write.
+		cluster, err := s.clusters.GetClusterForUpdate(ctx, organizationID, clusterID)
 		if err != nil {
 			return err
 		}
-		if target.Archived() {
-			return fmt.Errorf("%w: target %s", delivery.ErrArchived, target.ID())
-		}
-		env, err := s.environments.GetEnvironment(ctx, token.OrganizationID(), target.EnvironmentID())
-		if err != nil {
-			return err
-		}
-		if env.Archived() {
-			return fmt.Errorf("%w: environment %s", delivery.ErrArchived, env.ID())
+		if cluster.Archived() {
+			return fmt.Errorf("%w: cluster %s", delivery.ErrArchived, cluster.ID())
 		}
 		workload, err := iam.NewWorkload(iam.NewWorkloadProps{
-			PrincipalProps: iam.PrincipalProps{OrganizationID: token.OrganizationID(), DisplayName: "Runtime agent for " + target.DisplayName()},
+			PrincipalProps: iam.PrincipalProps{OrganizationID: organizationID, DisplayName: "Runtime agent for " + cluster.DisplayName()},
 			Component:      iam.ComponentRuntimeAgent, Pool: token.Pool(),
 		}, nil)
 		if err != nil {
@@ -222,7 +212,11 @@ func (s *service) Redeem(ctx context.Context, in RedeemInput) (*Redeemed, error)
 		if err != nil {
 			return err
 		}
-		if err := s.revokeSameIdentity(ctx, token.OrganizationID(), credential); err != nil {
+		if err := s.revokeSameIdentity(ctx, organizationID, cluster, credential); err != nil {
+			var inUse *identityInUseError
+			if errors.As(err, &inUse) {
+				conflict = inUse
+			}
 			return err
 		}
 		if err := s.workloads.Write(ctx, workload); err != nil {
@@ -237,26 +231,26 @@ func (s *service) Redeem(ctx context.Context, in RedeemInput) (*Redeemed, error)
 		if err := s.tokens.Write(ctx, token); err != nil {
 			return err
 		}
-		if err := s.revokeOldAgent(ctx, token.OrganizationID(), target); err != nil {
+		if err := s.revokeOldAgent(ctx, organizationID, cluster); err != nil {
 			return err
 		}
-		if err := target.AssignAgent(workload.ID()); err != nil {
+		if err := cluster.AssignAgent(workload.ID()); err != nil {
 			return err
 		}
-		if err := s.targets.UpdateTarget(ctx, target); err != nil {
+		if err := s.clusters.UpdateCluster(ctx, cluster); err != nil {
 			return err
 		}
-		if err := s.events(ctx, workload, credential, token, target); err != nil {
+		if err := s.events(ctx, workload, credential, token, cluster); err != nil {
 			return err
 		}
 		if err := s.auditRecord(ctx, identity.Actor{PrincipalID: workload.ID(), Kind: identity.ActorWorkload},
-			iam.EventWorkloadEnrollmentRedeemed, token.OrganizationID(), token.ID(), credential.Snapshot()); err != nil {
+			iam.EventWorkloadEnrollmentRedeemed, organizationID, token.ID(), credential.Snapshot()); err != nil {
 			return err
 		}
-		expires := credential.NotAfter()
 		out = &Redeemed{
+			OrganizationID: organizationID, ClusterID: clusterID,
 			WorkloadPrincipalID: workload.ID(), CredentialID: credential.ID(),
-			CredentialKind: credential.Kind(), ExpiresAt: expires,
+			CredentialKind: credential.Kind(), ExpiresAt: credential.NotAfter(),
 		}
 		if issued != nil {
 			out.WorkloadToken = &issued.Secret
@@ -264,9 +258,45 @@ func (s *service) Redeem(ctx context.Context, in RedeemInput) (*Redeemed, error)
 		return nil
 	})
 	if err != nil {
+		if conflict != nil {
+			s.recordAgentFailure(outer, organizationID, clusterID, conflict.reason())
+		}
 		return nil, err
 	}
 	return out, nil
+}
+
+// identityInUseError refuses a redeem whose workload identity already serves
+// another active Cluster. It names the other Cluster only in the record kept
+// for the operator, never in the response: the caller holds only a token.
+type identityInUseError struct {
+	clusterSlug string
+}
+
+func (e *identityInUseError) Error() string {
+	return fmt.Sprintf("%s: this workload identity already serves another cluster", delivery.ErrIdentityInUse)
+}
+
+func (e *identityInUseError) Is(target error) bool { return target == delivery.ErrIdentityInUse }
+
+func (e *identityInUseError) reason() string {
+	return "identity_in_use: this workload identity already serves cluster " + e.clusterSlug
+}
+
+// recordAgentFailure notes a refused redeem on the Cluster being enrolled, in
+// its own transaction so the refusal survives the rollback. It is best
+// effort: the redeem already failed, and its error is what the caller sees.
+func (s *service) recordAgentFailure(ctx context.Context, organizationID, clusterID, reason string) {
+	_ = s.writer.Tx.WithinTx(ctx, func(ctx context.Context) error {
+		cluster, err := s.clusters.GetClusterForUpdate(ctx, organizationID, clusterID)
+		if err != nil {
+			return err
+		}
+		if err := cluster.RecordAgentFailure(reason); err != nil {
+			return err
+		}
+		return s.clusters.UpdateCluster(ctx, cluster)
+	})
 }
 
 // verifyKubernetes verifies the projected service-account token of a
@@ -358,9 +388,9 @@ func (s *service) Renew(ctx context.Context, caller identity.Caller) (*Renewed, 
 		if !workload.Active() {
 			return fmt.Errorf("%w: workload is %s", iam.ErrStatus, workload.Status())
 		}
-		if _, err := s.targets.GetTargetByAgentPrincipalID(ctx, caller.OrganizationID, workload.ID()); err != nil {
+		if _, err := s.clusters.GetClusterByAgentPrincipalID(ctx, caller.OrganizationID, workload.ID()); err != nil {
 			if errors.Is(err, delivery.ErrNotFound) {
-				return fmt.Errorf("%w: workload is not a target's assigned agent", delivery.ErrNotTargetAgent)
+				return fmt.Errorf("%w: workload is not a cluster's assigned agent", delivery.ErrNotClusterAgent)
 			}
 			return err
 		}
@@ -442,21 +472,35 @@ func (s *service) Renew(ctx context.Context, caller identity.Caller) (*Renewed, 
 	return out, nil
 }
 
-func (s *service) Status(ctx context.Context, _ identity.Actor, organizationID, targetID string) (*AgentStatus, error) {
-	target, err := s.targets.GetTarget(ctx, organizationID, targetID)
+func (s *service) Status(ctx context.Context, _ identity.Actor, organizationID, clusterID string) (*AgentStatus, error) {
+	cluster, err := s.clusters.GetCluster(ctx, organizationID, clusterID)
 	if err != nil {
 		return nil, err
 	}
-	out := &AgentStatus{AgentPrincipalID: target.AgentPrincipalID(), LastSeenAt: target.LastReportedAt()}
-	if target.AgentPrincipalID() == nil {
+	out := &AgentStatus{
+		ClusterID:        cluster.ID(),
+		AgentPrincipalID: cluster.AgentPrincipalID(),
+		LastSeenAt:       cluster.LastReportedAt(),
+		LastFailure:      cluster.AgentLastFailure(),
+	}
+	capabilities := cluster.AgentCapabilities()
+	if v, ok := capabilities["agent_version"].(string); ok {
+		out.AgentVersion = v
+	}
+	if v, ok := capabilities["kubernetes_version"].(string); ok {
+		out.KubernetesVersion = v
+	}
+	if cluster.AgentPrincipalID() == nil {
 		out.Status = "unassigned"
 		return out, nil
 	}
-	workload, err := s.workloads.Get(ctx, organizationID, *target.AgentPrincipalID())
+	workload, err := s.workloads.Get(ctx, organizationID, *cluster.AgentPrincipalID())
 	if err != nil {
 		return nil, err
 	}
 	out.Component = workload.Component()
+	enrolledAt := workload.EnrolledAt()
+	out.RedeemedAt = &enrolledAt
 	if workload.LastSeenAt() != nil {
 		out.LastSeenAt = workload.LastSeenAt()
 	}
@@ -488,8 +532,11 @@ func (s *service) Status(ctx context.Context, _ identity.Actor, organizationID, 
 
 // revokeSameIdentity revokes the Organization's live credentials that identify
 // the same certificate or Kubernetes service account, so re-enrolment can
-// register the identity again. Bearer tokens are already unique.
-func (s *service) revokeSameIdentity(ctx context.Context, organizationID string, next *iam.WorkloadCredential) error {
+// register the identity again. Bearer tokens are already unique. An identity
+// that already serves another active Cluster is refused instead of revoked:
+// silently cutting that Cluster off would leave it naming an agent that can
+// no longer authenticate.
+func (s *service) revokeSameIdentity(ctx context.Context, organizationID string, enrolling *delivery.Cluster, next *iam.WorkloadCredential) error {
 	if next.Kind() == iam.CredentialBearerToken {
 		return nil
 	}
@@ -498,6 +545,13 @@ func (s *service) revokeSameIdentity(ctx context.Context, organizationID string,
 		return err
 	}
 	for _, credential := range previous {
+		other, err := s.clusters.GetClusterByAgentPrincipalID(ctx, organizationID, credential.PrincipalID())
+		switch {
+		case err == nil && other.ID() != enrolling.ID():
+			return &identityInUseError{clusterSlug: other.Slug()}
+		case err != nil && !errors.Is(err, delivery.ErrNotFound):
+			return err
+		}
 		credential.Revoke()
 		if err := s.credentials.Write(ctx, credential); err != nil {
 			return err
@@ -509,14 +563,16 @@ func (s *service) revokeSameIdentity(ctx context.Context, organizationID string,
 	return nil
 }
 
-func (s *service) revokeOldAgent(ctx context.Context, organizationID string, target *delivery.Target) error {
-	if target.AgentPrincipalID() == nil {
+// revokeOldAgent suspends the Cluster's previous agent and revokes its
+// credentials, so only the agent that just enrolled can report.
+func (s *service) revokeOldAgent(ctx context.Context, organizationID string, cluster *delivery.Cluster) error {
+	if cluster.AgentPrincipalID() == nil {
 		return nil
 	}
-	return revokePrincipal(ctx, s.principals, s.workloads, s.credentials, s.writer, organizationID, *target.AgentPrincipalID())
+	return revokePrincipal(ctx, s.principals, s.workloads, s.credentials, s.writer, organizationID, *cluster.AgentPrincipalID())
 }
 
-func (s *service) events(ctx context.Context, workload *iam.Workload, credential *iam.WorkloadCredential, token *iam.WorkloadEnrollmentToken, target *delivery.Target) error {
+func (s *service) events(ctx context.Context, workload *iam.Workload, credential *iam.WorkloadCredential, token *iam.WorkloadEnrollmentToken, cluster *delivery.Cluster) error {
 	if err := s.writer.Events(ctx, iam.AggregateWorkload, workload.ID(), workload); err != nil {
 		return err
 	}
@@ -526,7 +582,7 @@ func (s *service) events(ctx context.Context, workload *iam.Workload, credential
 	if err := s.writer.Events(ctx, iam.AggregateWorkloadEnrollmentToken, token.ID(), token); err != nil {
 		return err
 	}
-	return s.writer.Events(ctx, delivery.AggregateTarget, target.ID(), target)
+	return s.writer.Events(ctx, delivery.AggregateCluster, cluster.ID(), cluster)
 }
 
 func (s *service) auditRecord(ctx context.Context, actor identity.Actor, eventType, organizationID, resourceID string, after any) error {

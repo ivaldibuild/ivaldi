@@ -107,6 +107,7 @@ func (a *app) wireDelivery() error {
 	envs, err := environments.NewEnvironmentService(
 		environments.WithEnvironmentRepo(envRepo),
 		environments.WithTargetRepo(targetRepo),
+		environments.WithClusterRepo(clusterRepo),
 		environments.WithLifecycleUsage(lifecycleRepo),
 		environments.WithWorkspaces(workspaces),
 		environments.WithResourceRegistrar(a.iam.resources),
@@ -187,6 +188,7 @@ func (a *app) wireDelivery() error {
 		deployments.WithApplications(applicationRepo),
 		deployments.WithEnvironments(envRepo),
 		deployments.WithTargets(targetRepo),
+		deployments.WithClusters(clusterRepo),
 		deployments.WithLifecycles(lifecycleRepo),
 		deployments.WithCommitHistory(a.commitHistory),
 		deployments.WithChanges(a.changes),

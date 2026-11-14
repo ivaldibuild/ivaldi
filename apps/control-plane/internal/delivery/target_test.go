@@ -11,15 +11,11 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/id"
 )
 
-const (
-	domAgent      = "prn_agent"
-	domOtherAgent = "prn_other"
-)
-
 func domTargetProps() NewTargetProps {
 	return NewTargetProps{
 		OrganizationID: domOrg,
 		EnvironmentID:  id.New("env"),
+		ClusterID:      id.New("cls"),
 		Slug:           "eu-west",
 		DisplayName:    "EU West",
 		Runtime:        RuntimeKubernetes,
@@ -37,7 +33,8 @@ func domNewTarget(t *testing.T) *Target {
 func TestNewTarget(t *testing.T) {
 	clock.Fix(t, domT0)
 	props := domTargetProps()
-	props.AgentPrincipalID = new(domAgent)
+	props.CanObserve = true
+	props.CanExecute = true
 
 	tgt, err := NewTarget(props, nil)
 
@@ -45,13 +42,13 @@ func TestNewTarget(t *testing.T) {
 	assert.True(t, id.Valid("tgt", tgt.ID()), "a new target gets a tgt_ ID: %q", tgt.ID())
 	assert.Equal(t, domOrg, tgt.OrganizationID())
 	assert.Equal(t, props.EnvironmentID, tgt.EnvironmentID())
+	assert.Equal(t, props.ClusterID, tgt.ClusterID())
 	assert.Equal(t, "eu-west", tgt.Slug())
 	assert.Equal(t, "EU West", tgt.DisplayName())
 	assert.Equal(t, RuntimeKubernetes, tgt.Runtime())
 	assert.Equal(t, map[string]string{LocatorCluster: "prod-eu-1", LocatorNamespace: "payments"}, tgt.Locator())
-	require.NotNil(t, tgt.AgentPrincipalID())
-	assert.Equal(t, domAgent, *tgt.AgentPrincipalID())
-	assert.Nil(t, tgt.LastReportedAt())
+	assert.True(t, tgt.CanObserve())
+	assert.True(t, tgt.CanExecute())
 	assert.Equal(t, domT0, tgt.CreatedAt())
 	assert.Equal(t, domT0, tgt.UpdatedAt())
 	assert.Nil(t, tgt.DeletedAt())
@@ -61,20 +58,20 @@ func TestNewTarget(t *testing.T) {
 func TestNewTargetDefaults(t *testing.T) {
 	props := domTargetProps()
 	props.Slug = ""
-	props.AgentPrincipalID = new("")
 
 	tgt, err := NewTarget(props, nil)
 
 	require.NoError(t, err)
 	assert.Equal(t, "eu-west", tgt.Slug(), "the slug is derived from the display name")
-	assert.Nil(t, tgt.AgentPrincipalID(), "an empty agent is none")
+	assert.False(t, tgt.CanObserve(), "an agent that has not reported can do nothing")
+	assert.False(t, tgt.CanExecute())
 }
 
 func TestNewTargetWithStoredState(t *testing.T) {
 	clock.Fix(t, domT2)
 	given := id.New("tgt")
 	props := domTargetProps()
-	props.LastReportedAt = new(domT1)
+	props.CanObserve = true
 	props.CreatedAt = new(domT0)
 	props.UpdatedAt = new(domT1)
 	props.DeletedAt = new(domT1)
@@ -83,7 +80,7 @@ func TestNewTargetWithStoredState(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, given, tgt.ID())
-	assert.Equal(t, domT1, *tgt.LastReportedAt())
+	assert.True(t, tgt.CanObserve())
 	assert.Equal(t, domT0, tgt.CreatedAt())
 	assert.Equal(t, domT1, tgt.UpdatedAt())
 	assert.Equal(t, domT1, *tgt.DeletedAt())
@@ -99,6 +96,8 @@ func TestNewTargetIsRefused(t *testing.T) {
 		{"no organization", func(p *NewTargetProps) { p.OrganizationID = "" }, nil},
 		{"no environment", func(p *NewTargetProps) { p.EnvironmentID = "" }, nil},
 		{"environment ID with wrong prefix", func(p *NewTargetProps) { p.EnvironmentID = id.New("lfc") }, nil},
+		{"no cluster", func(p *NewTargetProps) { p.ClusterID = "" }, nil},
+		{"cluster ID with wrong prefix", func(p *NewTargetProps) { p.ClusterID = id.New("env") }, nil},
 		{"ID with wrong prefix", func(*NewTargetProps) {}, new(id.New("env"))},
 		{"malformed ID", func(*NewTargetProps) {}, new("tgt_")},
 		{"no display name", func(p *NewTargetProps) { p.DisplayName = "" }, nil},
@@ -106,9 +105,9 @@ func TestNewTargetIsRefused(t *testing.T) {
 		{"unsupported runtime", func(p *NewTargetProps) { p.Runtime = "nomad" }, nil},
 		{"no runtime", func(p *NewTargetProps) { p.Runtime = "" }, nil},
 		{"no locator", func(p *NewTargetProps) { p.Locator = nil }, nil},
-		{"no cluster", func(p *NewTargetProps) { delete(p.Locator, LocatorCluster) }, nil},
-		{"cluster with a space", func(p *NewTargetProps) { p.Locator[LocatorCluster] = "prod eu" }, nil},
-		{"cluster too long", func(p *NewTargetProps) { p.Locator[LocatorCluster] = strings.Repeat("c", maxDisplayNameLength+1) }, nil},
+		{"no cluster slug", func(p *NewTargetProps) { delete(p.Locator, LocatorCluster) }, nil},
+		{"cluster slug with a space", func(p *NewTargetProps) { p.Locator[LocatorCluster] = "prod eu" }, nil},
+		{"cluster slug too long", func(p *NewTargetProps) { p.Locator[LocatorCluster] = strings.Repeat("c", maxDisplayNameLength+1) }, nil},
 		{"no namespace", func(p *NewTargetProps) { delete(p.Locator, LocatorNamespace) }, nil},
 		{"namespace not a DNS label", func(p *NewTargetProps) { p.Locator[LocatorNamespace] = "Payments_NS" }, nil},
 		{"namespace too long", func(p *NewTargetProps) { p.Locator[LocatorNamespace] = strings.Repeat("n", 64) }, nil},
@@ -126,23 +125,17 @@ func TestNewTargetIsRefused(t *testing.T) {
 
 func TestTargetGettersReturnCopies(t *testing.T) {
 	props := domTargetProps()
-	props.AgentPrincipalID = new(domAgent)
-	props.LastReportedAt = new(domT0)
 	props.DeletedAt = new(domT0)
 	tgt, err := NewTarget(props, nil)
 	require.NoError(t, err)
 	before := tgt.Snapshot()
 
 	props.Locator[LocatorNamespace] = "changed"
-	*props.AgentPrincipalID = "changed"
-	*props.LastReportedAt = domT2
+	*props.DeletedAt = domT2
 	tgt.Locator()[LocatorNamespace] = "changed"
-	*tgt.AgentPrincipalID() = "changed"
-	*tgt.LastReportedAt() = domT2
 	*tgt.DeletedAt() = domT2
 	snap := tgt.Snapshot()
 	snap.Locator[LocatorCluster] = "changed"
-	*snap.AgentPrincipalID = "changed"
 
 	assert.Equal(t, before, tgt.Snapshot())
 }
@@ -150,6 +143,7 @@ func TestTargetGettersReturnCopies(t *testing.T) {
 func TestTargetSnapshot(t *testing.T) {
 	clock.Fix(t, domT0)
 	props := domTargetProps()
+	props.CanObserve = true
 	tgt, err := NewTarget(props, nil)
 	require.NoError(t, err)
 
@@ -157,10 +151,12 @@ func TestTargetSnapshot(t *testing.T) {
 		ID:             tgt.ID(),
 		OrganizationID: domOrg,
 		EnvironmentID:  props.EnvironmentID,
+		ClusterID:      props.ClusterID,
 		Slug:           "eu-west",
 		DisplayName:    "EU West",
 		Runtime:        RuntimeKubernetes,
 		Locator:        map[string]string{LocatorCluster: "prod-eu-1", LocatorNamespace: "payments"},
+		CanObserve:     true,
 		CreatedAt:      domT0,
 		UpdatedAt:      domT0,
 	}, tgt.Snapshot())
@@ -170,7 +166,7 @@ func TestTargetUpdate(t *testing.T) {
 	clock.Fix(t, domT0)
 	tgt := domNewTarget(t)
 	clock.Fix(t, domT1)
-	locator := map[string]string{LocatorCluster: "prod-eu-2", LocatorNamespace: "billing"}
+	locator := map[string]string{LocatorCluster: "prod-eu-1", LocatorNamespace: "billing"}
 
 	require.NoError(t, tgt.Update(UpdateTargetProps{Slug: new("eu-west-2"), DisplayName: new("EU West 2"), Locator: locator}))
 
@@ -189,8 +185,19 @@ func TestTargetUpdate(t *testing.T) {
 	})
 }
 
+func TestTargetCannotMoveToAnotherCluster(t *testing.T) {
+	tgt := domNewTarget(t)
+	before := tgt.Snapshot()
+
+	err := tgt.Update(UpdateTargetProps{Locator: map[string]string{LocatorCluster: "prod-eu-2", LocatorNamespace: "payments"}})
+
+	assert.ErrorIs(t, err, ErrInvalid)
+	assert.Contains(t, err.Error(), "another cluster")
+	assert.Equal(t, before, tgt.Snapshot())
+}
+
 func TestTargetUpdateIsAtomic(t *testing.T) {
-	good := map[string]string{LocatorCluster: "c2", LocatorNamespace: "ns2"}
+	good := map[string]string{LocatorCluster: "prod-eu-1", LocatorNamespace: "ns2"}
 	tests := []struct {
 		name  string
 		props UpdateTargetProps
@@ -198,8 +205,9 @@ func TestTargetUpdateIsAtomic(t *testing.T) {
 		{"bad slug", UpdateTargetProps{Slug: new("Bad"), DisplayName: new("New"), Locator: good}},
 		{"bad display name", UpdateTargetProps{Slug: new("new"), DisplayName: new(""), Locator: good}},
 		{"empty locator", UpdateTargetProps{Slug: new("new"), DisplayName: new("New"), Locator: map[string]string{}}},
-		{"bad namespace", UpdateTargetProps{Slug: new("new"), DisplayName: new("New"), Locator: map[string]string{LocatorCluster: "c2", LocatorNamespace: "-ns"}}},
-		{"unknown key", UpdateTargetProps{Slug: new("new"), DisplayName: new("New"), Locator: map[string]string{LocatorCluster: "c2", LocatorNamespace: "ns2", "zone": "a"}}},
+		{"bad namespace", UpdateTargetProps{Slug: new("new"), DisplayName: new("New"), Locator: map[string]string{LocatorCluster: "prod-eu-1", LocatorNamespace: "-ns"}}},
+		{"another cluster", UpdateTargetProps{Slug: new("new"), DisplayName: new("New"), Locator: map[string]string{LocatorCluster: "prod-eu-2", LocatorNamespace: "ns2"}}},
+		{"unknown key", UpdateTargetProps{Slug: new("new"), DisplayName: new("New"), Locator: map[string]string{LocatorCluster: "prod-eu-1", LocatorNamespace: "ns2", "zone": "a"}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -215,94 +223,27 @@ func TestTargetUpdateIsAtomic(t *testing.T) {
 }
 
 func TestTargetRefusesChangesWhenArchived(t *testing.T) {
-	props := domTargetProps()
-	props.AgentPrincipalID = new(domAgent)
-	tgt, err := NewTarget(props, nil)
-	require.NoError(t, err)
+	tgt := domNewTarget(t)
 	tgt.Archive()
 	before := tgt.Snapshot()
 
 	assert.ErrorIs(t, tgt.Update(UpdateTargetProps{DisplayName: new("New")}), ErrArchived)
-	assert.ErrorIs(t, tgt.AssignAgent(domOtherAgent), ErrArchived)
-	assert.ErrorIs(t, tgt.RecordReport(domAgent), ErrArchived)
 	assert.Equal(t, before, tgt.Snapshot())
 }
 
-func TestTargetAssignAgent(t *testing.T) {
+func TestTargetSetCapabilities(t *testing.T) {
 	clock.Fix(t, domT0)
 	tgt := domNewTarget(t)
 
-	clock.Fix(t, domT1)
-	require.NoError(t, tgt.AssignAgent(domAgent))
-	assert.Equal(t, domAgent, *tgt.AgentPrincipalID())
-	assert.Equal(t, domT1, tgt.UpdatedAt())
+	assert.True(t, tgt.SetCapabilities(true, false))
+	assert.True(t, tgt.CanObserve())
+	assert.False(t, tgt.CanExecute())
 
-	require.NoError(t, tgt.RecordReport(domAgent))
-	require.NotNil(t, tgt.LastReportedAt())
+	assert.False(t, tgt.SetCapabilities(true, false), "the same capabilities change nothing")
+	assert.Equal(t, domT0, tgt.UpdatedAt(), "capabilities are not a configuration change")
 
-	t.Run("another agent replaces it and clears the last report", func(t *testing.T) {
-		clock.Fix(t, domT2)
-		require.NoError(t, tgt.AssignAgent(domOtherAgent))
-		assert.Equal(t, domOtherAgent, *tgt.AgentPrincipalID())
-		assert.Nil(t, tgt.LastReportedAt())
-		assert.Equal(t, domT2, tgt.UpdatedAt())
-		assert.ErrorIs(t, tgt.RecordReport(domAgent), ErrNotTargetAgent, "the replaced agent may no longer report")
-	})
-
-	t.Run("an empty principal is refused", func(t *testing.T) {
-		before := tgt.Snapshot()
-		assert.ErrorIs(t, tgt.AssignAgent(""), ErrInvalid)
-		assert.Equal(t, before, tgt.Snapshot())
-	})
-}
-
-func TestTargetUnassignAgent(t *testing.T) {
-	clock.Fix(t, domT0)
-	tgt := domNewTarget(t)
-	require.NoError(t, tgt.AssignAgent(domAgent))
-	require.NoError(t, tgt.RecordReport(domAgent))
-
-	clock.Fix(t, domT1)
-	require.NoError(t, tgt.UnassignAgent())
-	assert.Nil(t, tgt.AgentPrincipalID())
-	assert.Nil(t, tgt.LastReportedAt())
-	assert.Equal(t, domT1, tgt.UpdatedAt())
-	assert.ErrorIs(t, tgt.RecordReport(domAgent), ErrNotTargetAgent)
-
-	clock.Fix(t, domT2)
-	require.NoError(t, tgt.UnassignAgent())
-	assert.Equal(t, domT1, tgt.UpdatedAt(), "unassigning with no agent does nothing")
-}
-
-func TestTargetUnassignAgentRefusesArchived(t *testing.T) {
-	clock.Fix(t, domT0)
-	tgt := domNewTarget(t)
-	require.NoError(t, tgt.AssignAgent(domAgent))
-	tgt.Archive()
-	before := tgt.Snapshot()
-
-	assert.ErrorIs(t, tgt.UnassignAgent(), ErrArchived)
-	assert.Equal(t, before, tgt.Snapshot())
-}
-
-func TestTargetRecordReport(t *testing.T) {
-	clock.Fix(t, domT0)
-	tgt := domNewTarget(t)
-
-	assert.ErrorIs(t, tgt.RecordReport(domAgent), ErrNotTargetAgent, "a target without an agent takes no reports")
-	assert.Nil(t, tgt.LastReportedAt())
-
-	require.NoError(t, tgt.AssignAgent(domAgent))
-
-	clock.Fix(t, domT1)
-	assert.ErrorIs(t, tgt.RecordReport(domOtherAgent), ErrNotTargetAgent)
-	assert.ErrorIs(t, tgt.RecordReport(""), ErrNotTargetAgent)
-	assert.Nil(t, tgt.LastReportedAt())
-
-	require.NoError(t, tgt.RecordReport(domAgent))
-	require.NotNil(t, tgt.LastReportedAt())
-	assert.Equal(t, domT1, *tgt.LastReportedAt())
-	assert.Equal(t, domT0, tgt.UpdatedAt(), "a report is not a configuration change")
+	assert.True(t, tgt.SetCapabilities(true, true))
+	assert.True(t, tgt.CanExecute())
 }
 
 func TestTargetArchiveAndRestore(t *testing.T) {

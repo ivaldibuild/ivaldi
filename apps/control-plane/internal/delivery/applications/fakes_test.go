@@ -586,8 +586,9 @@ func (s *store) GetTarget(_ context.Context, organizationID, id string) (*delive
 		return nil, delivery.ErrNotFound
 	}
 	return must(delivery.NewTarget(delivery.NewTargetProps{
-		OrganizationID: snap.OrganizationID, EnvironmentID: snap.EnvironmentID, Slug: snap.Slug, DisplayName: snap.DisplayName,
-		Runtime: snap.Runtime, Locator: snap.Locator, AgentPrincipalID: snap.AgentPrincipalID, LastReportedAt: snap.LastReportedAt,
+		OrganizationID: snap.OrganizationID, EnvironmentID: snap.EnvironmentID, ClusterID: snap.ClusterID,
+		Slug: snap.Slug, DisplayName: snap.DisplayName,
+		Runtime: snap.Runtime, Locator: snap.Locator, CanObserve: snap.CanObserve, CanExecute: snap.CanExecute,
 		CreatedAt: &snap.CreatedAt, UpdatedAt: &snap.UpdatedAt, DeletedAt: snap.DeletedAt,
 	}, &snap.ID)), nil
 }
@@ -840,7 +841,8 @@ func (w *world) env(t *testing.T, workspaceID, slug string) *delivery.Environmen
 func (w *world) target(t *testing.T, e *delivery.Environment, slug string) *delivery.Target {
 	t.Helper()
 	tg := must(delivery.NewTarget(delivery.NewTargetProps{
-		OrganizationID: org, EnvironmentID: e.ID(), Slug: slug, DisplayName: slug,
+		OrganizationID: org, EnvironmentID: e.ID(), ClusterID: "cls_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+		Slug: slug, DisplayName: slug,
 		Runtime: delivery.RuntimeKubernetes, Locator: map[string]string{delivery.LocatorCluster: "prod-1", delivery.LocatorNamespace: slug},
 	}, nil))
 	tg.PullEvents()

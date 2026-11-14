@@ -1,6 +1,6 @@
-// Package enrollment creates and redeems Target enrolments for data-plane
+// Package enrollment creates and redeems Cluster enrolments for data-plane
 // workloads, and renews their credentials. It joins IAM's workload identity
-// with delivery's Targets without making either capability depend on the
+// with delivery's Clusters without making either capability depend on the
 // other.
 package enrollment
 
@@ -41,16 +41,16 @@ func (m CredentialMethod) Valid() bool {
 	return false
 }
 
-// CreateInput asks for a Target enrolment token.
+// CreateInput asks for a Cluster enrolment token.
 type CreateInput struct {
 	OrganizationID string
-	TargetID       string
+	ClusterID      string
 	Method         CredentialMethod
 }
 
 // IssuedEnrolment is a new single-use enrolment token.
 type IssuedEnrolment struct {
-	TargetID  string           `json:"target_id"`
+	ClusterID string           `json:"cluster_id"`
 	Method    CredentialMethod `json:"method"`
 	Token     string           `json:"token"`
 	Pool      string           `json:"pool"`
@@ -66,8 +66,11 @@ type RedeemInput struct {
 	ClientCertificateEnds time.Time
 }
 
-// Redeemed is the credential a workload got at enrolment.
+// Redeemed is the credential a workload got at enrolment. It names the
+// Cluster and Organization so the agent can keep them in its state Secret.
 type Redeemed struct {
+	OrganizationID      string                     `json:"organization_id"`
+	ClusterID           string                     `json:"cluster_id"`
 	WorkloadPrincipalID string                     `json:"workload_principal_id"`
 	CredentialID        string                     `json:"credential_id"`
 	CredentialKind      iam.WorkloadCredentialKind `json:"credential_kind"`
@@ -84,35 +87,36 @@ type Renewed struct {
 	PreviousExpiresAt *time.Time                 `json:"previous_expires_at"`
 }
 
-// AgentStatus describes the agent assigned to a Target.
+// AgentStatus describes the agent enrolled for a Cluster.
 type AgentStatus struct {
+	ClusterID           string                      `json:"cluster_id"`
 	AgentPrincipalID    *string                     `json:"agent_principal_id"`
 	Component           iam.WorkloadComponent       `json:"component"`
 	CredentialKind      *iam.WorkloadCredentialKind `json:"credential_kind"`
 	CredentialExpiresAt *time.Time                  `json:"credential_expires_at"`
 	Status              string                      `json:"status"`
 	LastSeenAt          *time.Time                  `json:"last_seen_at"`
+	RedeemedAt          *time.Time                  `json:"redeemed_at"`
+	AgentVersion        string                      `json:"agent_version,omitempty"`
+	KubernetesVersion   string                      `json:"kubernetes_version,omitempty"`
+	// LastFailure is the last refused enrolment for the Cluster, so the
+	// person enrolling can see why without reading server logs.
+	LastFailure *delivery.AgentFailure `json:"last_failure,omitempty"`
 }
 
-// Targets is the delivery capability's Target repository, narrowed to what
-// enrolment needs.
-type Targets interface {
-	GetTarget(ctx context.Context, organizationID, targetID string) (*delivery.Target, error)
-	GetTargetForUpdate(ctx context.Context, organizationID, targetID string) (*delivery.Target, error)
-	GetTargetByAgentPrincipalID(ctx context.Context, organizationID, principalID string) (*delivery.Target, error)
-	UpdateTarget(ctx context.Context, t *delivery.Target) error
+// Clusters is the delivery capability's Cluster repository, narrowed to what
+// enrolment needs. A Cluster's agent is the only thing enrolment assigns.
+type Clusters interface {
+	GetCluster(ctx context.Context, organizationID, clusterID string) (*delivery.Cluster, error)
+	GetClusterForUpdate(ctx context.Context, organizationID, clusterID string) (*delivery.Cluster, error)
+	GetClusterByAgentPrincipalID(ctx context.Context, organizationID, principalID string) (*delivery.Cluster, error)
+	UpdateCluster(ctx context.Context, c *delivery.Cluster) error
 }
 
-// Environments is the delivery capability's Environment repository, narrowed
-// to what enrolment needs.
-type Environments interface {
-	GetEnvironment(ctx context.Context, organizationID, environmentID string) (*delivery.Environment, error)
-}
-
-// Service manages Target enrolment and workload credential renewal.
+// Service manages Cluster enrolment and workload credential renewal.
 type Service interface {
 	Create(ctx context.Context, actor identity.Actor, in CreateInput) (*IssuedEnrolment, error)
 	Redeem(ctx context.Context, in RedeemInput) (*Redeemed, error)
 	Renew(ctx context.Context, caller identity.Caller) (*Renewed, error)
-	Status(ctx context.Context, actor identity.Actor, organizationID, targetID string) (*AgentStatus, error)
+	Status(ctx context.Context, actor identity.Actor, organizationID, clusterID string) (*AgentStatus, error)
 }

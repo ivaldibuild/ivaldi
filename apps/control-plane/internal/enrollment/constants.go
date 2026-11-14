@@ -11,6 +11,6 @@ const (
 
 // Authorizer action names.
 const (
-	ActionTargetEnrol       = "target.enrol"
-	ActionTargetAgentStatus = "target.agent_status"
+	ActionClusterEnrol       = "cluster.enrol"
+	ActionClusterAgentStatus = "cluster.agent_status"
 )

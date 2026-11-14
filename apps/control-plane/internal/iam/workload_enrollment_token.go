@@ -18,7 +18,7 @@ type WorkloadEnrollmentToken struct {
 	organizationID       string
 	tokenHash            []byte
 	pool                 string
-	targetID             *string
+	clusterID            *string
 	credentialKind       WorkloadCredentialKind
 	createdByPrincipalID string
 	expiresAt            time.Time
@@ -36,7 +36,7 @@ type WorkloadEnrollmentTokenSnapshot struct {
 	OrganizationID       string                 `json:"organization_id"`
 	TokenHash            []byte                 `json:"-"`
 	Pool                 string                 `json:"pool"`
-	TargetID             *string                `json:"target_id"`
+	ClusterID            *string                `json:"cluster_id"`
 	CredentialKind       WorkloadCredentialKind `json:"credential_kind"`
 	CreatedByPrincipalID string                 `json:"created_by_principal_id"`
 	ExpiresAt            time.Time              `json:"expires_at"`
@@ -54,8 +54,8 @@ type NewWorkloadEnrollmentTokenProps struct {
 	TokenHash []byte
 	// Pool is the pool the enrolled Workload joins.
 	Pool string
-	// TargetID is the Target a runtime agent serves, when the token is for one.
-	TargetID *string
+	// ClusterID is the Cluster whose runtime agent will redeem the token.
+	ClusterID *string
 	// CredentialKind is the credential the enrolled Workload will use.
 	CredentialKind       WorkloadCredentialKind
 	CreatedByPrincipalID string
@@ -81,8 +81,8 @@ func NewWorkloadEnrollmentToken(props NewWorkloadEnrollmentTokenProps, tokenID *
 	if err := validateName("pool", props.Pool, maxPoolLength); err != nil {
 		return nil, err
 	}
-	if props.TargetID != nil && !id.Valid("tgt", *props.TargetID) {
-		return nil, NewErrInvalidInput(fmt.Sprintf("%q is not a target ID", *props.TargetID))
+	if props.ClusterID != nil && !id.Valid("cls", *props.ClusterID) {
+		return nil, NewErrInvalidInput(fmt.Sprintf("%q is not a cluster ID", *props.ClusterID))
 	}
 	if props.CredentialKind == "" {
 		props.CredentialKind = CredentialBearerToken
@@ -114,7 +114,7 @@ func NewWorkloadEnrollmentToken(props NewWorkloadEnrollmentTokenProps, tokenID *
 		organizationID:       props.OrganizationID,
 		tokenHash:            copyBytes(props.TokenHash),
 		pool:                 props.Pool,
-		targetID:             optional.OfPtr(props.TargetID),
+		clusterID:            optional.OfPtr(props.ClusterID),
 		credentialKind:       props.CredentialKind,
 		createdByPrincipalID: props.CreatedByPrincipalID,
 		expiresAt:            props.ExpiresAt,
@@ -132,7 +132,7 @@ func (WorkloadEnrollmentToken) Prefix() string            { return "wet" }
 func (t *WorkloadEnrollmentToken) OrganizationID() string { return t.organizationID }
 func (t *WorkloadEnrollmentToken) TokenHash() []byte      { return copyBytes(t.tokenHash) }
 func (t *WorkloadEnrollmentToken) Pool() string           { return t.pool }
-func (t *WorkloadEnrollmentToken) TargetID() *string      { return copyString(t.targetID) }
+func (t *WorkloadEnrollmentToken) ClusterID() *string     { return copyString(t.clusterID) }
 func (t *WorkloadEnrollmentToken) CredentialKind() WorkloadCredentialKind {
 	return t.credentialKind
 }
@@ -151,7 +151,7 @@ func (t *WorkloadEnrollmentToken) Snapshot() WorkloadEnrollmentTokenSnapshot {
 		OrganizationID:       t.organizationID,
 		TokenHash:            copyBytes(t.tokenHash),
 		Pool:                 t.pool,
-		TargetID:             copyString(t.targetID),
+		ClusterID:            copyString(t.clusterID),
 		CredentialKind:       t.credentialKind,
 		CreatedByPrincipalID: t.createdByPrincipalID,
 		ExpiresAt:            t.expiresAt,

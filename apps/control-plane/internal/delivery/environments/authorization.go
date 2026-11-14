@@ -186,20 +186,6 @@ func (a *authorized) UpdateTarget(ctx context.Context, actor identity.Actor, org
 	return a.next.UpdateTarget(ctx, actor, organizationID, targetID, props)
 }
 
-func (a *authorized) AssignTargetAgent(ctx context.Context, actor identity.Actor, organizationID, targetID, principalID string) (*delivery.Target, error) {
-	ctx, err := a.manageTarget(ctx, actor, organizationID, targetID, delivery.ActionTargetAssignAgent, principalID)
-	if err != nil {
-		return nil, err
-	}
-	return a.next.AssignTargetAgent(ctx, actor, organizationID, targetID, principalID)
-}
-
-// RecordTargetReport is not checked by the authorizer: only the Target's
-// assigned agent may report, which the Target itself enforces.
-func (a *authorized) RecordTargetReport(ctx context.Context, actor identity.Actor, organizationID, targetID string) error {
-	return a.next.RecordTargetReport(ctx, actor, organizationID, targetID)
-}
-
 func (a *authorized) ArchiveTarget(ctx context.Context, actor identity.Actor, organizationID, targetID string) (*delivery.Target, error) {
 	ctx, err := a.manageTarget(ctx, actor, organizationID, targetID, delivery.ActionTargetArchive, nil)
 	if err != nil {

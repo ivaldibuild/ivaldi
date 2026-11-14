@@ -163,6 +163,11 @@ func (s *service) ArchiveCluster(ctx context.Context, actor identity.Actor, orga
 		if c.Archived() {
 			return nil
 		}
+		if n, err := s.clusters.CountActiveTargets(ctx, organizationID, clusterID); err != nil {
+			return fmt.Errorf("count targets of cluster %s: %w", clusterID, err)
+		} else if n > 0 {
+			return fmt.Errorf("%w: cluster %s has %d active targets", delivery.ErrInUse, clusterID, n)
+		}
 		before := c.Snapshot()
 		principal := c.Archive()
 		if err := s.clusters.UpdateCluster(ctx, c); err != nil {

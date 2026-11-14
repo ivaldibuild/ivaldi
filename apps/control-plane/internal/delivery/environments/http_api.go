@@ -37,7 +37,6 @@ func (c *EnvironmentController) RegisterRoutes(h huma.API) {
 	register(h, "list-targets", http.MethodGet, "/environments/{environment_id}/targets", "List an Environment's Targets", 0, c.ListTargets)
 	register(h, "get-target", http.MethodGet, "/targets/{target_id}", "Get a Target", 0, c.GetTarget)
 	register(h, "update-target", http.MethodPatch, "/targets/{target_id}", "Change a Target", 0, c.UpdateTarget)
-	register(h, "assign-target-agent", http.MethodPut, "/targets/{target_id}/agent", "Assign or unassign a Target's runtime agent", 0, c.AssignTargetAgent)
 	register(h, "archive-target", http.MethodPost, "/targets/{target_id}/archive", "Archive a Target", 0, c.ArchiveTarget)
 	register(h, "restore-target", http.MethodPost, "/targets/{target_id}/restore", "Restore an archived Target", 0, c.RestoreTarget)
 }
@@ -181,12 +180,6 @@ func (c *EnvironmentController) GetTarget(ctx context.Context, req *TargetReques
 func (c *EnvironmentController) UpdateTarget(ctx context.Context, req *UpdateTargetRequest) (*TargetResponse, error) {
 	return c.target(ctx, req.TargetID, func(ctx context.Context, actor identity.Actor, organizationID, targetID string) (*delivery.Target, error) {
 		return c.service.UpdateTarget(ctx, actor, organizationID, targetID, req.props())
-	})
-}
-
-func (c *EnvironmentController) AssignTargetAgent(ctx context.Context, req *AssignTargetAgentRequest) (*TargetResponse, error) {
-	return c.target(ctx, req.TargetID, func(ctx context.Context, actor identity.Actor, organizationID, targetID string) (*delivery.Target, error) {
-		return c.service.AssignTargetAgent(ctx, actor, organizationID, targetID, req.Body.AgentPrincipalID)
 	})
 }
 

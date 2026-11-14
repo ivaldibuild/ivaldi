@@ -24,6 +24,7 @@ const org = "org_acme"
 type state struct {
 	environments map[string]delivery.EnvironmentSnapshot
 	targets      map[string]delivery.TargetSnapshot
+	clusters     map[string]delivery.ClusterSnapshot
 	resources    map[string]iam.Resource
 	archivedRes  map[string]bool
 	audit        []audit.Event
@@ -34,6 +35,7 @@ func (s state) clone() state {
 	return state{
 		environments: maps.Clone(s.environments),
 		targets:      maps.Clone(s.targets),
+		clusters:     maps.Clone(s.clusters),
 		resources:    maps.Clone(s.resources),
 		archivedRes:  maps.Clone(s.archivedRes),
 		audit:        append([]audit.Event(nil), s.audit...),
@@ -54,6 +56,7 @@ func newStore() *store {
 		state: state{
 			environments: map[string]delivery.EnvironmentSnapshot{},
 			targets:      map[string]delivery.TargetSnapshot{},
+			clusters:     map[string]delivery.ClusterSnapshot{},
 			resources:    map[string]iam.Resource{},
 			archivedRes:  map[string]bool{},
 		},
@@ -177,10 +180,37 @@ func (s *store) CountActiveLifecyclesWithEnvironment(_ context.Context, _, envir
 
 func rebuildTarget(s delivery.TargetSnapshot) *delivery.Target {
 	return must(delivery.NewTarget(delivery.NewTargetProps{
-		OrganizationID: s.OrganizationID, EnvironmentID: s.EnvironmentID, Slug: s.Slug, DisplayName: s.DisplayName,
-		Runtime: s.Runtime, Locator: s.Locator, AgentPrincipalID: s.AgentPrincipalID, LastReportedAt: s.LastReportedAt,
+		OrganizationID: s.OrganizationID, EnvironmentID: s.EnvironmentID, ClusterID: s.ClusterID,
+		Slug: s.Slug, DisplayName: s.DisplayName,
+		Runtime: s.Runtime, Locator: s.Locator, CanObserve: s.CanObserve, CanExecute: s.CanExecute,
 		CreatedAt: &s.CreatedAt, UpdatedAt: &s.UpdatedAt, DeletedAt: s.DeletedAt,
 	}, &s.ID))
+}
+
+func rebuildCluster(s delivery.ClusterSnapshot) *delivery.Cluster {
+	return must(delivery.NewCluster(delivery.NewClusterProps{
+		OrganizationID: s.OrganizationID, Slug: s.Slug, DisplayName: s.DisplayName, Runtime: s.Runtime,
+		AgentPrincipalID: s.AgentPrincipalID, AgentCapabilities: s.AgentCapabilities,
+		AgentLastFailure: s.AgentLastFailure, LastReportedAt: s.LastReportedAt,
+		CreatedAt: &s.CreatedAt, UpdatedAt: &s.UpdatedAt, DeletedAt: s.DeletedAt,
+	}, &s.ID))
+}
+
+func (s *store) GetClusterBySlug(_ context.Context, organizationID, slug string) (*delivery.Cluster, error) {
+	for _, snap := range s.clusters {
+		if snap.OrganizationID == organizationID && snap.Slug == slug && snap.DeletedAt == nil {
+			return rebuildCluster(snap), nil
+		}
+	}
+	return nil, delivery.ErrNotFound
+}
+
+func (s *store) GetClusterForUpdate(ctx context.Context, organizationID, clusterID string) (*delivery.Cluster, error) {
+	snap, ok := s.clusters[clusterID]
+	if !ok || snap.OrganizationID != organizationID {
+		return nil, delivery.ErrNotFound
+	}
+	return rebuildCluster(snap), nil
 }
 
 func (s *store) CreateTarget(_ context.Context, t *delivery.Target) error {
@@ -201,18 +231,19 @@ func (s *store) GetTargetForUpdate(ctx context.Context, organizationID, id strin
 	return s.GetTarget(ctx, organizationID, id)
 }
 
-func (s *store) GetTargetByAgentPrincipalID(_ context.Context, organizationID, principalID string) (*delivery.Target, error) {
+func (s *store) GetTargetBySlug(_ context.Context, organizationID, environmentID, slug string) (*delivery.Target, error) {
 	for _, snap := range s.targets {
-		if snap.OrganizationID == organizationID && snap.AgentPrincipalID != nil && *snap.AgentPrincipalID == principalID && snap.DeletedAt == nil {
+		if snap.OrganizationID == organizationID && snap.EnvironmentID == environmentID && snap.Slug == slug && snap.DeletedAt == nil {
 			return rebuildTarget(snap), nil
 		}
 	}
 	return nil, delivery.ErrNotFound
 }
 
-func (s *store) GetTargetBySlug(_ context.Context, organizationID, environmentID, slug string) (*delivery.Target, error) {
+func (s *store) GetTargetByNamespace(_ context.Context, organizationID, clusterID, namespace string) (*delivery.Target, error) {
 	for _, snap := range s.targets {
-		if snap.OrganizationID == organizationID && snap.EnvironmentID == environmentID && snap.Slug == slug && snap.DeletedAt == nil {
+		if snap.OrganizationID == organizationID && snap.ClusterID == clusterID &&
+			snap.Locator[delivery.LocatorNamespace] == namespace && snap.DeletedAt == nil {
 			return rebuildTarget(snap), nil
 		}
 	}
@@ -335,8 +366,9 @@ type world struct {
 }
 
 const (
-	wsActive   = "wsp_01JZ0000000000000000000001"
-	wsArchived = "wsp_01JZ0000000000000000000002"
+	wsActive      = "wsp_01JZ0000000000000000000001"
+	wsArchived    = "wsp_01JZ0000000000000000000002"
+	testClusterID = "cls_01JZ0000000000000000000001"
 )
 
 func newWorld(t *testing.T) *world {
@@ -353,6 +385,13 @@ func newWorld(t *testing.T) *world {
 		}
 		s.workspaces[id] = w
 	}
+	clusterID := testClusterID
+	cluster := must(delivery.NewCluster(delivery.NewClusterProps{
+		OrganizationID: org, Slug: "prod-1", DisplayName: "Prod", Runtime: delivery.RuntimeKubernetes,
+	}, &clusterID))
+	cluster.PullEvents()
+	s.clusters[testClusterID] = cluster.Snapshot()
+
 	authz := &authorizer{}
 	svc, err := NewEnvironmentService(s.options(authz)...)
 	require.NoError(t, err)
@@ -361,7 +400,7 @@ func newWorld(t *testing.T) *world {
 
 func (s *store) options(authz authorization.Authorizer) []EnvironmentServiceOption {
 	return []EnvironmentServiceOption{
-		WithEnvironmentRepo(s), WithTargetRepo(s), WithLifecycleUsage(s), WithWorkspaces(s),
+		WithEnvironmentRepo(s), WithTargetRepo(s), WithClusterRepo(s), WithLifecycleUsage(s), WithWorkspaces(s),
 		WithResourceRegistrar(s), WithAuthorizer(authz), WithTransactor(s),
 		WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
 	}
@@ -382,11 +421,12 @@ func (w *world) env(t *testing.T, workspaceID, slug string, archived bool) *deli
 }
 
 // target stores a Target directly, bypassing the service.
-func (w *world) target(t *testing.T, environmentID, slug string, agent string, archived bool) *delivery.Target {
+func (w *world) target(t *testing.T, environmentID, slug string, archived bool) *delivery.Target {
 	t.Helper()
 	tg := must(delivery.NewTarget(delivery.NewTargetProps{
-		OrganizationID: org, EnvironmentID: environmentID, Slug: slug, DisplayName: slug,
-		Runtime: delivery.RuntimeKubernetes, Locator: locator(), AgentPrincipalID: &agent,
+		OrganizationID: org, EnvironmentID: environmentID, ClusterID: testClusterID,
+		Slug: slug, DisplayName: slug,
+		Runtime: delivery.RuntimeKubernetes, Locator: locator(),
 	}, nil))
 	if archived {
 		tg.Archive()

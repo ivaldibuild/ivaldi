@@ -10,7 +10,6 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
-	"github.com/ivaldibuild/ivaldi/pkg/optional"
 	"github.com/ivaldibuild/ivaldi/pkg/slug"
 )
 
@@ -19,45 +18,51 @@ type Runtime string
 
 const RuntimeKubernetes Runtime = "kubernetes"
 
-// Locator keys for Kubernetes Targets: the cluster's identity and the namespace.
+// Locator keys for Kubernetes Targets: the Cluster's slug and the namespace.
 const (
 	LocatorCluster   = "cluster"
 	LocatorNamespace = "namespace"
 )
 
 // Target is a concrete place an Environment runs, such as a namespace in a
-// Kubernetes cluster. It holds no credentials: its runtime agent reaches the
-// cluster with its own in-cluster identity. Access follows its Environment.
+// Kubernetes cluster. It holds no credentials: the Cluster's runtime agent
+// reaches the cluster with its own in-cluster identity. Access follows its
+// Environment.
 type Target struct {
 	aggregate.Root
-	organizationID   string
-	environmentID    string
-	slug             string
-	displayName      string
-	runtime          Runtime
-	locator          map[string]string
-	agentPrincipalID *string
-	lastReportedAt   *time.Time
-	createdAt        time.Time
-	updatedAt        time.Time
-	deletedAt        *time.Time
+	organizationID string
+	environmentID  string
+	clusterID      string
+	slug           string
+	displayName    string
+	runtime        Runtime
+	locator        map[string]string
+	// canObserve and canExecute are what the Cluster's agent last reported
+	// it can do in this namespace. They are set by the agent's heartbeat,
+	// never by the Target's configuration methods.
+	canObserve bool
+	canExecute bool
+	createdAt  time.Time
+	updatedAt  time.Time
+	deletedAt  *time.Time
 }
 
 // TargetSnapshot is a Target's state, for repositories, audit records, and
 // events. Its JSON form is part of the Target events' contract.
 type TargetSnapshot struct {
-	ID               string            `json:"id"`
-	OrganizationID   string            `json:"organization_id"`
-	EnvironmentID    string            `json:"environment_id"`
-	Slug             string            `json:"slug"`
-	DisplayName      string            `json:"display_name"`
-	Runtime          Runtime           `json:"runtime"`
-	Locator          map[string]string `json:"locator"`
-	AgentPrincipalID *string           `json:"agent_principal_id"`
-	LastReportedAt   *time.Time        `json:"last_reported_at"`
-	CreatedAt        time.Time         `json:"created_at"`
-	UpdatedAt        time.Time         `json:"updated_at"`
-	DeletedAt        *time.Time        `json:"deleted_at"`
+	ID             string            `json:"id"`
+	OrganizationID string            `json:"organization_id"`
+	EnvironmentID  string            `json:"environment_id"`
+	ClusterID      string            `json:"cluster_id"`
+	Slug           string            `json:"slug"`
+	DisplayName    string            `json:"display_name"`
+	Runtime        Runtime           `json:"runtime"`
+	Locator        map[string]string `json:"locator"`
+	CanObserve     bool              `json:"can_observe"`
+	CanExecute     bool              `json:"can_execute"`
+	CreatedAt      time.Time         `json:"created_at"`
+	UpdatedAt      time.Time         `json:"updated_at"`
+	DeletedAt      *time.Time        `json:"deleted_at"`
 }
 
 // NewTargetProps describes a Target. A new one leaves the timestamps nil; a
@@ -65,27 +70,29 @@ type TargetSnapshot struct {
 type NewTargetProps struct {
 	OrganizationID string
 	EnvironmentID  string
+	// ClusterID is the Cluster whose agent serves the Target. It cannot
+	// change; a Target that moves is archived and created again.
+	ClusterID string
 	// Slug is derived from DisplayName when empty.
 	Slug        string
 	DisplayName string
 	Runtime     Runtime
 	// Locator is the runtime's non-secret address. For Kubernetes it has
 	// LocatorCluster and LocatorNamespace.
-	Locator map[string]string
-	// AgentPrincipalID is the IAM workload principal of the runtime agent
-	// that serves the Target, if one is assigned.
-	AgentPrincipalID *string
-	LastReportedAt   *time.Time
-	CreatedAt        *time.Time
-	UpdatedAt        *time.Time
-	DeletedAt        *time.Time
+	Locator    map[string]string
+	CanObserve bool
+	CanExecute bool
+	CreatedAt  *time.Time
+	UpdatedAt  *time.Time
+	DeletedAt  *time.Time
 }
 
 // UpdateTargetProps changes the fields that are set.
 type UpdateTargetProps struct {
 	Slug        *string
 	DisplayName *string
-	// Locator replaces the whole locator when not nil.
+	// Locator replaces the whole locator when not nil. Its cluster must be
+	// the one the Target already names; only the namespace may change.
 	Locator map[string]string
 }
 
@@ -96,6 +103,9 @@ func NewTarget(props NewTargetProps, targetID *string) (*Target, error) {
 	}
 	if !id.Valid(Environment{}.Prefix(), props.EnvironmentID) {
 		return nil, NewErrInvalidInput("a target needs an environment ID")
+	}
+	if !id.Valid(Cluster{}.Prefix(), props.ClusterID) {
+		return nil, NewErrInvalidInput("a target needs a cluster ID")
 	}
 	root, err := newRoot(Target{}.Prefix(), targetID)
 	if err != nil {
@@ -108,25 +118,28 @@ func NewTarget(props NewTargetProps, targetID *string) (*Target, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := validateRuntime(props.Runtime); err != nil {
+		return nil, err
+	}
 	if err := validateLocator(props.Runtime, props.Locator); err != nil {
 		return nil, err
 	}
-	agent := optional.OfPtr(props.AgentPrincipalID)
 
 	now := clock.Now()
 	t := &Target{
-		Root:             root,
-		organizationID:   props.OrganizationID,
-		environmentID:    props.EnvironmentID,
-		slug:             s,
-		displayName:      props.DisplayName,
-		runtime:          props.Runtime,
-		locator:          copyLabels(props.Locator),
-		agentPrincipalID: agent,
-		lastReportedAt:   clock.CopyTime(props.LastReportedAt),
-		createdAt:        timeOr(props.CreatedAt, now),
-		updatedAt:        timeOr(props.UpdatedAt, now),
-		deletedAt:        clock.CopyTime(props.DeletedAt),
+		Root:           root,
+		organizationID: props.OrganizationID,
+		environmentID:  props.EnvironmentID,
+		clusterID:      props.ClusterID,
+		slug:           s,
+		displayName:    props.DisplayName,
+		runtime:        props.Runtime,
+		locator:        copyLabels(props.Locator),
+		canObserve:     props.CanObserve,
+		canExecute:     props.CanExecute,
+		createdAt:      timeOr(props.CreatedAt, now),
+		updatedAt:      timeOr(props.UpdatedAt, now),
+		deletedAt:      clock.CopyTime(props.DeletedAt),
 	}
 	if t.IsNew() {
 		t.RecordEvent(TargetCreated{t.Snapshot()})
@@ -137,56 +150,57 @@ func NewTarget(props NewTargetProps, targetID *string) (*Target, error) {
 // validateLocator checks a locator against its runtime. New runtimes add
 // their own keys here.
 func validateLocator(runtime Runtime, locator map[string]string) error {
-	switch runtime {
-	case RuntimeKubernetes:
-		allowed := []string{LocatorCluster, LocatorNamespace}
-		for k := range locator {
-			if !slices.Contains(allowed, k) {
-				return NewErrInvalidInput(fmt.Sprintf("a kubernetes locator has only %s; %q is not allowed", strings.Join(allowed, " and "), k))
-			}
-		}
-		cluster := locator[LocatorCluster]
-		if cluster == "" || len(cluster) > maxDisplayNameLength || strings.ContainsAny(cluster, " \t\n") {
-			return NewErrInvalidInput(fmt.Sprintf("a kubernetes locator needs a %s of 1-%d characters without spaces", LocatorCluster, maxDisplayNameLength))
-		}
-		// Namespaces are DNS labels, which is the slug format.
-		if err := slug.Validate(locator[LocatorNamespace]); err != nil {
-			return NewErrInvalidInput(fmt.Sprintf("a kubernetes locator needs a %s that is a DNS label", LocatorNamespace))
-		}
-		return nil
+	if err := validateRuntime(runtime); err != nil {
+		return err
 	}
-	return NewErrInvalidInput(fmt.Sprintf("runtime %q is not supported; use kubernetes", runtime))
+	allowed := []string{LocatorCluster, LocatorNamespace}
+	for k := range locator {
+		if !slices.Contains(allowed, k) {
+			return NewErrInvalidInput(fmt.Sprintf("a kubernetes locator has only %s; %q is not allowed", strings.Join(allowed, " and "), k))
+		}
+	}
+	cluster := locator[LocatorCluster]
+	if cluster == "" || len(cluster) > maxDisplayNameLength || strings.ContainsAny(cluster, " \t\n") {
+		return NewErrInvalidInput(fmt.Sprintf("a kubernetes locator needs a %s of 1-%d characters without spaces", LocatorCluster, maxDisplayNameLength))
+	}
+	// Namespaces are DNS labels, which is the slug format.
+	if err := slug.Validate(locator[LocatorNamespace]); err != nil {
+		return NewErrInvalidInput(fmt.Sprintf("a kubernetes locator needs a %s that is a DNS label", LocatorNamespace))
+	}
+	return nil
 }
 
-func (Target) Prefix() string                { return "tgt" }
-func (t *Target) OrganizationID() string     { return t.organizationID }
-func (t *Target) EnvironmentID() string      { return t.environmentID }
-func (t *Target) Slug() string               { return t.slug }
-func (t *Target) DisplayName() string        { return t.displayName }
-func (t *Target) Runtime() Runtime           { return t.runtime }
-func (t *Target) Locator() map[string]string { return copyLabels(t.locator) }
-func (t *Target) AgentPrincipalID() *string  { return copyString(t.agentPrincipalID) }
-func (t *Target) LastReportedAt() *time.Time { return clock.CopyTime(t.lastReportedAt) }
-func (t *Target) CreatedAt() time.Time       { return t.createdAt }
-func (t *Target) UpdatedAt() time.Time       { return t.updatedAt }
-func (t *Target) DeletedAt() *time.Time      { return clock.CopyTime(t.deletedAt) }
+func (Target) Prefix() string                  { return "tgt" }
+func (t *Target) OrganizationID() string       { return t.organizationID }
+func (t *Target) EnvironmentID() string        { return t.environmentID }
+func (t *Target) ClusterID() string            { return t.clusterID }
+func (t *Target) Slug() string                 { return t.slug }
+func (t *Target) DisplayName() string          { return t.displayName }
+func (t *Target) Runtime() Runtime             { return t.runtime }
+func (t *Target) Locator() map[string]string   { return copyLabels(t.locator) }
+func (t *Target) CanObserve() bool             { return t.canObserve }
+func (t *Target) CanExecute() bool             { return t.canExecute }
+func (t *Target) CreatedAt() time.Time         { return t.createdAt }
+func (t *Target) UpdatedAt() time.Time         { return t.updatedAt }
+func (t *Target) DeletedAt() *time.Time        { return clock.CopyTime(t.deletedAt) }
 
 func (t *Target) Archived() bool { return t.deletedAt != nil }
 
 func (t *Target) Snapshot() TargetSnapshot {
 	return TargetSnapshot{
-		ID:               t.ID(),
-		OrganizationID:   t.organizationID,
-		EnvironmentID:    t.environmentID,
-		Slug:             t.slug,
-		DisplayName:      t.displayName,
-		Runtime:          t.runtime,
-		Locator:          copyLabels(t.locator),
-		AgentPrincipalID: copyString(t.agentPrincipalID),
-		LastReportedAt:   clock.CopyTime(t.lastReportedAt),
-		CreatedAt:        t.createdAt,
-		UpdatedAt:        t.updatedAt,
-		DeletedAt:        clock.CopyTime(t.deletedAt),
+		ID:             t.ID(),
+		OrganizationID: t.organizationID,
+		EnvironmentID:  t.environmentID,
+		ClusterID:      t.clusterID,
+		Slug:           t.slug,
+		DisplayName:    t.displayName,
+		Runtime:        t.runtime,
+		Locator:        copyLabels(t.locator),
+		CanObserve:     t.canObserve,
+		CanExecute:     t.canExecute,
+		CreatedAt:      t.createdAt,
+		UpdatedAt:      t.updatedAt,
+		DeletedAt:      clock.CopyTime(t.deletedAt),
 	}
 }
 
@@ -198,6 +212,8 @@ func (t *Target) checkActive() error {
 }
 
 // Update changes an active Target. Nothing changes if any field is invalid.
+// A Target cannot move to another Cluster: archiving it and creating a new
+// one keeps its history with the Cluster it ran in.
 func (t *Target) Update(props UpdateTargetProps) error {
 	if err := t.checkActive(); err != nil {
 		return err
@@ -216,6 +232,9 @@ func (t *Target) Update(props UpdateTargetProps) error {
 		if err := validateLocator(t.runtime, props.Locator); err != nil {
 			return err
 		}
+		if props.Locator[LocatorCluster] != t.locator[LocatorCluster] {
+			return NewErrInvalidInput("a target cannot move to another cluster; archive it and create it again")
+		}
 	}
 
 	changed := anyTrue(
@@ -233,53 +252,16 @@ func (t *Target) Update(props UpdateTargetProps) error {
 	return nil
 }
 
-// AssignAgent makes principalID the runtime agent that serves the Target,
-// replacing any earlier one. Only that agent may report on the Target.
-func (t *Target) AssignAgent(principalID string) error {
-	if err := t.checkActive(); err != nil {
-		return err
+// SetCapabilities records what the Cluster's agent last reported it can do in
+// the Target's namespace, and reports whether anything changed. Only the
+// service that checked the caller is the Cluster's agent may call it.
+func (t *Target) SetCapabilities(canObserve, canExecute bool) bool {
+	if t.canObserve == canObserve && t.canExecute == canExecute {
+		return false
 	}
-	if principalID == "" {
-		return NewErrInvalidInput("an agent principal ID is required")
-	}
-	previous := t.agentPrincipalID
-	t.agentPrincipalID = &principalID
-	t.lastReportedAt = nil
-	t.updatedAt = clock.Now()
-	if !equalPtr(previous, &principalID) {
-		t.RecordEvent(TargetAgentAssigned{Target: t.Snapshot(), PreviousAgentPrincipalID: previous})
-	}
-	return nil
-}
-
-// UnassignAgent removes an active Target's agent.
-func (t *Target) UnassignAgent() error {
-	if err := t.checkActive(); err != nil {
-		return err
-	}
-	if t.agentPrincipalID != nil {
-		previous := *t.agentPrincipalID
-		t.agentPrincipalID = nil
-		t.lastReportedAt = nil
-		t.updatedAt = clock.Now()
-		t.RecordEvent(TargetAgentUnassigned{Target: t.Snapshot(), PreviousAgentPrincipalID: previous})
-	}
-	return nil
-}
-
-// RecordReport notes that the Target's agent is still in contact. It is
-// refused for any principal but the assigned agent. It does not change
-// UpdatedAt, which tracks changes to the Target's configuration.
-func (t *Target) RecordReport(principalID string) error {
-	if err := t.checkActive(); err != nil {
-		return err
-	}
-	if t.agentPrincipalID == nil || *t.agentPrincipalID != principalID {
-		return fmt.Errorf("%w: %s does not serve target %s", ErrNotTargetAgent, principalID, t.ID())
-	}
-	now := clock.Now()
-	t.lastReportedAt = &now
-	return nil
+	t.canObserve = canObserve
+	t.canExecute = canExecute
+	return true
 }
 
 // Archive soft-deletes the Target. Archiving an archived one does nothing.

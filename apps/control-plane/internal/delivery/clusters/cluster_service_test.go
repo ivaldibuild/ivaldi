@@ -138,6 +138,22 @@ func TestArchiveClusterRevokesTheAgent(t *testing.T) {
 	assert.Equal(t, c.Snapshot().AgentPrincipalID, w.audit[0].Before.(delivery.ClusterSnapshot).AgentPrincipalID)
 }
 
+func TestArchiveClusterWithActiveTargets(t *testing.T) {
+	ctx := context.Background()
+	w := newWorld(t)
+	c := w.cluster(t, "prod-eu", "wkp_agent", false)
+	w.activeTargets = 2
+	w.reset()
+
+	_, err := w.svc.ArchiveCluster(ctx, ada, org, c.ID())
+
+	require.ErrorIs(t, err, delivery.ErrInUse)
+	assert.False(t, w.clusters[c.ID()].DeletedAt != nil, "the cluster is not archived")
+	assert.Empty(t, w.revoked)
+	assert.Empty(t, w.audit)
+	assert.Empty(t, w.events)
+}
+
 func TestArchiveClusterWithoutAnAgent(t *testing.T) {
 	w := newWorld(t)
 	c := w.cluster(t, "prod-eu", "", false)

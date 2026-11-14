@@ -29,6 +29,15 @@ type Targets interface {
 	UpdateTarget(ctx context.Context, t *delivery.Target) error
 }
 
+// Clusters is where a Target's runtime agent lives: a Target is served by the
+// agent of the Cluster it names.
+type Clusters interface {
+	GetCluster(ctx context.Context, organizationID, clusterID string) (*delivery.Cluster, error)
+	// GetClusterForUpdate is GetCluster that also locks the row until the
+	// transaction ends.
+	GetClusterForUpdate(ctx context.Context, organizationID, clusterID string) (*delivery.Cluster, error)
+}
+
 type Lifecycles interface {
 	GetLifecycle(ctx context.Context, organizationID, lifecycleID string) (*delivery.Lifecycle, error)
 }

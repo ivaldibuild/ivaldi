@@ -28,18 +28,18 @@ func NewController(service Service) *Controller { return &Controller{service: se
 var bearer = []map[string][]string{{api.BearerAuth: {}}}
 
 func (c *Controller) RegisterRoutes(h huma.API) {
-	register(h, "create-target-enrolment", http.MethodPost, "/targets/{target_id}/enrolments",
-		"Create a single-use enrolment token for a Target's runtime agent", http.StatusCreated, c.Create)
-	register(h, "get-target-agent", http.MethodGet, "/targets/{target_id}/agent",
-		"Get the Target's assigned agent and credential status", 0, c.Status)
+	register(h, "create-cluster-enrolment", http.MethodPost, "/clusters/{cluster_id}/enrolments",
+		"Create a single-use enrolment token for a Cluster's runtime agent", http.StatusCreated, c.Create)
+	register(h, "get-cluster-agent", http.MethodGet, "/clusters/{cluster_id}/agent",
+		"Get the Cluster's agent and credential status", 0, c.Status)
 	register(h, "renew-workload-credential", http.MethodPost, "/agent/credentials/renew",
 		"Renew the credential that authenticated the workload", 0, c.Renew)
 
 	huma.Register(h, huma.Operation{
-		OperationID:   "redeem-target-enrolment",
+		OperationID:   "redeem-cluster-enrolment",
 		Method:        http.MethodPost,
 		Path:          "/agent/enrolments/redeem",
-		Summary:       "Redeem a Target enrolment token for a workload credential",
+		Summary:       "Redeem a Cluster enrolment token for a workload credential",
 		Tags:          []string{"enrolment"},
 		DefaultStatus: http.StatusCreated,
 		Metadata:      map[string]any{api.Public: true},
@@ -54,18 +54,18 @@ func register[I, O any](h huma.API, id, method, path, summary string, status int
 }
 
 type CreateRequest struct {
-	TargetID string `path:"target_id" doc:"The Target the agent will serve"`
-	Body     struct {
+	ClusterID string `path:"cluster_id" doc:"The Cluster the agent will serve"`
+	Body      struct {
 		Method string `json:"method" required:"true" enum:"bearer,mtls,kubernetes" doc:"How the agent will authenticate"`
 	}
 }
 
 func (r *CreateRequest) input(organizationID string) CreateInput {
-	return CreateInput{OrganizationID: organizationID, TargetID: r.TargetID, Method: CredentialMethod(r.Body.Method)}
+	return CreateInput{OrganizationID: organizationID, ClusterID: r.ClusterID, Method: CredentialMethod(r.Body.Method)}
 }
 
-type TargetRequest struct {
-	TargetID string `path:"target_id" doc:"The Target"`
+type ClusterRequest struct {
+	ClusterID string `path:"cluster_id" doc:"The Cluster"`
 }
 
 type RedeemRequest struct {
@@ -116,12 +116,12 @@ func (c *Controller) Create(ctx context.Context, req *CreateRequest) (*Enrolment
 	return &EnrolmentResponse{Body: api.SuccessResponse(nil, *out)}, nil
 }
 
-func (c *Controller) Status(ctx context.Context, req *TargetRequest) (*AgentStatusResponse, error) {
+func (c *Controller) Status(ctx context.Context, req *ClusterRequest) (*AgentStatusResponse, error) {
 	who, err := caller(ctx)
 	if err != nil {
 		return nil, err
 	}
-	out, err := c.service.Status(ctx, who.Actor, who.OrganizationID, req.TargetID)
+	out, err := c.service.Status(ctx, who.Actor, who.OrganizationID, req.ClusterID)
 	if err != nil {
 		return nil, translateToHttpError(ctx, err)
 	}
@@ -175,7 +175,9 @@ func translateToHttpError(ctx context.Context, err error) error {
 		return huma.Error410Gone("the credential expired")
 	case errors.Is(err, delivery.ErrArchived), errors.Is(err, iam.ErrStatus):
 		return huma.Error409Conflict(err.Error())
-	case errors.Is(err, delivery.ErrNotTargetAgent):
+	case errors.Is(err, delivery.ErrIdentityInUse):
+		return huma.Error409Conflict("this workload identity already serves another cluster")
+	case errors.Is(err, delivery.ErrNotClusterAgent), errors.Is(err, delivery.ErrNotTargetAgent):
 		return huma.Error403Forbidden(err.Error())
 	case errors.Is(err, identity.ErrInvalidToken):
 		return huma.Error401Unauthorized("the credential is not valid")

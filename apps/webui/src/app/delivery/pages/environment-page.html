@@ -257,9 +257,6 @@
                     @if (target.deleted_at) {
                       <span hlmBadge variant="outline" class="ml-2">Archived</span>
                     }
-                    <span class="text-muted-foreground block text-[13px]">
-                      {{ target.agent_principal_id ? 'Agent assigned' : 'No agent yet' }}
-                    </span>
                   </span>
                   @if (canManage() && !archived()) {
                     <span class="flex flex-wrap gap-2">

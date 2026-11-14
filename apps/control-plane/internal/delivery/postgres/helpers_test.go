@@ -22,16 +22,14 @@ import (
 // Records in other capabilities are plain strings: delivery keeps no
 // foreign keys across capabilities.
 const (
-	orgA   = "org_a"
-	orgB   = "org_b"
-	wsA    = "wsp_a"
-	wsB    = "wsp_b"
-	projA  = "prj_a"
-	projB  = "prj_b"
-	teamA  = "team_a"
-	teamB  = "team_b"
-	agentA = "wkp_agent_a"
-	agentB = "wkp_agent_b"
+	orgA  = "org_a"
+	orgB  = "org_b"
+	wsA   = "wsp_a"
+	wsB   = "wsp_b"
+	projA = "prj_a"
+	projB = "prj_b"
+	teamA = "team_a"
+	teamB = "team_b"
 )
 
 // t0 has microseconds, which PostgreSQL keeps, so round trips check precision.
@@ -62,6 +60,9 @@ type fixture struct {
 	clusters   delivery.ClusterRepository
 	registries delivery.RegistryRepository
 	apps       delivery.ApplicationRepository
+	// clusterIDs remembers the Cluster each (organization, slug) test
+	// created, so a second call reuses it.
+	clusterIDs map[string]string
 }
 
 // newFixture gives the test a fresh database with the delivery schema, and
@@ -80,6 +81,7 @@ func newFixture(t *testing.T) *fixture {
 		clusters:   NewClusterRepository(db),
 		registries: NewRegistryRepository(db),
 		apps:       NewApplicationRepository(db),
+		clusterIDs: map[string]string{},
 	}
 }
 
@@ -141,10 +143,11 @@ func (f *fixture) createLifecycle(t *testing.T, org, ws, slug string, phases ...
 	return l
 }
 
-func newTarget(org, envID, slug string) *delivery.Target {
+func newTarget(clusterID, org, envID, slug string) *delivery.Target {
 	return must(delivery.NewTarget(delivery.NewTargetProps{
 		OrganizationID: org,
 		EnvironmentID:  envID,
+		ClusterID:      clusterID,
 		Slug:           slug,
 		DisplayName:    "Target " + slug,
 		Runtime:        delivery.RuntimeKubernetes,
@@ -152,9 +155,24 @@ func newTarget(org, envID, slug string) *delivery.Target {
 	}, nil))
 }
 
+// cluster returns the test Cluster for (org, slug), creating it once.
+func (f *fixture) cluster(t *testing.T, org, slug string) *delivery.Cluster {
+	t.Helper()
+	key := org + "/" + slug
+	if id, ok := f.clusterIDs[key]; ok {
+		c, err := f.clusters.GetCluster(f.ctx, org, id)
+		require.NoError(t, err)
+		return c
+	}
+	c := newCluster(org, slug)
+	require.NoError(t, f.clusters.CreateCluster(f.ctx, c))
+	f.clusterIDs[key] = c.ID()
+	return c
+}
+
 func (f *fixture) createTarget(t *testing.T, org, envID, slug string) *delivery.Target {
 	t.Helper()
-	tg := newTarget(org, envID, slug)
+	tg := newTarget(f.cluster(t, org, "cluster-1").ID(), org, envID, slug)
 	require.NoError(t, f.targets.CreateTarget(f.ctx, tg))
 	return tg
 }

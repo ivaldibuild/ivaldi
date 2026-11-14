@@ -23,11 +23,12 @@ import (
 )
 
 const (
-	org      = "org_01ARZ3NDEKTSV4RRFFQ69G5FAV"
-	appID    = "app_01ARZ3NDEKTSV4RRFFQ69G5FAV"
-	envID    = "env_01ARZ3NDEKTSV4RRFFQ69G5FAV"
-	targetID = "tgt_01ARZ3NDEKTSV4RRFFQ69G5FAV"
-	agentID  = "prn_01ARZ3NDEKTSV4RRFFQ69G5FAG"
+	org       = "org_01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	appID     = "app_01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	envID     = "env_01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	targetID  = "tgt_01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	clusterID = "cls_01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	agentID   = "prn_01ARZ3NDEKTSV4RRFFQ69G5FAG"
 )
 
 var (
@@ -42,6 +43,7 @@ type store struct {
 	lifecycles  map[string]*delivery.Lifecycle
 	envs        map[string]*delivery.Environment
 	targets     map[string]*delivery.Target
+	clusters    map[string]*delivery.Cluster
 	placements  map[string]*delivery.Placement
 	builds      map[string]*delivery.Build
 	artifacts   map[string]*delivery.Artifact
@@ -58,7 +60,7 @@ func newStore() *store {
 	return &store{
 		apps: map[string]*delivery.Application{}, channels: map[string]*delivery.Channel{},
 		lifecycles: map[string]*delivery.Lifecycle{}, envs: map[string]*delivery.Environment{},
-		targets: map[string]*delivery.Target{}, placements: map[string]*delivery.Placement{},
+		targets: map[string]*delivery.Target{}, clusters: map[string]*delivery.Cluster{}, placements: map[string]*delivery.Placement{},
 		builds: map[string]*delivery.Build{}, artifacts: map[string]*delivery.Artifact{},
 		releases:    map[string]*delivery.Release{},
 		deployments: map[string]*delivery.Deployment{},
@@ -141,18 +143,23 @@ func (f fakeTargets) GetTargetForUpdate(ctx context.Context, organizationID, tar
 	return f.GetTarget(ctx, organizationID, targetID)
 }
 
-func (f fakeTargets) GetTargetByAgentPrincipalID(_ context.Context, organizationID, principalID string) (*delivery.Target, error) {
-	for _, t := range f.targets {
-		if t.OrganizationID() == organizationID && t.AgentPrincipalID() != nil && *t.AgentPrincipalID() == principalID && !t.Archived() {
-			return t, nil
-		}
-	}
-	return nil, delivery.ErrNotFound
-}
-
 func (f fakeTargets) UpdateTarget(_ context.Context, t *delivery.Target) error {
 	f.targets[t.ID()] = t
 	return nil
+}
+
+type fakeClusters struct{ *store }
+
+func (f fakeClusters) GetCluster(_ context.Context, organizationID, id string) (*delivery.Cluster, error) {
+	c, ok := f.clusters[id]
+	if !ok || c.OrganizationID() != organizationID {
+		return nil, delivery.ErrNotFound
+	}
+	return c, nil
+}
+
+func (f fakeClusters) GetClusterForUpdate(ctx context.Context, organizationID, id string) (*delivery.Cluster, error) {
+	return f.GetCluster(ctx, organizationID, id)
 }
 
 type fakeLifecycles struct{ *store }
@@ -337,13 +344,15 @@ func newWorld(t *testing.T) *world {
 	s := newStore()
 	app := mustApplication(org, appID)
 	env := mustEnvironment(org, envID, true)
-	target := mustTarget(org, envID, targetID, agentID)
+	cluster := mustCluster(org, clusterID, agentID)
+	target := mustTarget(org, envID, clusterID, targetID)
 	lc := mustLifecycle(org, envID)
 	channel := mustChannel(org, appID, lc.ID())
 	placement := mustPlacement(org, appID, targetID)
 	s.apps[app.ID()] = app
 	s.envs[env.ID()] = env
 	s.targets[target.ID()] = target
+	s.clusters[cluster.ID()] = cluster
 	s.lifecycles[lc.ID()] = lc
 	s.channels[channel.ID()] = channel
 	s.placements[placementKey(appID, targetID)] = placement
@@ -355,7 +364,7 @@ func newWorld(t *testing.T) *world {
 	recorded := &fakeChanges{}
 	svc, err := NewService(
 		WithDeploymentRepo(fakeDeployments{s}), WithReleaseRepo(fakeReleases{s}), WithBuildRepo(fakeBuilds{s}),
-		WithApplications(fakeApplications{s}), WithEnvironments(fakeEnvironments{s}), WithTargets(fakeTargets{s}),
+		WithApplications(fakeApplications{s}), WithEnvironments(fakeEnvironments{s}), WithTargets(fakeTargets{s}), WithClusters(fakeClusters{s}),
 		WithLifecycles(fakeLifecycles{s}), WithCommitHistory(history), WithChanges(recorded), WithAuthorizer(authz), WithTransactor(s),
 		WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
 	)
@@ -393,9 +402,7 @@ func TestRequestDeploymentsWaitsForApproval(t *testing.T) {
 func TestRequestDeploymentsChecks(t *testing.T) {
 	t.Run("no agent", func(t *testing.T) {
 		w := newWorld(t)
-		target := w.targets[targetID]
-		require.NoError(t, target.UnassignAgent())
-		w.targets[targetID] = target
+		require.NoError(t, w.clusters[clusterID].UnassignAgent())
 		_, err := w.svc.RequestDeployments(ctx, ada, delivery.RequestDeploymentsInput{
 			OrganizationID: org, ReleaseID: w.rel.ID(), TargetIDs: []string{targetID},
 		})
@@ -435,7 +442,6 @@ func TestReportDeployment(t *testing.T) {
 	placement := w.placements[placementKey(appID, targetID)]
 	assert.Equal(t, new(d.ID()), placement.CurrentDeploymentID())
 	assert.Equal(t, new(w.rel.ID()), placement.CurrentReleaseID())
-	assert.NotNil(t, w.targets[targetID].LastReportedAt())
 
 	_, err = w.svc.ReportDeployment(ctx, agent, delivery.ReportDeploymentInput{
 		OrganizationID: org, DeploymentID: d.ID(), ReportID: "report-1",
@@ -478,11 +484,14 @@ func TestCancelDeploymentNeedingApprovalIsRefused(t *testing.T) {
 	assert.NotContains(t, w.auditTypes(), delivery.EventDeploymentCancelled)
 }
 
-func TestAgentReportsLockTheTarget(t *testing.T) {
+func TestAgentHeartbeatChecksTheClusterAgent(t *testing.T) {
 	w := newWorld(t)
 	agent := identity.Actor{PrincipalID: agentID}
 	require.NoError(t, w.svc.RecordTargetHeartbeat(ctx, agent, org, targetID))
-	assert.Equal(t, []string{targetID}, w.lockedTargets)
+	assert.Empty(t, w.lockedTargets, "a heartbeat changes no Target state")
+
+	err := w.svc.RecordTargetHeartbeat(ctx, ada, org, targetID)
+	assert.ErrorIs(t, err, delivery.ErrNotDeploymentAgent)
 }
 
 func TestListAssignmentsAsksOnlyForInFlightDeployments(t *testing.T) {
@@ -631,14 +640,22 @@ func mustEnvironment(org, id string, execution bool) *delivery.Environment {
 	}, &id))
 }
 
-func mustTarget(org, envID, id, agent string) *delivery.Target {
-	t := must(delivery.NewTarget(delivery.NewTargetProps{
-		OrganizationID: org, EnvironmentID: envID, DisplayName: "Prod cluster",
+func mustCluster(org, id, agent string) *delivery.Cluster {
+	c := must(delivery.NewCluster(delivery.NewClusterProps{
+		OrganizationID: org, Slug: "cluster", DisplayName: "Prod cluster", Runtime: delivery.RuntimeKubernetes,
+	}, &id))
+	if err := c.AssignAgent(agent); err != nil {
+		panic(err)
+	}
+	return c
+}
+
+func mustTarget(org, envID, clusterID, id string) *delivery.Target {
+	return must(delivery.NewTarget(delivery.NewTargetProps{
+		OrganizationID: org, EnvironmentID: envID, ClusterID: clusterID, DisplayName: "Prod cluster",
 		Runtime: delivery.RuntimeKubernetes,
 		Locator: map[string]string{delivery.LocatorCluster: "cluster", delivery.LocatorNamespace: "default"},
 	}, &id))
-	requireNoErr(t.AssignAgent(agent))
-	return t
 }
 
 func mustLifecycle(org, envID string) *delivery.Lifecycle {

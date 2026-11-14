@@ -25,8 +25,6 @@ func TestDeploymentRepository(t *testing.T) {
 	api := f.createArtifact(t, orgA, app.ID(), "api")
 	main := f.createChannel(t, orgA, app.ID(), lc.ID(), "main", true)
 	target := f.createTarget(t, orgA, env.ID(), "prod")
-	require.NoError(t, target.AssignAgent(agentA))
-	require.NoError(t, f.targets.UpdateTarget(f.ctx, target))
 
 	build := newBuild(orgA, "ghcr.io/acme/api", digest("a"), delivery.BuildDetails{}, delivery.BuildCIReported)
 	_, err := builds.CreateBuild(f.ctx, build)

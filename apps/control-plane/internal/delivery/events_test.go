@@ -119,7 +119,7 @@ func TestEnvironmentEvents(t *testing.T) {
 func TestTargetEvents(t *testing.T) {
 	checkEvents(t, domNewTarget, []eventCase[*Target]{
 		{"update", func(t *testing.T, tgt *Target) {
-			require.NoError(t, tgt.Update(UpdateTargetProps{Locator: map[string]string{LocatorCluster: "prod-eu-2", LocatorNamespace: "payments"}}))
+			require.NoError(t, tgt.Update(UpdateTargetProps{Locator: map[string]string{LocatorCluster: "prod-eu-1", LocatorNamespace: "billing"}}))
 		}, func(tgt *Target) aggregate.Event { return TargetUpdated{tgt.Snapshot()} }},
 		{"update with the same values", func(t *testing.T, tgt *Target) {
 			require.NoError(t, tgt.Update(UpdateTargetProps{
@@ -127,37 +127,12 @@ func TestTargetEvents(t *testing.T) {
 				Locator:     map[string]string{LocatorCluster: "prod-eu-1", LocatorNamespace: "payments"},
 			}))
 		}, nil},
-		{"assign an agent", func(t *testing.T, tgt *Target) { require.NoError(t, tgt.AssignAgent(domAgent)) },
-			func(tgt *Target) aggregate.Event { return TargetAgentAssigned{Target: tgt.Snapshot()} }},
-		{"replace the agent", func(t *testing.T, tgt *Target) {
-			require.NoError(t, tgt.AssignAgent(domAgent))
-			tgt.PullEvents()
-			require.NoError(t, tgt.AssignAgent(domOtherAgent))
-		}, func(tgt *Target) aggregate.Event {
-			return TargetAgentAssigned{Target: tgt.Snapshot(), PreviousAgentPrincipalID: new(domAgent)}
-		}},
-		{"assign the same agent", func(t *testing.T, tgt *Target) {
-			require.NoError(t, tgt.AssignAgent(domAgent))
-			tgt.PullEvents()
-			require.NoError(t, tgt.AssignAgent(domAgent))
-		}, nil},
-		{"unassign the agent", func(t *testing.T, tgt *Target) {
-			require.NoError(t, tgt.AssignAgent(domAgent))
-			tgt.PullEvents()
-			require.NoError(t, tgt.UnassignAgent())
-		}, func(tgt *Target) aggregate.Event {
-			return TargetAgentUnassigned{Target: tgt.Snapshot(), PreviousAgentPrincipalID: domAgent}
-		}},
-		{"unassign without an agent", func(t *testing.T, tgt *Target) { require.NoError(t, tgt.UnassignAgent()) }, nil},
-		{"agent report", func(t *testing.T, tgt *Target) {
-			require.NoError(t, tgt.AssignAgent(domAgent))
-			tgt.PullEvents()
-			require.NoError(t, tgt.RecordReport(domAgent))
-		}, nil},
+		{"capabilities", func(t *testing.T, tgt *Target) { tgt.SetCapabilities(true, true) }, nil},
 		{"archive", func(t *testing.T, tgt *Target) { tgt.Archive() },
 			func(tgt *Target) aggregate.Event { return TargetArchived{tgt.Snapshot()} }},
 		{"restore", func(t *testing.T, tgt *Target) { tgt.Archive(); tgt.PullEvents(); tgt.Restore() },
 			func(tgt *Target) aggregate.Event { return TargetRestored{tgt.Snapshot()} }},
+		{"restore an active one", func(t *testing.T, tgt *Target) { tgt.Restore() }, nil},
 	})
 }
 
@@ -387,7 +362,7 @@ func TestSnapshotJSONKeys(t *testing.T) {
 		keys     []string
 	}{
 		{EnvironmentSnapshot{}, append([]string{"id", "organization_id", "workspace_id", "slug", "display_name", "tier", "execution_enabled", "deleted_at"}, timestamps...)},
-		{TargetSnapshot{}, append([]string{"id", "organization_id", "environment_id", "slug", "display_name", "runtime", "locator", "agent_principal_id", "last_reported_at", "deleted_at"}, timestamps...)},
+		{TargetSnapshot{}, append([]string{"id", "organization_id", "environment_id", "cluster_id", "slug", "display_name", "runtime", "locator", "can_observe", "can_execute", "deleted_at"}, timestamps...)},
 		{ClusterSnapshot{}, append([]string{"id", "organization_id", "slug", "display_name", "runtime", "agent_principal_id", "agent_capabilities", "agent_last_failure", "last_reported_at", "deleted_at"}, timestamps...)},
 		{AgentFailure{}, []string{"reason", "at"}},
 		{LifecycleSnapshot{}, append([]string{"id", "organization_id", "workspace_id", "slug", "display_name", "description", "phases", "deleted_at"}, timestamps...)},

@@ -86,8 +86,8 @@ func TestOperationsAreAuthorizedOnTheirResource(t *testing.T) {
 	w := newWorld(t)
 	env := w.env(t, wsActive, "staging", false)
 	archivedEnv := w.env(t, wsActive, "old", true)
-	tg := w.target(t, env.ID(), "web", "", false)
-	archivedTg := w.target(t, env.ID(), "api", "", true)
+	tg := w.target(t, env.ID(), "web", false)
+	archivedTg := w.target(t, env.ID(), "api", true)
 
 	cases := []struct {
 		name       string
@@ -140,10 +140,6 @@ func TestOperationsAreAuthorizedOnTheirResource(t *testing.T) {
 			_, err := w.svc.UpdateTarget(ctx, ada, org, tg.ID(), delivery.UpdateTargetProps{DisplayName: ptr("Web 2")})
 			return err
 		}, delivery.PermissionEnvironmentManage, delivery.ActionTargetUpdate, env.ID()},
-		{"assign target agent", func() error {
-			_, err := w.svc.AssignTargetAgent(ctx, ada, org, tg.ID(), "prn_agent")
-			return err
-		}, delivery.PermissionEnvironmentManage, delivery.ActionTargetAssignAgent, env.ID()},
 		{"archive target", func() error {
 			_, err := w.svc.ArchiveTarget(ctx, ada, org, archivedTg.ID())
 			return err
@@ -192,10 +188,6 @@ func TestRefusedChangesWriteNothing(t *testing.T) {
 			_, err := w.svc.UpdateTarget(ctx, ada, org, tg.ID(), delivery.UpdateTargetProps{DisplayName: ptr("Renamed")})
 			return err
 		},
-		"assign target agent": func(w *world, _ *delivery.Environment, tg *delivery.Target) error {
-			_, err := w.svc.AssignTargetAgent(ctx, ada, org, tg.ID(), "prn_agent")
-			return err
-		},
 		"archive target": func(w *world, _ *delivery.Environment, tg *delivery.Target) error {
 			_, err := w.svc.ArchiveTarget(ctx, ada, org, tg.ID())
 			return err
@@ -205,7 +197,7 @@ func TestRefusedChangesWriteNothing(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			w := newWorld(t)
 			env := w.env(t, wsActive, "staging", false)
-			tg := w.target(t, env.ID(), "web", "", false)
+			tg := w.target(t, env.ID(), "web", false)
 			before := w.state.clone()
 			w.authz.deny = func(authorization.Request) bool { return true }
 
@@ -224,7 +216,7 @@ func TestServiceWithoutAuthorizationChangesNothing(t *testing.T) {
 	w := newWorld(t)
 	env := w.env(t, wsActive, "staging", false)
 	unused := w.env(t, wsActive, "unused", false)
-	tg := w.target(t, env.ID(), "web", "", false)
+	tg := w.target(t, env.ID(), "web", false)
 	core := w.svc.(*authorized).next
 	before := w.state.clone()
 
@@ -289,7 +281,7 @@ func TestArchiveEnvironments(t *testing.T) {
 	})
 
 	for name, setup := range map[string]func(w *world, e *delivery.Environment){
-		"with an active target":     func(w *world, e *delivery.Environment) { w.target(t, e.ID(), "web", "", false) },
+		"with an active target":     func(w *world, e *delivery.Environment) { w.target(t, e.ID(), "web", false) },
 		"in an active lifecycle":    func(w *world, e *delivery.Environment) { w.lifecycleUse[e.ID()] = 1 },
 		"unknown in the same batch": func(w *world, _ *delivery.Environment) {},
 	} {
@@ -371,12 +363,14 @@ func TestCreateTarget(t *testing.T) {
 		return delivery.CreateTargetInput{OrganizationID: org, EnvironmentID: envID, DisplayName: "Workers", Runtime: delivery.RuntimeKubernetes, Locator: locator()}
 	}
 
-	t.Run("adds it with no agent", func(t *testing.T) {
+	t.Run("adds it with no agent capabilities", func(t *testing.T) {
 		w := newWorld(t)
 		env := w.env(t, wsActive, "staging", false)
 		tg, err := w.svc.CreateTarget(ctx, ada, in(env.ID()))
 		require.NoError(t, err)
-		assert.Nil(t, tg.AgentPrincipalID())
+		assert.Equal(t, testClusterID, tg.ClusterID())
+		assert.False(t, tg.CanObserve())
+		assert.False(t, tg.CanExecute())
 		assert.Contains(t, w.targets, tg.ID())
 		assert.Equal(t, []string{delivery.EventTargetCreated}, w.auditTypes())
 		assert.Equal(t, "dec-"+env.ID(), w.audit[0].DecisionID)
@@ -394,29 +388,10 @@ func TestCreateTarget(t *testing.T) {
 func TestTargetChanges(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("assign and unassign the agent", func(t *testing.T) {
-		w := newWorld(t)
-		env := w.env(t, wsActive, "staging", false)
-		tg := w.target(t, env.ID(), "web", "", false)
-
-		got, err := w.svc.AssignTargetAgent(ctx, ada, org, tg.ID(), "prn_agent")
-		require.NoError(t, err)
-		assert.Equal(t, ptr("prn_agent"), got.AgentPrincipalID())
-
-		got, err = w.svc.AssignTargetAgent(ctx, ada, org, tg.ID(), "")
-		require.NoError(t, err)
-		assert.Nil(t, got.AgentPrincipalID())
-
-		w.reset()
-		_, err = w.svc.AssignTargetAgent(ctx, ada, org, tg.ID(), "")
-		require.NoError(t, err)
-		assert.Empty(t, w.audit, "unassigning no agent records nothing")
-	})
-
 	t.Run("archive twice records once", func(t *testing.T) {
 		w := newWorld(t)
 		env := w.env(t, wsActive, "staging", false)
-		tg := w.target(t, env.ID(), "web", "", false)
+		tg := w.target(t, env.ID(), "web", false)
 		for range 2 {
 			got, err := w.svc.ArchiveTarget(ctx, ada, org, tg.ID())
 			require.NoError(t, err)
@@ -428,7 +403,7 @@ func TestTargetChanges(t *testing.T) {
 	t.Run("restore needs an active environment", func(t *testing.T) {
 		w := newWorld(t)
 		env := w.env(t, wsActive, "old", true)
-		tg := w.target(t, env.ID(), "web", "", true)
+		tg := w.target(t, env.ID(), "web", true)
 		_, err := w.svc.RestoreTarget(ctx, ada, org, tg.ID())
 		require.ErrorIs(t, err, delivery.ErrArchived)
 		assert.NotNil(t, w.targets[tg.ID()].DeletedAt)
@@ -437,26 +412,10 @@ func TestTargetChanges(t *testing.T) {
 	t.Run("restore", func(t *testing.T) {
 		w := newWorld(t)
 		env := w.env(t, wsActive, "staging", false)
-		tg := w.target(t, env.ID(), "web", "", true)
+		tg := w.target(t, env.ID(), "web", true)
 		got, err := w.svc.RestoreTarget(ctx, ada, org, tg.ID())
 		require.NoError(t, err)
 		assert.False(t, got.Archived())
 		assert.Equal(t, []string{delivery.EventTargetRestored}, w.auditTypes())
 	})
-}
-
-func TestRecordTargetReport(t *testing.T) {
-	ctx := context.Background()
-	agent := identity.Actor{PrincipalID: "prn_agent", Kind: identity.ActorServiceAccount}
-	w := newWorld(t)
-	env := w.env(t, wsActive, "staging", false)
-	tg := w.target(t, env.ID(), "web", "prn_agent", false)
-
-	require.NoError(t, w.svc.RecordTargetReport(ctx, agent, org, tg.ID()))
-	assert.NotNil(t, w.targets[tg.ID()].LastReportedAt)
-	assert.Empty(t, w.authz.asked, "the Target checks its agent; the authorizer is not asked")
-	assert.Empty(t, w.audit)
-
-	err := w.svc.RecordTargetReport(ctx, ada, org, tg.ID())
-	assert.ErrorIs(t, err, delivery.ErrNotTargetAgent)
 }

@@ -95,3 +95,11 @@ func (r *clusterRepository) UpdateCluster(ctx context.Context, c *delivery.Clust
 			"deleted_at":         e.DeletedAt,
 		}))
 }
+
+func (r *clusterRepository) CountActiveTargets(ctx context.Context, organizationID, clusterID string) (int, error) {
+	var n int64
+	err := r.conn(ctx).Model(&targetEntity{}).
+		Where("organization_id = ? AND cluster_id = ? AND deleted_at IS NULL", organizationID, clusterID).
+		Count(&n).Error
+	return int(n), translate(err)
+}

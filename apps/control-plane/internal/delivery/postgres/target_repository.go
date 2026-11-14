@@ -39,17 +39,18 @@ func (r *targetRepository) GetTargetForUpdate(ctx context.Context, organizationI
 		Where("organization_id = ? AND id = ?", organizationID, targetID))
 }
 
-func (r *targetRepository) GetTargetByAgentPrincipalID(ctx context.Context, organizationID, principalID string) (*delivery.Target, error) {
-	return r.get(r.conn(ctx).Where(
-		"organization_id = ? AND agent_principal_id = ? AND deleted_at IS NULL", organizationID, principalID))
-}
-
 func (r *targetRepository) GetTarget(ctx context.Context, organizationID, targetID string) (*delivery.Target, error) {
 	return r.get(r.conn(ctx).Where("organization_id = ? AND id = ?", organizationID, targetID))
 }
 
 func (r *targetRepository) GetTargetBySlug(ctx context.Context, organizationID, environmentID, slug string) (*delivery.Target, error) {
 	return r.get(r.conn(ctx).Where("organization_id = ? AND environment_id = ? AND slug = ? AND deleted_at IS NULL", organizationID, environmentID, slug))
+}
+
+func (r *targetRepository) GetTargetByNamespace(ctx context.Context, organizationID, clusterID, namespace string) (*delivery.Target, error) {
+	return r.get(r.conn(ctx).Where(
+		"organization_id = ? AND cluster_id = ? AND locator->>'namespace' = ? AND deleted_at IS NULL",
+		organizationID, clusterID, namespace))
 }
 
 func (r *targetRepository) get(q *gorm.DB) (*delivery.Target, error) {
@@ -62,7 +63,13 @@ func (r *targetRepository) get(q *gorm.DB) (*delivery.Target, error) {
 
 func (r *targetRepository) ListTargets(ctx context.Context, query delivery.ListTargetsQuery) (*pagination.Result[*delivery.Target], error) {
 	base := func() *gorm.DB {
-		q := r.conn(ctx).Model(&targetEntity{}).Where("organization_id = ? AND environment_id = ?", query.OrganizationID, query.EnvironmentID)
+		q := r.conn(ctx).Model(&targetEntity{}).Where("organization_id = ?", query.OrganizationID)
+		if query.EnvironmentID != "" {
+			q = q.Where("environment_id = ?", query.EnvironmentID)
+		}
+		if query.ClusterID != "" {
+			q = q.Where("cluster_id = ?", query.ClusterID)
+		}
 		if !query.IncludeArchived {
 			q = q.Where("deleted_at IS NULL")
 		}
@@ -83,13 +90,14 @@ func (r *targetRepository) UpdateTarget(ctx context.Context, t *delivery.Target)
 	return updated(r.conn(ctx).Model(&targetEntity{}).
 		Where("organization_id = ? AND id = ?", e.OrganizationID, e.ID).
 		Updates(map[string]any{
-			"slug":               e.Slug,
-			"display_name":       e.DisplayName,
-			"locator":            e.Locator,
-			"agent_principal_id": e.AgentPrincipalID,
-			"last_reported_at":   e.LastReportedAt,
-			"updated_at":         e.UpdatedAt,
-			"deleted_at":         e.DeletedAt,
+			"cluster_id":   e.ClusterID,
+			"slug":         e.Slug,
+			"display_name": e.DisplayName,
+			"locator":      e.Locator,
+			"can_observe":  e.CanObserve,
+			"can_execute":  e.CanExecute,
+			"updated_at":   e.UpdatedAt,
+			"deleted_at":   e.DeletedAt,
 		}))
 }
 

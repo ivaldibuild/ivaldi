@@ -20,9 +20,9 @@ import (
 )
 
 const (
-	org      = "org_01ARZ3NDEKTSV4RRFFQ69G5FAV"
-	envID    = "env_01ARZ3NDEKTSV4RRFFQ69G5FAV"
-	targetID = "tgt_01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	org            = "org_01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	clusterID      = "cls_01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	otherClusterID = "cls_01ARZ3NDEKTSV4RRFFQ69G5FAW"
 )
 
 var (
@@ -36,8 +36,7 @@ type store struct {
 	tokens      map[string]*iam.WorkloadEnrollmentToken
 	byHash      map[string]*iam.WorkloadEnrollmentToken
 	credentials map[string]*iam.WorkloadCredential
-	targets     map[string]*delivery.Target
-	envs        map[string]*delivery.Environment
+	clusters    map[string]*delivery.Cluster
 	audit       []audit.Event
 	envelopes   []events.Envelope
 	inTx        bool
@@ -45,19 +44,18 @@ type store struct {
 }
 
 func newStore(t *testing.T) *store {
-	env := must(delivery.NewEnvironment(delivery.NewEnvironmentProps{
-		OrganizationID: org, WorkspaceID: "wsp_01ARZ3NDEKTSV4RRFFQ69G5FAV",
-		DisplayName: "Production", Tier: delivery.TierProduction,
-	}, ptr(envID)))
-	target := must(delivery.NewTarget(delivery.NewTargetProps{
-		OrganizationID: org, EnvironmentID: envID, DisplayName: "Cluster",
-		Runtime: delivery.RuntimeKubernetes,
-		Locator: map[string]string{delivery.LocatorCluster: "cluster", delivery.LocatorNamespace: "default"},
-	}, ptr(targetID)))
+	newCluster := func(id, slug string) *delivery.Cluster {
+		return must(delivery.NewCluster(delivery.NewClusterProps{
+			OrganizationID: org, Slug: slug, DisplayName: slug, Runtime: delivery.RuntimeKubernetes,
+		}, ptr(id)))
+	}
 	return &store{
 		workloads: map[string]*iam.Workload{}, tokens: map[string]*iam.WorkloadEnrollmentToken{},
 		byHash: map[string]*iam.WorkloadEnrollmentToken{}, credentials: map[string]*iam.WorkloadCredential{},
-		targets: map[string]*delivery.Target{targetID: target}, envs: map[string]*delivery.Environment{envID: env},
+		clusters: map[string]*delivery.Cluster{
+			clusterID:      newCluster(clusterID, "cluster"),
+			otherClusterID: newCluster(otherClusterID, "other"),
+		},
 	}
 }
 
@@ -162,39 +160,32 @@ func (f fakePrincipals) Get(_ context.Context, organizationID, principalID strin
 	return iam.PrincipalSnapshot{}, iam.ErrNotFound
 }
 
-type fakeTargets struct{ *store }
+type fakeClusters struct{ *store }
 
-func (f fakeTargets) GetTarget(_ context.Context, organizationID, id string) (*delivery.Target, error) {
-	t, ok := f.targets[id]
-	if !ok || t.OrganizationID() != organizationID {
+func (f fakeClusters) GetCluster(_ context.Context, organizationID, id string) (*delivery.Cluster, error) {
+	c, ok := f.clusters[id]
+	if !ok || c.OrganizationID() != organizationID {
 		return nil, delivery.ErrNotFound
 	}
-	return t, nil
+	return c, nil
 }
-func (f fakeTargets) GetTargetForUpdate(ctx context.Context, organizationID, id string) (*delivery.Target, error) {
-	return f.GetTarget(ctx, organizationID, id)
+
+func (f fakeClusters) GetClusterForUpdate(ctx context.Context, organizationID, id string) (*delivery.Cluster, error) {
+	return f.GetCluster(ctx, organizationID, id)
 }
-func (f fakeTargets) GetTargetByAgentPrincipalID(_ context.Context, organizationID, principalID string) (*delivery.Target, error) {
-	for _, t := range f.targets {
-		if t.OrganizationID() == organizationID && t.AgentPrincipalID() != nil && *t.AgentPrincipalID() == principalID && !t.Archived() {
-			return t, nil
+
+func (f fakeClusters) GetClusterByAgentPrincipalID(_ context.Context, organizationID, principalID string) (*delivery.Cluster, error) {
+	for _, c := range f.clusters {
+		if c.OrganizationID() == organizationID && c.AgentPrincipalID() != nil && *c.AgentPrincipalID() == principalID && !c.Archived() {
+			return c, nil
 		}
 	}
 	return nil, delivery.ErrNotFound
 }
-func (f fakeTargets) UpdateTarget(_ context.Context, t *delivery.Target) error {
-	f.targets[t.ID()] = t
+
+func (f fakeClusters) UpdateCluster(_ context.Context, c *delivery.Cluster) error {
+	f.clusters[c.ID()] = c
 	return nil
-}
-
-type fakeEnvs struct{ *store }
-
-func (f fakeEnvs) GetEnvironment(_ context.Context, organizationID, id string) (*delivery.Environment, error) {
-	e, ok := f.envs[id]
-	if !ok || e.OrganizationID() != organizationID {
-		return nil, delivery.ErrNotFound
-	}
-	return e, nil
 }
 
 // fakeKubernetes records whether each verification ran inside a transaction.
@@ -240,7 +231,7 @@ func newWorld(t *testing.T) *world {
 	svc, err := NewService(
 		WithWorkloadRepo(fakeWorkloads{s}), WithEnrollmentTokenRepo(fakeTokens{s}),
 		WithCredentialRepo(fakeCredentials{s}), WithPrincipalRepo(fakePrincipals{s}),
-		WithTargets(fakeTargets{s}), WithEnvironments(fakeEnvs{s}),
+		WithClusters(fakeClusters{s}),
 		WithKubernetesVerifier(fakeKubernetes{s}), WithAuthorizer(allow{}),
 		WithTransactor(s), WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
 	)
@@ -250,12 +241,12 @@ func newWorld(t *testing.T) *world {
 
 func TestCreateEnrolment(t *testing.T) {
 	w := newWorld(t)
-	issued, err := w.svc.Create(ctx, ada, CreateInput{OrganizationID: org, TargetID: targetID, Method: MethodBearer})
+	issued, err := w.svc.Create(ctx, ada, CreateInput{OrganizationID: org, ClusterID: clusterID, Method: MethodBearer})
 	require.NoError(t, err)
 	assert.Contains(t, issued.Token, iam.WorkloadEnrollmentTokenPrefix)
-	assert.Equal(t, targetID, issued.TargetID)
+	assert.Equal(t, clusterID, issued.ClusterID)
 	assert.Equal(t, MethodBearer, issued.Method)
-	assert.Equal(t, "target:"+targetID, issued.Pool)
+	assert.Equal(t, "cluster:"+clusterID, issued.Pool)
 	assert.NotEmpty(t, w.tokens)
 	assert.Equal(t, iam.EventWorkloadEnrollmentCreated, w.audit[0].Type)
 }
@@ -268,7 +259,7 @@ func TestRedeemBearer(t *testing.T) {
 	assert.Contains(t, *got.WorkloadToken, iam.WorkloadTokenPrefix)
 	assert.Equal(t, iam.CredentialBearerToken, got.CredentialKind)
 	assert.NotNil(t, got.ExpiresAt)
-	assert.Equal(t, got.WorkloadPrincipalID, *w.targets[targetID].AgentPrincipalID())
+	assert.Equal(t, got.WorkloadPrincipalID, *w.clusters[clusterID].AgentPrincipalID())
 	assert.True(t, w.tokens[mustOneID(w.tokens)].Used())
 }
 
@@ -311,7 +302,7 @@ func TestReenrolmentRevokesOldWorker(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, iam.PrincipalSuspended, oldWorkload.Status())
 	assert.True(t, oldCredential.Revoked())
-	assert.Equal(t, next.WorkloadPrincipalID, *w.targets[targetID].AgentPrincipalID())
+	assert.Equal(t, next.WorkloadPrincipalID, *w.clusters[clusterID].AgentPrincipalID())
 }
 
 func TestRenewBearer(t *testing.T) {
@@ -404,23 +395,23 @@ func TestRenewMTLSAndKubernetes(t *testing.T) {
 	})
 }
 
-func TestRenewRefusedWhenNoLongerTargetAgent(t *testing.T) {
+func TestRenewRefusedWhenNoLongerClusterAgent(t *testing.T) {
 	w := newWorld(t)
 	got := mustRedeem(t, w, MethodBearer)
-	target := w.targets[targetID]
-	require.NoError(t, target.UnassignAgent())
-	w.targets[targetID] = target
+	cluster := w.clusters[clusterID]
+	require.NoError(t, cluster.UnassignAgent())
+	w.clusters[clusterID] = cluster
 	caller := identity.Caller{
 		Actor:          identity.Actor{PrincipalID: got.WorkloadPrincipalID, Kind: identity.ActorWorkload},
 		OrganizationID: org, CredentialID: got.CredentialID, CredentialExpiresAt: *got.ExpiresAt,
 	}
 	_, err := w.svc.Renew(ctx, caller)
-	assert.ErrorIs(t, err, delivery.ErrNotTargetAgent)
+	assert.ErrorIs(t, err, delivery.ErrNotClusterAgent)
 }
 
 func mustCreate(t *testing.T, w *world, method CredentialMethod) *IssuedEnrolment {
 	t.Helper()
-	issued, err := w.svc.Create(ctx, ada, CreateInput{OrganizationID: org, TargetID: targetID, Method: method})
+	issued, err := w.svc.Create(ctx, ada, CreateInput{OrganizationID: org, ClusterID: clusterID, Method: method})
 	require.NoError(t, err)
 	return issued
 }
@@ -463,7 +454,7 @@ func TestReenrolmentReusesCertificateIdentity(t *testing.T) {
 	second := mustRedeem(t, w, MethodMTLS)
 	assert.NotEqual(t, first.CredentialID, second.CredentialID)
 	assert.True(t, firstCredential.Revoked(), "the previous certificate credential is revoked")
-	assert.Equal(t, second.WorkloadPrincipalID, *w.targets[targetID].AgentPrincipalID())
+	assert.Equal(t, second.WorkloadPrincipalID, *w.clusters[clusterID].AgentPrincipalID())
 }
 
 func TestReenrolmentReusesKubernetesIdentity(t *testing.T) {
@@ -474,4 +465,37 @@ func TestReenrolmentReusesKubernetesIdentity(t *testing.T) {
 	second := mustRedeem(t, w, MethodKubernetes)
 	assert.NotEqual(t, first.CredentialID, second.CredentialID)
 	assert.True(t, firstCredential.Revoked(), "the previous service-account credential is revoked")
+}
+
+func TestAgentStatus(t *testing.T) {
+	w := newWorld(t)
+	got := mustRedeem(t, w, MethodBearer)
+
+	status, err := w.svc.Status(ctx, ada, org, clusterID)
+	require.NoError(t, err)
+	assert.Equal(t, clusterID, status.ClusterID)
+	require.NotNil(t, status.AgentPrincipalID)
+	assert.Equal(t, got.WorkloadPrincipalID, *status.AgentPrincipalID)
+	assert.Equal(t, "active", status.Status)
+	assert.NotNil(t, status.RedeemedAt)
+	assert.Nil(t, status.LastFailure)
+}
+
+func TestReenrolmentRefusesAnIdentityUsedByAnotherCluster(t *testing.T) {
+	w := newWorld(t)
+	first := mustRedeem(t, w, MethodMTLS)
+
+	issued, err := w.svc.Create(ctx, ada, CreateInput{OrganizationID: org, ClusterID: otherClusterID, Method: MethodMTLS})
+	require.NoError(t, err)
+	_, err = w.svc.Redeem(ctx, RedeemInput{
+		Token: issued.Token, Method: MethodMTLS,
+		ClientCertificateFP: "fingerprint", ClientCertificateEnds: t0.Add(2 * time.Hour),
+	})
+	require.ErrorIs(t, err, delivery.ErrIdentityInUse)
+
+	assert.Equal(t, first.WorkloadPrincipalID, *w.clusters[clusterID].AgentPrincipalID(), "the first cluster keeps its agent")
+	assert.Nil(t, w.clusters[otherClusterID].AgentPrincipalID())
+	require.NotNil(t, w.clusters[otherClusterID].AgentLastFailure())
+	assert.Contains(t, w.clusters[otherClusterID].AgentLastFailure().Reason, "identity_in_use")
+	assert.Contains(t, w.clusters[otherClusterID].AgentLastFailure().Reason, "cluster")
 }

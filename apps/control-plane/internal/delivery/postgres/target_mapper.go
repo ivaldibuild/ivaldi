@@ -20,18 +20,19 @@ func (m *targetMapper) ToPersistence(t *delivery.Target) (*targetEntity, error) 
 		return nil, fmt.Errorf("encode locator: %w", err)
 	}
 	return &targetEntity{
-		ID:               s.ID,
-		OrganizationID:   s.OrganizationID,
-		EnvironmentID:    s.EnvironmentID,
-		Slug:             s.Slug,
-		DisplayName:      s.DisplayName,
-		Runtime:          string(s.Runtime),
-		Locator:          locator,
-		AgentPrincipalID: s.AgentPrincipalID,
-		LastReportedAt:   s.LastReportedAt,
-		CreatedAt:        s.CreatedAt,
-		UpdatedAt:        s.UpdatedAt,
-		DeletedAt:        s.DeletedAt,
+		ID:             s.ID,
+		OrganizationID: s.OrganizationID,
+		EnvironmentID:  s.EnvironmentID,
+		ClusterID:      s.ClusterID,
+		Slug:           s.Slug,
+		DisplayName:    s.DisplayName,
+		Runtime:        string(s.Runtime),
+		Locator:        locator,
+		CanObserve:     s.CanObserve,
+		CanExecute:     s.CanExecute,
+		CreatedAt:      s.CreatedAt,
+		UpdatedAt:      s.UpdatedAt,
+		DeletedAt:      s.DeletedAt,
 	}, nil
 }
 
@@ -41,16 +42,17 @@ func (m *targetMapper) ToDomain(e *targetEntity) (*delivery.Target, error) {
 		return nil, fmt.Errorf("decode locator of target %s: %w", e.ID, err)
 	}
 	return delivery.NewTarget(delivery.NewTargetProps{
-		OrganizationID:   e.OrganizationID,
-		EnvironmentID:    e.EnvironmentID,
-		Slug:             e.Slug,
-		DisplayName:      e.DisplayName,
-		Runtime:          delivery.Runtime(e.Runtime),
-		Locator:          locator,
-		AgentPrincipalID: e.AgentPrincipalID,
-		LastReportedAt:   utcPtr(e.LastReportedAt),
-		CreatedAt:        utc(e.CreatedAt),
-		UpdatedAt:        utc(e.UpdatedAt),
-		DeletedAt:        utcPtr(e.DeletedAt),
+		OrganizationID: e.OrganizationID,
+		EnvironmentID:  e.EnvironmentID,
+		ClusterID:      e.ClusterID,
+		Slug:           e.Slug,
+		DisplayName:    e.DisplayName,
+		Runtime:        delivery.Runtime(e.Runtime),
+		Locator:        locator,
+		CanObserve:     e.CanObserve,
+		CanExecute:     e.CanExecute,
+		CreatedAt:      utc(e.CreatedAt),
+		UpdatedAt:      utc(e.UpdatedAt),
+		DeletedAt:      utcPtr(e.DeletedAt),
 	}, &e.ID)
 }

@@ -60,7 +60,7 @@ type Set struct {
 }
 
 // HeartbeatBody is the heartbeat that reports s.
-func (s Set) HeartbeatBody(agentVersion string) apiclient.HeartbeatRequestBody {
+func (s Set) HeartbeatBody(agentVersion string, deployers []string) apiclient.HeartbeatRequestBody {
 	reports := make([]apiclient.TargetHeartbeatRequest, 0, len(s.Targets))
 	for _, t := range s.Targets {
 		report := apiclient.TargetHeartbeatRequest{
@@ -71,8 +71,7 @@ func (s Set) HeartbeatBody(agentVersion string) apiclient.HeartbeatRequestBody {
 		}
 		reports = append(reports, report)
 	}
-	// No deployer or secret store is built yet; each is added to these
-	// lists with the slice that brings it.
+	// No secret store is built yet.
 	watchMode := s.WatchMode
 	if watchMode == "" {
 		// Before the first refresh has checked RBAC.
@@ -82,7 +81,7 @@ func (s Set) HeartbeatBody(agentVersion string) apiclient.HeartbeatRequestBody {
 		AgentVersion:      agentVersion,
 		KubernetesVersion: s.KubernetesVersion,
 		WatchMode:         apiclient.HeartbeatRequestBodyWatchMode(watchMode),
-		Deployers:         &[]string{},
+		Deployers:         &deployers,
 		SecretStoreKinds:  &[]string{},
 		Targets:           &reports,
 	}

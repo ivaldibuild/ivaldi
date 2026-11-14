@@ -14,6 +14,8 @@ import (
 
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/apiclient"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/auth"
+	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/deploy"
+	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/report"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/targets"
 )
 
@@ -40,6 +42,8 @@ type agent struct {
 	creds      auth.Credentials
 	cp         apiclient.ControlPlane
 	newTracker func() targets.Tracker
+	deployers  map[string]deploy.Deployer
+	reporter   report.Reporter
 	ready      *readiness
 	enrolRetry time.Duration
 	retryBase  time.Duration

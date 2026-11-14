@@ -27,6 +27,32 @@ const degradedDebounce = 60 * time.Second
 // reached the informer caches.
 const emptyGrace = 30 * time.Second
 
+// healthReportTimeout bounds one health report, retries included.
+const healthReportTimeout = 10 * time.Second
+
+// deploymentsWorkloads returns the workloads to judge a Deployment by, and
+// whether the caches reflect it. Ivaldi annotates everything it applies with
+// the Deployment that applied it: when any workload names another
+// Deployment, the caches have not caught up yet; when some name this one,
+// only those count. Workloads Ivaldi did not apply carry no annotation, so
+// an observed Deployment is judged by all of them.
+func deploymentsWorkloads(objects []*unstructured.Unstructured, deploymentID string) ([]*unstructured.Unstructured, bool) {
+	var ours []*unstructured.Unstructured
+	for _, obj := range objects {
+		switch applied, ok := obj.GetAnnotations()[deploy.AnnotationDeployment]; {
+		case !ok:
+		case applied == deploymentID:
+			ours = append(ours, obj)
+		default:
+			return nil, false
+		}
+	}
+	if len(ours) > 0 {
+		return ours, true
+	}
+	return objects, true
+}
+
 // watched is one Deployment whose health the agent tracks.
 type watched struct {
 	deploymentID string
@@ -46,6 +72,8 @@ type rollouts struct {
 	health   *status.Tracker
 	log      *slog.Logger
 	now      func() time.Time
+	// reportTimeout bounds one health report.
+	reportTimeout time.Duration
 }
 
 // workloadSource reads an Application's workloads; targets.Tracker is one.
@@ -56,7 +84,8 @@ type workloadSource interface {
 func newRollouts(source workloadSource, reporter report.Reporter, log *slog.Logger) *rollouts {
 	return &rollouts{
 		source: source, reporter: reporter, log: log, now: time.Now,
-		health: status.NewTracker(degradedDebounce, emptyGrace),
+		health:        status.NewTracker(degradedDebounce, emptyGrace),
+		reportTimeout: healthReportTimeout,
 	}
 }
 
@@ -93,7 +122,13 @@ func toWatch(assignments []apiclient.DeploymentAssignment, set targets.Set) []wa
 				continue
 			}
 			seen[*app.CurrentDeploymentId] = true
-			out = append(out, watched{deploymentID: *app.CurrentDeploymentId, namespace: t.Namespace, selector: selector(t.Id, app.Id)})
+			item := watched{deploymentID: *app.CurrentDeploymentId, namespace: t.Namespace, selector: selector(t.Id, app.Id)}
+			if app.CurrentDeploymentStatus != nil {
+				// The control plane's status, so an agent that restarts
+				// carries on from degraded rather than assuming healthy.
+				item.known = release.DeploymentStatus(*app.CurrentDeploymentStatus)
+			}
+			out = append(out, item)
 		}
 	}
 	return out
@@ -113,6 +148,13 @@ func (r *rollouts) check(ctx context.Context, items []watched) {
 			r.log.Warn("could not read workloads", "deployment_id", item.deploymentID, "error", err)
 			continue
 		}
+		objects, current := deploymentsWorkloads(objects, item.deploymentID)
+		if !current {
+			// The caches still hold another Deployment's workloads, as
+			// right after an apply: judging them would report this one
+			// healthy or failed on the strength of the old revision.
+			continue
+		}
 		overall, detail := status.Evaluate(objects)
 		now := r.now()
 		next := r.health.Next(item.deploymentID, item.known, overall, len(objects), now)
@@ -125,11 +167,16 @@ func (r *rollouts) check(ctx context.Context, items []watched) {
 			// move is its own report.
 			step = fmt.Sprintf("%s:%d", next, now.Unix())
 		}
-		err = r.reporter.Send(ctx, item.deploymentID, report.Report{
+		// Bounded, so a control plane that keeps failing cannot hold up the
+		// assignment poll; a report that does not get through is tried
+		// again at the next check.
+		reportCtx, cancel := context.WithTimeout(ctx, r.reportTimeout)
+		err = r.reporter.Send(reportCtx, item.deploymentID, report.Report{
 			Step: step, Kind: report.KindStatusChanged,
 			Status: apiclient.ReportDeploymentRequestBodyStatus(next),
 			Detail: map[string]any{"workloads": detail},
 		})
+		cancel()
 		if err == nil {
 			r.health.Moved(item.deploymentID, next)
 			r.log.Info("deployment status changed", "deployment_id", item.deploymentID, "status", next)

@@ -403,6 +403,22 @@
             "nullable": true,
             "type": "string"
           },
+          "current_deployment_status": {
+            "enum": [
+              "pending",
+              "awaiting_approval",
+              "rejected",
+              "cancelled",
+              "applying",
+              "progressing",
+              "healthy",
+              "degraded",
+              "failed",
+              "superseded"
+            ],
+            "nullable": true,
+            "type": "string"
+          },
           "id": {
             "type": "string"
           },
@@ -421,7 +437,8 @@
           "slug",
           "workload_selector",
           "artifacts",
-          "current_deployment_id"
+          "current_deployment_id",
+          "current_deployment_status"
         ],
         "type": "object"
       },

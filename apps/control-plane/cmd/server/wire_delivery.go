@@ -208,6 +208,7 @@ func (a *app) wireDelivery(runners config.Runners) error {
 		agentapi.WithClusters(clusterRepo),
 		agentapi.WithTargets(targetRepo),
 		agentapi.WithApplications(applicationRepo),
+		agentapi.WithDeployments(deliverypg.NewDeploymentRepository(a.db)),
 		agentapi.WithAssignments(deps),
 		agentapi.WithObservations(deps),
 		agentapi.WithTransactor(a.tx),

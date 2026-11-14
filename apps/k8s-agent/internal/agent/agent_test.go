@@ -198,6 +198,7 @@ type fakeControlPlane struct {
 	heartbeats   []apiclient.HeartbeatRequestBody
 	heartbeatErr error
 	targetsErr   error
+	reportErr    error
 	assignments  []apiclient.DeploymentAssignment
 	reports      []apiclient.ReportDeploymentRequestBody
 }
@@ -212,7 +213,7 @@ func (f *fakeControlPlane) ReportDeployment(_ context.Context, _ string, body ap
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.reports = append(f.reports, body)
-	return nil
+	return f.reportErr
 }
 
 func (f *fakeControlPlane) reportIDs() []string {

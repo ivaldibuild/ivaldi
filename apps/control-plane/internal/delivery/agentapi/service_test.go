@@ -1,6 +1,8 @@
 package agentapi
 
 import (
+	"github.com/ivaldibuild/ivaldi/pkg/release"
+
 	"context"
 	"encoding/json"
 	"net/http"
@@ -41,6 +43,26 @@ func TestTargets(t *testing.T) {
 	assert.Equal(t, appID, app.ID)
 	require.Len(t, app.Artifacts, 1)
 	assert.Equal(t, "ghcr.io/acme/api", app.Artifacts[0].ArtifactName)
+}
+
+func TestTargetsGiveTheCurrentDeploymentsStatus(t *testing.T) {
+	w := newWorld(t)
+	current := must(delivery.NewDeployment(delivery.NewDeploymentProps{
+		OrganizationID: org, ApplicationID: appID, ReleaseID: "rel_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+		EnvironmentID: "env_01ARZ3NDEKTSV4RRFFQ69G5FAV", TargetID: targetID, Status: release.DeploymentDegraded,
+	}, nil))
+	w.deployments[current.ID()] = current
+	w.placements[targetID] = []*delivery.Placement{must(delivery.NewPlacement(delivery.NewPlacementProps{
+		OrganizationID: org, ApplicationID: appID, TargetID: targetID, CurrentDeploymentID: ptr(current.ID()),
+	}))}
+
+	resp, err := w.svc.Targets(ctx, agentCaller())
+	require.NoError(t, err)
+	app := resp.Targets[0].Applications[0]
+	assert.Equal(t, current.ID(), *app.CurrentDeploymentID)
+	require.NotNil(t, app.CurrentDeploymentStatus)
+	assert.Equal(t, release.DeploymentDegraded, *app.CurrentDeploymentStatus,
+		"an agent that restarts learns the Deployment is degraded, not that it is healthy")
 }
 
 func TestTargetsRefusesANonAgent(t *testing.T) {

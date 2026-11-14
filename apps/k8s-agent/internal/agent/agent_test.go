@@ -15,11 +15,18 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	authorizationv1 "k8s.io/api/authorization/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/version"
+	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
+	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/apiclient"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/auth"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/state"
+	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/targets"
 )
 
 func TestConfig(t *testing.T) {
@@ -138,7 +145,15 @@ func (f *fakeCredentials) Enrol(context.Context) (state.State, error) {
 }
 
 func (f *fakeCredentials) Client() *http.Client { return http.DefaultClient }
-func (f *fakeCredentials) Invalidate(string)    {}
+func (f *fakeCredentials) Invalidate(string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	select {
+	case <-f.lose:
+	default:
+		close(f.lose)
+	}
+}
 
 func (f *fakeCredentials) Maintain(ctx context.Context) error {
 	f.mu.Lock()
@@ -174,21 +189,78 @@ func (f *fakeCredentials) enrolCount() int {
 	return f.enrols
 }
 
-func newTestAgent(creds auth.Credentials) (*agent, *fake.Clientset) {
+// fakeControlPlane serves one Target and records heartbeats.
+type fakeControlPlane struct {
+	mu           sync.Mutex
+	heartbeats   []apiclient.HeartbeatRequestBody
+	heartbeatErr error
+	targetsErr   error
+}
+
+func (f *fakeControlPlane) Targets(context.Context) (*apiclient.TargetsResponse, error) {
+	f.mu.Lock()
+	err := f.targetsErr
+	f.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	return &apiclient.TargetsResponse{
+		Cluster:                  apiclient.ClusterView{Id: "cls_1", Slug: "prod-eu"},
+		HeartbeatIntervalSeconds: 1, PollIntervalSeconds: 1, WatchIntervalSeconds: 1,
+		Targets: []apiclient.TargetView{{Id: "tgt_1", Namespace: "payments"}},
+	}, nil
+}
+
+func (f *fakeControlPlane) Heartbeat(_ context.Context, body apiclient.HeartbeatRequestBody) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.heartbeats = append(f.heartbeats, body)
+	return f.heartbeatErr
+}
+
+func (f *fakeControlPlane) lastHeartbeat() (apiclient.HeartbeatRequestBody, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.heartbeats) == 0 {
+		return apiclient.HeartbeatRequestBody{}, false
+	}
+	return f.heartbeats[len(f.heartbeats)-1], true
+}
+
+func (f *fakeControlPlane) refuseHeartbeats(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.heartbeatErr = err
+}
+
+func newTestAgent(creds auth.Credentials) (*agent, *fake.Clientset, *fakeControlPlane) {
 	kube := fake.NewClientset()
+	// The agent may read and change everything in every namespace.
+	kube.PrependReactor("create", "selfsubjectrulesreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		review := action.(k8stesting.CreateAction).GetObject().(*authorizationv1.SelfSubjectRulesReview)
+		review.Status.ResourceRules = []authorizationv1.ResourceRule{{Verbs: []string{"*"}, APIGroups: []string{"*"}, Resources: []string{"*"}}}
+		return true, review, nil
+	})
+	kube.Discovery().(*fakediscovery.FakeDiscovery).FakedServerVersion = &version.Info{GitVersion: "v1.31.4"}
+	cp := &fakeControlPlane{}
+	log := slog.New(slog.DiscardHandler)
 	return &agent{
 		cfg:        Config{Namespace: "ivaldi-system", LeaseName: "ivaldi-agent", PodName: "pod-1", EnrolmentSecret: "enrolment"},
-		log:        slog.New(slog.DiscardHandler),
+		version:    "1.0.0-test",
+		log:        log,
 		kube:       kube,
 		creds:      creds,
-		ready:      newReadiness(conditionEnrolled, conditionLease),
+		cp:         cp,
+		newTracker: func() targets.Tracker { return targets.NewTracker(cp, kube, log) },
+		ready:      newReadiness(conditionEnrolled, conditionLease, conditionTargets),
 		enrolRetry: 10 * time.Millisecond,
-	}, kube
+		retryBase:  10 * time.Millisecond,
+	}, kube, cp
 }
 
 func TestRun_TakesTheLeaseAndIsReady(t *testing.T) {
 	creds := newFakeCredentials()
-	a, kube := newTestAgent(creds)
+	a, kube, _ := newTestAgent(creds)
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error)
 	go func() { done <- a.run(ctx) }()
@@ -204,7 +276,7 @@ func TestRun_TakesTheLeaseAndIsReady(t *testing.T) {
 
 func TestRun_WaitsNotReadyForANewTokenWhenTheCredentialIsLost(t *testing.T) {
 	creds := newFakeCredentials()
-	a, kube := newTestAgent(creds)
+	a, kube, _ := newTestAgent(creds)
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error)
 	go func() { done <- a.run(ctx) }()
@@ -237,7 +309,7 @@ func TestRun_WaitsNotReadyForANewTokenWhenTheCredentialIsLost(t *testing.T) {
 
 func TestRun_EnrolsOnlyWhileHoldingTheLease(t *testing.T) {
 	creds := newFakeCredentials()
-	a, kube := newTestAgent(creds)
+	a, kube, _ := newTestAgent(creds)
 	var heldAtEnrol []bool
 	creds.onEnrol = func() {
 		lease, err := kube.CoordinationV1().Leases("ivaldi-system").Get(context.Background(), "ivaldi-agent", metav1.GetOptions{})
@@ -258,4 +330,65 @@ func TestRun_EnrolsOnlyWhileHoldingTheLease(t *testing.T) {
 	creds.mu.Lock()
 	defer creds.mu.Unlock()
 	assert.NotContains(t, heldAtEnrol, false, "every Enrol ran while this replica held the Lease")
+}
+
+func TestWork_HeartbeatsWhatTheAgentCanDoAndStopsWhenAnotherAgentServesTheCluster(t *testing.T) {
+	creds := newFakeCredentials()
+	a, _, cp := newTestAgent(creds)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan error)
+	go func() { done <- a.work(ctx, state.State{ClusterID: "cls_1"}) }()
+
+	// The first heartbeat may come before the Targets are known; the
+	// first refresh sends another at once.
+	require.Eventually(t, func() bool {
+		body, ok := cp.lastHeartbeat()
+		return ok && body.Targets != nil && len(*body.Targets) > 0
+	}, 5*time.Second, 10*time.Millisecond)
+	body, _ := cp.lastHeartbeat()
+	assert.Equal(t, "1.0.0-test", body.AgentVersion)
+	assert.Equal(t, "v1.31.4", body.KubernetesVersion)
+	assert.Equal(t, []apiclient.TargetHeartbeatRequest{{TargetId: "tgt_1", Observe: true, Execute: true}}, *body.Targets)
+	require.Eventually(t, func() bool { return !slices.Contains(a.ready.unmet(), conditionTargets) }, 5*time.Second, 10*time.Millisecond)
+
+	cp.refuseHeartbeats(&apiclient.StatusError{Operation: "agent heartbeat", Status: http.StatusForbidden})
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, auth.ErrCredentialLost)
+	case <-time.After(5 * time.Second):
+		t.Fatal("work did not stop when the control plane refused the agent")
+	}
+	assert.Contains(t, a.ready.unmet(), conditionTargets)
+}
+
+func TestWork_HeartbeatsWhileTheFirstRefreshFails(t *testing.T) {
+	a, _, cp := newTestAgent(newFakeCredentials())
+	cp.targetsErr = &apiclient.StatusError{Operation: "agent targets", Status: http.StatusServiceUnavailable}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go func() { _ = a.work(ctx, state.State{ClusterID: "cls_1"}) }()
+
+	require.Eventually(t, func() bool { _, ok := cp.lastHeartbeat(); return ok }, 5*time.Second, 10*time.Millisecond)
+	body, _ := cp.lastHeartbeat()
+	assert.Equal(t, "v1.31.4", body.KubernetesVersion)
+	assert.Equal(t, apiclient.HeartbeatRequestBodyWatchModeNamespaces, body.WatchMode, "a valid watch mode before RBAC is checked")
+	assert.Empty(t, *body.Targets, "no Targets before they are known")
+	assert.Contains(t, a.ready.unmet(), conditionTargets)
+}
+
+func TestWork_SkipsAHeartbeatItCannotFillIn(t *testing.T) {
+	a, kube, cp := newTestAgent(newFakeCredentials())
+	kube.PrependReactor("get", "version", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("discovery is down")
+	})
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go func() { _ = a.work(ctx, state.State{ClusterID: "cls_1"}) }()
+
+	// The refresh still completes; only the heartbeat waits for a version.
+	require.Eventually(t, func() bool { return !slices.Contains(a.ready.unmet(), conditionTargets) }, 5*time.Second, 10*time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
+	_, sent := cp.lastHeartbeat()
+	assert.False(t, sent, "a heartbeat without the Kubernetes version would be refused, so none is sent")
 }

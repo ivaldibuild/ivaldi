@@ -84,8 +84,7 @@ The agent calls `GET /v1/agent/targets` (below). It returns the Cluster, the int
 
 It watches Deployments, StatefulSets, DaemonSets, ReplicaSets, and Pods in its Targets' namespaces, and nowhere else:
 
-- When the chart grants cluster-wide read (`observe.namespaces` left empty), it uses one cluster-wide informer per kind, filtered to its Targets' namespaces.
-- When the chart lists namespaces, it has read access only there, so it runs one informer set per namespace, for those that have a Target.
+It runs one informer set per Target namespace it can read, whether the chart grants cluster-wide read (`observe.namespaces` left empty) or lists namespaces. A watch cannot be limited to a list of namespaces, so a cluster-wide informer would cache every Pod in the cluster to report on a few namespaces. The heartbeat's `watch_mode` says which grant the agent has (`cluster` when it may list and watch the observed kinds in every namespace), not how it watches. The informers follow the Targets at every refresh: a new Target's namespace starts its informers, a removed one stops them, and `/readyz` waits until they have synced.
 
 A Target whose namespace the agent cannot read is reported as not observable in the heartbeat, and the web app shows it.
 
@@ -200,7 +199,7 @@ The chart creates one ServiceAccount in the agent's namespace, and:
 
 Execution never gets a ClusterRoleBinding, so the agent can change only namespaces the cluster's operators listed. Adding an execute namespace is a `helm upgrade` of the agent, which is deliberate: it is the cluster operator's consent. Charts that create cluster-scoped objects, such as CRDs, cannot be executed by the agent.
 
-The agent reports in each heartbeat which of its Targets' namespaces it can observe and execute in, found with `SelfSubjectAccessReview`, so the control plane and the web app know before anyone requests a Deployment.
+The agent reports in each heartbeat which of its Targets' namespaces it can observe and execute in, found with one `SelfSubjectRulesReview` per namespace at each Target refresh (a `SelfSubjectAccessReview` confirms any denial when the rules review is incomplete), so the control plane and the web app know before anyone requests a Deployment. Observing needs `get`, `list`, and `watch` on the observed kinds; executing is judged by a sample of what applying a chart needs, `get`, `list`, `create`, `update`, `patch`, and `delete` on Deployments, Services, ConfigMaps, and Secrets (where Helm keeps its release history), which `edit` and `admin` both grant. A capability that is false carries the first permission missing as its reason, such as `RBAC denies create on deployments.apps`.
 
 ## Configuration
 

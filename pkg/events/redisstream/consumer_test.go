@@ -791,8 +791,11 @@ func TestConsumerReadsNoMoreThanItsFreeSlots(t *testing.T) {
 	requirePending(t, client, stream, group, 1)
 
 	close(release)
+	// Pending only counts entries already read, so it touches 0 between
+	// entries: wait for the other two to be handled before checking it.
+	require.Eventually(t, func() bool { return len(started) == 2 }, 3*time.Second, 10*time.Millisecond,
+		"the other entries are read once a slot frees")
 	requirePending(t, client, stream, group, 0)
-	assert.Len(t, started, 2, "the other entries are read once a slot frees")
 	stop()
 }
 

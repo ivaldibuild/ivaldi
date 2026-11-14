@@ -50,6 +50,10 @@ spec:
           env:
             - name: IVALDI_SERVER_URL
               value: {{ required "controlPlane.url is required" .Values.controlPlane.url | quote }}
+            {{- if .Values.controlPlane.allowInsecureHTTP }}
+            - name: IVALDI_ALLOW_INSECURE_HTTP
+              value: "true"
+            {{- end }}
             - name: IVALDI_AUTHENTICATION_METHOD
               value: {{ .Values.agent.authentication | quote }}
             - name: IVALDI_ENROLMENT_SECRET

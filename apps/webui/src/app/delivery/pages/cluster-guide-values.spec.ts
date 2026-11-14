@@ -46,6 +46,15 @@ describe('the guide writes valid ivaldi-agent values', () => {
     });
   }
 
+  it('allows a plaintext control plane only when it is one', () => {
+    const local = parse(agentValues('http://localhost:8660', combinations()[0]));
+    expect(local.controlPlane.allowInsecureHTTP).toBe(true);
+    expect(validate(local)).toBe(true);
+    const remote = parse(agentValues('https://ivaldi.example.com', combinations()[0]));
+    expect(remote.controlPlane.allowInsecureHTTP).toBeUndefined();
+    expect(validate({ controlPlane: { url: 'http://ivaldi.example.com' } })).toBe(false);
+  });
+
   it('never writes the enrolment token', () => {
     const values = parse(agentValues('https://ivaldi.example.com', combinations()[0]));
     expect(values.enrolment).toEqual({ secretName: 'ivaldi-enrolment' });

@@ -40,6 +40,9 @@ export function agentValues(serverURL: string, c: AgentChoices): string {
   const lines = [
     'controlPlane:',
     `  url: ${serverURL}`,
+    // The agent refuses a plaintext control plane unless told otherwise,
+    // which only a local control plane should need.
+    ...(serverURL.startsWith('http://') ? ['  allowInsecureHTTP: true'] : []),
     'agent:',
     `  authentication: ${c.authentication}`,
     'enrolment:',

@@ -9,6 +9,7 @@ import (
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/api"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/applications"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/clusters"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/deployments"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/environments"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/lifecycles"
@@ -22,6 +23,7 @@ func TestControllersFitTogether(t *testing.T) {
 	_, h := humatest.New(t)
 	for _, r := range []api.Routes{
 		environments.NewEnvironmentController(nil),
+		clusters.NewController(nil),
 		lifecycles.NewLifecycleController(nil),
 		registries.NewRegistryController(nil),
 		applications.NewApplicationController(nil),
@@ -47,5 +49,5 @@ func TestControllersFitTogether(t *testing.T) {
 			assert.NotEmpty(t, op.Security, "%s needs a token", where)
 		}
 	}
-	assert.Len(t, ids, 13+10+8+32+6+8)
+	assert.Len(t, ids, 13+6+10+8+32+6+8)
 }

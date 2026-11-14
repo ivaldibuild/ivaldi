@@ -691,7 +691,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Archive a Cluster that has no active Targets */
+    /** Archive a Cluster and revoke its agent */
     post: operations['archive-cluster'];
     delete?: never;
     options?: never;

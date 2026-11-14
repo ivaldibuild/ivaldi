@@ -31,7 +31,7 @@ func (c *Controller) RegisterRoutes(h huma.API) {
 	register(h, "list-clusters", http.MethodGet, "/clusters", "List the Organization's Clusters", 0, c.ListClusters)
 	register(h, "get-cluster", http.MethodGet, "/clusters/{cluster_id}", "Get a Cluster", 0, c.GetCluster)
 	register(h, "update-cluster", http.MethodPatch, "/clusters/{cluster_id}", "Change a Cluster's display name", 0, c.UpdateCluster)
-	register(h, "archive-cluster", http.MethodPost, "/clusters/{cluster_id}/archive", "Archive a Cluster that has no active Targets", 0, c.ArchiveCluster)
+	register(h, "archive-cluster", http.MethodPost, "/clusters/{cluster_id}/archive", "Archive a Cluster and revoke its agent", 0, c.ArchiveCluster)
 	register(h, "restore-cluster", http.MethodPost, "/clusters/{cluster_id}/restore", "Restore an archived Cluster", 0, c.RestoreCluster)
 }
 

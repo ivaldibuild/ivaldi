@@ -10768,7 +10768,7 @@
             "bearer": []
           }
         ],
-        "summary": "Archive a Cluster that has no active Targets",
+        "summary": "Archive a Cluster and revoke its agent",
         "tags": [
           "clusters"
         ]

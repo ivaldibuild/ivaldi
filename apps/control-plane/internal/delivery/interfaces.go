@@ -313,7 +313,7 @@ type ClusterService interface {
 	ListClusters(ctx context.Context, actor identity.Actor, query ListClustersQuery) (*pagination.Result[*Cluster], error)
 	UpdateCluster(ctx context.Context, actor identity.Actor, organizationID, clusterID string, props UpdateClusterProps) (*Cluster, error)
 	// ArchiveCluster archives a Cluster, suspends its agent, and revokes its
-	// credentials. It is refused while the Cluster has active Targets.
+	// credentials.
 	ArchiveCluster(ctx context.Context, actor identity.Actor, organizationID, clusterID string) (*Cluster, error)
 	// RestoreCluster restores an archived Cluster, which has no agent until a
 	// new enrolment token is redeemed.

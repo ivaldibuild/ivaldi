@@ -10,27 +10,28 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam"
 )
 
-// AgentRevoker suspends a runtime agent's workload and revokes its
+// agentRevoker suspends a runtime agent's workload and revokes its
 // credentials. delivery calls it when it archives a Cluster, in the archive's
 // transaction, so no credential outlives the Cluster that named it.
-type AgentRevoker struct {
+type agentRevoker struct {
 	principals  iam.PrincipalRepository
 	workloads   iam.WorkloadRepository
 	credentials iam.WorkloadCredentialRepository
 	writer      change.Writer
 }
 
-var _ delivery.AgentRevoker = (*AgentRevoker)(nil)
+var _ delivery.AgentRevoker = (*agentRevoker)(nil)
 
-// NewAgentRevoker returns the delivery.AgentRevoker. It writes through the
-// caller's transaction, so the workload and credential events commit with the
-// Cluster's archive.
+// NewAgentRevoker returns the delivery.AgentRevoker. It opens no transaction
+// of its own: it writes through the caller's context, so the workload and
+// credential changes and their events commit with the Cluster's archive. Only
+// the writer's Outbox is used.
 func NewAgentRevoker(
 	principals iam.PrincipalRepository,
 	workloads iam.WorkloadRepository,
 	credentials iam.WorkloadCredentialRepository,
 	writer change.Writer,
-) (*AgentRevoker, error) {
+) (delivery.AgentRevoker, error) {
 	switch {
 	case principals == nil:
 		return nil, errors.New("agent revoker: PrincipalRepo is required")
@@ -38,18 +39,16 @@ func NewAgentRevoker(
 		return nil, errors.New("agent revoker: WorkloadRepo is required")
 	case credentials == nil:
 		return nil, errors.New("agent revoker: CredentialRepo is required")
-	case writer.Tx == nil:
-		return nil, errors.New("agent revoker: a Transactor is required")
 	case writer.Outbox == nil:
 		return nil, errors.New("agent revoker: an Outbox Recorder is required")
 	}
-	return &AgentRevoker{principals: principals, workloads: workloads, credentials: credentials, writer: writer}, nil
+	return &agentRevoker{principals: principals, workloads: workloads, credentials: credentials, writer: writer}, nil
 }
 
 // RevokeAgent suspends the workload and revokes its live credentials. A
 // principal that is gone, or is not a workload, is left alone: there is
 // nothing of a runtime agent to revoke.
-func (r *AgentRevoker) RevokeAgent(ctx context.Context, organizationID, principalID string) error {
+func (r *agentRevoker) RevokeAgent(ctx context.Context, organizationID, principalID string) error {
 	return revokePrincipal(ctx, r.principals, r.workloads, r.credentials, r.writer, organizationID, principalID)
 }
 

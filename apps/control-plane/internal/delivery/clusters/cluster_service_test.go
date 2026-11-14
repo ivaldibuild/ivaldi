@@ -14,8 +14,6 @@ import (
 
 var ada = identity.Actor{PrincipalID: "prn_ada", Kind: identity.ActorUser}
 
-func ptr[T any](v T) *T { return &v }
-
 func TestNewClusterServiceRequiresEveryDependency(t *testing.T) {
 	s := newStore()
 	all := s.options(&authorizer{})
@@ -92,7 +90,7 @@ func TestOperationsAreAuthorizedOnTheirResource(t *testing.T) {
 			return err
 		}, delivery.PermissionClusterRead, delivery.ActionClusterList},
 		{"update", func() error {
-			_, err := w.svc.UpdateCluster(ctx, ada, org, active.ID(), delivery.UpdateClusterProps{DisplayName: ptr("Prod EU 2")})
+			_, err := w.svc.UpdateCluster(ctx, ada, org, active.ID(), delivery.UpdateClusterProps{DisplayName: new("Prod EU 2")})
 			return err
 		}, delivery.PermissionClusterManage, delivery.ActionClusterUpdate},
 		{"archive", func() error {
@@ -192,7 +190,7 @@ func TestUpdateCluster(t *testing.T) {
 	w := newWorld(t)
 	c := w.cluster(t, "prod-eu", "", false)
 
-	got, err := w.svc.UpdateCluster(ctx, ada, org, c.ID(), delivery.UpdateClusterProps{DisplayName: ptr("Prod EU West")})
+	got, err := w.svc.UpdateCluster(ctx, ada, org, c.ID(), delivery.UpdateClusterProps{DisplayName: new("Prod EU West")})
 	require.NoError(t, err)
 	assert.Equal(t, "Prod EU West", got.DisplayName())
 	assert.Equal(t, []string{"delivery.v1.cluster.updated"}, w.eventTypes())
@@ -209,7 +207,7 @@ func TestRefusedChangesWriteNothing(t *testing.T) {
 			return err
 		},
 		"update": func(w *world, cluster *delivery.Cluster) error {
-			_, err := w.svc.UpdateCluster(ctx, ada, org, cluster.ID(), delivery.UpdateClusterProps{DisplayName: ptr("Renamed")})
+			_, err := w.svc.UpdateCluster(ctx, ada, org, cluster.ID(), delivery.UpdateClusterProps{DisplayName: new("Renamed")})
 			return err
 		},
 		"archive": func(w *world, cluster *delivery.Cluster) error {

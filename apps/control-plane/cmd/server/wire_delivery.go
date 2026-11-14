@@ -86,7 +86,7 @@ func (a *app) wireDelivery() error {
 		iampg.NewPrincipalRepository(a.db),
 		iampg.NewWorkloadRepository(a.db),
 		iampg.NewWorkloadCredentialRepository(a.db),
-		change.Writer{Tx: a.tx, Outbox: a.outbox},
+		change.Writer{Outbox: a.outbox},
 	)
 	if err != nil {
 		return err

@@ -3,6 +3,7 @@ package delivery
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
@@ -43,13 +44,14 @@ type ApplyConfig struct {
 	// DefinitionArtifact is the name of the Release's artifact that holds
 	// the deployment definition, such as "chart".
 	DefinitionArtifact string `json:"definition_artifact"`
-	// ValuesRefs refer to Target-specific values, such as Helm values held
-	// by the credentials capability. They are references, never values.
-	ValuesRefs []string `json:"values_refs,omitempty"`
+	// Values are the overlay values files in the chart, such as
+	// "values.production.yaml", applied in order. They are file names, never
+	// values.
+	Values []string `json:"values,omitempty"`
 }
 
 func (c ApplyConfig) clone() *ApplyConfig {
-	c.ValuesRefs = copyStrings(c.ValuesRefs)
+	c.Values = copyStrings(c.Values)
 	return &c
 }
 
@@ -57,7 +59,7 @@ func (c *ApplyConfig) equal(o *ApplyConfig) bool {
 	if c == nil || o == nil {
 		return c == o
 	}
-	return c.DefinitionArtifact == o.DefinitionArtifact && slices.Equal(c.ValuesRefs, o.ValuesRefs)
+	return c.DefinitionArtifact == o.DefinitionArtifact && slices.Equal(c.Values, o.Values)
 }
 
 // Validate checks the config on its own, without the artifacts it names.
@@ -65,12 +67,15 @@ func (c ApplyConfig) Validate() error {
 	if err := validateArtifactName(c.DefinitionArtifact); err != nil {
 		return NewErrInvalidInput("apply config needs the name of the artifact that holds the deployment definition")
 	}
-	if len(c.ValuesRefs) > maxValuesRefs {
-		return NewErrInvalidInput(fmt.Sprintf("apply config can have at most %d values references", maxValuesRefs))
+	if len(c.Values) > maxValuesFiles {
+		return NewErrInvalidInput(fmt.Sprintf("apply config can name at most %d values files", maxValuesFiles))
 	}
-	for _, ref := range c.ValuesRefs {
-		if ref == "" || len(ref) > maxValuesRefLength {
-			return NewErrInvalidInput(fmt.Sprintf("values references must be 1-%d characters", maxValuesRefLength))
+	for _, file := range c.Values {
+		if file == "" || len(file) > maxValuesFileLength {
+			return NewErrInvalidInput(fmt.Sprintf("values files must be 1-%d characters", maxValuesFileLength))
+		}
+		if strings.HasPrefix(file, "/") || slices.Contains(strings.Split(file, "/"), "..") {
+			return NewErrInvalidInput(fmt.Sprintf("values file %q must be relative to the chart", file))
 		}
 	}
 	return nil

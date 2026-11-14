@@ -2295,6 +2295,10 @@ export interface components {
       revoked_at: string | null;
       token_prefix: string;
     };
+    AWSStore: {
+      region: string;
+      role_arn?: string;
+    };
     AgentDetail: {
       /** Format: date-time */
       created_at: string;
@@ -2397,15 +2401,31 @@ export interface components {
         [key: string]: string;
       };
     };
+    ApplyAssignment: {
+      definition: components['schemas']['AssignmentArtifact'];
+      /** @enum {string} */
+      deployer: 'helm';
+      helm?: components['schemas']['HelmApply'];
+      images: {
+        [key: string]: components['schemas']['AssignmentImage'];
+      };
+      namespace: string;
+      overlays: string[];
+      /** @enum {string} */
+      reason: 'rollout' | 'redeploy' | 'rollback';
+      restores?: string;
+      secrets: components['schemas']['AssignmentSecret'][];
+      variables: components['schemas']['AssignmentVariable'][];
+    };
     ApplyConfig: {
       definition_artifact: string;
-      values_refs?: string[];
+      values?: string[];
     };
     ApplyConfigBody: {
       /** @description The name of the application's artifact that holds the deployment definition */
       definition_artifact: string;
-      /** @description References to Target-specific values, never the values */
-      values_refs?: string[];
+      /** @description The chart's overlay values files, in order, such as values.production.yaml */
+      values?: string[];
     };
     ArtifactChange: {
       artifact_id: string;
@@ -2446,6 +2466,34 @@ export interface components {
       /** @enum {string} */
       kind: 'container_image' | 'helm_chart' | 'archive';
       published_as: string;
+    };
+    AssignmentImage: {
+      artifact_id: string;
+      digest: string;
+      image: string;
+      repository: string;
+    };
+    AssignmentSecret: {
+      /** @enum {string} */
+      deliver_as: 'secret' | 'value';
+      fingerprint?: string;
+      name: string;
+      ref: components['schemas']['SecretRef'];
+      /** @enum {string} */
+      source: 'project' | 'application';
+      store: components['schemas']['StoreSettings'];
+      values_path?: string;
+    };
+    AssignmentVariable: {
+      /** @enum {string} */
+      deliver_as?: 'secret' | 'value';
+      /** @enum {string} */
+      kind: 'text' | 'secret';
+      name: string;
+      /** @enum {string} */
+      source: 'project' | 'application';
+      value: string;
+      values_path?: string;
     };
     BuildBody: {
       /**
@@ -3037,11 +3085,9 @@ export interface components {
       default_channel: components['schemas']['ChannelSnapshot'];
     };
     DeploymentAssignment: {
-      apply_config: components['schemas']['ApplyConfig'];
-      artifacts: components['schemas']['AssignmentArtifact'][];
+      apply: components['schemas']['ApplyAssignment'];
       deployment: components['schemas']['DeploymentSnapshot'];
       environment: components['schemas']['EnvironmentSnapshot'];
-      helm_release_name: string;
       release: components['schemas']['ReleaseSnapshot'];
       target: components['schemas']['TargetSnapshot'];
     };
@@ -3113,6 +3159,10 @@ export interface components {
       /** Format: date-time */
       updated_at: string;
       work_item_id: string | null;
+    };
+    DopplerStore: {
+      token_secret_key: string;
+      token_secret_name: string;
     };
     EnvironmentSnapshot: {
       /** Format: date-time */
@@ -3219,6 +3269,9 @@ export interface components {
        */
       watch_mode: 'cluster' | 'namespaces';
     };
+    HelmApply: {
+      release_name: string;
+    };
     InstallationStartSnapshot: {
       /**
        * Format: date-time
@@ -3241,6 +3294,7 @@ export interface components {
       secret: string;
       token: components['schemas']['APITokenSnapshot'];
     };
+    KubernetesStore: Record<string, never>;
     LifecyclePhaseSnapshot: {
       /** Format: date-time */
       created_at: string;
@@ -4956,6 +5010,11 @@ export interface components {
       project_id?: string;
       workspace_id?: string;
     };
+    SecretRef: {
+      field?: string;
+      path: string;
+      version?: string;
+    };
     ServiceAccount: {
       /** Format: date-time */
       created_at: string;
@@ -5098,6 +5157,15 @@ export interface components {
        * @enum {string}
        */
       provider: 'github';
+    };
+    StoreSettings: {
+      aws?: components['schemas']['AWSStore'];
+      doppler?: components['schemas']['DopplerStore'];
+      id: string;
+      /** @enum {string} */
+      kind: 'kubernetes' | 'aws_secrets_manager' | 'vault' | 'doppler';
+      kubernetes?: components['schemas']['KubernetesStore'];
+      vault?: components['schemas']['VaultStore'];
     };
     TargetHeartbeatRequest: {
       /** @description Whether the agent can change the namespace */
@@ -5376,6 +5444,13 @@ export interface components {
       display_name?: string;
       /** @description New slug */
       slug?: string;
+    };
+    VaultStore: {
+      address: string;
+      auth_mount?: string;
+      auth_role: string;
+      mount: string;
+      namespace?: string;
     };
     WorkspaceRunsOn: {
       environments: components['schemas']['EnvironmentSnapshot'][];

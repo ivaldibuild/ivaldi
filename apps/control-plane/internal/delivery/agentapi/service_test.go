@@ -58,12 +58,12 @@ func TestTargetsRefusesANonAgent(t *testing.T) {
 
 func TestAssignments(t *testing.T) {
 	w := newWorld(t)
-	w.assignments = []delivery.DeploymentAssignment{{HelmReleaseName: "ivaldi-app"}}
+	w.assignments = []delivery.DeploymentAssignment{{Apply: delivery.ApplyAssignment{Helm: &delivery.HelmApply{ReleaseName: "ivaldi-app"}}}}
 
 	items, err := w.svc.Assignments(ctx, agentCaller())
 	require.NoError(t, err)
 	require.Len(t, items, 1)
-	assert.Equal(t, "ivaldi-app", items[0].HelmReleaseName)
+	assert.Equal(t, "ivaldi-app", items[0].Apply.Helm.ReleaseName)
 }
 
 func TestHeartbeat(t *testing.T) {

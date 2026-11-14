@@ -1,0 +1,23 @@
+# Generates the agent's client from the committed API description,
+# api/openapi.json. Run make openapi after the API changes.
+package: apiclient
+output: client.gen.go
+generate:
+  models: true
+  client: true
+output-options:
+  # Only the operations the agent calls, and the schemas they use. The
+  # agent-tagged operations take no Cluster in the path: the control plane
+  # finds it from the agent's credential.
+  include-operation-ids:
+    - agent-targets
+    - agent-assignments
+    - agent-heartbeat
+    - agent-observation
+    - report-deployment
+    - redeem-cluster-enrolment
+    - renew-workload-credential
+compatibility:
+  # Name enum values after their type, so values of different enums never
+  # collide.
+  always-prefix-enum-values: true

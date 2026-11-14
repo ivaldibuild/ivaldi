@@ -52,6 +52,21 @@
         ],
         "type": "object"
       },
+      "AWSStore": {
+        "additionalProperties": false,
+        "properties": {
+          "region": {
+            "type": "string"
+          },
+          "role_arn": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "region"
+        ],
+        "type": "object"
+      },
       "AgentDetail": {
         "additionalProperties": false,
         "properties": {
@@ -410,13 +425,79 @@
         ],
         "type": "object"
       },
+      "ApplyAssignment": {
+        "additionalProperties": false,
+        "properties": {
+          "definition": {
+            "$ref": "#/components/schemas/AssignmentArtifact"
+          },
+          "deployer": {
+            "enum": [
+              "helm"
+            ],
+            "type": "string"
+          },
+          "helm": {
+            "$ref": "#/components/schemas/HelmApply"
+          },
+          "images": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/AssignmentImage"
+            },
+            "type": "object"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "overlays": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "reason": {
+            "enum": [
+              "rollout",
+              "redeploy",
+              "rollback"
+            ],
+            "type": "string"
+          },
+          "restores": {
+            "type": "string"
+          },
+          "secrets": {
+            "items": {
+              "$ref": "#/components/schemas/AssignmentSecret"
+            },
+            "type": "array"
+          },
+          "variables": {
+            "items": {
+              "$ref": "#/components/schemas/AssignmentVariable"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "deployer",
+          "namespace",
+          "definition",
+          "overlays",
+          "images",
+          "variables",
+          "secrets",
+          "reason"
+        ],
+        "type": "object"
+      },
       "ApplyConfig": {
         "additionalProperties": false,
         "properties": {
           "definition_artifact": {
             "type": "string"
           },
-          "values_refs": {
+          "values": {
             "items": {
               "type": "string"
             },
@@ -435,8 +516,8 @@
             "description": "The name of the application's artifact that holds the deployment definition",
             "type": "string"
           },
-          "values_refs": {
-            "description": "References to Target-specific values, never the values",
+          "values": {
+            "description": "The chart's overlay values files, in order, such as values.production.yaml",
             "items": {
               "type": "string"
             },
@@ -606,6 +687,114 @@
           "build_id",
           "published_as",
           "digest"
+        ],
+        "type": "object"
+      },
+      "AssignmentImage": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_id": {
+            "type": "string"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "image": {
+            "type": "string"
+          },
+          "repository": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "repository",
+          "digest",
+          "image"
+        ],
+        "type": "object"
+      },
+      "AssignmentSecret": {
+        "additionalProperties": false,
+        "properties": {
+          "deliver_as": {
+            "enum": [
+              "secret",
+              "value"
+            ],
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ref": {
+            "$ref": "#/components/schemas/SecretRef"
+          },
+          "source": {
+            "enum": [
+              "project",
+              "application"
+            ],
+            "type": "string"
+          },
+          "store": {
+            "$ref": "#/components/schemas/StoreSettings"
+          },
+          "values_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "source",
+          "deliver_as",
+          "store",
+          "ref"
+        ],
+        "type": "object"
+      },
+      "AssignmentVariable": {
+        "additionalProperties": false,
+        "properties": {
+          "deliver_as": {
+            "enum": [
+              "secret",
+              "value"
+            ],
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "text",
+              "secret"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "project",
+              "application"
+            ],
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          },
+          "values_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "source",
+          "kind",
+          "value"
         ],
         "type": "object"
       },
@@ -2030,23 +2219,14 @@
       "DeploymentAssignment": {
         "additionalProperties": false,
         "properties": {
-          "apply_config": {
-            "$ref": "#/components/schemas/ApplyConfig"
-          },
-          "artifacts": {
-            "items": {
-              "$ref": "#/components/schemas/AssignmentArtifact"
-            },
-            "type": "array"
+          "apply": {
+            "$ref": "#/components/schemas/ApplyAssignment"
           },
           "deployment": {
             "$ref": "#/components/schemas/DeploymentSnapshot"
           },
           "environment": {
             "$ref": "#/components/schemas/EnvironmentSnapshot"
-          },
-          "helm_release_name": {
-            "type": "string"
           },
           "release": {
             "$ref": "#/components/schemas/ReleaseSnapshot"
@@ -2060,9 +2240,7 @@
           "release",
           "target",
           "environment",
-          "apply_config",
-          "helm_release_name",
-          "artifacts"
+          "apply"
         ],
         "type": "object"
       },
@@ -2295,6 +2473,22 @@
           "status_changed_at",
           "created_at",
           "updated_at"
+        ],
+        "type": "object"
+      },
+      "DopplerStore": {
+        "additionalProperties": false,
+        "properties": {
+          "token_secret_key": {
+            "type": "string"
+          },
+          "token_secret_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "token_secret_name",
+          "token_secret_key"
         ],
         "type": "object"
       },
@@ -2553,6 +2747,18 @@
         ],
         "type": "object"
       },
+      "HelmApply": {
+        "additionalProperties": false,
+        "properties": {
+          "release_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "release_name"
+        ],
+        "type": "object"
+      },
       "InstallationStartSnapshot": {
         "additionalProperties": false,
         "properties": {
@@ -2616,6 +2822,10 @@
           "token",
           "secret"
         ],
+        "type": "object"
+      },
+      "KubernetesStore": {
+        "additionalProperties": false,
         "type": "object"
       },
       "LifecyclePhaseSnapshot": {
@@ -7081,6 +7291,24 @@
         ],
         "type": "object"
       },
+      "SecretRef": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
       "ServiceAccount": {
         "additionalProperties": false,
         "properties": {
@@ -7452,6 +7680,40 @@
         },
         "required": [
           "provider"
+        ],
+        "type": "object"
+      },
+      "StoreSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "aws": {
+            "$ref": "#/components/schemas/AWSStore"
+          },
+          "doppler": {
+            "$ref": "#/components/schemas/DopplerStore"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "kubernetes",
+              "aws_secrets_manager",
+              "vault",
+              "doppler"
+            ],
+            "type": "string"
+          },
+          "kubernetes": {
+            "$ref": "#/components/schemas/KubernetesStore"
+          },
+          "vault": {
+            "$ref": "#/components/schemas/VaultStore"
+          }
+        },
+        "required": [
+          "id",
+          "kind"
         ],
         "type": "object"
       },
@@ -8101,6 +8363,32 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "VaultStore": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "auth_mount": {
+            "type": "string"
+          },
+          "auth_role": {
+            "type": "string"
+          },
+          "mount": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "address",
+          "mount",
+          "auth_role"
+        ],
         "type": "object"
       },
       "WorkspaceRunsOn": {

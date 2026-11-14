@@ -27,8 +27,8 @@ const (
 	maxChannelRules        = 20
 	maxSelectorLabels      = 20
 	maxSelectorKeyLength   = 253
-	maxValuesRefs          = 20
-	maxValuesRefLength     = 512
+	maxValuesFiles         = 20
+	maxValuesFileLength    = 512
 	// maxClusterCapabilitiesBytes bounds the facts an agent reports about
 	// itself, so a malformed or hostile report cannot fill a row.
 	maxClusterCapabilitiesBytes = 64 * 1024

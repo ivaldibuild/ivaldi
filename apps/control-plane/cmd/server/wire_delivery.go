@@ -191,6 +191,7 @@ func (a *app) wireDelivery(runners config.Runners) error {
 		deployments.WithEnvironments(envRepo),
 		deployments.WithTargets(targetRepo),
 		deployments.WithClusters(clusterRepo),
+		deployments.WithHeartbeatInterval(runners.HeartbeatInterval),
 		deployments.WithLifecycles(lifecycleRepo),
 		deployments.WithCommitHistory(a.commitHistory),
 		deployments.WithChanges(a.changes),

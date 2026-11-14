@@ -52,7 +52,7 @@ func TestNewPlacementWithStoredState(t *testing.T) {
 	clock.Fix(t, domT2)
 	props := domPlacementProps()
 	props.Source = PlacementObserved
-	props.ApplyConfig = &ApplyConfig{DefinitionArtifact: "chart", ValuesRefs: []string{"cred_values"}}
+	props.ApplyConfig = &ApplyConfig{DefinitionArtifact: "chart", Values: []string{"cred_values"}}
 	props.CurrentDeploymentID = new("dep_1")
 	props.CurrentReleaseID = new("rel_1")
 	props.CreatedAt = new(domT0)
@@ -62,7 +62,7 @@ func TestNewPlacementWithStoredState(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, PlacementObserved, p.Source())
-	assert.Equal(t, &ApplyConfig{DefinitionArtifact: "chart", ValuesRefs: []string{"cred_values"}}, p.ApplyConfig())
+	assert.Equal(t, &ApplyConfig{DefinitionArtifact: "chart", Values: []string{"cred_values"}}, p.ApplyConfig())
 	assert.Equal(t, "dep_1", *p.CurrentDeploymentID())
 	assert.Equal(t, "rel_1", *p.CurrentReleaseID())
 	assert.Equal(t, domT0, p.CreatedAt())
@@ -79,7 +79,7 @@ func TestNewPlacementWithStoredState(t *testing.T) {
 }
 
 func TestNewPlacementIsRefused(t *testing.T) {
-	tooMany := make([]string, maxValuesRefs+1)
+	tooMany := make([]string, maxValuesFiles+1)
 	for i := range tooMany {
 		tooMany[i] = "ref"
 	}
@@ -96,13 +96,13 @@ func TestNewPlacementIsRefused(t *testing.T) {
 		{"apply config without a definition artifact", func(p *NewPlacementProps) { p.ApplyConfig = &ApplyConfig{} }},
 		{"apply config with a bad definition artifact", func(p *NewPlacementProps) { p.ApplyConfig = &ApplyConfig{DefinitionArtifact: "Helm Chart"} }},
 		{"apply config with too many values refs", func(p *NewPlacementProps) {
-			p.ApplyConfig = &ApplyConfig{DefinitionArtifact: "chart", ValuesRefs: tooMany}
+			p.ApplyConfig = &ApplyConfig{DefinitionArtifact: "chart", Values: tooMany}
 		}},
 		{"apply config with an empty values ref", func(p *NewPlacementProps) {
-			p.ApplyConfig = &ApplyConfig{DefinitionArtifact: "chart", ValuesRefs: []string{""}}
+			p.ApplyConfig = &ApplyConfig{DefinitionArtifact: "chart", Values: []string{""}}
 		}},
 		{"apply config with a values ref too long", func(p *NewPlacementProps) {
-			p.ApplyConfig = &ApplyConfig{DefinitionArtifact: "chart", ValuesRefs: []string{strings.Repeat("r", maxValuesRefLength+1)}}
+			p.ApplyConfig = &ApplyConfig{DefinitionArtifact: "chart", Values: []string{strings.Repeat("r", maxValuesFileLength+1)}}
 		}},
 	}
 	for _, tt := range tests {
@@ -115,20 +115,20 @@ func TestNewPlacementIsRefused(t *testing.T) {
 	}
 
 	t.Run("values refs at their limits", func(t *testing.T) {
-		refs := make([]string, maxValuesRefs)
+		refs := make([]string, maxValuesFiles)
 		for i := range refs {
-			refs[i] = strings.Repeat("r", maxValuesRefLength)
+			refs[i] = strings.Repeat("r", maxValuesFileLength)
 		}
 		_, err := NewPlacement(NewPlacementProps{
 			OrganizationID: domOrg, ApplicationID: id.New("app"), TargetID: id.New("tgt"),
-			ApplyConfig: &ApplyConfig{DefinitionArtifact: "chart", ValuesRefs: refs},
+			ApplyConfig: &ApplyConfig{DefinitionArtifact: "chart", Values: refs},
 		})
 		assert.NoError(t, err)
 	})
 }
 
 func TestPlacementGettersReturnCopies(t *testing.T) {
-	config := &ApplyConfig{DefinitionArtifact: "chart", ValuesRefs: []string{"cred_values"}}
+	config := &ApplyConfig{DefinitionArtifact: "chart", Values: []string{"cred_values"}}
 	props := domPlacementProps()
 	props.ApplyConfig = config
 	props.CurrentDeploymentID = new("dep_1")
@@ -138,19 +138,19 @@ func TestPlacementGettersReturnCopies(t *testing.T) {
 	before := p.Snapshot()
 
 	config.DefinitionArtifact = "changed"
-	config.ValuesRefs[0] = "changed"
+	config.Values[0] = "changed"
 	*props.CurrentDeploymentID = "changed"
 	got := p.ApplyConfig()
 	got.DefinitionArtifact = "changed"
-	got.ValuesRefs[0] = "changed"
+	got.Values[0] = "changed"
 	*p.CurrentDeploymentID() = "changed"
 	*p.CurrentReleaseID() = "changed"
 	snap := p.Snapshot()
-	snap.ApplyConfig.ValuesRefs[0] = "changed"
+	snap.ApplyConfig.Values[0] = "changed"
 	*snap.CurrentReleaseID = "changed"
 
 	assert.Equal(t, before, p.Snapshot())
-	assert.Equal(t, "cred_values", p.ApplyConfig().ValuesRefs[0])
+	assert.Equal(t, "cred_values", p.ApplyConfig().Values[0])
 }
 
 func TestPlacementSnapshot(t *testing.T) {
@@ -176,16 +176,16 @@ func TestPlacementConfigure(t *testing.T) {
 	p := domNewPlacement(t, func(p *NewPlacementProps) { p.Source = PlacementObserved })
 
 	clock.Fix(t, domT1)
-	config := ApplyConfig{DefinitionArtifact: "chart", ValuesRefs: []string{"cred_eu"}}
+	config := ApplyConfig{DefinitionArtifact: "chart", Values: []string{"cred_eu"}}
 	require.NoError(t, p.Configure(config))
 
-	assert.Equal(t, &ApplyConfig{DefinitionArtifact: "chart", ValuesRefs: []string{"cred_eu"}}, p.ApplyConfig())
+	assert.Equal(t, &ApplyConfig{DefinitionArtifact: "chart", Values: []string{"cred_eu"}}, p.ApplyConfig())
 	assert.Equal(t, PlacementConfigured, p.Source(), "configuring an observed placement makes it configured")
 	assert.Equal(t, domT1, p.UpdatedAt())
 	assert.Equal(t, domT0, p.CreatedAt())
 
-	config.ValuesRefs[0] = "changed"
-	assert.Equal(t, "cred_eu", p.ApplyConfig().ValuesRefs[0], "the given config is copied")
+	config.Values[0] = "changed"
+	assert.Equal(t, "cred_eu", p.ApplyConfig().Values[0], "the given config is copied")
 
 	t.Run("a new config replaces the old one", func(t *testing.T) {
 		require.NoError(t, p.Configure(ApplyConfig{DefinitionArtifact: "manifests"}))
@@ -198,8 +198,10 @@ func TestPlacementConfigure(t *testing.T) {
 	}{
 		{"no definition artifact", ApplyConfig{}},
 		{"definition artifact not a name", ApplyConfig{DefinitionArtifact: "ghcr.io/acme/chart"}},
-		{"empty values ref", ApplyConfig{DefinitionArtifact: "chart", ValuesRefs: []string{"ok", ""}}},
-		{"too many values refs", ApplyConfig{DefinitionArtifact: "chart", ValuesRefs: make([]string, maxValuesRefs+1)}},
+		{"empty values file", ApplyConfig{DefinitionArtifact: "chart", Values: []string{"ok", ""}}},
+		{"too many values files", ApplyConfig{DefinitionArtifact: "chart", Values: make([]string, maxValuesFiles+1)}},
+		{"an absolute values file", ApplyConfig{DefinitionArtifact: "chart", Values: []string{"/etc/passwd"}}},
+		{"a values file that escapes the chart", ApplyConfig{DefinitionArtifact: "chart", Values: []string{"../values.yaml"}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -43,7 +43,7 @@ help:
 	@echo "  make build-k8s-agent                               Build $(K8S_AGENT_BINARY_NAME)"
 	@echo ""
 	@echo "API clients"
-	@echo "  make openapi                                       Regenerate api/openapi.json, ivaldictl's client, and the web app's types"
+	@echo "  make openapi                                       Regenerate api/openapi.json, the Go clients, and the web app's types"
 	@echo "  make openapi_check                                 Fail if any of them is out of date"
 	@echo ""
 	@echo "Migrations (capabilities: $(CAPABILITIES))"
@@ -209,13 +209,15 @@ local_reset:
 	@$(MAKE) --no-print-directory local_database local_migrate
 
 # The control plane's API description is committed as api/openapi.json, and
-# ivaldictl's Go client and the web app's TypeScript types are generated from
-# it. Run this after changing an operation or a response.
+# ivaldictl's and the Kubernetes agent's Go clients and the web app's
+# TypeScript types are generated from it. Run this after changing an operation
+# or a response.
 openapi:
 	go run ./apps/control-plane/cmd openapi > api/openapi.json
 	cd apps/cli && go generate ./internal/apiclient
+	cd apps/k8s-agent && go generate ./internal/apiclient
 	cd apps/webui && pnpm run api:types
 
 # Regenerates everything and fails if that changed a committed file.
 openapi_check: openapi
-	git diff --exit-code -- api/openapi.json apps/cli/internal/apiclient apps/webui/src/app/api/schema.gen.ts
+	git diff --exit-code -- api/openapi.json apps/cli/internal/apiclient apps/k8s-agent/internal/apiclient apps/webui/src/app/api/schema.gen.ts

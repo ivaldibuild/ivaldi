@@ -36,6 +36,24 @@ func TestSnapshotEnumTagsMatchTheDomain(t *testing.T) {
 	assert.ElementsMatch(t, []string{string(ReleaseCreated), string(ReleaseObserved)}, enumTag(t, ReleaseSnapshot{}, "Source"))
 }
 
+// The assignment is the agent's contract, frozen from slice 5 on: its enum
+// tags must list exactly the domain's values, or the agent's generated client
+// refuses a real assignment.
+func TestAssignmentEnumTagsMatchTheDomain(t *testing.T) {
+	assert.ElementsMatch(t, []string{string(DeployerHelm)}, enumTag(t, ApplyAssignment{}, "Deployer"))
+	assert.ElementsMatch(t, []string{string(DeploymentRollout), string(DeploymentRedeploy), string(DeploymentRollback)},
+		enumTag(t, ApplyAssignment{}, "Reason"))
+	sources := []string{string(VariableSourceProject), string(VariableSourceApplication)}
+	assert.ElementsMatch(t, sources, enumTag(t, AssignmentVariable{}, "Source"))
+	assert.ElementsMatch(t, sources, enumTag(t, AssignmentSecret{}, "Source"))
+	assert.ElementsMatch(t, []string{string(VariableKindText), string(VariableKindSecret)}, enumTag(t, AssignmentVariable{}, "Kind"))
+	deliverAs := []string{string(VariableDeliverAsSecret), string(VariableDeliverAsValue)}
+	assert.ElementsMatch(t, deliverAs, enumTag(t, AssignmentVariable{}, "DeliverAs"))
+	assert.ElementsMatch(t, deliverAs, enumTag(t, AssignmentSecret{}, "DeliverAs"))
+	assert.ElementsMatch(t, []string{string(StoreKubernetes), string(StoreAWSSecretsManager), string(StoreVault), string(StoreDoppler)},
+		enumTag(t, StoreSettings{}, "Kind"))
+}
+
 func toTier(s []string) []Tier {
 	out := make([]Tier, len(s))
 	for i, v := range s {

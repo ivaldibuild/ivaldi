@@ -624,7 +624,7 @@ func TestPlacementRepository(t *testing.T) {
 	f, app, env, one, two := placementFixture(t)
 	ctx := f.ctx
 
-	configured := newPlacement(orgA, app.ID(), one.ID(), &delivery.ApplyConfig{DefinitionArtifact: "chart", ValuesRefs: []string{"cred_values_a", "cred_values_b"}})
+	configured := newPlacement(orgA, app.ID(), one.ID(), &delivery.ApplyConfig{DefinitionArtifact: "chart", Values: []string{"cred_values_a", "cred_values_b"}})
 	require.NoError(t, f.apps.CreatePlacement(ctx, configured))
 	at(t, time.Second)
 	tracked := must(delivery.NewPlacement(delivery.NewPlacementProps{
@@ -734,7 +734,7 @@ func TestPlacementRepository(t *testing.T) {
 		// configured was loaded before the Deployment set the current release.
 		require.Nil(t, configured.CurrentDeploymentID())
 		at(t, 3*time.Minute)
-		require.NoError(t, configured.Configure(delivery.ApplyConfig{DefinitionArtifact: "chart", ValuesRefs: []string{"cred_values_c"}}))
+		require.NoError(t, configured.Configure(delivery.ApplyConfig{DefinitionArtifact: "chart", Values: []string{"cred_values_c"}}))
 		require.NoError(t, f.apps.UpdatePlacement(ctx, configured))
 
 		got, err := f.apps.GetPlacement(ctx, orgA, app.ID(), one.ID())

@@ -1,0 +1,2 @@
+-- No-op: the retired keys are references to values documents, and nothing can
+-- reconstruct which ones an old config had.

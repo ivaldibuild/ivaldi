@@ -29,7 +29,7 @@ func TestCreatePlacement(t *testing.T) {
 
 	t.Run("created", func(t *testing.T) {
 		w, app, tg := placementSetup(t)
-		config := &delivery.ApplyConfig{DefinitionArtifact: "chart", ValuesRefs: []string{"crd_values"}}
+		config := &delivery.ApplyConfig{DefinitionArtifact: "chart", Values: []string{"crd_values"}}
 
 		p, err := w.svc.CreatePlacement(ctx, ada, delivery.CreatePlacementInput{OrganizationID: org, ApplicationID: app.ID(), TargetID: tg.ID(), ApplyConfig: config})
 
@@ -141,7 +141,7 @@ func TestConfigureAndRemovePlacement(t *testing.T) {
 		before := w.state.clone()
 		_, err := w.svc.ConfigurePlacement(ctx, ada, org, app.ID(), tg.ID(), &delivery.ApplyConfig{DefinitionArtifact: "nope"})
 		require.ErrorIs(t, err, delivery.ErrNotFound)
-		_, err = w.svc.ConfigurePlacement(ctx, ada, org, app.ID(), tg.ID(), &delivery.ApplyConfig{DefinitionArtifact: "chart", ValuesRefs: []string{""}})
+		_, err = w.svc.ConfigurePlacement(ctx, ada, org, app.ID(), tg.ID(), &delivery.ApplyConfig{DefinitionArtifact: "chart", Values: []string{""}})
 		require.ErrorIs(t, err, delivery.ErrInvalid)
 		assert.Equal(t, before, w.state)
 	})

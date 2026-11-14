@@ -46,6 +46,9 @@ type options struct {
 	changes      provenance.Lookup
 	authz        authorization.Authorizer
 	writer       change.Writer
+	// heartbeat is how often a Cluster's agent must report; capabilities go
+	// stale after three intervals, the same rule as a runner going offline.
+	heartbeat time.Duration
 }
 
 func WithDeploymentRepo(r delivery.DeploymentRepository) ServiceOption {
@@ -71,6 +74,13 @@ func WithLifecycles(r Lifecycles) ServiceOption {
 }
 func WithClusters(r Clusters) ServiceOption {
 	return func(o *options) { o.clusters = r }
+}
+
+// WithHeartbeatInterval sets how long a Cluster's reported capabilities stay
+// current: three intervals. It is runners.heartbeat_interval, which startup
+// validation requires to be positive.
+func WithHeartbeatInterval(d time.Duration) ServiceOption {
+	return func(o *options) { o.heartbeat = d }
 }
 
 // WithCommitHistory reads the commits between two Builds. The
@@ -117,6 +127,7 @@ func NewService(opts ...ServiceOption) (delivery.DeploymentService, error) {
 		{"Targets", o.targets != nil},
 		{"Clusters", o.clusters != nil},
 		{"Lifecycles", o.lifecycles != nil},
+		{"HeartbeatInterval", o.heartbeat > 0},
 		{"CommitHistory", o.history != nil},
 		{"Authorizer", o.authz != nil},
 	}
@@ -301,6 +312,17 @@ func (s *service) ListClusterAssignments(ctx context.Context, actor identity.Act
 		}
 		for _, d := range page.Items {
 			assignment, err := s.assignment(ctx, d)
+			var unassignable *delivery.ErrInvalidInput
+			if errors.As(err, &unassignable) {
+				// One Deployment that can no longer be applied, such as one
+				// whose placement lost its apply config mid-flight, must not
+				// cut the agent off from every other Target: it fails, and
+				// the rest are returned.
+				if err := s.failUnassignable(ctx, d.OrganizationID(), d.ID(), unassignable.Message); err != nil {
+					return nil, err
+				}
+				continue
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -311,6 +333,49 @@ func (s *service) ListClusterAssignments(ctx context.Context, actor identity.Act
 		}
 		query.Page.NextCursor = page.NextCursor
 	}
+}
+
+// failUnassignable fails an in-flight Deployment whose assignment cannot be
+// built, recording why on its timeline. Ivaldi itself is the actor: the agent
+// only asked for its work. A Deployment that finished meanwhile is left alone.
+func (s *service) failUnassignable(ctx context.Context, organizationID, deploymentID, reason string) error {
+	decision := authorization.Decision{
+		ID: authorization.NewDecisionID(), Outcome: authorization.OutcomeAllow,
+		Reason: "the deployment can no longer be applied",
+	}
+	ctx = authorization.WithDecision(ctx, "", decision)
+	return s.writer.Tx.WithinTx(ctx, func(ctx context.Context) error {
+		d, err := s.deployments.GetDeploymentForUpdate(ctx, organizationID, deploymentID)
+		if err != nil {
+			return err
+		}
+		if d.Status() != release.DeploymentApplying && d.Status() != release.DeploymentProgressing {
+			return nil
+		}
+		before := d.Snapshot()
+		if err := d.MoveTo(release.DeploymentFailed); err != nil {
+			return err
+		}
+		if err := s.deployments.UpdateDeployment(ctx, d); err != nil {
+			return err
+		}
+		detail, err := json.Marshal(struct {
+			Reason string `json:"reason"`
+		}{reason})
+		if err != nil {
+			return fmt.Errorf("encode failure reason: %w", err)
+		}
+		if err := s.appendStatusEvent(ctx, d, nil, nil, detail); err != nil {
+			return err
+		}
+		if err := s.writer.Events(ctx, delivery.AggregateDeployment, d.ID(), d); err != nil {
+			return err
+		}
+		return s.writer.AuditRecord(ctx, audit.Event{
+			Type: delivery.EventDeploymentFailed, OrganizationID: organizationID, ResourceID: d.ID(),
+			Actor: identity.Actor{Kind: identity.ActorSystem}, Before: before, After: d.Snapshot(),
+		})
+	})
 }
 
 func (s *service) ReportDeployment(ctx context.Context, actor identity.Actor, in delivery.ReportDeploymentInput) (*delivery.DeploymentDetail, error) {
@@ -370,9 +435,6 @@ func (s *service) ReportDeployment(ctx context.Context, actor identity.Actor, in
 	return s.detail(ctx, out)
 }
 
-// RecordTargetHeartbeat notes that the Target's Cluster agent is in contact.
-// Liveness is the Cluster's now, so this only checks the caller; the
-// cluster-wide heartbeat replaces it.
 // checkTargetAgent refuses anyone but the agent of the Target's Cluster.
 func (s *service) checkTargetAgent(ctx context.Context, organizationID string, target *delivery.Target, principalID string) error {
 	cluster, err := s.clusters.GetCluster(ctx, organizationID, target.ClusterID())
@@ -643,6 +705,22 @@ func (s *service) plan(ctx context.Context, organizationID string, rel *delivery
 		return nil, err
 	}
 	p.checks = append(p.checks, check("agent_assigned", cluster.AgentPrincipalID() != nil, "the target's cluster has no agent assigned"))
+	// Without an agent, agent_assigned already says why; agent_capable would
+	// only fail again for the same cause.
+	if cluster.AgentPrincipalID() != nil {
+		// Only a heartbeat refreshes capabilities, so a Cluster whose agent
+		// renews or reports but stops heartbeating is in contact yet stale.
+		capable, capableReason := false, "the cluster's agent has not reported recently"
+		if reported := cluster.LastReportedAt(); reported != nil && !clock.Now().After(reported.Add(3*s.heartbeat)) {
+			capable = target.CanExecute()
+			if capable {
+				capableReason = ""
+			} else {
+				capableReason = "the cluster's agent cannot execute in this namespace"
+			}
+		}
+		p.checks = append(p.checks, check("agent_capable", capable, capableReason))
+	}
 	inFlight, err := s.deployments.GetInFlightDeployment(ctx, organizationID, rel.ApplicationID(), targetID)
 	if errors.Is(err, delivery.ErrNotFound) {
 		p.checks = append(p.checks, check("no_in_flight", true, ""))
@@ -771,21 +849,54 @@ func (s *service) assignment(ctx context.Context, d *delivery.Deployment) (*deli
 	if err != nil {
 		return nil, err
 	}
-	out := &delivery.DeploymentAssignment{
-		Deployment: d.Snapshot(), Release: rel.Snapshot(), Target: target.Snapshot(),
-		Environment: env.Snapshot(), ApplyConfig: placement.ApplyConfig(), HelmReleaseName: helmReleaseName(d.ApplicationID()),
+	config := placement.ApplyConfig()
+	if config == nil {
+		return nil, delivery.NewErrInvalidInput("the target has no apply config; deployments there are tracked only")
 	}
+	apply := delivery.ApplyAssignment{
+		Deployer:  delivery.DeployerHelm,
+		Namespace: target.Locator()[delivery.LocatorNamespace],
+		Overlays:  config.Values,
+		Images:    map[string]delivery.AssignmentImage{},
+		Variables: []delivery.AssignmentVariable{},
+		Secrets:   []delivery.AssignmentSecret{},
+		Helm:      &delivery.HelmApply{ReleaseName: helmReleaseName(d.ApplicationID())},
+		Reason:    d.Reason(),
+	}
+	if apply.Overlays == nil {
+		apply.Overlays = []string{}
+	}
+	found := false
 	for _, rb := range rel.Builds() {
 		a, b := byArtifact[rb.ArtifactID], builds[rb.ArtifactID]
 		if a == nil || b == nil {
 			continue
 		}
-		out.Artifacts = append(out.Artifacts, delivery.AssignmentArtifact{
-			ArtifactID: a.ID(), ArtifactName: a.Name(), Kind: a.ArtifactKind(),
-			BuildID: b.ID(), PublishedAs: b.ArtifactName(), Digest: b.Digest(),
-		})
+		// Helm applies a chart and the images it runs; any other artifact
+		// kind, such as an archive, has no part in a Helm apply.
+		switch a.ArtifactKind() {
+		case delivery.ArtifactHelmChart:
+			if a.Name() == config.DefinitionArtifact {
+				apply.Definition = delivery.AssignmentArtifact{
+					ArtifactID: a.ID(), ArtifactName: a.Name(), Kind: a.ArtifactKind(),
+					BuildID: b.ID(), PublishedAs: b.ArtifactName(), Digest: b.Digest(),
+				}
+				found = true
+			}
+		case delivery.ArtifactContainerImage:
+			apply.Images[a.Name()] = delivery.AssignmentImage{
+				ArtifactID: a.ID(), Repository: b.ArtifactName(), Digest: b.Digest(),
+				Image: b.ArtifactName() + "@" + b.Digest(),
+			}
+		}
 	}
-	return out, nil
+	if !found {
+		return nil, delivery.NewErrInvalidInput(fmt.Sprintf("the release has no %q artifact to apply", config.DefinitionArtifact))
+	}
+	return &delivery.DeploymentAssignment{
+		Deployment: d.Snapshot(), Release: rel.Snapshot(), Target: target.Snapshot(),
+		Environment: env.Snapshot(), Apply: apply,
+	}, nil
 }
 
 func helmReleaseName(applicationID string) string {

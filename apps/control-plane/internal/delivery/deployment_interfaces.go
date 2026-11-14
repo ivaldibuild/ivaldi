@@ -76,15 +76,14 @@ type AssignmentArtifact struct {
 }
 
 // DeploymentAssignment is everything a Target's agent needs to execute a
-// Deployment.
+// Deployment. The apply block is deployer-neutral: Helm is today's deployer,
+// and Argo CD or Flux add a value and a sub-object without changing it.
 type DeploymentAssignment struct {
-	Deployment      DeploymentSnapshot   `json:"deployment"`
-	Release         ReleaseSnapshot      `json:"release"`
-	Target          TargetSnapshot       `json:"target"`
-	Environment     EnvironmentSnapshot  `json:"environment"`
-	ApplyConfig     *ApplyConfig         `json:"apply_config"`
-	HelmReleaseName string               `json:"helm_release_name"`
-	Artifacts       []AssignmentArtifact `json:"artifacts"`
+	Deployment  DeploymentSnapshot  `json:"deployment"`
+	Release     ReleaseSnapshot     `json:"release"`
+	Target      TargetSnapshot      `json:"target"`
+	Environment EnvironmentSnapshot `json:"environment"`
+	Apply       ApplyAssignment     `json:"apply"`
 }
 
 // ArtifactChange is what one artifact changes from on a Target.

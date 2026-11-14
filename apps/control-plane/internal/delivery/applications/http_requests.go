@@ -266,14 +266,14 @@ type UpdateChannelRuleRequest struct {
 // ApplyConfigBody says how Ivaldi applies Releases to a Target.
 type ApplyConfigBody struct {
 	DefinitionArtifact string   `json:"definition_artifact" required:"true" doc:"The name of the application's artifact that holds the deployment definition"`
-	ValuesRefs         []string `json:"values_refs,omitempty" required:"false" doc:"References to Target-specific values, never the values"`
+	Values             []string `json:"values,omitempty" required:"false" doc:"The chart's overlay values files, in order, such as values.production.yaml"`
 }
 
 func (b *ApplyConfigBody) config() *delivery.ApplyConfig {
 	if b == nil {
 		return nil
 	}
-	return &delivery.ApplyConfig{DefinitionArtifact: b.DefinitionArtifact, ValuesRefs: b.ValuesRefs}
+	return &delivery.ApplyConfig{DefinitionArtifact: b.DefinitionArtifact, Values: b.Values}
 }
 
 type CreatePlacementRequest struct {

@@ -326,7 +326,7 @@ func TestChannelEvents(t *testing.T) {
 
 func TestPlacementEvents(t *testing.T) {
 	build := func(t *testing.T) *Placement { return domNewPlacement(t, nil) }
-	config := ApplyConfig{DefinitionArtifact: "chart", ValuesRefs: []string{"values/eu"}}
+	config := ApplyConfig{DefinitionArtifact: "chart", Values: []string{"values/eu"}}
 
 	checkEvents(t, build, []eventCase[*Placement]{
 		{"configure", func(t *testing.T, p *Placement) { require.NoError(t, p.Configure(config)) },
@@ -334,7 +334,7 @@ func TestPlacementEvents(t *testing.T) {
 		{"configure the same way", func(t *testing.T, p *Placement) {
 			require.NoError(t, p.Configure(config))
 			p.PullEvents()
-			require.NoError(t, p.Configure(ApplyConfig{DefinitionArtifact: "chart", ValuesRefs: []string{"values/eu"}}))
+			require.NoError(t, p.Configure(ApplyConfig{DefinitionArtifact: "chart", Values: []string{"values/eu"}}))
 		}, nil},
 		{"clear the apply config", func(t *testing.T, p *Placement) {
 			require.NoError(t, p.Configure(config))

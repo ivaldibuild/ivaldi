@@ -449,7 +449,13 @@ func newWorld(t *testing.T) *world {
 	app := mustApplication(org, appID)
 	env := mustEnvironment(org, envID, true)
 	cluster := mustCluster(org, clusterID, agentID)
+	if err := cluster.RecordHeartbeat(agentID, map[string]any{"agent_version": "1.4.0"}); err != nil {
+		panic(err)
+	}
 	target := mustTarget(org, envID, clusterID, targetID)
+	if _, err := target.SetCapabilities(true, true, ""); err != nil {
+		panic(err)
+	}
 	lc := mustLifecycle(org, envID)
 	channel := mustChannel(org, appID, lc.ID())
 	placement := mustPlacement(org, appID, targetID)
@@ -469,7 +475,7 @@ func newWorld(t *testing.T) *world {
 	svc, err := NewService(
 		WithDeploymentRepo(fakeDeployments{s}), WithReleaseRepo(fakeReleases{s}), WithBuildRepo(fakeBuilds{s}),
 		WithApplications(fakeApplications{s}), WithEnvironments(fakeEnvironments{s}), WithTargets(fakeTargets{s}), WithClusters(fakeClusters{s}),
-		WithLifecycles(fakeLifecycles{s}), WithCommitHistory(history), WithChanges(recorded), WithAuthorizer(authz), WithTransactor(s),
+		WithLifecycles(fakeLifecycles{s}), WithHeartbeatInterval(30*time.Second), WithCommitHistory(history), WithChanges(recorded), WithAuthorizer(authz), WithTransactor(s),
 		WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
 	)
 	require.NoError(t, err)
@@ -507,6 +513,24 @@ func TestRequestDeploymentsChecks(t *testing.T) {
 	t.Run("no agent", func(t *testing.T) {
 		w := newWorld(t)
 		require.NoError(t, w.clusters[clusterID].UnassignAgent())
+		_, err := w.svc.RequestDeployments(ctx, ada, delivery.RequestDeploymentsInput{
+			OrganizationID: org, ReleaseID: w.rel.ID(), TargetIDs: []string{targetID},
+		})
+		assert.ErrorIs(t, err, delivery.ErrInvalid)
+	})
+	t.Run("the agent has not reported recently", func(t *testing.T) {
+		w := newWorld(t)
+		clock.Fix(t, t0.Add(time.Hour))
+		_, err := w.svc.RequestDeployments(ctx, ada, delivery.RequestDeploymentsInput{
+			OrganizationID: org, ReleaseID: w.rel.ID(), TargetIDs: []string{targetID},
+		})
+		assert.ErrorIs(t, err, delivery.ErrInvalid)
+	})
+	t.Run("the agent cannot execute", func(t *testing.T) {
+		w := newWorld(t)
+		if _, err := w.targets[targetID].SetCapabilities(true, false, "RBAC denies create on pods"); err != nil {
+			t.Fatal(err)
+		}
 		_, err := w.svc.RequestDeployments(ctx, ada, delivery.RequestDeploymentsInput{
 			OrganizationID: org, ReleaseID: w.rel.ID(), TargetIDs: []string{targetID},
 		})
@@ -619,8 +643,74 @@ func TestListAssignments(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 	assert.Equal(t, d.ID(), items[0].Deployment.ID)
-	assert.Contains(t, items[0].HelmReleaseName, "app-")
-	require.Len(t, items[0].Artifacts, 1)
+	require.NotNil(t, items[0].Apply.Helm)
+	assert.Contains(t, items[0].Apply.Helm.ReleaseName, "app-")
+	assert.Equal(t, "chart", items[0].Apply.Definition.ArtifactName)
+	assert.Empty(t, items[0].Apply.Images)
+}
+
+func TestAssignmentShape(t *testing.T) {
+	w := newWorld(t)
+	d := mustDeployment(org, w.rel.ID(), w.app.ID(), envID, targetID, release.DeploymentApplying)
+	w.deployments[d.ID()] = d
+
+	items, err := w.svc.ListClusterAssignments(ctx, identity.Actor{PrincipalID: agentID}, org, clusterID)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	apply := items[0].Apply
+	assert.Equal(t, delivery.DeployerHelm, apply.Deployer)
+	assert.Equal(t, "default", apply.Namespace)
+	assert.Equal(t, "chart", apply.Definition.ArtifactName)
+	assert.Equal(t, delivery.ArtifactHelmChart, apply.Definition.Kind)
+	assert.Equal(t, []string{}, apply.Overlays)
+	assert.Empty(t, apply.Images)
+	assert.Empty(t, apply.Variables)
+	assert.Empty(t, apply.Secrets)
+	require.NotNil(t, apply.Helm)
+	assert.Contains(t, apply.Helm.ReleaseName, "app-")
+	assert.Equal(t, delivery.DeploymentRollout, apply.Reason)
+	assert.Nil(t, apply.Restores)
+}
+
+func TestAssignmentCarriesImagesAndOverlays(t *testing.T) {
+	w := newWorld(t)
+	image := mustArtifact(appID, "api", delivery.ArtifactContainerImage)
+	imageDigest := "sha256:" + strings.Repeat("c", 64)
+	imageBuild := must(delivery.NewBuild(delivery.NewBuildProps{
+		OrganizationID: org, ArtifactKind: delivery.ArtifactContainerImage,
+		ArtifactName: image.ArtifactName(), Digest: imageDigest, Provenance: delivery.BuildCIReported,
+	}, nil))
+	w.artifacts[image.ID()] = image
+	w.builds[imageBuild.ID()] = imageBuild
+
+	chart := w.releases[mustOneID(w.releases)]
+	rel := must(delivery.NewRelease(delivery.NewReleaseProps{
+		OrganizationID: org, ApplicationID: appID, ChannelID: chart.ChannelID(), Version: "2.0.0",
+		Status: release.StatusPublished,
+		Builds: []delivery.NewReleaseBuildProps{
+			{ArtifactID: chart.Builds()[0].ArtifactID, BuildID: chart.Builds()[0].BuildID},
+			{ArtifactID: image.ID(), BuildID: imageBuild.ID()},
+		},
+	}, nil))
+	w.releases[rel.ID()] = rel
+	d := mustDeployment(org, rel.ID(), appID, envID, targetID, release.DeploymentApplying)
+	w.deployments[d.ID()] = d
+
+	placement := mustPlacement(org, appID, targetID)
+	require.NoError(t, placement.Configure(delivery.ApplyConfig{
+		DefinitionArtifact: "chart", Values: []string{"values.production.yaml"},
+	}))
+	w.placements[placementKey(appID, targetID)] = placement
+
+	items, err := w.svc.ListClusterAssignments(ctx, identity.Actor{PrincipalID: agentID}, org, clusterID)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	apply := items[0].Apply
+	assert.Equal(t, []string{"values.production.yaml"}, apply.Overlays)
+	require.Contains(t, apply.Images, "api")
+	assert.Equal(t, "ghcr.io/acme/api", apply.Images["api"].Repository)
+	assert.Equal(t, imageDigest, apply.Images["api"].Digest)
+	assert.Equal(t, "ghcr.io/acme/api@"+imageDigest, apply.Images["api"].Image)
 }
 
 func TestReleaseChanges(t *testing.T) {
@@ -844,6 +934,41 @@ func TestListClusterAssignmentsAcrossTargets(t *testing.T) {
 	items, err := w.svc.ListClusterAssignments(ctx, identity.Actor{PrincipalID: agentID}, org, clusterID)
 	require.NoError(t, err)
 	assert.Len(t, items, 2)
+}
+
+func TestListClusterAssignmentsFailsOnlyWhatCannotBeApplied(t *testing.T) {
+	w := newWorld(t)
+	second := must(delivery.NewTarget(delivery.NewTargetProps{
+		OrganizationID: org, EnvironmentID: envID, ClusterID: clusterID,
+		DisplayName: "Second", Runtime: delivery.RuntimeKubernetes,
+		Locator: map[string]string{delivery.LocatorCluster: "cluster", delivery.LocatorNamespace: "second"},
+	}, new(secondTargetID)))
+	w.targets[second.ID()] = second
+	// The placement lost its apply config after the Deployment was requested.
+	w.placements[placementKey(appID, second.ID())] = must(delivery.NewPlacement(delivery.NewPlacementProps{
+		OrganizationID: org, ApplicationID: appID, TargetID: second.ID(), Source: delivery.PlacementObserved,
+	}))
+	healthy := mustDeployment(org, w.rel.ID(), w.app.ID(), envID, targetID, release.DeploymentApplying)
+	w.deployments[healthy.ID()] = healthy
+	broken := mustDeployment(org, w.rel.ID(), w.app.ID(), envID, second.ID(), release.DeploymentApplying)
+	w.deployments[broken.ID()] = broken
+
+	items, err := w.svc.ListClusterAssignments(ctx, identity.Actor{PrincipalID: agentID}, org, clusterID)
+
+	require.NoError(t, err, "one Deployment that cannot be applied does not cut the agent off")
+	require.Len(t, items, 1)
+	assert.Equal(t, healthy.ID(), items[0].Deployment.ID)
+	assert.Equal(t, release.DeploymentFailed, w.deployments[broken.ID()].Status(), "the Deployment that cannot be applied fails")
+	require.NotEmpty(t, w.events)
+	last := w.events[len(w.events)-1]
+	assert.Equal(t, broken.ID(), last.DeploymentID())
+	assert.Contains(t, string(last.Snapshot().Detail), "apply config", "its timeline says why")
+	assert.Equal(t, delivery.EventDeploymentFailed, w.audit[len(w.audit)-1].Type)
+	assert.True(t, w.audit[len(w.audit)-1].Actor.IsSystem())
+
+	items, err = w.svc.ListClusterAssignments(ctx, identity.Actor{PrincipalID: agentID}, org, clusterID)
+	require.NoError(t, err)
+	assert.Len(t, items, 1, "a failed Deployment is no longer assigned")
 }
 
 func TestObserve(t *testing.T) {

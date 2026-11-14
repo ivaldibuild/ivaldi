@@ -281,19 +281,19 @@
                     </p>
                   </div>
                   <div hlmField>
-                    <label hlmFieldLabel for="apply-values">Values for this Target</label>
+                    <label hlmFieldLabel for="apply-values">Values files for this Target</label>
                     <textarea
                       id="apply-values"
                       rows="3"
                       class="border-input bg-background text-foreground border px-3 py-2 font-mono text-[13px]"
                       aria-describedby="apply-values-hint"
                       [disabled]="applyArtifact() === ''"
-                      [value]="valuesRefs()"
-                      (input)="valuesRefs.set($any($event.target).value)"
+                      [value]="valuesFiles()"
+                      (input)="valuesFiles.set($any($event.target).value)"
                     ></textarea>
                     <p id="apply-values-hint" class="text-muted-foreground text-[13px]">
-                      One reference per line, such as the name of a secret the agent can read. Never
-                      the values themselves.
+                      One values file in the chart per line, applied in order, such as
+                      values.production.yaml.
                     </p>
                   </div>
                   @if (configurationStatus.error(); as message) {

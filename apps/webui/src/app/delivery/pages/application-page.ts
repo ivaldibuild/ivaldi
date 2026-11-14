@@ -216,12 +216,12 @@ export class ApplicationPage {
   // How Releases are applied on a Target.
   protected readonly configuring = signal<string | null>(null);
   protected readonly applyArtifact = signal('');
-  protected readonly valuesRefs = signal('');
+  protected readonly valuesFiles = signal('');
   protected readonly configurationStatus = new RequestStatus();
 
   protected configure(placement: Placement): void {
     this.applyArtifact.set(placement.apply_config?.definition_artifact ?? '');
-    this.valuesRefs.set((placement.apply_config?.values_refs ?? []).join('\n'));
+    this.valuesFiles.set((placement.apply_config?.values ?? []).join('\n'));
     this.configurationStatus.error.set(null);
     this.configuring.set(placement.target_id);
   }
@@ -229,15 +229,15 @@ export class ApplicationPage {
   protected async saveConfiguration(event: Event, targetId: string): Promise<void> {
     event.preventDefault();
     const artifact = this.applyArtifact();
-    const refs = this.valuesRefs()
+    const files = this.valuesFiles()
       .split('\n')
-      .map((r) => r.trim())
+      .map((file) => file.trim())
       .filter(Boolean);
     const saved = await this.configurationStatus.run(() =>
       this.api.configurePlacement(
         this.id(),
         targetId,
-        artifact ? { definition_artifact: artifact, values_refs: refs } : null,
+        artifact ? { definition_artifact: artifact, values: files } : null,
       ),
     );
     if (saved) {

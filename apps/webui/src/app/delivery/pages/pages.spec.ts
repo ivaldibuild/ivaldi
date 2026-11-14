@@ -438,7 +438,7 @@ describe('delivery pages', () => {
     select.dispatchEvent(new Event('change'));
     await settle(fixture);
     const values = el.querySelector<HTMLTextAreaElement>('#apply-values')!;
-    values.value = 'payments-staging-values\n\n';
+    values.value = 'values.staging.yaml\n\n';
     values.dispatchEvent(new Event('input'));
     values.closest('form')!.dispatchEvent(new Event('submit'));
     await settle(fixture);
@@ -446,7 +446,7 @@ describe('delivery pages', () => {
     const put = http.expectOne(`${v1}/applications/app_1/placements/tgt_stg`);
     expect(put.request.method).toBe('PUT');
     expect(put.request.body).toEqual({
-      apply_config: { definition_artifact: 'chart', values_refs: ['payments-staging-values'] },
+      apply_config: { definition_artifact: 'chart', values: ['values.staging.yaml'] },
     });
     put.flush(ok({}));
     await drain(fixture);

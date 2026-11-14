@@ -2,15 +2,26 @@ package targets
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
 	"sync"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/cache"
 )
+
+// ErrNotWatched means a namespace's workloads are not in the caches: it is
+// not watched, or its informers have not synced.
+var ErrNotWatched = errors.New("the namespace is not watched")
 
 // Informers keeps one informer set per watched namespace. It watches only
 // Target namespaces, even when RBAC allows reading the whole cluster, so the
@@ -24,6 +35,10 @@ type Informers interface {
 	Watch(ctx context.Context, namespaces []string, timeout time.Duration) (unsynced []string, err error)
 	// Watched returns the watched namespaces, sorted.
 	Watched() []string
+	// Workloads returns the Deployments, StatefulSets, and DaemonSets in
+	// namespace whose labels match selector, from the informer caches. It
+	// returns ErrNotWatched when namespace is not watched or not synced.
+	Workloads(namespace string, selector map[string]string) ([]*unstructured.Unstructured, error)
 	// Stop stops every informer.
 	Stop()
 }
@@ -107,6 +122,61 @@ func (n *namespaceInformers) Watched() []string {
 	}
 	slices.Sort(out)
 	return out
+}
+
+func (n *namespaceInformers) Workloads(namespace string, selector map[string]string) ([]*unstructured.Unstructured, error) {
+	n.mu.Lock()
+	r, ok := n.running[namespace]
+	n.mu.Unlock()
+	if !ok {
+		return nil, ErrNotWatched
+	}
+	apps := r.factory.Apps().V1()
+	for _, informer := range []cache.SharedIndexInformer{apps.Deployments().Informer(), apps.StatefulSets().Informer(), apps.DaemonSets().Informer()} {
+		if !informer.HasSynced() {
+			return nil, ErrNotWatched
+		}
+	}
+	match := labels.SelectorFromSet(selector)
+	var objects []runtime.Object
+	deployments, err := apps.Deployments().Lister().Deployments(namespace).List(match)
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range deployments {
+		objects = append(objects, withKind(d.DeepCopy(), appsv1.SchemeGroupVersion.WithKind("Deployment")))
+	}
+	statefulSets, err := apps.StatefulSets().Lister().StatefulSets(namespace).List(match)
+	if err != nil {
+		return nil, err
+	}
+	for _, s := range statefulSets {
+		objects = append(objects, withKind(s.DeepCopy(), appsv1.SchemeGroupVersion.WithKind("StatefulSet")))
+	}
+	daemonSets, err := apps.DaemonSets().Lister().DaemonSets(namespace).List(match)
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range daemonSets {
+		objects = append(objects, withKind(d.DeepCopy(), appsv1.SchemeGroupVersion.WithKind("DaemonSet")))
+	}
+
+	out := make([]*unstructured.Unstructured, 0, len(objects))
+	for _, obj := range objects {
+		content, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, &unstructured.Unstructured{Object: content})
+	}
+	return out, nil
+}
+
+// withKind sets the type information informers leave empty, which status
+// computation needs.
+func withKind(obj runtime.Object, gvk schema.GroupVersionKind) runtime.Object {
+	obj.GetObjectKind().SetGroupVersionKind(gvk)
+	return obj
 }
 
 func (n *namespaceInformers) Stop() {

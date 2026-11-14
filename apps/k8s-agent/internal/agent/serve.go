@@ -39,6 +39,7 @@ func (a *agent) work(ctx context.Context, st state.State) error {
 		// Report the Targets' capabilities as soon as they are known.
 		beatNow <- struct{}{}
 		loops.Go(func() error { a.refreshLoop(ctx, tracker, refreshNow); return nil })
+		loops.Go(func() error { a.assignmentLoop(ctx, tracker); return nil })
 		return loops.Wait()
 	})
 	return group.Wait()
@@ -79,7 +80,7 @@ func (a *agent) heartbeatLoop(ctx context.Context, tracker targets.Tracker, refr
 		if verr != nil {
 			err = verr
 		} else {
-			err = a.cp.Heartbeat(ctx, set.HeartbeatBody(a.version))
+			err = a.cp.Heartbeat(ctx, set.HeartbeatBody(a.version, deployerNames(a.deployers)))
 		}
 		switch {
 		case ctx.Err() != nil:
@@ -100,6 +101,25 @@ func (a *agent) heartbeatLoop(ctx context.Context, tracker targets.Tracker, refr
 			return
 		case <-time.After(set.Heartbeat):
 		case <-beatNow:
+		}
+	}
+}
+
+// assignmentLoop polls for assignments at the control plane's interval and
+// applies them. When ctx ends it waits for the applies in flight, which
+// report nothing once stopped, so it returns promptly.
+func (a *agent) assignmentLoop(ctx context.Context, tracker targets.Tracker) {
+	exec := newExecutor(a.cp, a.deployers, a.reporter, a.log, a.cfg.MaxConcurrentApplies)
+	defer exec.wait()
+	for {
+		set := tracker.Current()
+		if err := exec.poll(ctx, set.Cluster.Slug); err != nil && ctx.Err() == nil {
+			a.handle(err, "could not poll for assignments")
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(set.Poll):
 		}
 	}
 }

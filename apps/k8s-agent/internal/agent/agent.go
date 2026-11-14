@@ -20,6 +20,9 @@ import (
 
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/apiclient"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/auth"
+	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/deploy"
+	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/deploy/helm"
+	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/report"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/state"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/targets"
 )
@@ -85,6 +88,17 @@ func start(ctx context.Context, cfg Config, version string) error {
 	if err != nil {
 		return err
 	}
+	helmDeployer, err := helm.New(helm.Config{
+		RESTConfig:     restConfig,
+		Kube:           kube,
+		AgentNamespace: cfg.Namespace,
+		PullSecret:     cfg.RegistryPullSecret,
+		Timeout:        applyTimeout,
+		Logger:         log,
+	})
+	if err != nil {
+		return err
+	}
 	a := &agent{
 		cfg:        cfg,
 		version:    version,
@@ -93,6 +107,8 @@ func start(ctx context.Context, cfg Config, version string) error {
 		creds:      creds,
 		cp:         cp,
 		newTracker: func() targets.Tracker { return targets.NewTracker(cp, kube, log) },
+		deployers:  map[string]deploy.Deployer{helmDeployer.Name(): helmDeployer},
+		reporter:   report.New(cp, log),
 		ready:      newReadiness(conditionEnrolled, conditionLease, conditionTargets),
 		enrolRetry: enrolRetry,
 		retryBase:  time.Second,

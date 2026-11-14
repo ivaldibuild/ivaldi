@@ -25,6 +25,8 @@ import (
 
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/apiclient"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/auth"
+	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/deploy"
+	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/report"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/state"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/targets"
 )
@@ -189,12 +191,38 @@ func (f *fakeCredentials) enrolCount() int {
 	return f.enrols
 }
 
-// fakeControlPlane serves one Target and records heartbeats.
+// fakeControlPlane serves one Target and the assignments it is given, and
+// records heartbeats and reports.
 type fakeControlPlane struct {
 	mu           sync.Mutex
 	heartbeats   []apiclient.HeartbeatRequestBody
 	heartbeatErr error
 	targetsErr   error
+	assignments  []apiclient.DeploymentAssignment
+	reports      []apiclient.ReportDeploymentRequestBody
+}
+
+func (f *fakeControlPlane) Assignments(context.Context) ([]apiclient.DeploymentAssignment, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.assignments), nil
+}
+
+func (f *fakeControlPlane) ReportDeployment(_ context.Context, _ string, body apiclient.ReportDeploymentRequestBody) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reports = append(f.reports, body)
+	return nil
+}
+
+func (f *fakeControlPlane) reportIDs() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []string
+	for _, r := range f.reports {
+		out = append(out, r.ReportId)
+	}
+	return out
 }
 
 func (f *fakeControlPlane) Targets(context.Context) (*apiclient.TargetsResponse, error) {
@@ -245,13 +273,15 @@ func newTestAgent(creds auth.Credentials) (*agent, *fake.Clientset, *fakeControl
 	cp := &fakeControlPlane{}
 	log := slog.New(slog.DiscardHandler)
 	return &agent{
-		cfg:        Config{Namespace: "ivaldi-system", LeaseName: "ivaldi-agent", PodName: "pod-1", EnrolmentSecret: "enrolment"},
+		cfg:        Config{Namespace: "ivaldi-system", LeaseName: "ivaldi-agent", PodName: "pod-1", EnrolmentSecret: "enrolment", MaxConcurrentApplies: 2},
 		version:    "1.0.0-test",
 		log:        log,
 		kube:       kube,
 		creds:      creds,
 		cp:         cp,
 		newTracker: func() targets.Tracker { return targets.NewTracker(cp, kube, log) },
+		deployers:  map[string]deploy.Deployer{},
+		reporter:   report.New(cp, log),
 		ready:      newReadiness(conditionEnrolled, conditionLease, conditionTargets),
 		enrolRetry: 10 * time.Millisecond,
 		retryBase:  10 * time.Millisecond,
@@ -391,4 +421,72 @@ func TestWork_SkipsAHeartbeatItCannotFillIn(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	_, sent := cp.lastHeartbeat()
 	assert.False(t, sent, "a heartbeat without the Kubernetes version would be refused, so none is sent")
+}
+
+// fakeDeployer applies by returning err, or by blocking until ctx ends.
+type fakeDeployer struct {
+	err   error
+	block bool
+}
+
+func (f *fakeDeployer) Name() string { return "helm" }
+
+func (f *fakeDeployer) Apply(ctx context.Context, _ deploy.Assignment, progress deploy.Progress) (deploy.Applied, error) {
+	progress(deploy.StepFetching, "pulling")
+	if f.block {
+		<-ctx.Done()
+		return deploy.Applied{}, ctx.Err()
+	}
+	return deploy.Applied{Ref: map[string]any{"type": "helm"}}, f.err
+}
+
+func applyingAssignment(id string) apiclient.DeploymentAssignment {
+	return apiclient.DeploymentAssignment{
+		Deployment: apiclient.DeploymentSnapshot{Id: id, Status: apiclient.DeploymentSnapshotStatusApplying},
+		Apply:      apiclient.ApplyAssignment{Deployer: "helm"},
+	}
+}
+
+func TestExecutor(t *testing.T) {
+	tests := []struct {
+		name     string
+		deployer *fakeDeployer
+		status   apiclient.DeploymentSnapshotStatus
+		want     []string
+	}{
+		{name: "an apply reports progress then progressing", deployer: &fakeDeployer{}, want: []string{"dep_1:fetching", "dep_1:applied"}},
+		{name: "a failed apply reports failed", deployer: &fakeDeployer{err: deploy.Failf("no chart")}, want: []string{"dep_1:fetching", "dep_1:failed"}},
+		{name: "only applying deployments are applied", deployer: &fakeDeployer{}, status: apiclient.DeploymentSnapshotStatusProgressing},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cp := &fakeControlPlane{assignments: []apiclient.DeploymentAssignment{applyingAssignment("dep_1")}}
+			if tt.status != "" {
+				cp.assignments[0].Deployment.Status = tt.status
+			}
+			log := slog.New(slog.DiscardHandler)
+			exec := newExecutor(cp, map[string]deploy.Deployer{"helm": tt.deployer}, report.New(cp, log), log, 1)
+			require.NoError(t, exec.poll(t.Context(), "prod-eu"))
+			exec.wait()
+			assert.Equal(t, tt.want, cp.reportIDs())
+			if len(tt.want) == 2 && tt.want[1] == "dep_1:failed" {
+				assert.Equal(t, map[string]any{"reason": "no chart"}, cp.reports[1].Detail)
+			}
+		})
+	}
+}
+
+func TestExecutor_ReportsNothingFinalWhenStoppedMidApply(t *testing.T) {
+	cp := &fakeControlPlane{assignments: []apiclient.DeploymentAssignment{applyingAssignment("dep_1"), applyingAssignment("dep_2")}}
+	log := slog.New(slog.DiscardHandler)
+	exec := newExecutor(cp, map[string]deploy.Deployer{"helm": &fakeDeployer{block: true}}, report.New(cp, log), log, 1)
+	ctx, cancel := context.WithCancel(t.Context())
+
+	require.NoError(t, exec.poll(ctx, "prod-eu"))
+	require.Eventually(t, func() bool { return len(cp.reportIDs()) == 1 }, 5*time.Second, 10*time.Millisecond)
+	// One slot: the second Deployment waits for a later poll.
+	require.NoError(t, exec.poll(ctx, "prod-eu"))
+	cancel()
+	exec.wait()
+	assert.Equal(t, []string{"dep_1:fetching"}, cp.reportIDs())
 }

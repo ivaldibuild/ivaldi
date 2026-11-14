@@ -87,6 +87,14 @@ func (f *fakeControlPlane) Heartbeat(context.Context, apiclient.HeartbeatRequest
 	return nil
 }
 
+func (f *fakeControlPlane) Assignments(context.Context) ([]apiclient.DeploymentAssignment, error) {
+	return nil, nil
+}
+
+func (f *fakeControlPlane) ReportDeployment(context.Context, string, apiclient.ReportDeploymentRequestBody) error {
+	return nil
+}
+
 func TestTracker_RefreshChecksAccessAndWatchesTheNamespacesItCanRead(t *testing.T) {
 	kube := fakeKube(map[string][]authorizationv1.ResourceRule{
 		"payments":  {readRule, editRule},
@@ -116,8 +124,9 @@ func TestTracker_RefreshChecksAccessAndWatchesTheNamespacesItCanRead(t *testing.
 	assert.False(t, set.Targets[2].Capabilities.Observe)
 	assert.Equal(t, []string{"payments", "reporting"}, tr.(*tracker).informers.Watched())
 
-	body := set.HeartbeatBody("1.0.0")
+	body := set.HeartbeatBody("1.0.0", []string{"helm"})
 	assert.Equal(t, "v1.31.4", body.KubernetesVersion)
+	assert.Equal(t, []string{"helm"}, *body.Deployers)
 	require.Len(t, *body.Targets, 3)
 	assert.Equal(t, apiclient.TargetHeartbeatRequest{TargetId: "tgt_1", Observe: true, Execute: true}, (*body.Targets)[0])
 

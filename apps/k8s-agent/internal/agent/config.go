@@ -47,6 +47,10 @@ type Config struct {
 	// AllowInsecureHTTP permits an http:// server URL, which sends
 	// credentials in plaintext; for local development only.
 	AllowInsecureHTTP bool
+	// RegistryPullSecret is a docker-config Secret in the agent's
+	// namespace with credentials for pulling charts.
+	RegistryPullSecret   string
+	MaxConcurrentApplies int
 }
 
 func (c *Config) bind(flags *pflag.FlagSet) {
@@ -70,6 +74,9 @@ func (c *Config) bind(flags *pflag.FlagSet) {
 	flags.StringVar(&c.LogLevel, "log-level", "info", "Log level: debug, info, warn, or error")
 	flags.BoolVar(&c.AllowInsecureHTTP, "allow-insecure-http", false,
 		"Allow an http:// server URL, which sends credentials in plaintext; for local development only")
+	flags.StringVar(&c.RegistryPullSecret, "registry-pull-secret", "",
+		"Docker-config Secret in the agent's namespace with credentials for pulling charts")
+	flags.IntVar(&c.MaxConcurrentApplies, "max-concurrent-applies", 4, "How many Deployments the agent applies at once")
 }
 
 // bindEnv sets every flag not given on the command line from its
@@ -110,6 +117,9 @@ func (c *Config) complete(readFile func(string) ([]byte, error), hostname func()
 	}
 	if c.EnrolmentSecret == "" || c.StateSecret == "" || c.LeaseName == "" {
 		errs = append(errs, errors.New("--enrolment-secret, --state-secret, and --lease-name must not be empty"))
+	}
+	if c.MaxConcurrentApplies < 1 {
+		errs = append(errs, errors.New("--max-concurrent-applies must be at least 1"))
 	}
 	if _, err := c.logLevel(); err != nil {
 		errs = append(errs, err)

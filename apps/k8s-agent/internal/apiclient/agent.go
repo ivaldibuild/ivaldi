@@ -50,6 +50,12 @@ type ControlPlane interface {
 	// Heartbeat reports the agent's contact and what it can do in each
 	// Target.
 	Heartbeat(ctx context.Context, body HeartbeatRequestBody) error
+	// Assignments returns the in-flight Deployments on the Cluster's
+	// Targets.
+	Assignments(ctx context.Context) ([]DeploymentAssignment, error)
+	// ReportDeployment records one report about a Deployment. A report
+	// with a report ID already recorded is stored once.
+	ReportDeployment(ctx context.Context, deploymentID string, body ReportDeploymentRequestBody) error
 }
 
 // NewControlPlane returns the ControlPlane at serverURL. client must
@@ -86,6 +92,38 @@ func (c *controlPlane) Heartbeat(ctx context.Context, body HeartbeatRequestBody)
 		return statusError("agent heartbeat", resp.StatusCode(), resp.ApplicationproblemJSONDefault)
 	}
 	return nil
+}
+
+func (c *controlPlane) Assignments(ctx context.Context) ([]DeploymentAssignment, error) {
+	resp, err := c.client.AgentAssignmentsWithResponse(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("agent assignments: %w", err)
+	}
+	if resp.JSON200 == nil {
+		return nil, statusError("agent assignments", resp.StatusCode(), resp.ApplicationproblemJSONDefault)
+	}
+	return resp.JSON200.Data, nil
+}
+
+func (c *controlPlane) ReportDeployment(ctx context.Context, deploymentID string, body ReportDeploymentRequestBody) error {
+	resp, err := c.client.ReportDeploymentWithResponse(ctx, deploymentID, body)
+	if err != nil {
+		return fmt.Errorf("report deployment %s: %w", deploymentID, err)
+	}
+	if resp.JSON200 == nil {
+		return statusError("report deployment "+deploymentID, resp.StatusCode(), resp.ApplicationproblemJSONDefault)
+	}
+	return nil
+}
+
+// Transient reports whether err is worth retrying: no response, or a
+// response saying the control plane is busy or failing.
+func Transient(err error) bool {
+	var status *StatusError
+	if !errors.As(err, &status) {
+		return true
+	}
+	return status.Status == http.StatusTooManyRequests || status.Status >= 500
 }
 
 func statusError(operation string, status int, problem *ErrorModel) error {

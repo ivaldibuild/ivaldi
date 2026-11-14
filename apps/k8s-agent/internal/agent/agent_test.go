@@ -202,6 +202,9 @@ type fakeControlPlane struct {
 	assignments  []apiclient.DeploymentAssignment
 	reports      []apiclient.ReportDeploymentRequestBody
 	observations []apiclient.ObservationRequestBody
+	// observedStatus is the status of the Deployment an observation is
+	// answered with; empty means one the observation recorded.
+	observedStatus apiclient.DeploymentSnapshotStatus
 }
 
 func (f *fakeControlPlane) Assignments(context.Context) ([]apiclient.DeploymentAssignment, error) {
@@ -217,11 +220,11 @@ func (f *fakeControlPlane) ReportDeployment(_ context.Context, _ string, body ap
 	return f.reportErr
 }
 
-func (f *fakeControlPlane) Observe(_ context.Context, body apiclient.ObservationRequestBody) error {
+func (f *fakeControlPlane) Observe(_ context.Context, body apiclient.ObservationRequestBody) (*apiclient.DeploymentSnapshot, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.observations = append(f.observations, body)
-	return nil
+	return &apiclient.DeploymentSnapshot{Status: f.observedStatus}, nil
 }
 
 func (f *fakeControlPlane) reportIDs() []string {

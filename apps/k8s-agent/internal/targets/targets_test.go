@@ -95,8 +95,8 @@ func (f *fakeControlPlane) ReportDeployment(context.Context, string, apiclient.R
 	return nil
 }
 
-func (f *fakeControlPlane) Observe(context.Context, apiclient.ObservationRequestBody) error {
-	return nil
+func (f *fakeControlPlane) Observe(context.Context, apiclient.ObservationRequestBody) (*apiclient.DeploymentSnapshot, error) {
+	return &apiclient.DeploymentSnapshot{}, nil
 }
 
 func TestTracker_RefreshChecksAccessAndWatchesTheNamespacesItCanRead(t *testing.T) {

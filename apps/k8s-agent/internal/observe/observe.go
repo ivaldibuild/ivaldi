@@ -169,7 +169,7 @@ func ownedBy(refs []metav1.OwnerReference, uid types.UID) bool {
 
 // podImages returns the images a Pod runs, init containers included, each by
 // digest: the spec's digest when it names one, otherwise the digest the
-// kubelet resolved. A container not started yet has none and is skipped.
+// kubelet resolved. A container that has not started is skipped.
 func podImages(pod *corev1.Pod) []Image {
 	specs := map[string]string{}
 	for _, c := range append(slices.Clone(pod.Spec.InitContainers), pod.Spec.Containers...) {
@@ -178,7 +178,7 @@ func podImages(pod *corev1.Pod) []Image {
 	var out []Image
 	for _, status := range append(slices.Clone(pod.Status.InitContainerStatuses), pod.Status.ContainerStatuses...) {
 		spec, ok := specs[status.Name]
-		if !ok {
+		if !ok || !started(status) {
 			continue
 		}
 		repository, digest := splitImage(spec)
@@ -191,6 +191,14 @@ func podImages(pod *corev1.Pod) []Image {
 		out = append(out, Image{Repository: repository, Digest: digest})
 	}
 	return out
+}
+
+// started reports whether a container has run: it is running, or has
+// terminated now or before, as a completed init container has. A container
+// still waiting, such as one in ImagePullBackOff, has run nothing, whatever
+// its spec names.
+func started(s corev1.ContainerStatus) bool {
+	return s.State.Running != nil || s.State.Terminated != nil || s.LastTerminationState.Terminated != nil
 }
 
 // splitImage splits an image reference into its repository, without tag,

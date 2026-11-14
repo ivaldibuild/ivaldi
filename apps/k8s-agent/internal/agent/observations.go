@@ -29,9 +29,16 @@ func newObservations(cp apiclient.ControlPlane, listed func(string) (targets.Lis
 
 // check observes every Application on every Target the agent can read. A
 // namespace it cannot read is not observed: the heartbeat already says so.
-// It returns the first error that says the agent no longer serves the
-// Cluster.
-func (o *observations) check(ctx context.Context, set targets.Set) error {
+// An Application with a Deployment in flight is not observed either: the
+// control plane records nothing while one is applying or progressing, and
+// what it sees is that rollout. What was sent for it is forgotten, so it is
+// observed afresh once the rollout ends, however it ends. It returns the
+// first error that says the agent no longer serves the Cluster.
+func (o *observations) check(ctx context.Context, set targets.Set, assignments []apiclient.DeploymentAssignment) error {
+	inFlight := map[string]bool{}
+	for _, a := range assignments {
+		inFlight[a.Target.Id+"/"+a.Deployment.ApplicationId] = true
+	}
 	for _, t := range set.Targets {
 		if !t.Capabilities.Observe {
 			continue
@@ -44,6 +51,10 @@ func (o *observations) check(ctx context.Context, set targets.Set) error {
 			return err
 		}
 		for _, app := range t.Applications {
+			if inFlight[t.Id+"/"+app.Id] {
+				delete(o.sent, t.Id+"/"+app.Id)
+				continue
+			}
 			selector := app.WorkloadSelector
 			if len(selector) == 0 {
 				selector = map[string]string{deploy.LabelApplication: app.Id}
@@ -60,8 +71,11 @@ func (o *observations) check(ctx context.Context, set targets.Set) error {
 			if o.sent[slot] == key {
 				continue
 			}
-			err = o.cp.Observe(ctx, o.body(t.TargetView, app.Id, t.Namespace, key, seen))
+			answered, err := o.cp.Observe(ctx, o.body(t.TargetView, app.Id, t.Namespace, key, seen))
 			switch {
+			case err == nil && deferred(answered):
+				// A rollout began since the poll: the control plane kept
+				// the observation for later, so it is sent again.
 			case err == nil:
 				o.sent[slot] = key
 				o.log.Info("observed", "target_id", t.Id, "application_id", app.Id, "images", len(seen.Images))
@@ -78,6 +92,12 @@ func (o *observations) check(ctx context.Context, set targets.Set) error {
 		}
 	}
 	return nil
+}
+
+// deferred reports whether the control plane answered an observation with a
+// Deployment still in flight, which means it recorded nothing.
+func deferred(d *apiclient.DeploymentSnapshot) bool {
+	return d != nil && (d.Status == apiclient.DeploymentSnapshotStatusApplying || d.Status == apiclient.DeploymentSnapshotStatusProgressing)
 }
 
 func (o *observations) body(t apiclient.TargetView, applicationID, namespace, key string, seen observe.Observation) apiclient.ObservationRequestBody {

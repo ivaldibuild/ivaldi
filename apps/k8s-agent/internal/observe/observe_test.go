@@ -62,7 +62,7 @@ func pod(name string, owner types.UID, lbls map[string]string, image, resolved s
 	return &corev1.Pod{
 		ObjectMeta: meta(name, types.UID(name), owner, lbls, nil),
 		Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "main", Image: image}}},
-		Status:     corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{Name: "main", ImageID: resolved}}},
+		Status:     corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{Name: "main", ImageID: resolved, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}}}},
 	}
 }
 
@@ -125,7 +125,9 @@ func TestObserve_DaemonSet_ReadsTheNewestControllerRevision(t *testing.T) {
 func TestObserve_CountsInitContainersAndSkipsUnstartedOnes(t *testing.T) {
 	p := pod("api-1", "rs1", map[string]string{"pod-template-hash": "h"}, "ghcr.io/acme/api:1", "")
 	p.Spec.InitContainers = []corev1.Container{{Name: "migrate", Image: "ghcr.io/acme/migrate:1"}}
-	p.Status.InitContainerStatuses = []corev1.ContainerStatus{{Name: "migrate", ImageID: "ghcr.io/acme/migrate@sha256:m"}}
+	p.Status.ContainerStatuses[0].State = corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "ContainerCreating"}}
+	p.Status.InitContainerStatuses = []corev1.ContainerStatus{{Name: "migrate", ImageID: "ghcr.io/acme/migrate@sha256:m",
+		State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 0}}}}
 	l := fakeLister{
 		deployments: []*appsv1.Deployment{{ObjectMeta: meta("api", "d1", "", app, map[string]string{"deployment.kubernetes.io/revision": "1"})}},
 		replicaSets: []*appsv1.ReplicaSet{{ObjectMeta: meta("api-h", "rs1", "d1", map[string]string{"pod-template-hash": "h"}, map[string]string{"deployment.kubernetes.io/revision": "1"})}},
@@ -158,4 +160,24 @@ func TestKey_IgnoresOrder(t *testing.T) {
 	b := Observation{Images: []Image{{"y", "sha256:2"}, {"x", "sha256:1"}}}
 	assert.Equal(t, a.Key(), b.Key())
 	assert.Len(t, a.Key(), 16)
+}
+
+func TestObserve_IgnoresAContainerThatHasNotStarted(t *testing.T) {
+	// The spec names a digest, but the image never pulled: nothing ran.
+	p := pod("api-1", "rs1", map[string]string{"pod-template-hash": "h"}, "ghcr.io/acme/api@sha256:never", "")
+	p.Status.ContainerStatuses[0].State = corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "ImagePullBackOff"}}
+	l := fakeLister{
+		deployments: []*appsv1.Deployment{{ObjectMeta: meta("api", "d1", "", app, map[string]string{"deployment.kubernetes.io/revision": "1"})}},
+		replicaSets: []*appsv1.ReplicaSet{{ObjectMeta: meta("api-h", "rs1", "d1", map[string]string{"pod-template-hash": "h"}, map[string]string{"deployment.kubernetes.io/revision": "1"})}},
+		pods:        []*corev1.Pod{p},
+	}
+	got, err := Observe(l, app)
+	require.NoError(t, err)
+	assert.Empty(t, got.Images)
+
+	// A container that ran and restarted still counts.
+	p.Status.ContainerStatuses[0].LastTerminationState = corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 1}}
+	got, err = Observe(l, app)
+	require.NoError(t, err)
+	assert.Equal(t, []Image{{Repository: "ghcr.io/acme/api", Digest: "sha256:never"}}, got.Images)
 }

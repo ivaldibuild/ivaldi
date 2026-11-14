@@ -123,7 +123,7 @@ func (a *agent) assignmentLoop(ctx context.Context, tracker targets.Tracker) {
 		case ctx.Err() == nil:
 			a.handle(err, "could not poll for assignments")
 		}
-		if err := seen.check(ctx, set); err != nil && ctx.Err() == nil {
+		if err := seen.check(ctx, set, assignments); err != nil && ctx.Err() == nil {
 			a.handle(err, "could not observe")
 		}
 		select {

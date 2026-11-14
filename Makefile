@@ -3,7 +3,7 @@ SERVER_BINARY_NAME := ivaldi
 K8S_AGENT_BINARY_NAME := ivaldi-k8s-agent
 
 # Stamped into both binaries' --version.
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+VERSION ?= $(shell scripts/version.sh)
 LDFLAGS := -ldflags "-X main.VERSION=$(VERSION)"
 
 # Control-plane capabilities with their own migrations, in the order they are applied.

@@ -51,12 +51,16 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
-Create the name of the service account to use
+The agent's ServiceAccount, Lease, and RBAC objects share the full name.
 */}}
 {{- define "ivaldi-agent.serviceAccountName" -}}
-{{- if .Values.serviceAccount.create }}
-{{- default (include "ivaldi-agent.fullname" .) .Values.serviceAccount.name }}
-{{- else }}
-{{- default "default" .Values.serviceAccount.name }}
+{{ include "ivaldi-agent.fullname" . }}
 {{- end }}
+
+{{/*
+Namespaces the agent reads through RoleBindings when observe.namespaces is
+set: those, and the ones it deploys to, which it must also watch.
+*/}}
+{{- define "ivaldi-agent.observedNamespaces" -}}
+{{- concat .Values.observe.namespaces .Values.execute.namespaces | uniq | toJson }}
 {{- end }}

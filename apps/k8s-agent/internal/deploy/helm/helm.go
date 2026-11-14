@@ -167,7 +167,7 @@ func (d *deployer) Apply(ctx context.Context, a deploy.Assignment, progress depl
 		}
 		return deploy.Applied{}, &deploy.Failure{Reason: "helm could not apply release " + a.HelmReleaseName, Err: err}
 	}
-	return deploy.Applied{Ref: d.ref(cfg.Releases, a.HelmReleaseName)}, nil
+	return deploy.Applied{Ref: d.ref(cfg.Releases, a.HelmReleaseName), SecretsInValues: built.SecretsInValues}, nil
 }
 
 // prepare reads the release's latest revision and decides what to do:

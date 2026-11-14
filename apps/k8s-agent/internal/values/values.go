@@ -8,6 +8,7 @@ package values
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -27,6 +28,17 @@ type Variable struct {
 	// ValuesPath, when set, is the dotted path the value is written to.
 	ValuesPath string
 	Value      string
+}
+
+// Secret is one resolved secret. Overlays may bind it by name, and it is
+// written at ValuesPath when it is delivered as a value; otherwise it
+// reaches the chart through the Kubernetes Secret named in
+// global.ivaldi.secrets.name.
+type Secret struct {
+	Name       string
+	Value      string
+	ValuesPath string
+	AsValue    bool
 }
 
 // Image is one artifact as the Deployment runs it.
@@ -52,12 +64,20 @@ type Input struct {
 	// Ivaldi.Environment.Slug, which overlays and variables may bind.
 	System    map[string]string
 	Variables []Variable
-	Generated Generated
+	Secrets   []Secret
+	// SecretName is the Kubernetes Secret holding the secrets delivered as
+	// a Secret, when there are any.
+	SecretName string
+	Generated  Generated
 }
 
 // Result is a built set of values.
 type Result struct {
 	Values map[string]any
+	// SecretsInValues names the secrets whose values are in Values: those
+	// delivered as a value and those an overlay binds. They end up in the
+	// deployer's own records, so the Deployment says so.
+	SecretsInValues []string
 }
 
 // Build builds the values for in. It returns an error, never a partial
@@ -68,19 +88,46 @@ func Build(_ context.Context, in Input) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if err := checkPaths(in.Variables); err != nil {
+	paths := slices.Clone(in.Variables)
+	for _, s := range in.Secrets {
+		if s.AsValue && s.ValuesPath != "" {
+			paths = append(paths, Variable{Name: s.Name, ValuesPath: s.ValuesPath})
+		}
+	}
+	if err := checkPaths(paths); err != nil {
 		return Result{}, err
 	}
 
+	// Overlays may bind secrets too, which puts their values in the
+	// values; variables may not, so a secret never hides in a text value.
+	inValues := map[string]bool{}
+	overlayBound := maps.Clone(bound)
+	secrets := map[string]bool{}
+	for _, s := range in.Secrets {
+		if _, taken := overlayBound[s.Name]; taken {
+			return Result{}, fmt.Errorf("secret %s has the name of a variable", s.Name)
+		}
+		overlayBound[s.Name] = s.Value
+		secrets[s.Name] = true
+		if s.AsValue {
+			inValues[s.Name] = true
+		}
+	}
 	merged := map[string]any{}
 	for _, doc := range in.Overlays {
 		parsed, err := parse(doc)
 		if err != nil {
 			return Result{}, err
 		}
-		substituted, err := substituteTree(parsed, bound)
+		used := map[string]bool{}
+		substituted, err := substituteTree(parsed, overlayBound, used)
 		if err != nil {
 			return Result{}, fmt.Errorf("overlay %s: %w", doc.Name, err)
+		}
+		for name := range used {
+			if secrets[name] {
+				inValues[name] = true
+			}
 		}
 		merged = merge(merged, substituted.(map[string]any))
 	}
@@ -95,10 +142,23 @@ func Build(_ context.Context, in Input) (Result, error) {
 		}
 	}
 
-	if err := setGenerated(merged, in.Generated.values()); err != nil {
+	for _, s := range in.Secrets {
+		if !s.AsValue || s.ValuesPath == "" {
+			continue
+		}
+		if err := set(merged, s.ValuesPath, s.Value); err != nil {
+			return Result{}, fmt.Errorf("secret %s: %w", s.Name, err)
+		}
+	}
+
+	generated := in.Generated.values()
+	if in.SecretName != "" {
+		generated["secrets"] = map[string]any{"name": in.SecretName}
+	}
+	if err := setGenerated(merged, generated); err != nil {
 		return Result{}, err
 	}
-	return Result{Values: merged}, nil
+	return Result{Values: merged, SecretsInValues: slices.Sorted(maps.Keys(inValues))}, nil
 }
 
 func (g Generated) values() map[string]any {

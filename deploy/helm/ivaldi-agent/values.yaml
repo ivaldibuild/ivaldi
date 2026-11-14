@@ -58,6 +58,9 @@ secrets:
   # -- Namespaces whose Secrets the agent may read, for the kubernetes
   # Secret Store.
   kubernetesNamespaces: []
+  # -- Secrets in the release namespace holding Doppler service tokens,
+  # one per Doppler Secret Store, which the agent may read.
+  dopplerTokenSecrets: []
 
 registry:
   # -- A docker-config Secret in the release namespace with credentials for

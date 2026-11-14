@@ -92,14 +92,16 @@ func substitute(s string, lookup func(string) (string, error)) (string, error) {
 }
 
 // substituteTree substitutes bindings in every string scalar of a parsed
-// document. Keys are left alone, and a binding always yields a string, so
-// it cannot change the document's structure.
-func substituteTree(node any, bound map[string]string) (any, error) {
+// document, recording each name it binds in used. Keys are left alone, and
+// a binding always yields a string, so it cannot change the document's
+// structure.
+func substituteTree(node any, bound map[string]string, used map[string]bool) (any, error) {
 	lookup := func(name string) (string, error) {
 		value, ok := bound[name]
 		if !ok {
 			return "", fmt.Errorf("#{%s} is not defined", name)
 		}
+		used[name] = true
 		return value, nil
 	}
 	switch v := node.(type) {
@@ -107,7 +109,7 @@ func substituteTree(node any, bound map[string]string) (any, error) {
 		return substitute(v, lookup)
 	case map[string]any:
 		for key, child := range v {
-			out, err := substituteTree(child, bound)
+			out, err := substituteTree(child, bound, used)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", key, err)
 			}
@@ -116,7 +118,7 @@ func substituteTree(node any, bound map[string]string) (any, error) {
 		return v, nil
 	case []any:
 		for i, child := range v {
-			out, err := substituteTree(child, bound)
+			out, err := substituteTree(child, bound, used)
 			if err != nil {
 				return nil, fmt.Errorf("[%d]: %w", i, err)
 			}

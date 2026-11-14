@@ -20,6 +20,9 @@ rules:
       {{- with .Values.registry.pullSecret }}
       - {{ . | quote }}
       {{- end }}
+      {{- range .Values.secrets.dopplerTokenSecrets }}
+      - {{ . | quote }}
+      {{- end }}
     verbs: [get]
   - apiGroups: [coordination.k8s.io]
     resources: [leases]

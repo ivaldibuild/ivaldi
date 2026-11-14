@@ -51,6 +51,8 @@ type Config struct {
 	// namespace with credentials for pulling charts.
 	RegistryPullSecret   string
 	MaxConcurrentApplies int
+	// FingerprintSecret holds the key secret fingerprints are made with.
+	FingerprintSecret string
 }
 
 func (c *Config) bind(flags *pflag.FlagSet) {
@@ -76,6 +78,8 @@ func (c *Config) bind(flags *pflag.FlagSet) {
 		"Allow an http:// server URL, which sends credentials in plaintext; for local development only")
 	flags.StringVar(&c.RegistryPullSecret, "registry-pull-secret", "",
 		"Docker-config Secret in the agent's namespace with credentials for pulling charts")
+	flags.StringVar(&c.FingerprintSecret, "fingerprint-secret", "ivaldi-fingerprint-key",
+		"Secret in the agent's namespace holding the key secret fingerprints are made with")
 	flags.IntVar(&c.MaxConcurrentApplies, "max-concurrent-applies", 4, "How many Deployments the agent applies at once")
 }
 

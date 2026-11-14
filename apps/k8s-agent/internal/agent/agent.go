@@ -23,9 +23,14 @@ import (
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/deploy"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/deploy/helm"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/report"
+	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/secrets"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/state"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/targets"
 )
+
+// serviceAccountTokenFile is the Pod's API token, which Vault's Kubernetes
+// auth checks.
+const serviceAccountTokenFile = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 
 // New returns the agent's root command. version is the build's version.
 func New(version string) *cobra.Command {
@@ -55,7 +60,10 @@ func New(version string) *cobra.Command {
 
 func start(ctx context.Context, cfg Config, version string) error {
 	level, _ := cfg.logLevel()
-	log := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+	// Every log line passes through the masker, so no secret value the
+	// agent resolves can reach its logs.
+	masker := secrets.NewMasker()
+	log := slog.New(secrets.NewMaskingHandler(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level}), masker))
 	log.Info("starting", "version", version, "namespace", cfg.Namespace, "server_url", cfg.ServerURL,
 		"authentication_method", cfg.AuthenticationMethod)
 
@@ -109,9 +117,15 @@ func start(ctx context.Context, cfg Config, version string) error {
 		newTracker: func() targets.Tracker { return targets.NewTracker(cp, kube, log) },
 		deployers:  map[string]deploy.Deployer{helmDeployer.Name(): helmDeployer},
 		reporter:   report.New(cp, log),
-		ready:      newReadiness(conditionEnrolled, conditionLease, conditionTargets),
-		enrolRetry: enrolRetry,
-		retryBase:  time.Second,
+		secrets: secrets.NewResolver(secrets.Config{
+			Kube: kube, AgentNamespace: cfg.Namespace, FingerprintSecret: cfg.FingerprintSecret,
+			ServiceAccountTokenFile: serviceAccountTokenFile, Masker: masker, Logger: log,
+		}),
+		secretWriter: secrets.NewWriter(kube),
+		masker:       masker,
+		ready:        newReadiness(conditionEnrolled, conditionLease, conditionTargets),
+		enrolRetry:   enrolRetry,
+		retryBase:    time.Second,
 	}
 	group, ctx := errgroup.WithContext(ctx)
 	runCtx, stopHealth := context.WithCancel(ctx)

@@ -62,6 +62,8 @@ spec:
               value: {{ .Values.enrolment.secretName | quote }}
             - name: IVALDI_STATE_SECRET
               value: {{ .Values.state.secretName | quote }}
+            - name: IVALDI_FINGERPRINT_SECRET
+              value: {{ .Values.fingerprint.secretName | quote }}
             - name: IVALDI_LEASE_NAME
               value: {{ include "ivaldi-agent.fullname" . | quote }}
             - name: IVALDI_MAX_CONCURRENT_APPLIES

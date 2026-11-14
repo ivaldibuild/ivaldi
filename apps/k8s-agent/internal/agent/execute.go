@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"maps"
 	"slices"
@@ -11,6 +12,8 @@ import (
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/apiclient"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/deploy"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/report"
+	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/secrets"
+	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/values"
 )
 
 // applyTimeout bounds one apply, from pulling the chart to Helm's return.
@@ -28,6 +31,9 @@ type executor struct {
 	reporter  report.Reporter
 	log       *slog.Logger
 	timeout   time.Duration
+	secrets   secrets.Resolver
+	writer    secrets.Writer
+	masker    *secrets.Masker
 
 	slots   chan struct{}
 	mu      sync.Mutex
@@ -38,8 +44,14 @@ type executor struct {
 func newExecutor(cp apiclient.ControlPlane, deployers map[string]deploy.Deployer, reporter report.Reporter, log *slog.Logger, max int) *executor {
 	return &executor{
 		cp: cp, deployers: deployers, reporter: reporter, log: log, timeout: applyTimeout,
-		slots: make(chan struct{}, max), running: map[string]bool{},
+		slots: make(chan struct{}, max), running: map[string]bool{}, masker: secrets.NewMasker(),
 	}
+}
+
+// withSecrets lets the executor resolve secrets.
+func (e *executor) withSecrets(r secrets.Resolver, w secrets.Writer, m *secrets.Masker) *executor {
+	e.secrets, e.writer, e.masker = r, w, m
+	return e
 }
 
 // deployerNames lists the deployers, for the heartbeat.
@@ -89,6 +101,27 @@ func (e *executor) poll(ctx context.Context, clusterSlug string) ([]apiclient.De
 	return assignments, nil
 }
 
+// resolveSecrets resolves the assignment's secrets and writes those
+// delivered as a Secret, filling a's Secrets and SecretName.
+func (e *executor) resolveSecrets(ctx context.Context, a *deploy.Assignment, progress deploy.Progress) ([]secrets.Resolved, error) {
+	if len(a.SecretRefs) == 0 {
+		return nil, nil
+	}
+	if e.secrets == nil {
+		return nil, deploy.Failf("this agent cannot resolve secrets")
+	}
+	progress(deploy.StepResolving, fmt.Sprintf("resolving %d secrets", len(a.SecretRefs)))
+	resolved, err := e.secrets.Resolve(ctx, a.Namespace, a.SecretRefs)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range resolved {
+		a.Secrets = append(a.Secrets, values.Secret{Name: r.Name, Value: r.Value, ValuesPath: r.ValuesPath, AsValue: r.AsValue})
+	}
+	a.SecretName, err = e.writer.Write(ctx, a.Namespace, a.ApplicationID, a.DeploymentID, resolved)
+	return resolved, err
+}
+
 // wait waits for the applies in flight to finish their reports.
 func (e *executor) wait() { e.wg.Wait() }
 
@@ -100,6 +133,7 @@ func (e *executor) apply(ctx context.Context, a deploy.Assignment) {
 	applyCtx, cancel := context.WithTimeout(ctx, e.timeout)
 	defer cancel()
 	progress := func(step deploy.Step, message string) {
+		message = e.masker.Mask(message)
 		log.Info(message, "step", step)
 		_ = e.reporter.Send(applyCtx, a.DeploymentID, report.Report{
 			Step: string(step), Kind: report.KindProgress,
@@ -108,10 +142,18 @@ func (e *executor) apply(ctx context.Context, a deploy.Assignment) {
 	}
 
 	var applied deploy.Applied
-	deployer, ok := e.deployers[a.Deployer]
-	err := error(deploy.Failf("this agent has no %q deployer", a.Deployer))
-	if ok {
-		applied, err = deployer.Apply(applyCtx, a, progress)
+	resolved, err := e.resolveSecrets(applyCtx, &a, progress)
+	defer func() {
+		if e.secrets != nil {
+			e.secrets.Release(resolved)
+		}
+	}()
+	if err == nil {
+		deployer, ok := e.deployers[a.Deployer]
+		err = deploy.Failf("this agent has no %q deployer", a.Deployer)
+		if ok {
+			applied, err = deployer.Apply(applyCtx, a, progress)
+		}
 	}
 	if ctx.Err() != nil {
 		log.Info("stopped mid-apply; the deployment stays applying")
@@ -126,9 +168,9 @@ func (e *executor) apply(ctx context.Context, a deploy.Assignment) {
 			failure = &deploy.Failure{Reason: "the apply did not finish within " + e.timeout.String(), Err: err}
 		}
 		log.Error("the apply failed", "reason", failure.Error())
-		detail := map[string]any{"reason": failure.Error()}
+		detail := map[string]any{"reason": e.masker.Mask(failure.Error())}
 		for k, v := range failure.Detail {
-			detail[k] = v
+			detail[k] = e.masker.MaskAny(v)
 		}
 		_ = e.reporter.Send(final, a.DeploymentID, report.Report{
 			Step: "failed", Kind: report.KindStatusChanged, Status: apiclient.ReportDeploymentRequestBodyStatusFailed, Detail: detail,
@@ -139,6 +181,19 @@ func (e *executor) apply(ctx context.Context, a deploy.Assignment) {
 	detail := map[string]any{"external_ref": applied.Ref, "already_applied": applied.Skipped}
 	if a.IsRollback() {
 		detail["restores"] = a.Restores
+	}
+	if len(resolved) > 0 {
+		// The pins a rollback replays, never the values.
+		pins := make([]any, 0, len(resolved))
+		for _, r := range resolved {
+			pins = append(pins, r.Pin())
+		}
+		detail["secrets"] = pins
+	}
+	if len(applied.SecretsInValues) > 0 {
+		// These are in the deployer's records too, such as Helm's release
+		// history, which the deploy sheet warns about.
+		detail["secrets_in_values"] = applied.SecretsInValues
 	}
 	_ = e.reporter.Send(final, a.DeploymentID, report.Report{
 		Step: "applied", Kind: report.KindStatusChanged, Status: apiclient.ReportDeploymentRequestBodyStatusProgressing,

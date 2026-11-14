@@ -82,7 +82,10 @@
     "secrets": {
       "type": "object",
       "additionalProperties": false,
-      "properties": { "kubernetesNamespaces": { "$ref": "#/definitions/namespaces" } }
+      "properties": {
+        "kubernetesNamespaces": { "$ref": "#/definitions/namespaces" },
+        "dopplerTokenSecrets": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/definitions/name" } }
+      }
     },
     "registry": {
       "type": "object",

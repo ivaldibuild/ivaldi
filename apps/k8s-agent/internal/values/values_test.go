@@ -162,3 +162,32 @@ func keys(m map[string]any) []string {
 	}
 	return out
 }
+
+func TestBuild_Secrets(t *testing.T) {
+	got, err := Build(t.Context(), Input{
+		Overlays: []Document{doc("a.yaml", "smtp: {password: \"#{SMTP_PASSWORD}\"}\n")},
+		Secrets: []Secret{
+			{Name: "DB_PASSWORD", Value: "hunter22"},
+			{Name: "SMTP_PASSWORD", Value: "mailpass"},
+			{Name: "API_KEY", Value: "key-123", ValuesPath: "api.key", AsValue: true},
+		},
+		SecretName: "ivaldi-app-1-dep-1",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{"password": "mailpass"}, got.Values["smtp"], "an overlay may bind a secret")
+	assert.Equal(t, map[string]any{"key": "key-123"}, got.Values["api"], "a secret delivered as a value is written at its path")
+	assert.Equal(t, map[string]any{"name": "ivaldi-app-1-dep-1"}, got.Values["global"].(map[string]any)["ivaldi"].(map[string]any)["secrets"])
+	assert.Equal(t, []string{"API_KEY", "SMTP_PASSWORD"}, got.SecretsInValues, "the secrets now in the values, for the warning")
+
+	_, err = Build(t.Context(), Input{
+		Variables: []Variable{{Name: "Url", Value: "postgres://#{DB_PASSWORD}@db"}},
+		Secrets:   []Secret{{Name: "DB_PASSWORD", Value: "hunter22"}},
+	})
+	require.ErrorContains(t, err, "#{DB_PASSWORD} is not defined", "a text variable may not bind a secret")
+
+	_, err = Build(t.Context(), Input{
+		Variables: []Variable{{Name: "Db", ValuesPath: "db", Value: "x"}},
+		Secrets:   []Secret{{Name: "DB_PASSWORD", Value: "y", ValuesPath: "db.password", AsValue: true}},
+	})
+	require.ErrorContains(t, err, "overlapping values paths")
+}

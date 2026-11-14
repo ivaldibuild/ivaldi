@@ -8,7 +8,6 @@
       <h2 id="cluster-guide-heading" class="text-heading text-lg font-semibold">
         Connect the cluster
       </h2>
-      <span hlmBadge variant="outline">Preview</span>
     </div>
     <p class="text-muted-foreground text-sm">
       Name the cluster, install its agent, and wait for the first heartbeat. The guide never stores
@@ -136,6 +135,21 @@
             Comma-separated. The chart grants write access only there; Ivaldi cannot widen it.
           </p>
         </div>
+        <label class="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            class="mt-1"
+            [checked]="choices().allowRBAC"
+            (change)="setAllowRBAC($any($event.target).checked)"
+          />
+          <span>
+            Let charts manage Roles and RoleBindings there
+            <span class="text-muted-foreground block text-[13px]">
+              Binds the built-in admin ClusterRole instead of edit in those namespaces. Leave it off
+              unless a chart you deploy creates RBAC objects.
+            </span>
+          </span>
+        </label>
         <div class="grid gap-4 sm:grid-cols-2">
           <div hlmField>
             <label hlmFieldLabel for="guide-namespace">Agent namespace</label>

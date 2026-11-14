@@ -23,7 +23,6 @@ import {
   lucideX,
 } from '@ng-icons/lucide';
 import { HlmAlertImports } from '@spartan-ng/helm/alert';
-import { HlmBadgeImports } from '@spartan-ng/helm/badge';
 import { HlmButtonImports } from '@spartan-ng/helm/button';
 import { HlmFieldImports } from '@spartan-ng/helm/field';
 import { HlmInputImports } from '@spartan-ng/helm/input';
@@ -34,6 +33,12 @@ import { RequestStatus } from '../../shared/request-status';
 import { ClustersApi } from '../clusters-api';
 import { DeliveryApi, slugify } from '../delivery-api';
 import { slugPattern } from './new-project-page';
+import {
+  AgentChoices,
+  agentValues,
+  enrolmentSecretName,
+  namespaceList,
+} from './cluster-guide-values';
 
 const emptyCluster = { display_name: '', slug: '' };
 const dnsLabel = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -41,14 +46,6 @@ const dnsLabel = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const pollMs = 3000;
 /** How long a step may make no progress before the guide offers help. */
 const stallMs = 2 * 60 * 1000;
-
-interface Choices {
-  observeAll: boolean;
-  observeNamespaces: string;
-  executeNamespaces: string;
-  agentNamespace: string;
-  authentication: 'bearer' | 'kubernetes';
-}
 
 /**
  * The guided path from "I have a cluster" to "Ivaldi sees it": name the
@@ -63,7 +60,6 @@ interface Choices {
     FormField,
     NgIcon,
     HlmAlertImports,
-    HlmBadgeImports,
     HlmButtonImports,
     HlmFieldImports,
     HlmInputImports,
@@ -142,10 +138,11 @@ export class ClusterGuide implements OnInit {
 
   // Step 2: what the agent may do. These only shape the chart values; the
   // cluster's RBAC is the control.
-  protected readonly choices = signal<Choices>({
+  protected readonly choices = signal<AgentChoices>({
     observeAll: true,
     observeNamespaces: '',
     executeNamespaces: '',
+    allowRBAC: false,
     agentNamespace: 'ivaldi-system',
     authentication: 'bearer',
   });
@@ -159,6 +156,9 @@ export class ClusterGuide implements OnInit {
   }
   protected setExecuteNamespaces(value: string): void {
     this.choices.update((c) => ({ ...c, executeNamespaces: value }));
+  }
+  protected setAllowRBAC(value: boolean): void {
+    this.choices.update((c) => ({ ...c, allowRBAC: value }));
   }
   protected setAgentNamespace(value: string): void {
     this.choices.update((c) => ({ ...c, agentNamespace: value }));
@@ -178,8 +178,8 @@ export class ClusterGuide implements OnInit {
       return 'The agent namespace must be a Kubernetes namespace: lower-case letters, digits and hyphens.';
     }
     const named = [
-      ...(c.observeAll ? [] : list(c.observeNamespaces)),
-      ...list(c.executeNamespaces),
+      ...(c.observeAll ? [] : namespaceList(c.observeNamespaces)),
+      ...namespaceList(c.executeNamespaces),
     ];
     const bad = named.filter((ns) => !dnsLabel.test(ns));
     if (bad.length > 0) {
@@ -231,29 +231,7 @@ export class ClusterGuide implements OnInit {
 
   protected valuesYaml(): string {
     const install = this.enrolment()?.install;
-    if (!install) {
-      return '';
-    }
-    const c = this.choices();
-    const observe = c.observeAll ? [] : list(c.observeNamespaces);
-    const execute = list(c.executeNamespaces);
-    const lines = [
-      'controlPlane:',
-      `  url: ${install.server_url}`,
-      'agent:',
-      `  authentication: ${c.authentication}`,
-      'enrolment:',
-      '  secretName: ivaldi-enrolment',
-      'state:',
-      '  secretName: ivaldi-state',
-      'fingerprint:',
-      '  secretName: ivaldi-fingerprint-key',
-      'observe:',
-      namespaces('  ', observe),
-      'execute:',
-      namespaces('  ', execute),
-    ];
-    return `${lines.join('\n')}\n`;
+    return install ? agentValues(install.server_url, this.choices()) : '';
   }
 
   protected namespaceCommand(): string {
@@ -267,7 +245,7 @@ export class ClusterGuide implements OnInit {
   protected secretCommand(): string {
     return [
       'read -rs IVALDI_ENROLMENT_TOKEN  # paste the token, then press Enter',
-      `kubectl -n ${this.agentNamespace()} create secret generic ivaldi-enrolment --from-literal=token="$IVALDI_ENROLMENT_TOKEN" --dry-run=client -o yaml | kubectl apply -f -`,
+      `kubectl -n ${this.agentNamespace()} create secret generic ${enrolmentSecretName} --from-literal=token="$IVALDI_ENROLMENT_TOKEN" --dry-run=client -o yaml | kubectl apply -f -`,
       'unset IVALDI_ENROLMENT_TOKEN',
     ].join('\n');
   }
@@ -480,18 +458,4 @@ export class ClusterGuide implements OnInit {
   protected readonly mintError = computed(() => this.errorOf(this.minting.error()));
   protected readonly createError = computed(() => this.errorOf(this.creating.error()));
   protected readonly targetError = computed(() => this.errorOf(this.addingTarget.error()));
-}
-
-function list(value: string): string[] {
-  return value
-    .split(/[\s,]+/)
-    .map((v) => v.trim())
-    .filter(Boolean);
-}
-
-function namespaces(indent: string, values: string[]): string {
-  if (values.length === 0) {
-    return `${indent}namespaces: []`;
-  }
-  return `${indent}namespaces:\n${values.map((v) => `${indent}  - ${v}`).join('\n')}`;
 }

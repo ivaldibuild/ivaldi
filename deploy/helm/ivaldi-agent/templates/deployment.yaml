@@ -2,12 +2,14 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ include "ivaldi-agent.fullname" . }}
+  namespace: {{ .Release.Namespace }}
   labels:
     {{- include "ivaldi-agent.labels" . | nindent 4 }}
 spec:
-  {{- if not .Values.autoscaling.enabled }}
-  replicas: {{ .Values.replicaCount }}
-  {{- end }}
+  # One active agent per cluster: Recreate here, and a Lease in the agent.
+  replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "ivaldi-agent.selectorLabels" . | nindent 6 }}
@@ -23,47 +25,148 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
+      serviceAccountName: {{ include "ivaldi-agent.serviceAccountName" . }}
+      automountServiceAccountToken: false
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "ivaldi-agent.serviceAccountName" . }}
-      {{- with .Values.podSecurityContext }}
       securityContext:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
       containers:
-        - name: {{ .Chart.Name }}
-          {{- with .Values.securityContext }}
-          securityContext:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        - name: agent
+          {{- /* An image tag cannot hold SemVer build metadata's "+"; CI tags
+               the image with "_" in its place, as Helm does in labels. */}}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default (.Chart.AppVersion | replace "+" "_") }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: IVALDI_SERVER_URL
+              value: {{ required "controlPlane.url is required" .Values.controlPlane.url | quote }}
+            {{- if .Values.controlPlane.allowInsecureHTTP }}
+            - name: IVALDI_ALLOW_INSECURE_HTTP
+              value: "true"
+            {{- end }}
+            - name: IVALDI_AUTHENTICATION_METHOD
+              value: {{ .Values.agent.authentication | quote }}
+            - name: IVALDI_ENROLMENT_SECRET
+              value: {{ .Values.enrolment.secretName | quote }}
+            - name: IVALDI_STATE_SECRET
+              value: {{ .Values.state.secretName | quote }}
+            - name: IVALDI_LEASE_NAME
+              value: {{ include "ivaldi-agent.fullname" . | quote }}
+            - name: IVALDI_MAX_CONCURRENT_APPLIES
+              value: {{ .Values.maxConcurrentApplies | quote }}
+            {{- with .Values.registry.pullSecret }}
+            - name: IVALDI_REGISTRY_PULL_SECRET
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if .Values.controlPlane.caConfigMap }}
+            - name: IVALDI_CLIENT_CA_FILE
+              value: /etc/ivaldi/ca/ca.crt
+            {{- end }}
+            {{- if eq .Values.agent.authentication "mtls" }}
+            - name: IVALDI_CLIENT_CERT_FILE
+              value: /var/run/secrets/ivaldi/tls/tls.crt
+            - name: IVALDI_CLIENT_KEY_FILE
+              value: /var/run/secrets/ivaldi/tls/tls.key
+            {{- end }}
+            - name: IVALDI_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: IVALDI_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            # Helm's registry client looks for configuration under HOME.
+            - name: HOME
+              value: /tmp
           ports:
-            - name: http
-              containerPort: {{ .Values.service.port }}
-              protocol: TCP
-          {{- with .Values.livenessProbe }}
+            - name: health
+              containerPort: 8080
           livenessProbe:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-          {{- with .Values.readinessProbe }}
+            httpGet:
+              path: /healthz
+              port: health
+            periodSeconds: 20
           readinessProbe:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-          {{- with .Values.resources }}
+            httpGet:
+              path: /readyz
+              port: health
+            periodSeconds: 10
           resources:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-          {{- with .Values.volumeMounts }}
+            {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-      {{- with .Values.volumes }}
+            - name: kube-api-access
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
+            - name: ivaldi-token
+              mountPath: /var/run/secrets/ivaldi
+              readOnly: true
+            {{- if eq .Values.agent.authentication "mtls" }}
+            - name: tls
+              mountPath: /var/run/secrets/ivaldi/tls
+              readOnly: true
+            {{- end }}
+            {{- if .Values.controlPlane.caConfigMap }}
+            - name: ca
+              mountPath: /etc/ivaldi/ca
+              readOnly: true
+            {{- end }}
+            - name: tmp
+              mountPath: /tmp
       volumes:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+        # The Kubernetes API credentials automounting would give, mounted
+        # explicitly because automounting is off.
+        - name: kube-api-access
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3607
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+              - downwardAPI:
+                  items:
+                    - path: namespace
+                      fieldRef:
+                        fieldPath: metadata.namespace
+        # The token the agent presents to the control plane, for the
+        # kubernetes method; its audience must match the control plane's
+        # runners.kubernetes_audience.
+        - name: ivaldi-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: ivaldi
+                  expirationSeconds: 3600
+        {{- if eq .Values.agent.authentication "mtls" }}
+        - name: tls
+          secret:
+            secretName: {{ required "agent.tlsSecretName is required for mtls" .Values.agent.tlsSecretName }}
+        {{- end }}
+        {{- with .Values.controlPlane.caConfigMap }}
+        - name: ca
+          configMap:
+            name: {{ . }}
+        {{- end }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

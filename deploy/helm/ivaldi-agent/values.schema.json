@@ -1,0 +1,124 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ivaldi-agent values",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["controlPlane"],
+  "definitions": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+      "maxLength": 253
+    },
+    "optionalName": {
+      "type": "string",
+      "pattern": "^([a-z0-9]([-a-z0-9.]*[a-z0-9])?)?$",
+      "maxLength": 253
+    },
+    "namespaces": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+        "maxLength": 63
+      }
+    }
+  },
+  "properties": {
+    "controlPlane": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url"],
+      "properties": {
+        "url": { "type": "string", "pattern": "^https?://[^\\s/]+(/\\S*)?$" },
+        "caConfigMap": { "$ref": "#/definitions/optionalName" },
+        "allowInsecureHTTP": { "type": "boolean" }
+      },
+      "if": { "not": { "properties": { "allowInsecureHTTP": { "const": true } }, "required": ["allowInsecureHTTP"] } },
+      "then": { "properties": { "url": { "pattern": "^https://" } } }
+    },
+    "agent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "authentication": { "enum": ["kubernetes", "bearer", "mtls"] },
+        "tlsSecretName": { "$ref": "#/definitions/optionalName" }
+      },
+      "if": { "properties": { "authentication": { "const": "mtls" } }, "required": ["authentication"] },
+      "then": { "required": ["tlsSecretName"], "properties": { "tlsSecretName": { "$ref": "#/definitions/name" } } }
+    },
+    "enrolment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "token": { "type": "string" },
+        "secretName": { "$ref": "#/definitions/name" }
+      }
+    },
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "secretName": { "$ref": "#/definitions/name" } }
+    },
+    "fingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "secretName": { "$ref": "#/definitions/name" } }
+    },
+    "observe": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "namespaces": { "$ref": "#/definitions/namespaces" } }
+    },
+    "execute": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "namespaces": { "$ref": "#/definitions/namespaces" },
+        "allowRBAC": { "type": "boolean" }
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "kubernetesNamespaces": { "$ref": "#/definitions/namespaces" } }
+    },
+    "registry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "pullSecret": { "$ref": "#/definitions/optionalName" } }
+    },
+    "maxConcurrentApplies": { "type": "integer", "minimum": 1, "maximum": 64 },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string" },
+        "pullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] }
+      }
+    },
+    "imagePullSecrets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": { "name": { "$ref": "#/definitions/name" } }
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "annotations": { "type": "object", "additionalProperties": { "type": "string" } } }
+    },
+    "resources": { "type": "object" },
+    "podAnnotations": { "type": "object", "additionalProperties": { "type": "string" } },
+    "podLabels": { "type": "object", "additionalProperties": { "type": "string" } },
+    "nodeSelector": { "type": "object", "additionalProperties": { "type": "string" } },
+    "tolerations": { "type": "array" },
+    "affinity": { "type": "object" },
+    "nameOverride": { "type": "string" },
+    "fullnameOverride": { "type": "string" }
+  }
+}

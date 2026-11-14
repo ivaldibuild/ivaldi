@@ -1,142 +1,97 @@
-# Default values for ivaldi-agent.
-# This is a YAML-formatted file.
-# Declare variables to be passed into your templates.
+# The Ivaldi Kubernetes agent. The web app's cluster onboarding guide writes
+# these values for you; values.schema.json lists and checks every one.
 
-# This will set the replicaset count more information can be found here: https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/
-replicaCount: 1
+controlPlane:
+  # -- The control plane's URL, as the cluster reaches it. Required, and
+  # https unless allowInsecureHTTP is set.
+  url: ""
+  # -- Allow an http:// url, which sends the agent's credentials in
+  # plaintext. For local development only.
+  allowInsecureHTTP: false
+  # -- A ConfigMap in the release namespace with a "ca.crt" that verifies
+  # the control plane, when it uses a private CA.
+  caConfigMap: ""
 
-# This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
+agent:
+  # -- How the agent authenticates to the control plane: kubernetes (a
+  # projected service-account token; the control plane must trust this
+  # cluster's OIDC issuer), bearer (a token Ivaldi issues), or mtls.
+  authentication: kubernetes
+  # -- For mtls: a kubernetes.io/tls Secret with the agent's client
+  # certificate.
+  tlsSecretName: ""
+
+enrolment:
+  # -- The one-time enrolment token. Prefer creating the Secret yourself, as
+  # the onboarding guide does, so the token is never in a values file; when
+  # this is set, the chart creates the Secret.
+  token: ""
+  # -- The Secret holding the token under the key "token".
+  secretName: ivaldi-enrolment
+
+state:
+  # -- The Secret the agent keeps its credential in. The chart creates it.
+  secretName: ivaldi-state
+
+fingerprint:
+  # -- The Secret holding the key the agent fingerprints secret values
+  # with. The chart creates it empty and keeps it on uninstall; back it up
+  # with the cluster's other Secrets, because rollbacks compare against
+  # fingerprints made with it.
+  secretName: ivaldi-fingerprint-key
+
+observe:
+  # -- Namespaces the agent may read. Empty means every namespace,
+  # read-only, through a ClusterRoleBinding.
+  namespaces: []
+
+execute:
+  # -- Namespaces the agent may deploy to, through a RoleBinding to the
+  # built-in edit ClusterRole in each. The agent is never given
+  # cluster-wide writes.
+  namespaces: []
+  # -- Bind admin instead of edit, so charts may create Roles and
+  # RoleBindings in those namespaces.
+  allowRBAC: false
+
+secrets:
+  # -- Namespaces whose Secrets the agent may read, for the kubernetes
+  # Secret Store.
+  kubernetesNamespaces: []
+
+registry:
+  # -- A docker-config Secret in the release namespace with credentials for
+  # pulling charts.
+  pullSecret: ""
+
+# -- How many Deployments the agent applies at once.
+maxConcurrentApplies: 4
+
 image:
-  repository: ghcr.io/ivaldibuild/k8s-agent
-  # This sets the pull policy for images.
-  pullPolicy: IfNotPresent
-  # Overrides the image tag whose default is the chart appVersion.
+  repository: ghcr.io/ivaldibuild/ivaldi-k8s-agent
+  # -- Defaults to the chart's appVersion.
   tag: ""
+  pullPolicy: IfNotPresent
 
-# This is for the secrets for pulling an image from a private repository more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
 imagePullSecrets: []
-# This is to override the chart name.
-nameOverride: ""
-fullnameOverride: ""
 
-# This section builds out the service account more information can be found here: https://kubernetes.io/docs/concepts/security/service-accounts/
 serviceAccount:
-  # Specifies whether a service account should be created.
-  create: true
-  # Automatically mount a ServiceAccount's API credentials?
-  automount: true
-  # Annotations to add to the service account.
+  # -- Annotations for the agent's ServiceAccount, such as an IAM role for
+  # a cloud Secret Store.
   annotations: {}
-  # The name of the service account to use.
-  # If not set and create is true, a name is generated using the fullname template.
-  name: ""
 
-# This is for setting Kubernetes Annotations to a Pod.
-# For more information checkout: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
-podAnnotations: {}
-# This is for setting Kubernetes Labels to a Pod.
-# For more information checkout: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
-podLabels: {}
-
-podSecurityContext: {}
-  # fsGroup: 2000
-
-securityContext: {}
-  # capabilities:
-  #   drop:
-  #   - ALL
-  # readOnlyRootFilesystem: true
-  # runAsNonRoot: true
-  # runAsUser: 1000
-
-# This is for setting up a service more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/
-service:
-  # This sets the service type more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
-  type: ClusterIP
-  # This sets the ports more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#field-spec-ports
-  port: 80
-
-# -- Expose the service via gateway-api HTTPRoute
-# Requires Gateway API resources and suitable controller installed within the cluster
-# (see: https://gateway-api.sigs.k8s.io/guides/)
-httpRoute:
-  # HTTPRoute enabled.
-  enabled: false
-  # HTTPRoute annotations.
-  annotations: {}
-  # Which Gateways this Route is attached to.
-  parentRefs:
-  - name: gateway
-    sectionName: http
-    # namespace: default
-  # Hostnames matching HTTP header.
-  hostnames:
-  - chart-example.local
-  # List of rules and filters applied.
-  rules:
-  - matches:
-    - path:
-        type: PathPrefix
-        value: /headers
-  #   filters:
-  #   - type: RequestHeaderModifier
-  #     requestHeaderModifier:
-  #       set:
-  #       - name: My-Overwrite-Header
-  #         value: this-is-the-only-value
-  #       remove:
-  #       - User-Agent
-  # - matches:
-  #   - path:
-  #       type: PathPrefix
-  #       value: /echo
-  #     headers:
-  #     - name: version
-  #       value: v2
-
-# Resource requests and limits for the agent container.
 resources:
-  limits:
-    cpu: 1
-    memory: 1Gi
   requests:
-    cpu: 200m
+    cpu: 50m
     memory: 128Mi
+  limits:
+    memory: 512Mi
 
-# This is to setup the liveness and readiness probes more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
-livenessProbe:
-  httpGet:
-    path: /
-    port: http
-readinessProbe:
-  httpGet:
-    path: /
-    port: http
-
-# This section is for setting up autoscaling more information can be found here: https://kubernetes.io/docs/concepts/workloads/autoscaling/
-autoscaling:
-  enabled: false
-  minReplicas: 1
-  maxReplicas: 100
-  targetCPUUtilizationPercentage: 80
-  # targetMemoryUtilizationPercentage: 80
-
-# Additional volumes on the output Deployment definition.
-volumes:
-  - name: credentials
-    persistentVolumeClaim:
-      claimName: credentials-pvc
-
-# Additional volumeMounts on the output Deployment definition.
-volumeMounts:
-  - name: credentials
-    mountPath: "/var/lib/ivaldi"
-
+podAnnotations: {}
+podLabels: {}
 nodeSelector: {}
-
 tolerations: []
-
 affinity: {}
 
-# Interval at which the agent sends heartbeat signals to the control plane.
-agentHeartbeatInterval: 30s
+nameOverride: ""
+fullnameOverride: ""

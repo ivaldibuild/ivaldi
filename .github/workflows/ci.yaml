@@ -5,6 +5,9 @@ on:
   push:
     branches:
       - main
+    # A release tag publishes a release-numbered agent image and chart.
+    tags:
+      - 'v*'
   merge_group:
   workflow_dispatch:
 
@@ -43,13 +46,15 @@ jobs:
       # Only pushes need the repository: paths-filter compares their commits,
       # which needs history. Pull requests go through the API.
       - name: Checkout repository
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      # A tag push has no meaningful diff, so its outputs stay empty and
+      # every job runs.
       - name: Detect changed paths
         id: filter
-        if: github.event_name == 'pull_request' || github.event_name == 'push'
+        if: github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/'))
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
           # Every filter lists this workflow, so a change to CI runs all of it.
@@ -65,14 +70,19 @@ jobs:
               - 'go.work.sum'
               - 'mise.toml'
               - 'Makefile'
+              - 'scripts/version.sh'
             webui:
               - '.github/workflows/ci.yaml'
               - 'apps/webui/**'
               - 'api/openapi.json'
+              # The cluster guide's values are checked against the chart's schema.
+              - 'deploy/helm/ivaldi-agent/values.schema.json'
               - 'mise.toml'
             charts:
               - '.github/workflows/ci.yaml'
               - 'deploy/helm/**'
+              # It sets the version the chart is published with.
+              - 'scripts/version.sh'
 
   go-test:
     name: Test ${{ matrix.module }}
@@ -323,7 +333,7 @@ jobs:
   images:
     name: Image ${{ matrix.image }}
     needs: changes
-    if: needs.changes.outputs.go != 'false' || needs.changes.outputs.webui != 'false'
+    if: needs.changes.outputs.go != 'false' || needs.changes.outputs.webui != 'false' || needs.changes.outputs.charts != 'false'
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 20
     permissions:
@@ -332,9 +342,9 @@ jobs:
       # whatever this says, which is fine: pull requests never push.
       packages: write
     env:
-      # Only pushes to main publish images; pull requests and the merge queue
-      # build them to check the Dockerfiles.
-      PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      # Only pushes to main and release tags publish images; pull requests and
+      # the merge queue build them to check the Dockerfiles.
+      PUSH: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
     strategy:
       fail-fast: false
       matrix:
@@ -347,6 +357,13 @@ jobs:
             context: apps/webui
             file: apps/webui/Dockerfile
             changed: ${{ needs.changes.outputs.webui }}
+          # Built when the chart changes too: each chart version names the
+          # image of the same version, so the chart is never published
+          # without it (see publish-chart).
+          - image: ivaldi-k8s-agent
+            context: .
+            file: apps/k8s-agent/Dockerfile
+            changed: ${{ (needs.changes.outputs.go == 'false' && needs.changes.outputs.charts == 'false') && 'false' || 'true' }}
     steps:
       # A job's `if` cannot see the matrix, so a leg whose paths did not change
       # skips its steps instead.
@@ -357,10 +374,16 @@ jobs:
           # The version stamped into ivaldi comes from `git describe`, as `make
           # build` does, which needs tags.
           fetch-depth: 0
+      # One version for the control plane, the agent, its image, and its
+      # chart. An image tag cannot hold SemVer build metadata's "+", so the
+      # tag has "_" in its place, which the agent chart renders the same way.
       - name: Describe version
         id: version
         if: matrix.changed != 'false'
-        run: echo "version=$(git describe --tags --always)" >> "$GITHUB_OUTPUT"
+        run: |
+          version=$(scripts/version.sh)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=${version//+/_}" >> "$GITHUB_OUTPUT"
       # Tags each image with the full commit SHA, and with `main` on main. The
       # labels include org.opencontainers.image.source, which links the ghcr.io
       # package to this repository so it inherits the repository's access.
@@ -373,6 +396,7 @@ jobs:
           tags: |
             type=sha,format=long
             type=ref,event=branch
+            type=raw,value=${{ steps.version.outputs.tag }}
           labels: |
             org.opencontainers.image.version=${{ steps.version.outputs.version }}
       - name: Log in to ghcr.io
@@ -400,8 +424,8 @@ jobs:
           push: ${{ env.PUSH == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Only the control plane's Dockerfile takes a VERSION.
-          build-args: ${{ matrix.image == 'ivaldi' && format('VERSION={0}', steps.version.outputs.version) || '' }}
+          # The Go images take a VERSION; the web UI's does not.
+          build-args: ${{ matrix.image != 'ivaldi-webui' && format('VERSION={0}', steps.version.outputs.version) || '' }}
 
   charts:
     name: Helm charts
@@ -416,7 +440,55 @@ jobs:
         with:
           version: v4.3.1
       - name: Lint charts
-        run: helm lint --strict deploy/helm/ivaldi deploy/helm/ivaldi-agent
+        run: |
+          helm lint --strict deploy/helm/ivaldi
+          # The agent chart requires the control plane's URL.
+          helm lint --strict deploy/helm/ivaldi-agent --set controlPlane.url=https://ivaldi.example.com
+
+  # Publishes the agent chart to ghcr.io as an OCI artifact, with the same
+  # version as the agent image published by the images job in this run.
+  publish-chart:
+    name: Publish agent chart
+    needs: [changes, images, charts]
+    # !cancelled() overrides the implicit success(), which would skip this
+    # job whenever charts is skipped, as on a push that changes only Go.
+    if: >-
+      !cancelled()
+      && github.event_name == 'push'
+      && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+      && needs.images.result == 'success'
+      && needs.charts.result != 'failure'
+      && (needs.changes.outputs.go != 'false' || needs.changes.outputs.charts != 'false')
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Describe version
+        id: version
+        run: echo "version=$(scripts/version.sh)" >> "$GITHUB_OUTPUT"
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
+        with:
+          version: v4.3.1
+      - name: Log in to ghcr.io
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
+      - name: Package and push
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          REPOSITORY: oci://ghcr.io/${{ github.repository_owner }}/charts
+        run: |
+          # Chart versions are immutable: refuse to overwrite one.
+          if helm show chart "$REPOSITORY/ivaldi-agent" --version "$VERSION" >/dev/null 2>&1; then
+            echo "::error::ivaldi-agent $VERSION is already published"
+            exit 1
+          fi
+          helm package deploy/helm/ivaldi-agent --version "$VERSION" --app-version "$VERSION" --destination dist
+          helm push "dist/ivaldi-agent-$VERSION.tgz" "$REPOSITORY"
 
   # The one check branch protection should require. Which jobs run depends on
   # the paths a change touches, and GitHub counts a skipped required check as
@@ -424,7 +496,7 @@ jobs:
   ci-ok:
     name: CI
     if: always()
-    needs: [changes, go-test, go-check, build, migrations, webui, generated, images, charts]
+    needs: [changes, go-test, go-check, build, migrations, webui, generated, images, charts, publish-chart]
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 2
     steps:

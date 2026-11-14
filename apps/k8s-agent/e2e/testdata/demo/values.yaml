@@ -1,0 +1,2 @@
+# Set by the values-e2e.yaml overlay, which the e2e's placement selects.
+environment: none

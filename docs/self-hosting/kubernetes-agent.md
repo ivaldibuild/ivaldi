@@ -32,6 +32,8 @@ runners:
 
 and install with `--set image.repository=registry.example.com/ivaldi-k8s-agent`.
 
+The agent pulls charts over HTTPS. For local development against a registry without TLS, such as `registry:2` beside a kind cluster, name its host in `registry.plainHTTPHosts` (for example `--set 'registry.plainHTTPHosts={registry:5000}'`). Nothing else uses plain HTTP, and the nodes pull images through their own container runtime's registry configuration.
+
 ## For a fork: package settings
 
 A new ghcr.io package is private and unlinked. After the first publish, once, by hand, in the organization's package settings:

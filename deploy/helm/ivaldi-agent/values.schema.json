@@ -90,7 +90,14 @@
     "registry": {
       "type": "object",
       "additionalProperties": false,
-      "properties": { "pullSecret": { "$ref": "#/definitions/optionalName" } }
+      "properties": {
+        "pullSecret": { "$ref": "#/definitions/optionalName" },
+        "plainHTTPHosts": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[A-Za-z0-9.-]+(:[0-9]+)?$" }
+        }
+      }
     },
     "maxConcurrentApplies": { "type": "integer", "minimum": 1, "maximum": 64 },
     "image": {

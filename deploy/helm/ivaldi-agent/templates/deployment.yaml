@@ -72,6 +72,10 @@ spec:
             - name: IVALDI_REGISTRY_PULL_SECRET
               value: {{ . | quote }}
             {{- end }}
+            {{- with .Values.registry.plainHTTPHosts }}
+            - name: IVALDI_PLAIN_HTTP_REGISTRIES
+              value: {{ join "," . | quote }}
+            {{- end }}
             {{- if .Values.controlPlane.caConfigMap }}
             - name: IVALDI_CLIENT_CA_FILE
               value: /etc/ivaldi/ca/ca.crt

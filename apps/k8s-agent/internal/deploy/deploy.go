@@ -168,10 +168,12 @@ func FromAPI(a apiclient.DeploymentAssignment, clusterSlug string) Assignment {
 		TargetID:      a.Target.Id,
 		Namespace:     a.Apply.Namespace,
 		Deployer:      string(a.Apply.Deployer),
-		Definition:    Artifact{Repository: a.Apply.Definition.ArtifactName, Digest: a.Apply.Definition.Digest},
-		Overlays:      a.Apply.Overlays,
-		Images:        images,
-		Variables:     variables,
+		// The chart is pulled from where it is published; ArtifactName is
+		// the Application's name for it, such as "chart".
+		Definition: Artifact{Repository: a.Apply.Definition.PublishedAs, Digest: a.Apply.Definition.Digest},
+		Overlays:   a.Apply.Overlays,
+		Images:     images,
+		Variables:  variables,
 		System: map[string]string{
 			"Ivaldi.Application.Id":   a.Deployment.ApplicationId,
 			"Ivaldi.Cluster.Slug":     clusterSlug,

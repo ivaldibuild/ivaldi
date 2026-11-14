@@ -97,12 +97,13 @@ func start(ctx context.Context, cfg Config, version string) error {
 		return err
 	}
 	helmDeployer, err := helm.New(helm.Config{
-		RESTConfig:     restConfig,
-		Kube:           kube,
-		AgentNamespace: cfg.Namespace,
-		PullSecret:     cfg.RegistryPullSecret,
-		Timeout:        applyTimeout,
-		Logger:         log,
+		RESTConfig:          restConfig,
+		Kube:                kube,
+		AgentNamespace:      cfg.Namespace,
+		PullSecret:          cfg.RegistryPullSecret,
+		PlainHTTPRegistries: cfg.PlainHTTPRegistries,
+		Timeout:             applyTimeout,
+		Logger:              log,
 	})
 	if err != nil {
 		return err

@@ -445,6 +445,45 @@ jobs:
           # The agent chart requires the control plane's URL.
           helm lint --strict deploy/helm/ivaldi-agent --set controlPlane.url=https://ivaldi.example.com
 
+  # The agent against a kind cluster and a real control plane: connect the
+  # cluster with the agent chart, deploy a Release, a second, and the first
+  # again (apps/k8s-agent/e2e).
+  k8s-agent-e2e:
+    name: Kubernetes agent e2e
+    needs: changes
+    if: needs.changes.outputs.go != 'false' || needs.changes.outputs.charts != 'false'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The images are stamped with scripts/version.sh, which needs tags.
+          fetch-depth: 0
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          cache: true
+      - name: Cache Go modules and build output
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-e2e-${{ hashFiles('**/go.mod', '**/go.sum', 'go.work', 'go.work.sum') }}
+          restore-keys: |
+            go-${{ runner.os }}-e2e-
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
+        with:
+          version: v4.3.1
+      - name: Install kind
+        run: |
+          GOWORK=off GOBIN="$HOME/.local/bin" go install sigs.k8s.io/kind@v0.33.0
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Vet the e2e test
+        run: go vet -tags e2e ./apps/k8s-agent/e2e/
+      - name: Run the e2e
+        run: make k8s_agent_e2e
+
   # Publishes the agent chart to ghcr.io as an OCI artifact, with the same
   # version as the agent image published by the images job in this run.
   publish-chart:
@@ -496,7 +535,7 @@ jobs:
   ci-ok:
     name: CI
     if: always()
-    needs: [changes, go-test, go-check, build, migrations, webui, generated, images, charts, publish-chart]
+    needs: [changes, go-test, go-check, build, migrations, webui, generated, images, charts, k8s-agent-e2e, publish-chart]
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 2
     steps:

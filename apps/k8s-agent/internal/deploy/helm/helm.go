@@ -45,6 +45,9 @@ type Config struct {
 	// PullSecret is a docker-config Secret with registry credentials for
 	// charts; empty means anonymous pulls.
 	PullSecret string
+	// PlainHTTPRegistries are registry hosts charts are pulled from over
+	// plain HTTP rather than HTTPS.
+	PlainHTTPRegistries []string
 	// Timeout bounds one apply, and is how old a pending revision left by
 	// someone else must be before it is treated as abandoned.
 	Timeout time.Duration

@@ -153,10 +153,3 @@ type UpdateTargetRequest struct {
 func (r *UpdateTargetRequest) props() delivery.UpdateTargetProps {
 	return delivery.UpdateTargetProps{Slug: r.Body.Slug, DisplayName: r.Body.DisplayName, Locator: r.Body.Locator}
 }
-
-type AssignTargetAgentRequest struct {
-	TargetID string `path:"target_id" doc:"The Target's ID"`
-	Body     struct {
-		AgentPrincipalID string `json:"agent_principal_id" required:"true" doc:"The runtime agent's principal ID; empty unassigns the agent"`
-	}
-}

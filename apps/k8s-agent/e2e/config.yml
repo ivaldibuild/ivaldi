@@ -1,0 +1,35 @@
+# The control plane run.sh starts for the e2e. It runs in a container on the
+# kind network, where the agent reaches it as http://ivaldi-e2e-ivaldi:8660;
+# the test reaches it through port 18660 on the host. Paths are inside the
+# container: run.sh mounts its generated secrets at /e2e.
+deployment_mode: self-hosted
+# Only loopback addresses may use http. The agent never reads this address.
+external_url: http://127.0.0.1:18660
+
+logging:
+  level: debug
+  format: text
+
+persistence:
+  database_url: postgres://ivaldi:ivaldi@ivaldi-e2e-postgres:5432/ivaldi?sslmode=disable
+
+redis:
+  address: ivaldi-e2e-valkey:6379
+
+# Short intervals keep the test quick.
+runners:
+  heartbeat_interval: 5s
+  agent_poll_interval: 2s
+  agent_watch_interval: 10s
+
+auth:
+  # The test plays the frontend: it reads the login challenge from the
+  # redirect and never loads this page.
+  login_url: http://127.0.0.1/login
+  signing_key_files: [/e2e/signing.pem]
+  builtin_accounts: true
+
+bootstrap:
+  organization_name: Ivaldi E2E
+  admin_email: admin@e2e.ivaldi.test
+  admin_password_file: /e2e/admin-password

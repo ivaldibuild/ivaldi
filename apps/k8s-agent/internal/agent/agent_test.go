@@ -74,6 +74,16 @@ func TestConfig(t *testing.T) {
 			readFile: podNamespace,
 			check:    func(t *testing.T, c Config) { assert.True(t, c.AllowInsecureHTTP) },
 		},
+		{
+			name:     "plain-HTTP registries come from a comma-separated variable",
+			args:     []string{"--server-url", "https://x"},
+			env:      map[string]string{"IVALDI_PLAIN_HTTP_REGISTRIES": "registry:5000,mirror"},
+			readFile: podNamespace,
+			check: func(t *testing.T, c Config) {
+				assert.Equal(t, []string{"registry:5000", "mirror"}, c.PlainHTTPRegistries)
+			},
+		},
+		{name: "a plain-HTTP registry is a host, not a URL", args: []string{"--server-url", "https://x", "--plain-http-registries", "http://registry:5000"}, readFile: podNamespace, wantErr: "must be a registry host"},
 		{name: "unknown method", args: []string{"--server-url", "https://x", "--authentication-method", "magic"}, readFile: podNamespace, wantErr: "must be kubernetes, bearer, or mtls"},
 		{name: "mtls needs a certificate", args: []string{"--server-url", "https://x", "--authentication-method", "mtls"}, readFile: podNamespace, wantErr: "--client-cert-file and --client-key-file are required"},
 		{name: "namespace is required outside a Pod", args: []string{"--server-url", "https://x"}, readFile: noFile, wantErr: "--namespace is required"},

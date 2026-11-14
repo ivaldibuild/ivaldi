@@ -49,7 +49,10 @@ type Config struct {
 	AllowInsecureHTTP bool
 	// RegistryPullSecret is a docker-config Secret in the agent's
 	// namespace with credentials for pulling charts.
-	RegistryPullSecret   string
+	RegistryPullSecret string
+	// PlainHTTPRegistries are registry hosts, such as registry:5000, that
+	// charts are pulled from over plain HTTP; for local development only.
+	PlainHTTPRegistries  []string
 	MaxConcurrentApplies int
 	// FingerprintSecret holds the key secret fingerprints are made with.
 	FingerprintSecret string
@@ -78,6 +81,8 @@ func (c *Config) bind(flags *pflag.FlagSet) {
 		"Allow an http:// server URL, which sends credentials in plaintext; for local development only")
 	flags.StringVar(&c.RegistryPullSecret, "registry-pull-secret", "",
 		"Docker-config Secret in the agent's namespace with credentials for pulling charts")
+	flags.StringSliceVar(&c.PlainHTTPRegistries, "plain-http-registries", nil,
+		"Registry hosts, such as registry:5000, to pull charts from over plain HTTP; for local development only")
 	flags.StringVar(&c.FingerprintSecret, "fingerprint-secret", "ivaldi-fingerprint-key",
 		"Secret in the agent's namespace holding the key secret fingerprints are made with")
 	flags.IntVar(&c.MaxConcurrentApplies, "max-concurrent-applies", 4, "How many Deployments the agent applies at once")
@@ -122,6 +127,11 @@ func (c *Config) complete(readFile func(string) ([]byte, error), hostname func()
 	if c.EnrolmentSecret == "" || c.StateSecret == "" || c.LeaseName == "" {
 		errs = append(errs, errors.New("--enrolment-secret, --state-secret, and --lease-name must not be empty"))
 	}
+	for _, host := range c.PlainHTTPRegistries {
+		if !validHostPort(host) {
+			errs = append(errs, fmt.Errorf("--plain-http-registries %q must be a registry host such as registry:5000", host))
+		}
+	}
 	if c.MaxConcurrentApplies < 1 {
 		errs = append(errs, errors.New("--max-concurrent-applies must be at least 1"))
 	}
@@ -150,6 +160,13 @@ func (c *Config) logLevel() (slog.Level, error) {
 		return 0, fmt.Errorf("--log-level %q must be debug, info, warn, or error", c.LogLevel)
 	}
 	return level, nil
+}
+
+// validHostPort reports whether s is a host, with or without a port, and
+// nothing else: no scheme, credentials, or path.
+func validHostPort(s string) bool {
+	u, err := url.Parse("//" + s)
+	return err == nil && s != "" && u.Host == s && u.User == nil && u.Path == ""
 }
 
 func defaultComplete(c *Config) error { return c.complete(os.ReadFile, os.Hostname) }

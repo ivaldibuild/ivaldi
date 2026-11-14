@@ -1,0 +1,5 @@
+apiVersion: v2
+name: demo
+description: The chart the k8s-agent e2e deploys. It runs the image Ivaldi passes in global.ivaldi.
+type: application
+version: 0.1.0

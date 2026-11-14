@@ -32,7 +32,7 @@ LOCAL_DIR := .local
 PG_PASSWORD ?= brokandsindri
 LOCAL_DATABASE_URL ?= postgres://ivaldi_db_user:$(PG_PASSWORD)@127.0.0.1:5433/ivaldi?sslmode=disable
 
-.PHONY: help prepare build build-cli build-server openapi openapi_check migration_generate migrate_up migrate_down migrate_version check_capability check_database_url \
+.PHONY: help prepare build build-cli build-server openapi openapi_check k8s_agent_e2e migration_generate migrate_up migrate_down migrate_version check_capability check_database_url \
 	local local_up local_stack local_secrets local_database local_migrate local_serve local_gateway local_down local_reset
 
 help:
@@ -45,6 +45,10 @@ help:
 	@echo "API clients"
 	@echo "  make openapi                                       Regenerate api/openapi.json, the Go clients, and the web app's types"
 	@echo "  make openapi_check                                 Fail if any of them is out of date"
+	@echo ""
+	@echo "End-to-end"
+	@echo "  make k8s_agent_e2e                                 Run the agent against a kind cluster and a real control"
+	@echo "                                                     plane (needs docker, kind, helm); IVALDI_E2E_KEEP=1 keeps them"
 	@echo ""
 	@echo "Migrations (capabilities: $(CAPABILITIES))"
 	@echo "  make <capability>_migration_generate name=<name>   Create a numbered up/down pair"
@@ -217,6 +221,11 @@ openapi:
 	cd apps/cli && go generate ./internal/apiclient
 	cd apps/k8s-agent && go generate ./internal/apiclient
 	cd apps/webui && pnpm run api:types
+
+# The Kubernetes agent's end-to-end test: a kind cluster, a registry, and
+# the control plane in containers (apps/k8s-agent/e2e/run.sh).
+k8s_agent_e2e:
+	apps/k8s-agent/e2e/run.sh
 
 # Regenerates everything and fails if that changed a committed file.
 openapi_check: openapi

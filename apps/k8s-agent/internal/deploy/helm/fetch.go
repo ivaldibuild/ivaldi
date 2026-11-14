@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	chart "helm.sh/helm/v4/pkg/chart/v2"
@@ -32,7 +33,11 @@ func (d *deployer) fetch(ctx context.Context, artifact deploy.Artifact) (*chart.
 		// stalled registry give up when the apply does.
 		registry.ClientOptHTTPClient(&http.Client{Transport: bind(ctx, registry.NewTransport(false))}),
 	}
-	username, password, err := d.registryCredentials(ctx, registryHost(artifact.Repository))
+	host := registryHost(artifact.Repository)
+	if slices.Contains(d.cfg.PlainHTTPRegistries, host) {
+		options = append(options, registry.ClientOptPlainHTTP())
+	}
+	username, password, err := d.registryCredentials(ctx, host)
 	if err != nil {
 		return nil, err
 	}

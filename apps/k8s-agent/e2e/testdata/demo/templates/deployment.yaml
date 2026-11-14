@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo
+  annotations:
+    e2e.ivaldi.build/environment: {{ .Values.environment | quote }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: demo
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: demo
+    spec:
+      containers:
+        - name: app
+          image: {{ required "global.ivaldi.artifacts.app is required" .Values.global.ivaldi.artifacts.app.image | quote }}

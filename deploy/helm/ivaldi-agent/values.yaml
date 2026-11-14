@@ -66,6 +66,9 @@ registry:
   # -- A docker-config Secret in the release namespace with credentials for
   # pulling charts.
   pullSecret: ""
+  # -- Registry hosts, such as registry:5000, to pull charts from over
+  # plain HTTP. For local development only.
+  plainHTTPHosts: []
 
 # -- How many Deployments the agent applies at once.
 maxConcurrentApplies: 4

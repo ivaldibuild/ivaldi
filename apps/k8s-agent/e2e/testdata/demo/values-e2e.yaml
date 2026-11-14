@@ -1,0 +1,2 @@
+# Selected by the placement; the agent resolves the binding.
+environment: "#{Ivaldi.Environment.Slug}"

@@ -1,7 +1,7 @@
 # Deployment variables
 
-- Status: Draft for review
-- Date: 2026-11-08
+- Status: Draft for review; revised 2026-11-14 for Project and Application owners, overlay values files, and fingerprint pinning
+- Date: 2026-11-08; revised 2026-11-14
 - Related: [ADR 0003](../adr/0003-identity-access-and-policy.md), [ADR 0004](../adr/0004-credentials-and-keys.md), [ADR 0006](../adr/0006-release-and-delivery-tracking.md), [delivery data model](delivery-data-model.md), [Kubernetes agent](k8s-agent.md)
 
 This document designs the configuration an Application is deployed with: plain values and secrets, which can differ by Environment, Target, and Channel. It follows Octopus Deploy's [project variables](https://octopus.com/docs/projects/variables), [variable sets](https://octopus.com/docs/projects/variables/library-variable-sets), [sensitive variables](https://octopus.com/docs/projects/variables/sensitive-variables), and [release snapshots](https://octopus.com/docs/releases/creating-a-release). Where it differs, the reason is noted.
@@ -12,19 +12,20 @@ The main difference is secrets. Octopus stores sensitive values itself, encrypte
 
 - **A variable is a name with one or more scoped values.** As in Octopus, an Application has variables, and each value can be scoped to Environments, Targets, and Channels. At deploy time the most specific matching value wins.
 - **Two kinds of value: `text` and `secret`.** A `text` value is stored in Ivaldi. A `secret` value is a reference (Secret Store, path, field, version) and is resolved by the agent. There is no third kind for secrets that Ivaldi stores encrypted. Customers without a secret manager use the `kubernetes` Secret Store, which reads a Secret in the Target's namespace. An Ivaldi-held store for managed-cloud tenants is ADR 0004's open question, and would be another Secret Store kind rather than a new kind of value.
-- **Variable Sets share variables across Applications.** A Variable Set belongs to a Workspace, and Applications include it, like Octopus's library variable sets.
+- **Variables belong to a Project or an Application.** A Project's variables apply to every Application in it; an Application's own variables cover what only it needs. On equal specificity the Application's value wins. There are no Workspace-level Variable Sets: configuration shared by an Application's siblings belongs to their Project, which already bounds permissions.
 - **A Release takes a snapshot of its variables.** As in Octopus, creating a Release snapshots the variables it will deploy with, so redeploying it or rolling back to it uses the configuration it was released with, not whatever the Application holds that day. The snapshot can be refreshed later, which creates a new revision. A Release's Builds stay immutable once it is published.
 - **Every Deployment records the snapshot revision it used and the secret versions it resolved.** Its history says exactly what configuration it shipped.
 - **A rollback restores that configuration.** Rolling back replays the snapshot revision and the secret versions of the Deployment being restored, so it brings back the old secret values too, not just the old code.
 - **A refresh that changes production needs a human's approval.** It changes what an already-approved Release would deploy, so policy treats it like a production Deployment.
 - **Ivaldi resolves scopes; the agent resolves secrets and bindings.** The control plane picks the winning value of each variable for the Deployment's Target. The agent fetches secrets, fills in bindings, and hands the result to the chart.
+- **Overlay values files are part of the chart, not variables.** A chart may ship `values.production.yaml` (or any other overlay), selected per Placement and applied in order. Their literals are configuration, and they may bind variables and secrets. Variables are for individual values, not whole documents.
 - **Ambiguity is refused at save time.** Octopus resolves some ties non-deterministically. Ivaldi refuses to save two values that could tie.
 
 ## Variables
 
 | Field | Meaning |
 |---|---|
-| `name` | Unique in its Application or Variable Set, case-insensitive. Letters, digits, `.`, `-`, and `_`, up to 253 characters, which is what a Kubernetes Secret key allows, because secrets become Secret keys. Octopus also allows spaces; Ivaldi does not, for the same reason. Dots namespace names, as Octopus recommends: `Database.Password`. |
+| `name` | Unique in its Project or Application, case-insensitive. Letters, digits, `.`, `-`, and `_`, up to 253 characters, which is what a Kubernetes Secret key allows, because secrets become Secret keys. Octopus also allows spaces; Ivaldi does not, for the same reason. Dots namespace names, as Octopus recommends: `Database.Password`. |
 | `description` | Optional. |
 | `kind` | `text` or `secret`. All values of a variable have its kind. |
 | `values_path` | Optional: where the chart receives the variable, such as `database.host`. A variable without one is only used through bindings. |
@@ -37,7 +38,7 @@ Each **value** has its content and its scope:
 
 ### Scopes and precedence
 
-A value's scope names Environments, Targets, and Channels, any of which may be empty. As in Octopus, the names within one dimension are alternatives and the dimensions must all match: a value scoped to Environments `staging, production` and Channel `hotfix` applies to a Deployment to either Environment, from a Release in `hotfix`.
+A value's scope names Environments, Targets, and Channels, any of which may be empty. A Project's values can be scoped to Environments and Targets but not Channels, because a Channel belongs to one Application; an Application's values may use all three. As in Octopus, the names within one dimension are alternatives and the dimensions must all match: a value scoped to Environments `staging, production` and Channel `hotfix` applies to a Deployment to either Environment, from a Release in `hotfix`.
 
 When several values of a variable match a Deployment, the most specific one wins, comparing the dimensions in this order:
 
@@ -51,12 +52,14 @@ Octopus's other dimensions are left out: there are no tenants, no target tags, a
 
 **Ties are refused.** Two values of one variable with the same dimensions in scope, and overlapping names in each, would tie for some Deployment: for example, one scoped to `staging, production` and another to `production`. Saving the second is refused, naming the overlap. Octopus picks among those non-deterministically; deploying an unpredictable value is worse than being told when saving.
 
-### Variable Sets
+### Owners and shadowing
 
-A **Variable Set** belongs to a Workspace and holds variables like an Application does. An Application includes any number of the Workspace's Variable Sets.
+`variables` has exactly one owner, `project_id` or `application_id`.
 
-- A Variable Set's values can be scoped to Environments and Targets but not Channels, because Channels belong to one Application. Octopus has the same restriction.
-- A Variable Set and an Application, or two Variable Sets, may define the same name. The most specific value wins across all of them. When the Application's value and a Variable Set's value are equally specific, the Application's wins, as in Octopus. When two included Variable Sets would tie with each other, including the second one is refused, naming the variable.
+- A Project's variables apply to every Application in the Project. An Application's variable with the same name shadows the Project's; it is the same variable, so its `kind`, `values_path`, and `deliver_as` must equal the Project value's, and saving a difference is refused. Changing those fields on a Project variable is refused while an Application shadows it differently.
+- **`values_path` never overlaps.** Among the variables an Application deploys with (its own plus its Project's, after shadowing), no two may have the same `values_path`, or one that is a prefix of the other at a path boundary (`db` and `db.host`, not `db` and `dbx`): one would silently overwrite the other. Saving checks the Application and its Project; saving a Project variable checks every active Application in it. A Release snapshot checks again.
+- Precedence across owners follows the same rule as within one owner: the most specific value wins, and on equal specificity the Application's value beats the Project's. Two values that would tie *within* one owner are refused, as before; a Project value and an Application value never tie, so adding a Project variable never fails because of an Application's values.
+- A Project cannot be archived while it has active Applications, so its variables do not outlive their users. An archived Application's variables go with it.
 
 ### Bindings and system variables
 
@@ -79,7 +82,7 @@ System variables are always defined, and can be bound but not overridden:
 
 ## Snapshots
 
-**Creating a Release takes a snapshot** of every variable it will deploy with: the Application's variables and those of the Variable Sets it includes, with all their scoped values and each value's source. Secret values are snapshotted as references; the secret itself is read when the Release is deployed. A snapshot is revision 1 of the Release's variables.
+**Creating a Release takes a snapshot** of every variable it will deploy with: the Application's variables and its Project's, with all their scoped values and each value's source (`project` or `application`). Secret values are snapshotted as references; the secret itself is read when the Release is deployed. A snapshot is revision 1 of the Release's variables.
 
 **Refreshing creates a new revision.** "Update variables" on a Release takes a fresh snapshot from the Application's current variables and makes it the Release's current revision. Earlier revisions are kept. Octopus can also update chosen variables only; Ivaldi refreshes the whole snapshot, and the API's preview shows what would change before it does. Refreshing needs `release.manage`, and a human's approval when it changes what production would get ([below](#refreshes-that-change-production-need-approval)). It is allowed on a draft and on a published Release, because a snapshot is configuration and not one of the Release's Builds. It is not allowed on a withdrawn Release.
 
@@ -115,12 +118,27 @@ When someone refreshes a Release's snapshot, the control plane resolves the old 
 
 When the control plane builds an assignment, it takes the Deployment's snapshot revision and, for each variable, picks the winning value for the Deployment's Target, Environment, and Channel. The assignment carries, for each variable with a winning value:
 
-- `name`, `kind`, `values_path`, `deliver_as`, and its source (Application or Variable Set);
-- the `text` value, or the secret reference with the version to fetch: the one the value pins, the one a rollback replays, or none for the latest;
+- `name`, `kind`, `values_path`, `deliver_as`, and its source (`project` or `application`);
+- the `text` value, or the secret reference with the version to fetch: the one the value pins, the one a rollback replays, or none for the latest; a rollback also carries the fingerprint the value had;
 
-plus every system variable.
+plus every system variable and the Placement's selected overlay files.
 
 The agent then fills in bindings, fetches secrets, and builds the chart's values ([Kubernetes agent](k8s-agent.md#applying-with-helm)).
+
+### Overlay values files
+
+A chart may ship overlay values files such as `values.production.yaml`. The Placement selects them with `apply_config.values`, an ordered list of chart-relative files. They are part of the chart artifact, so the chart's digest makes them immutable and a rollback restores them with the Release.
+
+The agent builds the values in this order, later winning:
+
+1. the chart's defaults;
+2. the selected overlays, merged in order (maps deep-merged, lists replaced, `null` deletes a key);
+3. variables with a `values_path`, at that path;
+4. Ivaldi's generated values (`global.ivaldi.*`).
+
+Overlays and text values may contain `#{…}` bindings, which are resolved before the merge. A binding in an overlay that names a secret makes that Deployment deliver the secret as a value, because the chart receives a literal; the deploy sheet warns that Helm's release history in the namespace will hold it. A secret variable with `deliver_as: secret` stays in the immutable Kubernetes Secret instead.
+
+**A rollback is checked, not guessed.** The agent fetches each pinned secret version, computes the keyed fingerprint, and fails the Deployment before applying when the fingerprint differs. Doppler cannot pin a per-secret version, so its rollbacks compare the fingerprint alone.
 
 **A preview shows the result before deploying.** `GET /v1/releases/{release_id}/variables?target_id=…` returns, for each variable, the winning value and the values it beat, with secrets shown as references. The deploy sheet shows it, and it answers "why did production get this value" without reading the precedence rules.
 
@@ -128,9 +146,8 @@ The agent then fills in bindings, fetches secrets, and builds the chart's values
 
 ## Permissions and audit
 
-- **Reading.** `variable.read` on the Project reads an Application's variables and its Releases' snapshots; on the Workspace it reads Variable Sets. Secret values are references, so reading them reveals where a secret is, not what it is.
-- **Changing.** `variable.manage` on the Application's Project changes its unscoped values. A value scoped to Environments also needs `variable.manage` on each of those Environments, so a Project's members cannot change production configuration without being allowed to on production. Octopus checks Environment and Target scopes against permissions the same way. Variable Sets need `variable.manage` on the Workspace, and the same per-Environment check.
-- **Including** a Variable Set in an Application needs `variable.manage` on the Project and `variable.read` on the Workspace.
+- **Reading.** `variable.read` on the Project reads its variables, an Application's variables, and their Releases' snapshots. Secret values are references, so reading them reveals where a secret is, not what it is.
+- **Changing.** `variable.manage` on the Application's Project changes its unscoped values. A value scoped to Environments also needs `variable.manage` on each of those Environments, so a Project's members cannot change production configuration without being allowed to on production. Octopus checks Environment and Target scopes against permissions the same way. Changing a Project variable affects every Application in it; the web app says so and lists them.
 - **Every change is audited** through `internal/change`, with the variable's snapshot before and after. A secret value's audit record holds its reference, which is not secret.
 
 The built-in roles pick up `variable.read` and `variable.manage` by rule, so IAM does not change.
@@ -141,15 +158,13 @@ All in the `delivery` schema, following its conventions. Secret Stores belong to
 
 | Table | Prefix | Holds |
 |---|---|---|
-| `variable_sets` | `vst` | Workspace, slug, display name, description, archived time |
-| `application_variable_sets` | | Which Variable Sets an Application includes |
-| `variables` | `var` | Exactly one of `application_id` or `variable_set_id`; `name` (unique case-insensitively within its owner), `description`, `kind`, `values_path`, `deliver_as` |
+| `variables` | `var` | Exactly one of `project_id` or `application_id`; `name` (unique case-insensitively within its owner), `description`, `kind`, `values_path`, `deliver_as` |
 | `variable_values` | `vvl` | Child of a variable: `text_value`, or `store_id`, `path`, `field`, `version`; `environment_ids`, `target_ids`, `channel_ids` |
 | `variable_snapshots` | `vsn` | One per Release revision: `release_id`, `revision`, the snapshot as JSON, `status` (`current`, `pending_approval`, `rejected`, `superseded`), `approval_decision_id`, who took it and when |
 
-`releases` gains `variable_snapshot_id` (the current revision). `deployments` gains `variable_snapshot_id` (the revision it used), `secret_versions` (for each secret variable: its store, path, field, and the version ID the agent resolved), `secrets_latest` (a rollback that asked for current secrets), and `restores_deployment_id` (for a rollback, the Deployment it replays). A variable and its values form one aggregate, changed through the variable's methods. A Variable Set cannot be archived while an active Application includes it. Environments, Targets, and Channels named in a scope cannot be archived while an active value names them, matching delivery's rule that configuration is not archived out from under what uses it.
+`releases` gains `variable_snapshot_id` (the current revision). `deployments` gains `variable_snapshot_id` (the revision it used), `secret_versions` (for each secret variable: its store, path, field, and the version ID the agent resolved), `secrets_latest` (a rollback that asked for current secrets), and `restores_deployment_id` (for a rollback, the Deployment it replays). A variable and its values form one aggregate, changed through the variable's methods. Environments, Targets, and Channels named in a scope cannot be archived while an active value names them, matching delivery's rule that configuration is not archived out from under what uses it.
 
-`apply_config.values_refs` stays for whole values documents, such as a values file a platform team keeps in a ConfigMap. Variables are for individual values.
+`apply_config.values` names the chart's overlay values files, in order, such as `values.production.yaml`. The chart's digest makes them immutable, and a rollback restores them with the Release. Variables are for individual values.
 
 ## Invariants
 
@@ -157,7 +172,9 @@ All in the `delivery` schema, following its conventions. Secret Stores belong to
 - **Every executed Deployment records its snapshot revision and the secret versions it resolved**, and a snapshot revision never changes once taken.
 - **A rollback deploys the snapshot revision and secret versions of the Deployment it restores**, or fails, unless the person asked for current secrets.
 - **A revision that changes production values becomes current only with a human's approval.**
-- **No two values of a variable can tie** for any Deployment, within one owner or across an Application's included Variable Sets.
+- **No two values of a variable can tie** for any Deployment within one owner, and a Project value and an Application value never tie: the Application's wins.
+- **No two variables an Application deploys with share a `values_path`**, or one that is a prefix of the other at a path boundary.
+- **An Application's variables shadow its Project's only in value**: `kind`, `values_path`, and `deliver_as` must agree.
 - **A Deployment uses only Secret Stores allowed for its Environment.**
 - **Changing a value scoped to an Environment needs permission on that Environment.**
 

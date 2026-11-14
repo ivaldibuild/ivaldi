@@ -4,13 +4,13 @@
 - Date: 2026-11-07
 - Related: [ADR 0001](../adr/0001-deployment-topology.md), [ADR 0003](../adr/0003-identity-access-and-policy.md), [ADR 0006](../adr/0006-release-and-delivery-tracking.md), [ADR 0008](../adr/0008-reaching-customer-systems.md), [IAM data model](iam-data-model.md)
 
-> [ADR 0014](../adr/0014-agents-serve-clusters.md) moves runtime-agent enrolment from Targets to Clusters. This document describes what is implemented today and is updated when that change is.
+> [ADR 0014](../adr/0014-agents-serve-clusters.md) moved runtime-agent enrolment from Targets to Clusters. This document describes the Cluster version as implemented.
 
 ## Decision
 
-A data-plane workload, such as a runtime agent, enrols for one Target and
-authenticates as a `workload` principal. Three credential mechanisms are
-supported:
+A data-plane workload, such as a runtime agent, enrols for one Cluster and
+authenticates as a `workload` principal. One credential serves every Target in
+the Cluster. Three credential mechanisms are supported:
 
 | Method | Enrolment evidence | Long-term credential | Renewal |
 |---|---|---|---|
@@ -32,30 +32,40 @@ Neither raw token is stored by the control plane.
 
 ## Enrolment
 
-`POST /v1/targets/{target_id}/enrolments` asks for an enrolment token with a
-chosen method and requires `environment.manage` on the Target's Environment.
+`POST /v1/clusters/{cluster_id}/enrolments` asks for an enrolment token with a
+chosen method and requires `cluster.manage` on the Organization. Its response
+also carries `install`: the control plane's URL, the agent chart and its
+version, and the credential methods this control plane accepts. The web
+onboarding guide uses it so its commands cannot drift from the release.
 
 `POST /v1/agent/enrolments/redeem` is public; the enrolment token is the
 credential. Redeem:
 
 1. locks and validates the enrolment token;
-2. locks the Target;
+2. locks the Cluster;
 3. creates a `runtime_agent` workload principal;
-4. creates the selected credential, revoking the Organization's previous
+4. refuses an identity that already serves another active Cluster
+   (`409 identity_in_use`), recording the refusal on the Cluster being
+   enrolled and auditing it; otherwise revokes the Organization's previous
    credential for the same certificate or service-account identity;
 5. redeems the token;
-6. suspends the previous workload and revokes its credentials;
-7. sets `target.agent_principal_id`;
+6. suspends the Cluster's previous workload and revokes its credentials;
+7. sets `clusters.agent_principal_id`;
 8. records events and audit in one transaction.
 
-Re-enrolment is the replacement path. A certificate or service-account
-identity names one live workload: another Organization cannot enrol the same
-identity, because a request is authenticated before its Organization is known.
+The response names the Cluster and the Organization, and returns the credential,
+its expiry, and a bearer token when the method is `bearer`.
+
+A certificate or service-account identity names one live workload, so enrolling
+it for a second active Cluster is refused rather than silently moving the agent
+and leaving the first Cluster naming a credential that no longer works. The
+operator either archives the other Cluster or installs this agent with another
+identity.
 
 ## Renewal
 
 `POST /v1/agent/credentials/renew` is authenticated by the current workload
-credential. The workload must still be the Target's assigned agent.
+credential. The workload must still be the Cluster's assigned agent.
 
 - **Bearer:** issues a new token and credential. The old credential gets a
   5-minute grace period and records `replaced_by`.
@@ -66,6 +76,13 @@ credential. The workload must still be the Target's assigned agent.
 
 A client should start renewal at 50% of the TTL with ±5% jitter, and retry
 while the current credential remains valid.
+
+## Archiving
+
+Archiving a Cluster is refused while it has active Targets. Without them, it
+suspends the agent workload and revokes its credentials in the archive's
+transaction, so no credential outlives the Cluster that named it. Restoring the
+Cluster leaves it agentless until a new enrolment token is redeemed.
 
 ## Verification
 

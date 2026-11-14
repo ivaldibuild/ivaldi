@@ -1,7 +1,7 @@
 # ADR 0014: Runtime agents serve Clusters, not Targets
 
-- Status: Proposed
-- Date: 2026-11-08
+- Status: Accepted; control plane implemented, agent in progress
+- Date: 2026-11-08; accepted 2026-11-14
 - Related: [ADR 0003](0003-identity-access-and-policy.md), [ADR 0006](0006-release-and-delivery-tracking.md), [ADR 0008](0008-reaching-customer-systems.md), [ADR 0013](0013-one-agent-per-runtime.md), [Kubernetes agent](../design/k8s-agent.md), [workload enrolment](../design/workload-enrolment.md), [delivery data model](../design/delivery-data-model.md)
 
 ## Context

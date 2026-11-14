@@ -2,6 +2,7 @@ package secrets
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"log/slog"
 	"testing"
@@ -74,15 +75,15 @@ func TestMaskingHandler(t *testing.T) {
 	assert.Equal(t, "hunter22", masker.Mask("hunter22"))
 }
 
-func newTestResolver(t *testing.T, kube *fake.Clientset) (*resolver, *Masker) {
+func newTestResolver(t *testing.T, kube *fake.Clientset) (*resolver, *Masker, Fingerprinter) {
 	t.Helper()
 	masker := NewMasker()
 	r := NewResolver(Config{Kube: kube, AgentNamespace: "ivaldi-system", Masker: masker, Logger: slog.New(slog.DiscardHandler)}).(*resolver)
 	r.retryBase = time.Millisecond
 	keys, err := newFingerprinter(map[int][]byte{1: key(1)})
 	require.NoError(t, err)
-	r.keys = keys
-	return r, masker
+	r.loadKeys = func(context.Context) (Fingerprinter, error) { return keys, nil }
+	return r, masker, keys
 }
 
 func kubernetesSecret(name, field string, fingerprint *string) apiclient.AssignmentSecret {
@@ -98,7 +99,7 @@ func TestResolver(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "db", Namespace: "payments", ResourceVersion: "7"},
 		Data:       map[string][]byte{"password": []byte("hunter22")},
 	})
-	r, masker := newTestResolver(t, kube)
+	r, masker, keys := newTestResolver(t, kube)
 
 	resolved, err := r.Resolve(t.Context(), "payments", []apiclient.AssignmentSecret{kubernetesSecret("DB_PASSWORD", "password", nil)})
 	require.NoError(t, err)
@@ -108,13 +109,13 @@ func TestResolver(t *testing.T) {
 	assert.Equal(t, "****", masker.Mask("hunter22"), "a resolved value is masked")
 	pin := resolved[0].Pin()
 	assert.NotContains(t, pin, "value")
-	assert.Equal(t, r.keys.Fingerprint("hunter22"), pin["fingerprint"])
+	assert.Equal(t, keys.Fingerprint("hunter22"), pin["fingerprint"])
 
 	r.Release(resolved)
 	assert.Equal(t, "hunter22", masker.Mask("hunter22"))
 
 	t.Run("a rollback whose secret changed fails naming it", func(t *testing.T) {
-		stale := r.keys.Fingerprint("an-older-password")
+		stale := keys.Fingerprint("an-older-password")
 		_, err := r.Resolve(t.Context(), "payments", []apiclient.AssignmentSecret{kubernetesSecret("DB_PASSWORD", "password", &stale)})
 		var failure *deploy.Failure
 		require.ErrorAs(t, err, &failure)
@@ -175,4 +176,41 @@ func TestWriter(t *testing.T) {
 		kept = append(kept, s.Labels[labelDeployment])
 	}
 	assert.ElementsMatch(t, []string{"dep_02DEF", "dep_c"}, kept)
+}
+
+func TestWriter_ARetryWithAChangedValueFails(t *testing.T) {
+	kube := fake.NewClientset()
+	w := NewWriter(kube)
+	_, err := w.Write(t.Context(), "payments", "app_1", "dep_1", []Resolved{{Name: "DB_PASSWORD", Value: "old-password"}})
+	require.NoError(t, err)
+
+	// The provider rotated before the retry.
+	_, err = w.Write(t.Context(), "payments", "app_1", "dep_1", []Resolved{{Name: "DB_PASSWORD", Value: "new-password"}})
+	var failure *deploy.Failure
+	require.ErrorAs(t, err, &failure)
+	assert.Contains(t, failure.Reason, "secret DB_PASSWORD changed since an earlier attempt of this Deployment")
+	assert.NotContains(t, err.Error(), "new-password")
+}
+
+func TestResolver_ReadsTheKeysForEachDeployment(t *testing.T) {
+	kube := fake.NewClientset(
+		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "fp", Namespace: "ivaldi-system"}, Data: map[string][]byte{"v1": key(1)}},
+		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "db", Namespace: "payments"}, Data: map[string][]byte{"password": []byte("hunter22")}},
+	)
+	r := NewResolver(Config{Kube: kube, AgentNamespace: "ivaldi-system", FingerprintSecret: "fp", Masker: NewMasker(), Logger: slog.New(slog.DiscardHandler)})
+	first, err := r.Resolve(t.Context(), "payments", []apiclient.AssignmentSecret{kubernetesSecret("DB_PASSWORD", "password", nil)})
+	require.NoError(t, err)
+	assert.Regexp(t, `^hmac-sha256:v1:`, first[0].Fingerprint)
+
+	// An operator rotates: v2 added, v1 removed, while the agent runs.
+	_, err = kube.CoreV1().Secrets("ivaldi-system").Update(t.Context(), &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "fp", Namespace: "ivaldi-system"}, Data: map[string][]byte{"v2": key(2)},
+	}, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	next, err := r.Resolve(t.Context(), "payments", []apiclient.AssignmentSecret{kubernetesSecret("DB_PASSWORD", "password", nil)})
+	require.NoError(t, err)
+	assert.Regexp(t, `^hmac-sha256:v2:`, next[0].Fingerprint, "the newest key is used at once")
+	_, err = r.Resolve(t.Context(), "payments", []apiclient.AssignmentSecret{kubernetesSecret("DB_PASSWORD", "password", &first[0].Fingerprint)})
+	assert.ErrorContains(t, err, "fingerprint key v1 is gone", "the removed key is refused at once")
 }

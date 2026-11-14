@@ -1,6 +1,7 @@
 package secrets
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"slices"
@@ -60,10 +61,41 @@ func (w *writer) Write(ctx context.Context, namespace, applicationID, deployment
 		},
 		Type: corev1.SecretTypeOpaque, Data: data, Immutable: &immutable,
 	}, metav1.CreateOptions{})
-	if err != nil && !apierrors.IsAlreadyExists(err) {
+	switch {
+	case apierrors.IsAlreadyExists(err):
+		// An earlier attempt of this Deployment wrote it, and it cannot
+		// change. It must hold what was just resolved, or the Pods would run
+		// with values other than the ones this Deployment records.
+		existing, err := w.kube.CoreV1().Secrets(namespace).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return "", &deploy.Failure{Reason: fmt.Sprintf("could not read Secret %s in %s", name, namespace), Err: err}
+		}
+		if changed := differing(existing.Data, data); len(changed) > 0 {
+			return "", deploy.Failf("secret %s changed since an earlier attempt of this Deployment wrote Secret %s; request the Deployment again to deliver the new value",
+				strings.Join(changed, ", "), name)
+		}
+	case err != nil:
 		return "", &deploy.Failure{Reason: fmt.Sprintf("could not create Secret %s in %s", name, namespace), Err: err}
 	}
 	return name, nil
+}
+
+// differing names the keys whose values differ between two Secrets' data,
+// sorted. It never returns a value.
+func differing(a, b map[string][]byte) []string {
+	var out []string
+	for k, v := range b {
+		if old, ok := a[k]; !ok || !bytes.Equal(old, v) {
+			out = append(out, k)
+		}
+	}
+	for k := range a {
+		if _, ok := b[k]; !ok {
+			out = append(out, k)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 func (w *writer) Prune(ctx context.Context, namespace, applicationID, currentDeploymentID string) error {

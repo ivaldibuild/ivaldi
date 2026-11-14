@@ -116,9 +116,15 @@ func kubernetesFixture(_ *testing.T, m mode) Store {
 
 // fakeSecretsManager serves the fixture secrets with Secrets Manager's
 // errors.
-type fakeSecretsManager struct{ mode mode }
+type fakeSecretsManager struct {
+	mode mode
+	// batchErrors fails these secrets inside a batch's 200, by error code.
+	batchErrors map[string]string
+	// last is the last single read asked for.
+	last *secretsmanager.GetSecretValueInput
+}
 
-func (f fakeSecretsManager) err() error {
+func (f *fakeSecretsManager) err() error {
 	switch f.mode {
 	case denied:
 		return &smithy.GenericAPIError{Code: "AccessDeniedException", Fault: smithy.FaultClient}
@@ -128,7 +134,7 @@ func (f fakeSecretsManager) err() error {
 	return nil
 }
 
-func (f fakeSecretsManager) lookup(id string, version *string) (*string, *string, error) {
+func (f *fakeSecretsManager) lookup(id string, version *string) (*string, *string, error) {
 	if err := f.err(); err != nil {
 		return nil, nil, err
 	}
@@ -141,7 +147,8 @@ func (f fakeSecretsManager) lookup(id string, version *string) (*string, *string
 	return aws.String(v), aws.String(versions[id]), nil
 }
 
-func (f fakeSecretsManager) GetSecretValue(_ context.Context, in *secretsmanager.GetSecretValueInput, _ ...func(*secretsmanager.Options)) (*secretsmanager.GetSecretValueOutput, error) {
+func (f *fakeSecretsManager) GetSecretValue(_ context.Context, in *secretsmanager.GetSecretValueInput, _ ...func(*secretsmanager.Options)) (*secretsmanager.GetSecretValueOutput, error) {
+	f.last = in
 	version := in.VersionStage
 	if in.VersionId != nil {
 		version = in.VersionId
@@ -153,9 +160,13 @@ func (f fakeSecretsManager) GetSecretValue(_ context.Context, in *secretsmanager
 	return &secretsmanager.GetSecretValueOutput{Name: in.SecretId, SecretString: value, VersionId: id}, nil
 }
 
-func (f fakeSecretsManager) BatchGetSecretValue(_ context.Context, in *secretsmanager.BatchGetSecretValueInput, _ ...func(*secretsmanager.Options)) (*secretsmanager.BatchGetSecretValueOutput, error) {
+func (f *fakeSecretsManager) BatchGetSecretValue(_ context.Context, in *secretsmanager.BatchGetSecretValueInput, _ ...func(*secretsmanager.Options)) (*secretsmanager.BatchGetSecretValueOutput, error) {
 	out := &secretsmanager.BatchGetSecretValueOutput{}
 	for _, id := range in.SecretIdList {
+		if code, ok := f.batchErrors[id]; ok {
+			out.Errors = append(out.Errors, types.APIErrorType{SecretId: aws.String(id), ErrorCode: aws.String(code)})
+			continue
+		}
 		value, version, err := f.lookup(id, nil)
 		var missing *types.ResourceNotFoundException
 		if err != nil && !errors.As(err, &missing) {
@@ -168,7 +179,39 @@ func (f fakeSecretsManager) BatchGetSecretValue(_ context.Context, in *secretsma
 	return out, nil
 }
 
-func awsFixture(_ *testing.T, m mode) Store { return NewAWS(fakeSecretsManager{mode: m}) }
+func awsFixture(_ *testing.T, m mode) Store { return NewAWS(&fakeSecretsManager{mode: m}) }
+
+func TestAWS_ABatchsPerSecretErrorsAreMappedLikeSingleReads(t *testing.T) {
+	for code, want := range map[string]error{
+		"InternalServiceError":  ErrUnavailable,
+		"AccessDeniedException": ErrDenied,
+		"DecryptionFailure":     ErrDenied,
+	} {
+		store := NewAWS(&fakeSecretsManager{batchErrors: map[string]string{"db": code}})
+		_, err := GetMany(t.Context(), store, []Ref{{Path: "plain"}, {Path: "db", Field: "password"}})
+		assert.ErrorIs(t, err, want, code)
+		assert.NotErrorIs(t, err, ErrNotFound, code)
+	}
+}
+
+func TestAWS_VersionIdsAndStagesAreSentAsSuch(t *testing.T) {
+	tests := []struct {
+		version   string
+		id, stage string
+	}{
+		{version: "0123456789abcdef0123456789abcdef", id: "0123456789abcdef0123456789abcdef"},
+		{version: "01234567-89ab-cdef-0123-456789abcdef", id: "01234567-89ab-cdef-0123-456789abcdef"},
+		{version: "AWSPREVIOUS", stage: "AWSPREVIOUS"},
+		{version: "stage:release-2026", stage: "release-2026"},
+	}
+	for _, tt := range tests {
+		api := &fakeSecretsManager{}
+		_, _ = NewAWS(api).Get(t.Context(), Ref{Path: "db", Version: tt.version})
+		require.NotNil(t, api.last, tt.version)
+		assert.Equal(t, tt.id, aws.ToString(api.last.VersionId), tt.version)
+		assert.Equal(t, tt.stage, aws.ToString(api.last.VersionStage), tt.version)
+	}
+}
 
 // vaultFixture is a Vault with Kubernetes auth and a KV v2 mount "kv".
 func vaultFixture(t *testing.T, m mode) Store {

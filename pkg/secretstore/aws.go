@@ -4,7 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
+	"slices"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -24,8 +25,30 @@ type SecretsManagerAPI interface {
 // awsBatchLimit is the most secrets one BatchGetSecretValue call names.
 const awsBatchLimit = 20
 
-// versionID matches a Secrets Manager VersionId; anything else is a stage.
-var versionID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+// stagePrefix marks a Ref version that names a staging label rather than a
+// VersionId, as in "stage:AWSPREVIOUS".
+const stagePrefix = "stage:"
+
+// awsStages are the staging labels Secrets Manager itself uses; they are read
+// as stages without the prefix.
+var awsStages = []string{"AWSCURRENT", "AWSPREVIOUS", "AWSPENDING"}
+
+// versionParams reads a Ref version: a staging label when it is one of AWS's
+// or carries the stage: prefix, and otherwise a VersionId, which may be a
+// UUID or any 32-64 character client request token, and is what a resolved
+// value records and a pin replays.
+func versionParams(version string) (id, stage *string) {
+	switch {
+	case version == "":
+		return nil, nil
+	case strings.HasPrefix(version, stagePrefix):
+		return nil, aws.String(strings.TrimPrefix(version, stagePrefix))
+	case slices.Contains(awsStages, version):
+		return nil, aws.String(version)
+	default:
+		return aws.String(version), nil
+	}
+}
 
 // NewAWSClient returns a Secrets Manager client in region with the Pod's
 // credentials (EKS Pod Identity or IRSA), assuming roleARN on top when it is
@@ -43,7 +66,8 @@ func NewAWSClient(ctx context.Context, region, roleARN string) (SecretsManagerAP
 
 // NewAWS returns the aws_secrets_manager store over api. A Ref's Path is the
 // secret's name or ARN, its Field a key of a JSON secret, and its Version a
-// VersionId or a staging label such as AWSPREVIOUS.
+// VersionId, or a staging label: AWSCURRENT, AWSPREVIOUS, AWSPENDING, or any
+// other written as stage:<label>.
 func NewAWS(api SecretsManagerAPI) Store { return &awsStore{api: api} }
 
 type awsStore struct{ api SecretsManagerAPI }
@@ -53,12 +77,7 @@ func (a *awsStore) Versions() bool { return true }
 
 func (a *awsStore) Get(ctx context.Context, ref Ref) (Value, error) {
 	in := &secretsmanager.GetSecretValueInput{SecretId: aws.String(ref.Path)}
-	switch {
-	case versionID.MatchString(ref.Version):
-		in.VersionId = aws.String(ref.Version)
-	case ref.Version != "":
-		in.VersionStage = aws.String(ref.Version)
-	}
+	in.VersionId, in.VersionStage = versionParams(ref.Version)
 	out, err := a.api.GetSecretValue(ctx, in)
 	if err != nil {
 		return Value{}, fail(KindAWSSecretsManager, ref, awsError(err, ref.Version != ""))
@@ -97,7 +116,16 @@ func (a *awsStore) GetMany(ctx context.Context, refs []Ref) ([]Value, error) {
 			found[aws.ToString(v.Name)] = j
 			found[aws.ToString(v.ARN)] = j
 		}
+		// A batch answers 200 and lists each secret it could not read in
+		// Errors, so those are mapped like a single read's error.
+		failed := map[string]error{}
+		for _, e := range resp.Errors {
+			failed[aws.ToString(e.SecretId)] = codeError(aws.ToString(e.ErrorCode), false, false)
+		}
 		for _, i := range chunk {
+			if err, ok := failed[refs[i].Path]; ok {
+				return nil, fail(KindAWSSecretsManager, refs[i], err)
+			}
 			j, ok := found[refs[i].Path]
 			if !ok {
 				return nil, fail(KindAWSSecretsManager, refs[i], ErrNotFound)
@@ -129,21 +157,26 @@ func awsError(err error, pinned bool) error {
 	if !errors.As(err, &api) {
 		return fmt.Errorf("%w: %v", ErrUnavailable, err)
 	}
-	switch api.ErrorCode() {
+	return codeError(api.ErrorCode(), pinned, api.ErrorFault() == smithy.FaultServer)
+}
+
+// codeError maps a Secrets Manager error code, from an API error or a batch's
+// per-secret Errors, onto the store's errors.
+func codeError(code string, pinned, serverFault bool) error {
+	switch code {
 	case "ResourceNotFoundException":
 		if pinned {
 			return ErrVersionGone
 		}
 		return ErrNotFound
-	case "AccessDeniedException", "UnrecognizedClientException", "InvalidSignatureException", "ExpiredTokenException":
-		return fmt.Errorf("%w: %s", ErrDenied, api.ErrorCode())
-	case "DecryptionFailure":
-		return fmt.Errorf("%w: %s", ErrDenied, api.ErrorCode())
-	case "ThrottlingException", "InternalServiceError", "ServiceUnavailable":
-		return fmt.Errorf("%w: %s", ErrUnavailable, api.ErrorCode())
+	case "AccessDeniedException", "UnrecognizedClientException", "InvalidSignatureException", "ExpiredTokenException",
+		"DecryptionFailure":
+		return fmt.Errorf("%w: %s", ErrDenied, code)
+	case "ThrottlingException", "InternalServiceError", "ServiceUnavailable", "RequestLimitExceeded":
+		return fmt.Errorf("%w: %s", ErrUnavailable, code)
 	}
-	if api.ErrorFault() == smithy.FaultServer {
-		return fmt.Errorf("%w: %s", ErrUnavailable, api.ErrorCode())
+	if serverFault {
+		return fmt.Errorf("%w: %s", ErrUnavailable, code)
 	}
-	return fmt.Errorf("%w: %s", ErrDenied, api.ErrorCode())
+	return fmt.Errorf("%w: %s", ErrDenied, code)
 }

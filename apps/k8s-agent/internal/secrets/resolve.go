@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -75,8 +74,8 @@ type Config struct {
 	Logger                  *slog.Logger
 }
 
-// NewResolver returns a Resolver. The fingerprint key is loaded the first
-// time a Deployment uses a secret.
+// NewResolver returns a Resolver. The fingerprint keys are read for each
+// Deployment that uses a secret.
 func NewResolver(cfg Config) Resolver {
 	r := &resolver{cfg: cfg, retryBase: time.Second}
 	r.store = r.newStore
@@ -91,23 +90,12 @@ type resolver struct {
 	retryBase time.Duration
 	store     func(ctx context.Context, settings apiclient.StoreSettings, namespace string) (secretstore.Store, error)
 	loadKeys  func(ctx context.Context) (Fingerprinter, error)
-
-	mu   sync.Mutex
-	keys Fingerprinter
 }
 
+// fingerprinter reads the key ring afresh for each Deployment, so a key an
+// operator adds is used, and a key removed is refused, without a restart.
 func (r *resolver) fingerprinter(ctx context.Context) (Fingerprinter, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.keys != nil {
-		return r.keys, nil
-	}
-	keys, err := r.loadKeys(ctx)
-	if err != nil {
-		return nil, err
-	}
-	r.keys = keys
-	return keys, nil
+	return r.loadKeys(ctx)
 }
 
 func (r *resolver) Resolve(ctx context.Context, namespace string, secrets []apiclient.AssignmentSecret) ([]Resolved, error) {

@@ -122,6 +122,9 @@ type manager struct {
 	current state.State
 	lost    chan struct{}
 	reason  string
+	// capped is set when a renewal could not extend the credential: it
+	// is left to expire.
+	capped bool
 }
 
 func (m *manager) Client() *http.Client { return m.client }
@@ -160,6 +163,7 @@ func (m *manager) Enrol(ctx context.Context) (state.State, error) {
 	m.current = st
 	m.lost = make(chan struct{})
 	m.reason = ""
+	m.capped = false
 	m.mu.Unlock()
 	return st, nil
 }
@@ -214,10 +218,10 @@ func (m *manager) redeem(ctx context.Context, st state.State, token string) (sta
 	if r.WorkloadToken != nil {
 		next.WorkloadToken = *r.WorkloadToken
 	}
-	if err := m.cfg.State.Save(ctx, next); err != nil {
-		// The token is spent, so this credential is the only one there
-		// will be; failing here loses it.
-		return state.State{}, fmt.Errorf("save the redeemed credential: %w", err)
+	// The token is spent, so this credential is the only one there will
+	// be: keep trying to save it rather than give it up.
+	if err := m.save(ctx, next, "the redeemed credential"); err != nil {
+		return state.State{}, err
 	}
 	m.cfg.Logger.Info("enrolled", "cluster_id", next.ClusterID, "workload_principal_id", next.WorkloadPrincipalID,
 		"credential_kind", next.CredentialKind)
@@ -257,7 +261,14 @@ func (m *manager) Maintain(ctx context.Context) error {
 				return m.forget(ctx)
 			}
 		}
-		timer := time.NewTimer(max(0, m.renewAt(st).Sub(m.now())))
+		m.mu.Lock()
+		capped := m.capped
+		m.mu.Unlock()
+		at := m.renewAt(st)
+		if capped {
+			at = *st.ExpiresAt
+		}
+		timer := time.NewTimer(max(0, at.Sub(m.now())))
 		select {
 		case <-ctx.Done():
 			timer.Stop()
@@ -266,6 +277,10 @@ func (m *manager) Maintain(ctx context.Context) error {
 			timer.Stop()
 			return m.forget(ctx)
 		case <-timer.C:
+		}
+		if capped {
+			m.Invalidate("the credential expired and could not be extended")
+			return m.forget(ctx)
 		}
 		if err := m.renew(ctx, st); err != nil {
 			if ctx.Err() != nil {
@@ -316,6 +331,17 @@ func (m *manager) renew(ctx context.Context, st state.State) error {
 	}
 
 	r := resp.JSON200.Data
+	if st.ExpiresAt != nil && r.ExpiresAt != nil && !r.ExpiresAt.After(*st.ExpiresAt) {
+		// The control plane could not extend it, as with an mTLS
+		// credential that has reached its certificate's expiry. Renewing
+		// again would only come sooner and sooner; it runs out instead.
+		m.mu.Lock()
+		m.capped = true
+		m.mu.Unlock()
+		m.cfg.Logger.Warn("the credential cannot be extended past its expiry; the agent will need a new enrolment token then",
+			"credential_id", r.CredentialId, "expires_at", *r.ExpiresAt)
+		return nil
+	}
 	next := st
 	next.CredentialID = r.CredentialId
 	next.CredentialKind = r.CredentialKind
@@ -324,18 +350,37 @@ func (m *manager) renew(ctx context.Context, st state.State) error {
 	if r.WorkloadToken != nil {
 		next.WorkloadToken = *r.WorkloadToken
 	}
-	// A new bearer token is saved before it is used, so a restart never
-	// loads a token the control plane has replaced. If saving fails the
-	// new token is used anyway: the old one stops working after a short
-	// grace period regardless.
-	if err := m.cfg.State.Save(ctx, next); err != nil {
-		m.cfg.Logger.Error("could not save the renewed credential; a restart will need a new enrolment token", "error", err)
-	}
+	// The new credential is used at once, because the old bearer token
+	// stops working after a short grace period whether or not it is
+	// saved, and saving is retried until it succeeds, so a restart never
+	// loads a token the control plane has replaced.
 	m.mu.Lock()
 	m.current = next
 	m.mu.Unlock()
+	if err := m.save(ctx, next, "the renewed credential"); err != nil {
+		return err
+	}
 	m.cfg.Logger.Info("renewed the credential", "credential_id", next.CredentialID, "expires_at", next.ExpiresAt)
 	return nil
+}
+
+// save writes st to the state Secret, retrying until it succeeds or ctx
+// ends: what it holds cannot be fetched again.
+func (m *manager) save(ctx context.Context, st state.State, what string) error {
+	wait := m.retryBase
+	for {
+		err := m.cfg.State.Save(ctx, st)
+		if err == nil {
+			return nil
+		}
+		m.cfg.Logger.Error("could not save "+what+"; retrying", "error", err, "in", wait)
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("save %s: %w", what, err)
+		case <-time.After(wait):
+		}
+		wait = min(2*wait, 30*time.Second)
+	}
 }
 
 // forget removes the lost credential from the state, so a restart waits for

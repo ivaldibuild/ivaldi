@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strconv"
 	"time"
 
@@ -60,9 +61,9 @@ func New(cfg Config) (deploy.Deployer, error) {
 		return nil, fmt.Errorf("kubernetes discovery: %w", err)
 	}
 	d := &deployer{cfg: cfg, mapper: mapper, now: time.Now}
-	d.configure = func(namespace string) (*action.Configuration, error) {
+	d.configure = func(namespace string, restConfig *rest.Config) (*action.Configuration, error) {
 		c := action.NewConfiguration(action.ConfigurationSetLogger(cfg.Logger.Handler()))
-		if err := c.Init(newRESTGetter(cfg.RESTConfig, disc, mapper, namespace), namespace, "secret"); err != nil {
+		if err := c.Init(newRESTGetter(restConfig, disc, mapper, namespace), namespace, "secret"); err != nil {
 			return nil, err
 		}
 		return c, nil
@@ -72,10 +73,12 @@ func New(cfg Config) (deploy.Deployer, error) {
 }
 
 type deployer struct {
-	cfg       Config
-	mapper    meta.RESTMapper
-	now       func() time.Time
-	configure func(namespace string) (*action.Configuration, error)
+	cfg    Config
+	mapper meta.RESTMapper
+	now    func() time.Time
+	// configure builds the Helm configuration for one apply, whose
+	// Kubernetes requests go through restConfig.
+	configure func(namespace string, restConfig *rest.Config) (*action.Configuration, error)
 	load      func(ctx context.Context, artifact deploy.Artifact) (*chart.Chart, error)
 }
 
@@ -85,7 +88,12 @@ func (d *deployer) Apply(ctx context.Context, a deploy.Assignment, progress depl
 	if a.HelmReleaseName == "" {
 		return deploy.Applied{}, deploy.Failf("the assignment names no Helm release")
 	}
-	cfg, err := d.configure(a.Namespace)
+	// Every Kubernetes request of this apply, Helm's writes, hook waits,
+	// and release storage, is cancelled when ctx ends, so nothing keeps
+	// changing the cluster after the agent has given the apply up.
+	bound := rest.CopyConfig(d.cfg.RESTConfig)
+	bound.Wrap(func(rt http.RoundTripper) http.RoundTripper { return bind(ctx, rt) })
+	cfg, err := d.configure(a.Namespace, bound)
 	if err != nil {
 		return deploy.Applied{}, fmt.Errorf("helm configuration: %w", err)
 	}
@@ -118,7 +126,10 @@ func (d *deployer) Apply(ctx context.Context, a deploy.Assignment, progress depl
 	}
 
 	progress(deploy.StepApplying, fmt.Sprintf("applying Helm release %s in %s", a.HelmReleaseName, a.Namespace))
-	renderer := &postRenderer{applicationID: a.ApplicationID, deploymentID: a.DeploymentID, releaseID: a.ReleaseID, mapper: d.mapper}
+	renderer := &postRenderer{
+		applicationID: a.ApplicationID, deploymentID: a.DeploymentID, releaseID: a.ReleaseID,
+		namespace: a.Namespace, mapper: d.mapper,
+	}
 	labels := map[string]string{releaseLabel: a.DeploymentID}
 	if *install {
 		act := action.NewInstall(cfg)
@@ -130,7 +141,10 @@ func (d *deployer) Apply(ctx context.Context, a deploy.Assignment, progress depl
 		act.Labels = labels
 		act.PostRenderer = renderer
 		act.SkipCRDs = true
-		_, err = act.RunWithContext(ctx, c, built.Values)
+		// Not ctx: Helm returns on cancellation while its install goroutine
+		// carries on. The bound requests stop the operation instead, and
+		// waiting for it means it has stopped when Apply returns.
+		_, err = act.RunWithContext(context.WithoutCancel(ctx), c, built.Values)
 	} else {
 		act := action.NewUpgrade(cfg)
 		act.Namespace = a.Namespace
@@ -141,7 +155,7 @@ func (d *deployer) Apply(ctx context.Context, a deploy.Assignment, progress depl
 		act.Labels = labels
 		act.PostRenderer = renderer
 		act.SkipCRDs = true
-		_, err = act.RunWithContext(ctx, a.HelmReleaseName, c, built.Values)
+		_, err = act.RunWithContext(context.WithoutCancel(ctx), a.HelmReleaseName, c, built.Values)
 	}
 	if err != nil {
 		if ctx.Err() != nil {
@@ -225,15 +239,21 @@ func markFailed(store *storage.Storage, rel *releasev1.Release, msg string) erro
 }
 
 // stuck is the failure when a pending revision cannot be cleared: the
-// Deployment says how to clear it by hand.
+// Deployment says how to clear it by hand. Helm reads a revision's status
+// from the release encoded in its Secret, not from the Secret's labels, so
+// the revision's Secret is deleted; the next apply then starts from the
+// revision before it, or installs afresh if it was the first.
 func stuck(a deploy.Assignment, rel *releasev1.Release, err error) *deploy.Failure {
 	return &deploy.Failure{
 		Reason: fmt.Sprintf("helm release %s is stuck in %s", a.HelmReleaseName, rel.Info.Status),
-		Detail: map[string]any{"clear_with": fmt.Sprintf(
-			"kubectl -n %s label secret sh.helm.release.v1.%s.v%d status=failed --overwrite",
-			a.Namespace, a.HelmReleaseName, rel.Version)},
-		Err: err,
+		Detail: map[string]any{"clear_with": revisionSecretCommand(a.Namespace, a.HelmReleaseName, rel.Version)},
+		Err:    err,
 	}
+}
+
+// revisionSecretCommand deletes the Secret Helm keeps one revision in.
+func revisionSecretCommand(namespace, release string, version int) string {
+	return fmt.Sprintf("kubectl -n %s delete secret sh.helm.release.v1.%s.v%d", namespace, release, version)
 }
 
 // ref names the release's current revision for the report.

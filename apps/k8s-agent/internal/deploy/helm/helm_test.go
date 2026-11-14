@@ -3,8 +3,12 @@ package helm
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,13 +17,17 @@ import (
 	"helm.sh/helm/v4/pkg/action"
 	"helm.sh/helm/v4/pkg/chart/common"
 	chart "helm.sh/helm/v4/pkg/chart/v2"
+	"helm.sh/helm/v4/pkg/kube"
 	kubefake "helm.sh/helm/v4/pkg/kube/fake"
 	releasecommon "helm.sh/helm/v4/pkg/release/common"
 	releasev1 "helm.sh/helm/v4/pkg/release/v1"
 	"helm.sh/helm/v4/pkg/storage"
 	"helm.sh/helm/v4/pkg/storage/driver"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	k8sfake "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/rest"
 
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/deploy"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/values"
@@ -80,18 +88,27 @@ type fixture struct {
 	store    *storage.Storage
 	loads    int
 	steps    []deploy.Step
+	// kube, when set, is the Kubernetes client Helm writes through.
+	kube kube.Interface
+}
+
+func (f *fixture) kubeClient() kube.Interface {
+	if f.kube != nil {
+		return f.kube
+	}
+	return &kubefake.PrintingKubeClient{Out: io.Discard}
 }
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	f := &fixture{store: storage.Init(driver.NewMemory())}
 	f.deployer = &deployer{
-		cfg: Config{Timeout: 10 * time.Minute},
+		cfg: Config{Timeout: 10 * time.Minute, RESTConfig: &rest.Config{}},
 		now: time.Now,
-		configure: func(string) (*action.Configuration, error) {
+		configure: func(string, *rest.Config) (*action.Configuration, error) {
 			return &action.Configuration{
 				Releases:     f.store,
-				KubeClient:   &kubefake.PrintingKubeClient{Out: io.Discard},
+				KubeClient:   f.kubeClient(),
 				Capabilities: common.DefaultCapabilities,
 			}, nil
 		},
@@ -234,4 +251,144 @@ func TestPostRenderer_RefusesClusterScopedObjects(t *testing.T) {
 
 	_, err := p.Run(bytes.NewBufferString("apiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRole\nmetadata:\n  name: admin-ish\n"))
 	require.ErrorContains(t, err, "the chart creates ClusterRole admin-ish, which is cluster-scoped")
+}
+
+// blockingKube is a Kubernetes client that blocks inside Helm's install
+// goroutine, as a write to a slow API server does: every install asks it for
+// a waiter after applying, in the goroutine RunWithContext abandons on
+// cancellation.
+type blockingKube struct {
+	kubefake.PrintingKubeClient
+	called  chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (b *blockingKube) block() {
+	b.once.Do(func() { close(b.called) })
+	<-b.release
+}
+
+func (b *blockingKube) GetWaiter(strategy kube.WaitStrategy) (kube.Waiter, error) {
+	b.block()
+	return b.PrintingKubeClient.GetWaiter(strategy)
+}
+
+func (b *blockingKube) GetWaiterWithOptions(strategy kube.WaitStrategy, opts ...kube.WaitOption) (kube.Waiter, error) {
+	b.block()
+	return b.PrintingKubeClient.GetWaiterWithOptions(strategy, opts...)
+}
+
+func TestApply_ReturnsOnlyOnceHelmHasStoppedWriting(t *testing.T) {
+	f := newFixture(t)
+	blocking := &blockingKube{PrintingKubeClient: kubefake.PrintingKubeClient{Out: io.Discard}, called: make(chan struct{}), release: make(chan struct{})}
+	f.kube = blocking
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error)
+	go func() {
+		_, err := f.deployer.Apply(ctx, assignment("dep_1"), func(deploy.Step, string) {})
+		done <- err
+	}()
+
+	select {
+	case <-blocking.called:
+	case err := <-done:
+		t.Fatalf("Apply returned before Helm wrote anything: %v", err)
+	}
+	cancel()
+	select {
+	case <-done:
+		t.Fatal("Apply returned while Helm was still writing")
+	case <-time.After(200 * time.Millisecond):
+	}
+	// The fake API server ignores cancellation, so the released install
+	// finishes; against a real one the bound requests fail instead. Either
+	// way Apply returns only after Helm's goroutine has.
+	close(blocking.release)
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Apply did not return once Helm stopped")
+	}
+}
+
+func TestBoundTransport_StopsRequestsWhenTheApplyEnds(t *testing.T) {
+	stalled := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/fast" {
+			_, _ = w.Write([]byte("ok"))
+			return
+		}
+		close(stalled)
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithCancel(t.Context())
+	client := &http.Client{Transport: bind(ctx, nil)}
+
+	resp, err := client.Get(server.URL + "/fast")
+	require.NoError(t, err)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	assert.Equal(t, "ok", string(body), "a response is readable after RoundTrip returns")
+
+	done := make(chan error)
+	go func() {
+		_, err := client.Get(server.URL + "/stall")
+		done <- err
+	}()
+	<-stalled
+	cancel()
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(5 * time.Second):
+		t.Fatal("a request in flight was not cancelled")
+	}
+	_, err = client.Get(server.URL + "/fast")
+	require.ErrorIs(t, err, context.Canceled, "no new request after the apply ends")
+}
+
+func TestPostRenderer_RefusesObjectsInAnotherNamespace(t *testing.T) {
+	p := &postRenderer{applicationID: "app_1", deploymentID: "dep_1", releaseID: "rel_1", namespace: "payments-staging"}
+
+	_, err := p.Run(bytes.NewBufferString("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: cfg\n  namespace: payments-prod\n"))
+	require.ErrorContains(t, err, "the chart puts ConfigMap cfg in namespace payments-prod; this Deployment may only change payments-staging")
+
+	_, err = p.Run(bytes.NewBufferString("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: cfg\n  namespace: payments-staging\n---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: unset\n"))
+	require.NoError(t, err, "its own namespace, or none, is fine")
+}
+
+func TestApply_RefusesAHookInAnotherNamespace(t *testing.T) {
+	f := newFixture(t)
+	f.deployer.load = func(context.Context, deploy.Artifact) (*chart.Chart, error) {
+		c := testChart()
+		c.Templates = append(c.Templates, &common.File{Name: "templates/hook.yaml", Data: []byte(
+			"apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: migrate\n  namespace: payments-staging\n  annotations:\n    helm.sh/hook: pre-install\n")})
+		return c, nil
+	}
+	_, err := f.deployer.Apply(t.Context(), assignment("dep_1"), f.progress)
+	require.ErrorContains(t, err, "in namespace payments-staging; this Deployment may only change payments-prod")
+}
+
+func TestStuckRevision_TheRecoveryCommandClearsIt(t *testing.T) {
+	kube := k8sfake.NewClientset()
+	store := storage.Init(driver.NewSecrets(kube.CoreV1().Secrets("payments-prod")))
+	require.NoError(t, store.Create(&releasev1.Release{Name: "payments", Namespace: "payments-prod", Version: 1,
+		Info: &releasev1.Info{Status: releasecommon.StatusDeployed}}))
+	require.NoError(t, store.Create(&releasev1.Release{Name: "payments", Namespace: "payments-prod", Version: 2,
+		Info: &releasev1.Info{Status: releasecommon.StatusPendingUpgrade}}))
+
+	failure := stuck(assignment("dep_1"), &releasev1.Release{Version: 2, Info: &releasev1.Info{Status: releasecommon.StatusPendingUpgrade}}, errors.New("update refused"))
+	command := failure.Detail["clear_with"].(string)
+	assert.Equal(t, "kubectl -n payments-prod delete secret sh.helm.release.v1.payments.v2", command)
+
+	// Run what the command does, against Helm's own Secret storage.
+	name := strings.Fields(command)[len(strings.Fields(command))-1]
+	require.NoError(t, kube.CoreV1().Secrets("payments-prod").Delete(t.Context(), name, metav1.DeleteOptions{}))
+	rel, err := latest(store, "payments")
+	require.NoError(t, err)
+	assert.Equal(t, 1, rel.Version)
+	assert.Equal(t, releasecommon.StatusDeployed, rel.Info.Status, "the pending revision is gone, so the next apply upgrades")
 }

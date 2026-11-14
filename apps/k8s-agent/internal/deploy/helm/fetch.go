@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,6 +28,9 @@ func (d *deployer) fetch(ctx context.Context, artifact deploy.Artifact) (*chart.
 		// Never read or write credentials on disk: the root filesystem is
 		// read-only, and credentials come from the pull Secret.
 		registry.ClientOptCredentialsFile(filepath.Join(os.TempDir(), "ivaldi-helm-registry.json")),
+		// Helm pulls with context.Background; the bound transport makes a
+		// stalled registry give up when the apply does.
+		registry.ClientOptHTTPClient(&http.Client{Transport: bind(ctx, registry.NewTransport(false))}),
 	}
 	username, password, err := d.registryCredentials(ctx, registryHost(artifact.Repository))
 	if err != nil {

@@ -23,13 +23,16 @@ var podTemplatePaths = map[string][]string{
 	"CronJob":     {"spec", "jobTemplate", "spec", "template", "metadata"},
 }
 
-// postRenderer labels and annotates what a chart renders so the agent can
-// find it and tell which Deployment applied it, and refuses objects outside
-// a namespace: the agent is never granted cluster-wide writes.
+// postRenderer labels and annotates what a chart renders, hooks included,
+// so the agent can find it and tell which Deployment applied it. It refuses
+// cluster-scoped objects, because the agent is never granted cluster-wide
+// writes, and objects in any namespace but the Target's.
 type postRenderer struct {
 	applicationID string
 	deploymentID  string
 	releaseID     string
+	// namespace is the Target's: every object must be in it.
+	namespace string
 	// mapper tells cluster-scoped kinds apart; nil skips the check.
 	mapper meta.RESTMapper
 }
@@ -42,6 +45,13 @@ func (p *postRenderer) Run(rendered *bytes.Buffer) (*bytes.Buffer, error) {
 	for _, node := range nodes {
 		if err := p.checkScope(node); err != nil {
 			return nil, err
+		}
+		// An explicit namespace would let one Target's Deployment change
+		// another namespace the agent may write to. Objects without one are
+		// put in the release namespace, the Target's, by Helm.
+		if ns := node.GetNamespace(); ns != "" && ns != p.namespace {
+			return nil, deploy.Failf("the chart puts %s %s in namespace %s; this Deployment may only change %s",
+				node.GetKind(), node.GetName(), ns, p.namespace)
 		}
 		// Each filter runs on its own: PipeE hands a filter's result to
 		// the next.

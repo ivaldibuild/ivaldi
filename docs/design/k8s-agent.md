@@ -218,6 +218,13 @@ Flags, with environment variables of the same name prefixed `IVALDI_`, and chart
 | `--registry-pull-secret` | none | Docker-config Secret for fetching charts |
 | `--max-concurrent-applies` | `4` | |
 | `--health-address` | `:8080` | Liveness and readiness |
+| `--lease-name` | `ivaldi-agent` | The Lease in the agent's namespace |
+| `--namespace` | the Pod's | The agent's namespace, holding its Secrets and Lease |
+| `--pod-name` | the host name | This replica's identity in the Lease |
+| `--kubeconfig` | in-cluster | For running outside a cluster |
+| `--log-level` | `info` | `debug`, `info`, `warn`, or `error` |
+
+The enrolment Secret holds the token under the key `token`; the state Secret holds the state as JSON under `state.json`, including the SHA-256 of the last enrolment token the agent tried, so it never redeems one twice. Re-enrolling is replacing the token in the enrolment Secret: the agent redeems a token it has not tried at its next start, or within 30 seconds while it waits without a credential. A credential the control plane refuses (401, or a refused renewal) is removed from the state, and the agent releases the Lease and waits, not ready, for a new token; it does not exit, so the Pod does not crash-loop.
 
 There is no `--execute` flag: whether the agent can execute in a namespace is whatever RBAC grants it there, which the chart's `execute.namespaces` sets. There are no heartbeat, poll, or watch flags either: the control plane sends the three intervals in `GET /v1/agent/targets`, so the agent's pace always matches the staleness rule. `--credentials-store-path` is replaced by `--state-secret`.
 

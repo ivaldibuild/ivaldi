@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -17,8 +18,10 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
+	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/apiclient"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/auth"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/state"
+	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/targets"
 )
 
 // New returns the agent's root command. version is the build's version.
@@ -78,13 +81,21 @@ func start(ctx context.Context, cfg Config, version string) error {
 		return err
 	}
 
+	cp, err := apiclient.NewControlPlane(cfg.ServerURL, creds.Client())
+	if err != nil {
+		return err
+	}
 	a := &agent{
 		cfg:        cfg,
+		version:    version,
 		log:        log,
 		kube:       kube,
 		creds:      creds,
-		ready:      newReadiness(conditionEnrolled, conditionLease),
+		cp:         cp,
+		newTracker: func() targets.Tracker { return targets.NewTracker(cp, kube, log) },
+		ready:      newReadiness(conditionEnrolled, conditionLease, conditionTargets),
 		enrolRetry: enrolRetry,
+		retryBase:  time.Second,
 	}
 	group, ctx := errgroup.WithContext(ctx)
 	runCtx, stopHealth := context.WithCancel(ctx)

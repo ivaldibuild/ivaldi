@@ -16,6 +16,9 @@ import (
 const (
 	conditionEnrolled = "enrolled"
 	conditionLease    = "lease"
+	// conditionTargets is met once the Targets are fetched and the
+	// informers for their namespaces have synced.
+	conditionTargets = "targets"
 )
 
 // readiness holds the conditions the agent must meet to be ready. Every

@@ -12,8 +12,9 @@ import (
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 
+	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/apiclient"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/auth"
-	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/state"
+	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/targets"
 )
 
 // errLeaseLost ends the process: another replica may now be applying, so
@@ -33,11 +34,15 @@ const enrolRetry = 30 * time.Second
 
 type agent struct {
 	cfg        Config
+	version    string
 	log        *slog.Logger
 	kube       kubernetes.Interface
 	creds      auth.Credentials
+	cp         apiclient.ControlPlane
+	newTracker func() targets.Tracker
 	ready      *readiness
 	enrolRetry time.Duration
+	retryBase  time.Duration
 }
 
 // run takes the Lease, enrols, and works until ctx ends. Credentials are
@@ -132,13 +137,6 @@ func (a *agent) lead(ctx context.Context) error {
 	default:
 		return errLeaseLost
 	}
-}
-
-// work is everything the agent does while it holds the Lease. It returns
-// nil when ctx ends.
-func (a *agent) work(ctx context.Context, st state.State) error {
-	a.log.Info("working", "cluster_id", st.ClusterID, "organization_id", st.OrganizationID)
-	return a.creds.Maintain(ctx)
 }
 
 // enrolAndWork enrols, reloading the state Secret, and works while ctx

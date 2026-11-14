@@ -194,9 +194,16 @@ type fakeControlPlane struct {
 	mu           sync.Mutex
 	heartbeats   []apiclient.HeartbeatRequestBody
 	heartbeatErr error
+	targetsErr   error
 }
 
 func (f *fakeControlPlane) Targets(context.Context) (*apiclient.TargetsResponse, error) {
+	f.mu.Lock()
+	err := f.targetsErr
+	f.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
 	return &apiclient.TargetsResponse{
 		Cluster:                  apiclient.ClusterView{Id: "cls_1", Slug: "prod-eu"},
 		HeartbeatIntervalSeconds: 1, PollIntervalSeconds: 1, WatchIntervalSeconds: 1,
@@ -333,7 +340,12 @@ func TestWork_HeartbeatsWhatTheAgentCanDoAndStopsWhenAnotherAgentServesTheCluste
 	done := make(chan error)
 	go func() { done <- a.work(ctx, state.State{ClusterID: "cls_1"}) }()
 
-	require.Eventually(t, func() bool { _, ok := cp.lastHeartbeat(); return ok }, 5*time.Second, 10*time.Millisecond)
+	// The first heartbeat may come before the Targets are known; the
+	// first refresh sends another at once.
+	require.Eventually(t, func() bool {
+		body, ok := cp.lastHeartbeat()
+		return ok && body.Targets != nil && len(*body.Targets) > 0
+	}, 5*time.Second, 10*time.Millisecond)
 	body, _ := cp.lastHeartbeat()
 	assert.Equal(t, "1.0.0-test", body.AgentVersion)
 	assert.Equal(t, "v1.31.4", body.KubernetesVersion)
@@ -348,4 +360,35 @@ func TestWork_HeartbeatsWhatTheAgentCanDoAndStopsWhenAnotherAgentServesTheCluste
 		t.Fatal("work did not stop when the control plane refused the agent")
 	}
 	assert.Contains(t, a.ready.unmet(), conditionTargets)
+}
+
+func TestWork_HeartbeatsWhileTheFirstRefreshFails(t *testing.T) {
+	a, _, cp := newTestAgent(newFakeCredentials())
+	cp.targetsErr = &apiclient.StatusError{Operation: "agent targets", Status: http.StatusServiceUnavailable}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go func() { _ = a.work(ctx, state.State{ClusterID: "cls_1"}) }()
+
+	require.Eventually(t, func() bool { _, ok := cp.lastHeartbeat(); return ok }, 5*time.Second, 10*time.Millisecond)
+	body, _ := cp.lastHeartbeat()
+	assert.Equal(t, "v1.31.4", body.KubernetesVersion)
+	assert.Equal(t, apiclient.HeartbeatRequestBodyWatchModeNamespaces, body.WatchMode, "a valid watch mode before RBAC is checked")
+	assert.Empty(t, *body.Targets, "no Targets before they are known")
+	assert.Contains(t, a.ready.unmet(), conditionTargets)
+}
+
+func TestWork_SkipsAHeartbeatItCannotFillIn(t *testing.T) {
+	a, kube, cp := newTestAgent(newFakeCredentials())
+	kube.PrependReactor("get", "version", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("discovery is down")
+	})
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go func() { _ = a.work(ctx, state.State{ClusterID: "cls_1"}) }()
+
+	// The refresh still completes; only the heartbeat waits for a version.
+	require.Eventually(t, func() bool { return !slices.Contains(a.ready.unmet(), conditionTargets) }, 5*time.Second, 10*time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
+	_, sent := cp.lastHeartbeat()
+	assert.False(t, sent, "a heartbeat without the Kubernetes version would be refused, so none is sent")
 }

@@ -13,6 +13,10 @@ import (
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/apiclient"
 )
 
+// DefaultHeartbeat is the heartbeat interval before the control plane has
+// sent one, matching its default.
+const DefaultHeartbeat = defaultHeartbeat
+
 // The intervals the agent falls back to if the control plane sends none,
 // matching the control plane's defaults.
 const (
@@ -69,10 +73,15 @@ func (s Set) HeartbeatBody(agentVersion string) apiclient.HeartbeatRequestBody {
 	}
 	// No deployer or secret store is built yet; each is added to these
 	// lists with the slice that brings it.
+	watchMode := s.WatchMode
+	if watchMode == "" {
+		// Before the first refresh has checked RBAC.
+		watchMode = WatchModeNamespaces
+	}
 	return apiclient.HeartbeatRequestBody{
 		AgentVersion:      agentVersion,
 		KubernetesVersion: s.KubernetesVersion,
-		WatchMode:         apiclient.HeartbeatRequestBodyWatchMode(s.WatchMode),
+		WatchMode:         apiclient.HeartbeatRequestBodyWatchMode(watchMode),
 		Deployers:         &[]string{},
 		SecretStoreKinds:  &[]string{},
 		Targets:           &reports,
@@ -87,6 +96,9 @@ type Tracker interface {
 	Refresh(ctx context.Context) (Set, error)
 	// Current returns the Set from the last successful Refresh.
 	Current() Set
+	// KubernetesVersion returns the cluster's version, reading it from
+	// the API server when it has not been read yet.
+	KubernetesVersion() (string, error)
 	// Stop stops the informers.
 	Stop()
 }
@@ -117,6 +129,30 @@ type tracker struct {
 
 	mu      sync.Mutex
 	current Set
+	// kubeVersion is the last version read, kept when a later read fails.
+	kubeVersion string
+}
+
+func (t *tracker) KubernetesVersion() (string, error) {
+	t.mu.Lock()
+	cached := t.kubeVersion
+	t.mu.Unlock()
+	if cached != "" {
+		return cached, nil
+	}
+	return t.readVersion()
+}
+
+// readVersion reads the version from the API server and caches it.
+func (t *tracker) readVersion() (string, error) {
+	v, err := t.version()
+	if err != nil {
+		return "", fmt.Errorf("read the Kubernetes version: %w", err)
+	}
+	t.mu.Lock()
+	t.kubeVersion = v
+	t.mu.Unlock()
+	return v, nil
 }
 
 func (t *tracker) Refresh(ctx context.Context) (Set, error) {
@@ -126,18 +162,18 @@ func (t *tracker) Refresh(ctx context.Context) (Set, error) {
 	}
 	previous := t.Current()
 	next := Set{
-		Cluster:           resp.Cluster,
-		Heartbeat:         seconds(resp.HeartbeatIntervalSeconds, defaultHeartbeat),
-		Poll:              seconds(resp.PollIntervalSeconds, defaultPoll),
-		Watch:             seconds(resp.WatchIntervalSeconds, defaultWatch),
-		WatchMode:         WatchModeNamespaces,
-		KubernetesVersion: previous.KubernetesVersion,
+		Cluster:   resp.Cluster,
+		Heartbeat: seconds(resp.HeartbeatIntervalSeconds, defaultHeartbeat),
+		Poll:      seconds(resp.PollIntervalSeconds, defaultPoll),
+		Watch:     seconds(resp.WatchIntervalSeconds, defaultWatch),
+		WatchMode: WatchModeNamespaces,
 	}
-	if v, err := t.version(); err != nil {
+	// Read again at every refresh, so an upgraded cluster is reported;
+	// a failed read keeps the version read before.
+	if _, err := t.readVersion(); err != nil {
 		t.log.Warn("could not read the Kubernetes version", "error", err)
-	} else {
-		next.KubernetesVersion = v
 	}
+	next.KubernetesVersion, _ = t.KubernetesVersion()
 	if wide, err := t.access.ClusterWide(ctx); err != nil {
 		t.log.Warn("could not check cluster-wide access", "error", err)
 	} else if wide {

@@ -28,12 +28,16 @@ func (a *agent) work(ctx context.Context, st state.State) error {
 	group, ctx := errgroup.WithContext(ctx)
 	group.Go(func() error { return a.creds.Maintain(ctx) })
 	group.Go(func() error {
-		if !a.firstRefresh(ctx, tracker) {
-			return nil
-		}
-		refreshNow := make(chan struct{}, 1)
+		refreshNow, beatNow := make(chan struct{}, 1), make(chan struct{}, 1)
 		loops, ctx := errgroup.WithContext(ctx)
-		loops.Go(func() error { a.heartbeatLoop(ctx, tracker, refreshNow); return nil })
+		// Liveness does not wait for the Targets: a slow or failing first
+		// refresh must not let the Cluster go stale.
+		loops.Go(func() error { a.heartbeatLoop(ctx, tracker, refreshNow, beatNow); return nil })
+		if !a.firstRefresh(ctx, tracker) {
+			return loops.Wait()
+		}
+		// Report the Targets' capabilities as soon as they are known.
+		beatNow <- struct{}{}
 		loops.Go(func() error { a.refreshLoop(ctx, tracker, refreshNow); return nil })
 		return loops.Wait()
 	})
@@ -57,13 +61,26 @@ func (a *agent) firstRefresh(ctx context.Context, tracker targets.Tracker) bool 
 	}
 }
 
-// heartbeatLoop heartbeats at once, then at the control plane's interval.
+// heartbeatLoop heartbeats at once, then at the control plane's interval,
+// or the default one until the first refresh brings it. Before the first
+// refresh a heartbeat names no Targets. A heartbeat needs the Kubernetes
+// version, so one that cannot be read is skipped rather than sent invalid.
 // A heartbeat refused as invalid, because a Target it names is no longer
 // active, asks for a refresh, after which the next heartbeat is correct.
-func (a *agent) heartbeatLoop(ctx context.Context, tracker targets.Tracker, refreshNow chan<- struct{}) {
+func (a *agent) heartbeatLoop(ctx context.Context, tracker targets.Tracker, refreshNow chan<- struct{}, beatNow <-chan struct{}) {
 	for {
 		set := tracker.Current()
-		err := a.cp.Heartbeat(ctx, set.HeartbeatBody(a.version))
+		if set.Heartbeat <= 0 {
+			set.Heartbeat = targets.DefaultHeartbeat
+		}
+		version, verr := tracker.KubernetesVersion()
+		set.KubernetesVersion = version
+		var err error
+		if verr != nil {
+			err = verr
+		} else {
+			err = a.cp.Heartbeat(ctx, set.HeartbeatBody(a.version))
+		}
 		switch {
 		case ctx.Err() != nil:
 			return
@@ -82,6 +99,7 @@ func (a *agent) heartbeatLoop(ctx context.Context, tracker targets.Tracker, refr
 		case <-ctx.Done():
 			return
 		case <-time.After(set.Heartbeat):
+		case <-beatNow:
 		}
 	}
 }

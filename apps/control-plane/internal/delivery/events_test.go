@@ -388,6 +388,8 @@ func TestSnapshotJSONKeys(t *testing.T) {
 	}{
 		{EnvironmentSnapshot{}, append([]string{"id", "organization_id", "workspace_id", "slug", "display_name", "tier", "execution_enabled", "deleted_at"}, timestamps...)},
 		{TargetSnapshot{}, append([]string{"id", "organization_id", "environment_id", "slug", "display_name", "runtime", "locator", "agent_principal_id", "last_reported_at", "deleted_at"}, timestamps...)},
+		{ClusterSnapshot{}, append([]string{"id", "organization_id", "slug", "display_name", "runtime", "agent_principal_id", "agent_capabilities", "agent_last_failure", "last_reported_at", "deleted_at"}, timestamps...)},
+		{AgentFailure{}, []string{"reason", "at"}},
 		{LifecycleSnapshot{}, append([]string{"id", "organization_id", "workspace_id", "slug", "display_name", "description", "phases", "deleted_at"}, timestamps...)},
 		{LifecyclePhaseSnapshot{}, append([]string{"id", "position", "name", "optional", "min_environments", "environment_ids"}, timestamps...)},
 		{RegistrySnapshot{}, append([]string{"id", "organization_id", "workspace_id", "slug", "display_name", "kind", "url", "credential_ref", "lookup_from", "lookup_pool", "deleted_at"}, timestamps...)},

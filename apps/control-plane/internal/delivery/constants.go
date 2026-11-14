@@ -29,6 +29,12 @@ const (
 	maxSelectorKeyLength   = 253
 	maxValuesRefs          = 20
 	maxValuesRefLength     = 512
+	// maxClusterCapabilitiesBytes bounds the facts an agent reports about
+	// itself, so a malformed or hostile report cannot fill a row.
+	maxClusterCapabilitiesBytes = 64 * 1024
+	// maxAgentFailureReasonLength bounds the explanation shown to whoever is
+	// enrolling a Cluster's agent.
+	maxAgentFailureReasonLength = 512
 )
 
 // AssignmentPageSize is how many in-flight Deployments are read per query

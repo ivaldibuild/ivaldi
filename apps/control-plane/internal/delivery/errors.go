@@ -33,6 +33,8 @@ var (
 	ErrInactiveTeam = errors.New("team is not an active team in the organization")
 	// ErrNotTargetAgent means the caller is not the runtime agent that serves the Target.
 	ErrNotTargetAgent = errors.New("not the target's agent")
+	// ErrNotClusterAgent means the caller is not the runtime agent that serves the Cluster.
+	ErrNotClusterAgent = errors.New("not the cluster's agent")
 	// ErrReleaseStatus means the Release's status does not allow the change,
 	// such as publishing a Release that is already published.
 	ErrReleaseStatus = errors.New("not allowed in the release's status")

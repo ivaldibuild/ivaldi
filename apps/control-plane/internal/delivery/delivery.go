@@ -14,6 +14,7 @@ func init() {
 	id.MustRegister(Lifecycle{}.Prefix(), "delivery.Lifecycle")
 	id.MustRegister(LifecyclePhase{}.Prefix(), "delivery.LifecyclePhase")
 	id.MustRegister(Target{}.Prefix(), "delivery.Target")
+	id.MustRegister(Cluster{}.Prefix(), "delivery.Cluster")
 	id.MustRegister(Registry{}.Prefix(), "delivery.Registry")
 	id.MustRegister(Application{}.Prefix(), "delivery.Application")
 	id.MustRegister(Artifact{}.Prefix(), "delivery.Artifact")

@@ -17,6 +17,7 @@ var slugIndexes = map[string]bool{
 	"idx_environments_workspace_slug": true,
 	"idx_lifecycles_workspace_slug":   true,
 	"idx_targets_environment_slug":    true,
+	"idx_clusters_slug":               true,
 	"idx_registries_workspace_slug":   true,
 	"idx_applications_project_slug":   true,
 	"idx_application_artifacts_name":  true,

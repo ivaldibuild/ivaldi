@@ -110,6 +110,34 @@ type TargetRepository interface {
 	CountActiveTargets(ctx context.Context, organizationID, environmentID string) (int, error)
 }
 
+// ListClustersQuery lists an Organization's Clusters. It sorts by
+// "created_at" (the default), "slug", or "display_name".
+type ListClustersQuery struct {
+	OrganizationID  string
+	IncludeArchived bool
+	Page            pagination.Query
+}
+
+// ClusterRepository stores Clusters. A Cluster belongs to the Organization
+// rather than a Workspace, so its queries are scoped by Organization alone.
+type ClusterRepository interface {
+	CreateCluster(ctx context.Context, c *Cluster) error
+	GetCluster(ctx context.Context, organizationID, clusterID string) (*Cluster, error)
+	// GetClusterForUpdate is GetCluster that also locks the row until the
+	// transaction ends. It must be called inside a transaction.
+	GetClusterForUpdate(ctx context.Context, organizationID, clusterID string) (*Cluster, error)
+	// GetClusterBySlug returns the active Cluster with the slug. Target
+	// locators name their Cluster by slug, so this is how a Target is
+	// resolved to its Cluster.
+	GetClusterBySlug(ctx context.Context, organizationID, slug string) (*Cluster, error)
+	// GetClusterByAgentPrincipalID returns the active Cluster whose agent is
+	// the workload principal. A credential serves at most one Cluster.
+	GetClusterByAgentPrincipalID(ctx context.Context, organizationID, principalID string) (*Cluster, error)
+	ListClusters(ctx context.Context, query ListClustersQuery) (*pagination.Result[*Cluster], error)
+	// UpdateCluster writes the cluster's state.
+	UpdateCluster(ctx context.Context, c *Cluster) error
+}
+
 // ListRegistriesQuery lists a Workspace's Registries. It sorts by
 // "created_at" (the default), "slug", or "display_name".
 type ListRegistriesQuery struct {

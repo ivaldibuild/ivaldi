@@ -83,6 +83,23 @@ type targetEntity struct {
 
 func (targetEntity) TableName() string { return "delivery.targets" }
 
+type clusterEntity struct {
+	ID                string     `gorm:"column:id;primaryKey"`
+	OrganizationID    string     `gorm:"column:organization_id"`
+	Slug              string     `gorm:"column:slug"`
+	DisplayName       string     `gorm:"column:display_name"`
+	Runtime           string     `gorm:"column:runtime"`
+	AgentPrincipalID  *string    `gorm:"column:agent_principal_id"`
+	AgentCapabilities []byte     `gorm:"column:agent_capabilities;type:jsonb"`
+	AgentLastFailure  []byte     `gorm:"column:agent_last_failure;type:jsonb"`
+	LastReportedAt    *time.Time `gorm:"column:last_reported_at"`
+	CreatedAt         time.Time  `gorm:"column:created_at;autoCreateTime:false"`
+	UpdatedAt         time.Time  `gorm:"column:updated_at;autoUpdateTime:false"`
+	DeletedAt         *time.Time `gorm:"column:deleted_at"`
+}
+
+func (clusterEntity) TableName() string { return "delivery.clusters" }
+
 type registryEntity struct {
 	ID             string     `gorm:"column:id;primaryKey"`
 	OrganizationID string     `gorm:"column:organization_id"`

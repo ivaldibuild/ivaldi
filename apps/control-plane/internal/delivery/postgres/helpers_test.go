@@ -59,6 +59,7 @@ type fixture struct {
 	envs       delivery.EnvironmentRepository
 	lifecycles delivery.LifecycleRepository
 	targets    delivery.TargetRepository
+	clusters   delivery.ClusterRepository
 	registries delivery.RegistryRepository
 	apps       delivery.ApplicationRepository
 }
@@ -76,6 +77,7 @@ func newFixture(t *testing.T) *fixture {
 		envs:       NewEnvironmentRepository(db),
 		lifecycles: NewLifecycleRepository(db),
 		targets:    NewTargetRepository(db),
+		clusters:   NewClusterRepository(db),
 		registries: NewRegistryRepository(db),
 		apps:       NewApplicationRepository(db),
 	}
@@ -155,6 +157,22 @@ func (f *fixture) createTarget(t *testing.T, org, envID, slug string) *delivery.
 	tg := newTarget(org, envID, slug)
 	require.NoError(t, f.targets.CreateTarget(f.ctx, tg))
 	return tg
+}
+
+func newCluster(org, slug string) *delivery.Cluster {
+	return must(delivery.NewCluster(delivery.NewClusterProps{
+		OrganizationID: org,
+		Slug:           slug,
+		DisplayName:    "Cluster " + slug,
+		Runtime:        delivery.RuntimeKubernetes,
+	}, nil))
+}
+
+func (f *fixture) createCluster(t *testing.T, org, slug string) *delivery.Cluster {
+	t.Helper()
+	c := newCluster(org, slug)
+	require.NoError(t, f.clusters.CreateCluster(f.ctx, c))
+	return c
 }
 
 func newRegistry(org, ws, slug string) *delivery.Registry {

@@ -45,6 +45,12 @@ var (
 		func(e *targetEntity) string { return e.Slug },
 		func(e *targetEntity) string { return e.DisplayName },
 	)
+	clusterKeyset = standardKeyset(
+		func(e *clusterEntity) string { return e.ID },
+		func(e *clusterEntity) time.Time { return e.CreatedAt },
+		func(e *clusterEntity) string { return e.Slug },
+		func(e *clusterEntity) string { return e.DisplayName },
+	)
 	registryKeyset = standardKeyset(
 		func(e *registryEntity) string { return e.ID },
 		func(e *registryEntity) time.Time { return e.CreatedAt },

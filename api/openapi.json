@@ -375,6 +375,41 @@
         ],
         "type": "object"
       },
+      "ApplicationView": {
+        "additionalProperties": false,
+        "properties": {
+          "artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/ArtifactView"
+            },
+            "type": "array"
+          },
+          "current_deployment_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "workload_selector": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "workload_selector",
+          "artifacts",
+          "current_deployment_id"
+        ],
+        "type": "object"
+      },
       "ApplyConfig": {
         "additionalProperties": false,
         "properties": {
@@ -518,6 +553,22 @@
           "created_at",
           "updated_at",
           "archived_at"
+        ],
+        "type": "object"
+      },
+      "ArtifactView": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_name": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "artifact_name"
         ],
         "type": "object"
       },
@@ -714,6 +765,25 @@
           "built_at",
           "created_at",
           "updated_at"
+        ],
+        "type": "object"
+      },
+      "CapabilityView": {
+        "additionalProperties": false,
+        "properties": {
+          "execute": {
+            "type": "boolean"
+          },
+          "observe": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "observe",
+          "execute"
         ],
         "type": "object"
       },
@@ -970,6 +1040,26 @@
           "created_at",
           "updated_at",
           "deleted_at"
+        ],
+        "type": "object"
+      },
+      "ClusterView": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "display_name"
         ],
         "type": "object"
       },
@@ -2404,6 +2494,65 @@
         ],
         "type": "object"
       },
+      "HeartbeatRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/HeartbeatRequestBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "agent_version": {
+            "description": "The agent's version",
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "deployers": {
+            "description": "The deployers the agent has, such as helm",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "kubernetes_version": {
+            "description": "The Kubernetes version the agent runs on",
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "secret_store_kinds": {
+            "description": "The secret-store kinds the agent can read",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "targets": {
+            "description": "What the agent can do in each Target's namespace",
+            "items": {
+              "$ref": "#/components/schemas/TargetHeartbeatRequest"
+            },
+            "type": "array"
+          },
+          "watch_mode": {
+            "description": "Whether the agent watches the whole cluster or only listed namespaces",
+            "enum": [
+              "cluster",
+              "namespaces"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_version",
+          "kubernetes_version",
+          "watch_mode"
+        ],
+        "type": "object"
+      },
       "InstallationStartSnapshot": {
         "additionalProperties": false,
         "properties": {
@@ -2872,6 +3021,105 @@
           "display_name",
           "status",
           "teams"
+        ],
+        "type": "object"
+      },
+      "ObservationRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ObservationRequestBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "application_id": {
+            "description": "The Application the images belong to",
+            "type": "string"
+          },
+          "artifacts": {
+            "description": "The images the agent saw, by published artifact name",
+            "items": {
+              "$ref": "#/components/schemas/ObservedArtifactRequest"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "type": "array"
+          },
+          "external_ref": {
+            "description": "Who deployed it, when the agent can tell"
+          },
+          "observed_at": {
+            "description": "When the agent saw it, by its clock",
+            "format": "date-time",
+            "type": "string"
+          },
+          "report_id": {
+            "description": "The agent's idempotent report ID",
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "target_id": {
+            "description": "The Target the images run on",
+            "type": "string"
+          },
+          "workloads": {
+            "description": "The workloads the images came from, kept on the Deployment's first status event",
+            "items": {
+              "$ref": "#/components/schemas/ObservedWorkload"
+            },
+            "maxItems": 500,
+            "type": "array"
+          }
+        },
+        "required": [
+          "report_id",
+          "target_id",
+          "application_id",
+          "artifacts"
+        ],
+        "type": "object"
+      },
+      "ObservedArtifactRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_name": {
+            "description": "The image's published name, such as ghcr.io/acme/api",
+            "type": "string"
+          },
+          "digest": {
+            "description": "The image's digest, such as sha256:…",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_name",
+          "digest"
+        ],
+        "type": "object"
+      },
+      "ObservedWorkload": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "namespace",
+          "name"
         ],
         "type": "object"
       },
@@ -4412,6 +4660,35 @@
         ],
         "type": "object"
       },
+      "ResponseDeploymentSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseDeploymentSnapshot.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/DeploymentSnapshot",
+            "description": "Response payload, always present: an empty list is [], not omitted"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
       "ResponseEnvironmentSnapshot": {
         "additionalProperties": false,
         "properties": {
@@ -5933,6 +6210,35 @@
         ],
         "type": "object"
       },
+      "ResponseTargetsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseTargetsResponse.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/TargetsResponse",
+            "description": "Response payload, always present: an empty list is [], not omitted"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
       "ResponseTeamSnapshot": {
         "additionalProperties": false,
         "properties": {
@@ -7149,6 +7455,34 @@
         ],
         "type": "object"
       },
+      "TargetHeartbeatRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "execute": {
+            "description": "Whether the agent can change the namespace",
+            "type": "boolean"
+          },
+          "observe": {
+            "description": "Whether the agent can read the namespace",
+            "type": "boolean"
+          },
+          "reason": {
+            "description": "Why a capability is false, when it is",
+            "maxLength": 512,
+            "type": "string"
+          },
+          "target_id": {
+            "description": "The Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_id",
+          "observe",
+          "execute"
+        ],
+        "type": "object"
+      },
       "TargetSnapshot": {
         "additionalProperties": false,
         "properties": {
@@ -7157,6 +7491,9 @@
           },
           "can_observe": {
             "type": "boolean"
+          },
+          "capability_reason": {
+            "type": "string"
           },
           "cluster_id": {
             "type": "string"
@@ -7210,9 +7547,79 @@
           "locator",
           "can_observe",
           "can_execute",
+          "capability_reason",
           "created_at",
           "updated_at",
           "deleted_at"
+        ],
+        "type": "object"
+      },
+      "TargetView": {
+        "additionalProperties": false,
+        "properties": {
+          "applications": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationView"
+            },
+            "type": "array"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/CapabilityView"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "display_name",
+          "namespace",
+          "capabilities",
+          "applications"
+        ],
+        "type": "object"
+      },
+      "TargetsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "cluster": {
+            "$ref": "#/components/schemas/ClusterView"
+          },
+          "heartbeat_interval_seconds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "poll_interval_seconds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/TargetView"
+            },
+            "type": "array"
+          },
+          "watch_interval_seconds": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cluster",
+          "heartbeat_interval_seconds",
+          "poll_interval_seconds",
+          "watch_interval_seconds",
+          "targets"
         ],
         "type": "object"
       },
@@ -7808,6 +8215,42 @@
   },
   "openapi": "3.0.3",
   "paths": {
+    "/v1/agent/assignments": {
+      "get": {
+        "operationId": "agent-assignments",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseListDeploymentAssignment"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the in-flight Deployments on the caller's Cluster's Targets",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
     "/v1/agent/credentials/renew": {
       "post": {
         "operationId": "renew-workload-credential",
@@ -7892,6 +8335,127 @@
         "summary": "Redeem a Cluster enrolment token for a workload credential",
         "tags": [
           "enrolment"
+        ]
+      }
+    },
+    "/v1/agent/heartbeat": {
+      "post": {
+        "operationId": "agent-heartbeat",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HeartbeatRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Report that the agent is in contact and what it can do",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/v1/agent/observations": {
+      "post": {
+        "operationId": "agent-observation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ObservationRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseDeploymentSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Report what the agent sees running on a Target",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/v1/agent/targets": {
+      "get": {
+        "operationId": "agent-targets",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseTargetsResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List what the caller's Cluster's agent watches",
+        "tags": [
+          "agent"
         ]
       }
     },
@@ -15452,95 +16016,6 @@
         "summary": "Archive a Target",
         "tags": [
           "environments"
-        ]
-      }
-    },
-    "/v1/targets/{target_id}/assignments": {
-      "get": {
-        "operationId": "list-target-assignments",
-        "parameters": [
-          {
-            "description": "The Target",
-            "in": "path",
-            "name": "target_id",
-            "required": true,
-            "schema": {
-              "description": "The Target",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ResponseListDeploymentAssignment"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "List the active Deployment assignments for the Target's agent",
-        "tags": [
-          "deployments"
-        ]
-      }
-    },
-    "/v1/targets/{target_id}/reports": {
-      "post": {
-        "operationId": "report-target-heartbeat",
-        "parameters": [
-          {
-            "description": "The Target",
-            "in": "path",
-            "name": "target_id",
-            "required": true,
-            "schema": {
-              "description": "The Target",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "No Content"
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Note that the Target's agent is in contact",
-        "tags": [
-          "deployments"
         ]
       }
     },

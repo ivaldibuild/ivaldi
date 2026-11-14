@@ -2,6 +2,7 @@ package deployments
 
 import (
 	"context"
+	"encoding/json"
 	"slices"
 	"strings"
 	"testing"
@@ -113,9 +114,47 @@ func (f fakeApplications) GetChannel(_ context.Context, organizationID, channelI
 	return c, nil
 }
 
+func (f fakeApplications) ListPlacementsByTarget(_ context.Context, organizationID, targetID string) ([]*delivery.Placement, error) {
+	var out []*delivery.Placement
+	for _, p := range f.placements {
+		if p.OrganizationID() == organizationID && p.TargetID() == targetID {
+			out = append(out, p)
+		}
+	}
+	return out, nil
+}
+
 func (f fakeApplications) UpdatePlacementCurrent(_ context.Context, p *delivery.Placement) error {
 	f.placements[placementKey(p.ApplicationID(), p.TargetID())] = p
 	return nil
+}
+
+func (f fakeApplications) GetDefaultChannel(_ context.Context, organizationID, applicationID string) (*delivery.Channel, error) {
+	for _, c := range f.channels {
+		if c.OrganizationID() == organizationID && c.ApplicationID() == applicationID && c.IsDefault() {
+			return c, nil
+		}
+	}
+	return nil, delivery.ErrNotFound
+}
+
+func (f fakeApplications) CreateArtifact(_ context.Context, a *delivery.Artifact) error {
+	for _, existing := range f.artifacts {
+		if existing.OrganizationID() == a.OrganizationID() && existing.ApplicationID() == a.ApplicationID() && existing.Name() == a.Name() {
+			return delivery.ErrAlreadyExists
+		}
+	}
+	f.artifacts[a.ID()] = a
+	return nil
+}
+
+func (f fakeApplications) CreatePlacementIfAbsent(_ context.Context, p *delivery.Placement) (bool, error) {
+	key := placementKey(p.ApplicationID(), p.TargetID())
+	if _, ok := f.placements[key]; ok {
+		return false, nil
+	}
+	f.placements[key] = p
+	return true, nil
 }
 
 type fakeEnvironments struct{ *store }
@@ -141,6 +180,27 @@ func (f fakeTargets) GetTarget(_ context.Context, organizationID, targetID strin
 func (f fakeTargets) GetTargetForUpdate(ctx context.Context, organizationID, targetID string) (*delivery.Target, error) {
 	f.lockedTargets = append(f.lockedTargets, targetID)
 	return f.GetTarget(ctx, organizationID, targetID)
+}
+
+func (f fakeTargets) ListTargets(_ context.Context, q delivery.ListTargetsQuery) (*pagination.Result[*delivery.Target], error) {
+	var out []*delivery.Target
+	for _, t := range f.targets {
+		if t.OrganizationID() != q.OrganizationID {
+			continue
+		}
+		if q.EnvironmentID != "" && t.EnvironmentID() != q.EnvironmentID {
+			continue
+		}
+		if q.ClusterID != "" && t.ClusterID() != q.ClusterID {
+			continue
+		}
+		if !q.IncludeArchived && t.Archived() {
+			continue
+		}
+		out = append(out, t)
+	}
+	slices.SortFunc(out, func(a, b *delivery.Target) int { return strings.Compare(a.ID(), b.ID()) })
+	return &pagination.Result[*delivery.Target]{Items: out, TotalCount: len(out)}, nil
 }
 
 func (f fakeTargets) UpdateTarget(_ context.Context, t *delivery.Target) error {
@@ -182,6 +242,25 @@ func (f fakeReleases) GetRelease(_ context.Context, organizationID, releaseID st
 	return r, nil
 }
 
+func (f fakeReleases) GetReleaseByVersion(_ context.Context, organizationID, applicationID, version string) (*delivery.Release, error) {
+	for _, r := range f.releases {
+		if r.OrganizationID() == organizationID && r.ApplicationID() == applicationID && r.Version() == version {
+			return r, nil
+		}
+	}
+	return nil, delivery.ErrNotFound
+}
+
+func (f fakeReleases) CreateRelease(_ context.Context, r *delivery.Release) error {
+	for _, existing := range f.releases {
+		if existing.OrganizationID() == r.OrganizationID() && existing.ApplicationID() == r.ApplicationID() && existing.Version() == r.Version() {
+			return delivery.ErrAlreadyExists
+		}
+	}
+	f.releases[r.ID()] = r
+	return nil
+}
+
 type fakeBuilds struct{ *store }
 
 func (f fakeBuilds) GetBuilds(_ context.Context, organizationID string, buildIDs []string) ([]*delivery.Build, error) {
@@ -192,6 +271,25 @@ func (f fakeBuilds) GetBuilds(_ context.Context, organizationID string, buildIDs
 		}
 	}
 	return out, nil
+}
+
+func (f fakeBuilds) CreateBuild(_ context.Context, b *delivery.Build) (bool, error) {
+	for _, existing := range f.builds {
+		if existing.OrganizationID() == b.OrganizationID() && existing.ArtifactName() == b.ArtifactName() && existing.Digest() == b.Digest() {
+			return false, nil
+		}
+	}
+	f.builds[b.ID()] = b
+	return true, nil
+}
+
+func (f fakeBuilds) GetBuildByDigestForUpdate(_ context.Context, organizationID, artifactName, digest string) (*delivery.Build, error) {
+	for _, b := range f.builds {
+		if b.OrganizationID() == organizationID && b.ArtifactName() == artifactName && b.Digest() == digest {
+			return b, nil
+		}
+	}
+	return nil, delivery.ErrNotFound
 }
 
 type fakeDeployments struct{ *store }
@@ -225,6 +323,12 @@ func (f fakeDeployments) ListDeployments(_ context.Context, q delivery.ListDeplo
 		}
 		if q.TargetID != "" && d.TargetID() != q.TargetID {
 			continue
+		}
+		if q.ClusterID != "" {
+			t, ok := f.targets[d.TargetID()]
+			if !ok || t.ClusterID() != q.ClusterID || t.Archived() {
+				continue
+			}
 		}
 		if q.Status != "" && d.Status() != q.Status {
 			continue
@@ -484,13 +588,13 @@ func TestCancelDeploymentNeedingApprovalIsRefused(t *testing.T) {
 	assert.NotContains(t, w.auditTypes(), delivery.EventDeploymentCancelled)
 }
 
-func TestAgentHeartbeatChecksTheClusterAgent(t *testing.T) {
+func TestListClusterAssignmentsChecksTheClusterAgent(t *testing.T) {
 	w := newWorld(t)
 	agent := identity.Actor{PrincipalID: agentID}
-	require.NoError(t, w.svc.RecordTargetHeartbeat(ctx, agent, org, targetID))
-	assert.Empty(t, w.lockedTargets, "a heartbeat changes no Target state")
+	_, err := w.svc.ListClusterAssignments(ctx, agent, org, clusterID)
+	require.NoError(t, err)
 
-	err := w.svc.RecordTargetHeartbeat(ctx, ada, org, targetID)
+	_, err = w.svc.ListClusterAssignments(ctx, ada, org, clusterID)
 	assert.ErrorIs(t, err, delivery.ErrNotDeploymentAgent)
 }
 
@@ -500,7 +604,7 @@ func TestListAssignmentsAsksOnlyForInFlightDeployments(t *testing.T) {
 	w.deployments[finished.ID()] = finished
 	applying := mustDeployment(org, w.rel.ID(), w.app.ID(), envID, targetID, release.DeploymentApplying)
 	w.deployments[applying.ID()] = applying
-	items, err := w.svc.ListAssignments(ctx, identity.Actor{PrincipalID: agentID}, org, targetID)
+	items, err := w.svc.ListClusterAssignments(ctx, identity.Actor{PrincipalID: agentID}, org, clusterID)
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 	assert.Equal(t, applying.ID(), items[0].Deployment.ID)
@@ -511,7 +615,7 @@ func TestListAssignments(t *testing.T) {
 	d := mustDeployment(org, w.rel.ID(), w.app.ID(), envID, targetID, release.DeploymentApplying)
 	w.deployments[d.ID()] = d
 	agent := identity.Actor{PrincipalID: agentID}
-	items, err := w.svc.ListAssignments(ctx, agent, org, targetID)
+	items, err := w.svc.ListClusterAssignments(ctx, agent, org, clusterID)
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 	assert.Equal(t, d.ID(), items[0].Deployment.ID)
@@ -719,4 +823,182 @@ func mustOneID[V any](m map[string]V) string {
 		return id
 	}
 	panic("empty map")
+}
+
+const secondTargetID = "tgt_01ARZ3NDEKTSV4RRFFQ69G5FAW"
+
+func TestListClusterAssignmentsAcrossTargets(t *testing.T) {
+	w := newWorld(t)
+	second := must(delivery.NewTarget(delivery.NewTargetProps{
+		OrganizationID: org, EnvironmentID: envID, ClusterID: clusterID,
+		DisplayName: "Second", Runtime: delivery.RuntimeKubernetes,
+		Locator: map[string]string{delivery.LocatorCluster: "cluster", delivery.LocatorNamespace: "second"},
+	}, new(secondTargetID)))
+	w.targets[second.ID()] = second
+	w.placements[placementKey(appID, second.ID())] = mustPlacement(org, appID, second.ID())
+	first := mustDeployment(org, w.rel.ID(), w.app.ID(), envID, targetID, release.DeploymentApplying)
+	w.deployments[first.ID()] = first
+	other := mustDeployment(org, w.rel.ID(), w.app.ID(), envID, second.ID(), release.DeploymentApplying)
+	w.deployments[other.ID()] = other
+
+	items, err := w.svc.ListClusterAssignments(ctx, identity.Actor{PrincipalID: agentID}, org, clusterID)
+	require.NoError(t, err)
+	assert.Len(t, items, 2)
+}
+
+func TestObserve(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("c", 64)
+	decision := authorization.WithDecision(ctx, "", authorization.Decision{Outcome: authorization.OutcomeAllow})
+	agent := identity.Actor{PrincipalID: agentID, Kind: identity.ActorServiceAccount}
+	observe := func(t *testing.T, w *world, reportID, digest string) *delivery.DeploymentDetail {
+		t.Helper()
+		detail, err := w.svc.Observe(decision, agent, delivery.ObserveInput{
+			OrganizationID: org, ClusterID: clusterID, TargetID: targetID, ApplicationID: appID,
+			Artifacts:   []delivery.ObservedArtifact{{ArtifactName: "ghcr.io/acme/api", Digest: digest}},
+			Workloads:   []delivery.ObservedWorkload{{Kind: "Deployment", Namespace: "default", Name: "api"}},
+			ExternalRef: json.RawMessage(`{"type":"helm","name":"api","revision":"7"}`),
+			ReportID:    reportID,
+		})
+		require.NoError(t, err)
+		return detail
+	}
+
+	t.Run("records an observed deployment, artifact, and build", func(t *testing.T) {
+		w := newWorld(t)
+		detail := observe(t, w, "obs-1", digest)
+
+		assert.Equal(t, delivery.DeploymentObserved, detail.Deployment.Source)
+		assert.Equal(t, release.DeploymentHealthy, detail.Deployment.Status)
+		assert.Equal(t, appID, detail.Deployment.ApplicationID)
+		require.Len(t, detail.Events, 1, "the initial status is on the timeline")
+
+		placement := w.placements[placementKey(appID, targetID)]
+		require.NotNil(t, placement.CurrentDeploymentID())
+		assert.Equal(t, detail.Deployment.ID, *placement.CurrentDeploymentID())
+		require.NotNil(t, placement.CurrentReleaseID())
+		assert.Equal(t, detail.Deployment.ReleaseID, *placement.CurrentReleaseID())
+
+		var observed *delivery.Artifact
+		for _, a := range w.artifacts {
+			if a.ArtifactName() == "ghcr.io/acme/api" {
+				observed = a
+			}
+		}
+		require.NotNil(t, observed, "the unmatched image becomes an observed artifact")
+		assert.Equal(t, delivery.ArtifactObserved, observed.Source())
+		assert.Equal(t, "api", observed.Name())
+
+		var build *delivery.Build
+		for _, b := range w.builds {
+			if b.ArtifactName() == "ghcr.io/acme/api" {
+				build = b
+			}
+		}
+		require.NotNil(t, build)
+		assert.Equal(t, delivery.BuildObserved, build.Provenance())
+		assert.Equal(t, digest, build.Digest())
+		assert.Contains(t, w.auditTypes(), delivery.EventDeploymentObserved)
+	})
+
+	t.Run("the same images change nothing", func(t *testing.T) {
+		w := newWorld(t)
+		first := observe(t, w, "obs-1", digest)
+		deployments, releases, artifacts := len(w.deployments), len(w.releases), len(w.artifacts)
+
+		second := observe(t, w, "obs-2", digest)
+
+		assert.Equal(t, first.Deployment.ID, second.Deployment.ID, "the current deployment is returned")
+		assert.Len(t, w.deployments, deployments)
+		assert.Len(t, w.releases, releases)
+		assert.Len(t, w.artifacts, artifacts)
+	})
+
+	t.Run("a chart in the current release is not an image", func(t *testing.T) {
+		w := newWorld(t)
+		image := mustArtifact(appID, "api", delivery.ArtifactContainerImage)
+		imageBuild := must(delivery.NewBuild(delivery.NewBuildProps{
+			OrganizationID: org, ArtifactKind: delivery.ArtifactContainerImage,
+			ArtifactName: image.ArtifactName(), Digest: digest, Provenance: delivery.BuildCIReported,
+		}, nil))
+		w.artifacts[image.ID()] = image
+		w.builds[imageBuild.ID()] = imageBuild
+
+		chart := w.releases[mustOneID(w.releases)]
+		rel := must(delivery.NewRelease(delivery.NewReleaseProps{
+			OrganizationID: org, ApplicationID: appID, ChannelID: chart.ChannelID(), Version: "2.0.0",
+			Status: release.StatusPublished,
+			Builds: []delivery.NewReleaseBuildProps{
+				{ArtifactID: chart.Builds()[0].ArtifactID, BuildID: chart.Builds()[0].BuildID},
+				{ArtifactID: image.ID(), BuildID: imageBuild.ID()},
+			},
+		}, nil))
+		w.releases[rel.ID()] = rel
+		current := mustDeployment(org, rel.ID(), appID, envID, targetID, release.DeploymentHealthy)
+		w.deployments[current.ID()] = current
+		placement := w.placements[placementKey(appID, targetID)]
+		_ = placement.SetCurrent(current.ID(), rel.ID())
+		w.placements[placementKey(appID, targetID)] = placement
+
+		detail := observe(t, w, "obs-1", digest)
+		assert.Equal(t, current.ID(), detail.Deployment.ID, "the chart does not make the image set differ")
+	})
+
+	t.Run("a changed digest supersedes the previous deployment", func(t *testing.T) {
+		w := newWorld(t)
+		first := observe(t, w, "obs-1", digest)
+		next := "sha256:" + strings.Repeat("d", 64)
+		second := observe(t, w, "obs-2", next)
+
+		assert.NotEqual(t, first.Deployment.ID, second.Deployment.ID)
+		assert.Equal(t, release.DeploymentSuperseded, w.deployments[first.Deployment.ID].Status())
+		placement := w.placements[placementKey(appID, targetID)]
+		assert.Equal(t, second.Deployment.ID, *placement.CurrentDeploymentID())
+	})
+
+	t.Run("a rollout in progress owns the placement", func(t *testing.T) {
+		w := newWorld(t)
+		rollout := mustDeployment(org, mustOneID(w.releases), appID, envID, targetID, release.DeploymentProgressing)
+		w.deployments[rollout.ID()] = rollout
+		deployments, releases, artifacts := len(w.deployments), len(w.releases), len(w.artifacts)
+
+		detail := observe(t, w, "obs-1", digest)
+
+		assert.Equal(t, rollout.ID(), detail.Deployment.ID, "the rollout's Deployment is returned")
+		assert.Len(t, w.deployments, deployments, "no observed Deployment is recorded mid-rollout")
+		assert.Len(t, w.releases, releases)
+		assert.Len(t, w.artifacts, artifacts)
+	})
+
+	t.Run("a deployment awaiting approval does not hold observations back", func(t *testing.T) {
+		w := newWorld(t)
+		waiting := mustDeployment(org, mustOneID(w.releases), appID, envID, targetID, release.DeploymentAwaitingApproval)
+		w.deployments[waiting.ID()] = waiting
+
+		detail := observe(t, w, "obs-1", digest)
+
+		assert.NotEqual(t, waiting.ID(), detail.Deployment.ID)
+		assert.Equal(t, delivery.DeploymentObserved, detail.Deployment.Source)
+	})
+
+	t.Run("the workloads are on the first status event", func(t *testing.T) {
+		w := newWorld(t)
+		detail := observe(t, w, "obs-1", digest)
+
+		require.Len(t, detail.Events, 1)
+		assert.JSONEq(t, `{"workloads":[{"kind":"Deployment","namespace":"default","name":"api"}]}`, string(detail.Events[0].Detail))
+	})
+
+	t.Run("an observation from the future is capped at now", func(t *testing.T) {
+		w := newWorld(t)
+		future := clock.Now().Add(time.Hour)
+		detail, err := w.svc.Observe(decision, agent, delivery.ObserveInput{
+			OrganizationID: org, ClusterID: clusterID, TargetID: targetID, ApplicationID: appID,
+			Artifacts:  []delivery.ObservedArtifact{{ArtifactName: "ghcr.io/acme/api", Digest: digest}},
+			ReportID:   "obs-1",
+			ObservedAt: &future,
+		})
+		require.NoError(t, err)
+		require.NotNil(t, detail.Deployment.StartedAt)
+		assert.Equal(t, clock.Now(), *detail.Deployment.StartedAt, "a skewed agent clock cannot date a Deployment in the future")
+	})
 }

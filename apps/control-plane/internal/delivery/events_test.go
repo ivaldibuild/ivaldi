@@ -127,7 +127,10 @@ func TestTargetEvents(t *testing.T) {
 				Locator:     map[string]string{LocatorCluster: "prod-eu-1", LocatorNamespace: "payments"},
 			}))
 		}, nil},
-		{"capabilities", func(t *testing.T, tgt *Target) { tgt.SetCapabilities(true, true) }, nil},
+		{"capabilities", func(t *testing.T, tgt *Target) {
+			_, err := tgt.SetCapabilities(true, true, "")
+			require.NoError(t, err)
+		}, nil},
 		{"archive", func(t *testing.T, tgt *Target) { tgt.Archive() },
 			func(tgt *Target) aggregate.Event { return TargetArchived{tgt.Snapshot()} }},
 		{"restore", func(t *testing.T, tgt *Target) { tgt.Archive(); tgt.PullEvents(); tgt.Restore() },
@@ -362,7 +365,7 @@ func TestSnapshotJSONKeys(t *testing.T) {
 		keys     []string
 	}{
 		{EnvironmentSnapshot{}, append([]string{"id", "organization_id", "workspace_id", "slug", "display_name", "tier", "execution_enabled", "deleted_at"}, timestamps...)},
-		{TargetSnapshot{}, append([]string{"id", "organization_id", "environment_id", "cluster_id", "slug", "display_name", "runtime", "locator", "can_observe", "can_execute", "deleted_at"}, timestamps...)},
+		{TargetSnapshot{}, append([]string{"id", "organization_id", "environment_id", "cluster_id", "slug", "display_name", "runtime", "locator", "can_observe", "can_execute", "capability_reason", "deleted_at"}, timestamps...)},
 		{ClusterSnapshot{}, append([]string{"id", "organization_id", "slug", "display_name", "runtime", "agent_principal_id", "agent_capabilities", "agent_last_failure", "last_reported_at", "deleted_at"}, timestamps...)},
 		{AgentFailure{}, []string{"reason", "at"}},
 		{LifecycleSnapshot{}, append([]string{"id", "organization_id", "workspace_id", "slug", "display_name", "description", "phases", "deleted_at"}, timestamps...)},

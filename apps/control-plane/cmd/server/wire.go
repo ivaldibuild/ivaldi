@@ -273,7 +273,7 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 	if err := a.wireAgents(); err != nil {
 		return nil, nil, err
 	}
-	if err := a.wireDelivery(); err != nil {
+	if err := a.wireDelivery(cfg.Runners); err != nil {
 		return nil, nil, err
 	}
 	if err := a.wireWorkspace(); err != nil {

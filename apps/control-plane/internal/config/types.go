@@ -118,6 +118,10 @@ type Runners struct {
 	// HeartbeatInterval is how often a connected runner must report in;
 	// one silent for three intervals is treated as offline.
 	HeartbeatInterval time.Duration `yaml:"heartbeat_interval" env:"IVALDI_RUNNER_HEARTBEAT_INTERVAL" envDefault:"30s"`
+	// AgentPollInterval and AgentWatchInterval are the pace the control plane
+	// tells a Cluster's agent to poll assignments and refresh its Targets.
+	AgentPollInterval  time.Duration `yaml:"agent_poll_interval" env:"IVALDI_RUNNER_AGENT_POLL_INTERVAL" envDefault:"5s"`
+	AgentWatchInterval time.Duration `yaml:"agent_watch_interval" env:"IVALDI_RUNNER_AGENT_WATCH_INTERVAL" envDefault:"60s"`
 	// KubernetesIssuers are the OIDC issuers whose projected service-account
 	// tokens Ivaldi accepts. Empty disables that credential kind.
 	KubernetesIssuers []string `yaml:"kubernetes_issuers" env:"IVALDI_RUNNER_KUBERNETES_ISSUERS"`

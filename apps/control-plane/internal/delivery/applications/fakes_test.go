@@ -466,6 +466,16 @@ func (s *store) CreatePlacement(_ context.Context, p *delivery.Placement) error 
 	return nil
 }
 
+func (s *store) CreatePlacementIfAbsent(ctx context.Context, p *delivery.Placement) (bool, error) {
+	if err := s.CreatePlacement(ctx, p); err != nil {
+		if errors.Is(err, delivery.ErrAlreadyExists) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 func (s *store) GetPlacement(_ context.Context, organizationID, applicationID, targetID string) (*delivery.Placement, error) {
 	snap, ok := s.placements[placementKey(applicationID, targetID)]
 	if !ok || snap.OrganizationID != organizationID {
@@ -478,6 +488,16 @@ func (s *store) ListPlacements(_ context.Context, organizationID, applicationID 
 	var out []*delivery.Placement
 	for _, snap := range sorted(s.placements, func(p delivery.PlacementSnapshot) bool {
 		return p.OrganizationID == organizationID && p.ApplicationID == applicationID
+	}, func(p delivery.PlacementSnapshot) time.Time { return p.CreatedAt }) {
+		out = append(out, rebuildPlacement(snap))
+	}
+	return out, nil
+}
+
+func (s *store) ListPlacementsByTarget(_ context.Context, organizationID, targetID string) ([]*delivery.Placement, error) {
+	var out []*delivery.Placement
+	for _, snap := range sorted(s.placements, func(p delivery.PlacementSnapshot) bool {
+		return p.OrganizationID == organizationID && p.TargetID == targetID
 	}, func(p delivery.PlacementSnapshot) time.Time { return p.CreatedAt }) {
 		out = append(out, rebuildPlacement(snap))
 	}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
+	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
 	"github.com/ivaldibuild/ivaldi/pkg/optional"
@@ -185,7 +186,7 @@ func NewDeployment(props NewDeploymentProps, deploymentID *string) (*Deployment,
 	if props.InitiatedByPrincipalID != nil && !id.Valid("prn", *props.InitiatedByPrincipalID) {
 		return nil, NewErrInvalidInput(fmt.Sprintf("%q is not a principal ID", *props.InitiatedByPrincipalID))
 	}
-	if props.PolicyDecisionID != nil && !id.Valid("dcn", *props.PolicyDecisionID) {
+	if props.PolicyDecisionID != nil && !id.Valid(authorization.DecisionPrefix, *props.PolicyDecisionID) {
 		return nil, NewErrInvalidInput(fmt.Sprintf("%q is not a decision ID", *props.PolicyDecisionID))
 	}
 	if len(props.ExternalRef) > 0 && !json.Valid(props.ExternalRef) {

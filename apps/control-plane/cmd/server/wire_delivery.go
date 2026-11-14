@@ -3,7 +3,9 @@ package server
 import (
 	auditpg "github.com/ivaldibuild/ivaldi-control-plane/internal/audit/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/change"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/config"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/agentapi"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/applications"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/clusters"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/deployments"
@@ -73,7 +75,7 @@ func (a *app) wireTeams() error {
 }
 
 // wireDelivery builds delivery's services and their HTTP APIs.
-func (a *app) wireDelivery() error {
+func (a *app) wireDelivery(runners config.Runners) error {
 	envRepo := deliverypg.NewEnvironmentRepository(a.db)
 	lifecycleRepo := deliverypg.NewLifecycleRepository(a.db)
 	applicationRepo := deliverypg.NewApplicationRepository(a.db)
@@ -201,8 +203,26 @@ func (a *app) wireDelivery() error {
 		return err
 	}
 
+	agentSvc, err := agentapi.NewService(
+		agentapi.WithClusters(clusterRepo),
+		agentapi.WithTargets(targetRepo),
+		agentapi.WithApplications(applicationRepo),
+		agentapi.WithAssignments(deps),
+		agentapi.WithObservations(deps),
+		agentapi.WithTransactor(a.tx),
+		agentapi.WithIntervals(agentapi.Intervals{
+			Heartbeat: runners.HeartbeatInterval,
+			Poll:      runners.AgentPollInterval,
+			Watch:     runners.AgentWatchInterval,
+		}),
+	)
+	if err != nil {
+		return err
+	}
+
 	a.services.environments, a.services.registries, a.services.lifecycles = envs, regs, lifecycleSvc
 	a.services.clusters = clusterSvc
+	a.services.agent = agentSvc
 	a.services.applications, a.services.releases = apps, rels
 	a.services.deployments = deps
 	return nil

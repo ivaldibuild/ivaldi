@@ -326,6 +326,20 @@ func (r *applicationRepository) CreatePlacement(ctx context.Context, p *delivery
 	return translate(r.conn(ctx).Create(e).Error)
 }
 
+func (r *applicationRepository) CreatePlacementIfAbsent(ctx context.Context, p *delivery.Placement) (bool, error) {
+	e, err := r.mapper.PlacementToPersistence(p)
+	if err != nil {
+		return false, err
+	}
+	// No conflict target, so any of the placement's unique keys counts: an
+	// insert that does nothing leaves the transaction usable.
+	res := r.conn(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(e)
+	if res.Error != nil {
+		return false, translate(res.Error)
+	}
+	return res.RowsAffected == 1, nil
+}
+
 func (r *applicationRepository) GetPlacement(ctx context.Context, organizationID, applicationID, targetID string) (*delivery.Placement, error) {
 	var entity placementEntity
 	err := r.conn(ctx).Where("organization_id = ? AND application_id = ? AND target_id = ?", organizationID, applicationID, targetID).Take(&entity).Error
@@ -333,6 +347,23 @@ func (r *applicationRepository) GetPlacement(ctx context.Context, organizationID
 		return nil, translate(err)
 	}
 	return r.mapper.PlacementToDomain(&entity)
+}
+
+func (r *applicationRepository) ListPlacementsByTarget(ctx context.Context, organizationID, targetID string) ([]*delivery.Placement, error) {
+	var entities []placementEntity
+	err := r.conn(ctx).Where("organization_id = ? AND target_id = ?", organizationID, targetID).Order("application_id").Find(&entities).Error
+	if err != nil {
+		return nil, translate(err)
+	}
+	out := make([]*delivery.Placement, 0, len(entities))
+	for i := range entities {
+		p, err := r.mapper.PlacementToDomain(&entities[i])
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, nil
 }
 
 func (r *applicationRepository) ListPlacements(ctx context.Context, organizationID, applicationID string) ([]*delivery.Placement, error) {

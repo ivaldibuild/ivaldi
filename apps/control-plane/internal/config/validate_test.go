@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -85,6 +86,8 @@ func TestValidateRefuses(t *testing.T) {
 		{"no login page", func(_ *testing.T, c *Config) { c.Auth.LoginURL = "" }, "auth.login_url is required"},
 		{"login page over plain http", func(_ *testing.T, c *Config) { c.Auth.LoginURL = "http://app.example.com/login" }, "auth.login_url"},
 		{"zero token lifetime", func(_ *testing.T, c *Config) { c.Auth.AccessTokenTTL = 0 }, "auth.access_token_ttl must be positive"},
+		{"zero agent poll interval", func(_ *testing.T, c *Config) { c.Runners.AgentPollInterval = 0 }, "runners.agent_poll_interval must be positive"},
+		{"negative agent watch interval", func(_ *testing.T, c *Config) { c.Runners.AgentWatchInterval = -time.Second }, "runners.agent_watch_interval must be positive"},
 		{"web redirect over plain http", func(_ *testing.T, c *Config) {
 			c.Auth.WebClient.RedirectURIs = []string{"http://app.example.com/cb"}
 		}, "must use https"},

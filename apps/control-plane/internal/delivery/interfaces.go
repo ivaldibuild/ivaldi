@@ -219,8 +219,15 @@ type ApplicationRepository interface {
 
 	// CreatePlacement returns ErrAlreadyExists if the Application is already on the Target.
 	CreatePlacement(ctx context.Context, p *Placement) error
+	// CreatePlacementIfAbsent inserts the placement unless one exists for its
+	// Application and Target, and reports whether it inserted it. It never
+	// fails because the placement exists, so it leaves the transaction usable.
+	CreatePlacementIfAbsent(ctx context.Context, p *Placement) (bool, error)
 	GetPlacement(ctx context.Context, organizationID, applicationID, targetID string) (*Placement, error)
 	ListPlacements(ctx context.Context, organizationID, applicationID string) ([]*Placement, error)
+	// ListPlacementsByTarget returns the applications placed on a Target,
+	// which is what the agent watches.
+	ListPlacementsByTarget(ctx context.Context, organizationID, targetID string) ([]*Placement, error)
 	// ListRunsOn reads where the Applications run: each placement with its
 	// Target, Environment, and current Release and Deployment. Archived
 	// Targets and Environments are left out. It is a read model, so it
@@ -518,6 +525,9 @@ type ReleaseRepository interface {
 	// GetReleaseForUpdate is GetRelease that also locks the Release until
 	// the transaction ends.
 	GetReleaseForUpdate(ctx context.Context, organizationID, releaseID string) (*Release, error)
+	// GetReleaseByVersion returns the Application's Release with the version,
+	// which is how an observed Release is found again.
+	GetReleaseByVersion(ctx context.Context, organizationID, applicationID, version string) (*Release, error)
 	ListReleases(ctx context.Context, query ListReleasesQuery) (*pagination.Result[*Release], error)
 	// UpdateRelease writes a Release's status, publish decision, and
 	// timestamps. Its Channel, version, and Builds never change.

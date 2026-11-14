@@ -38,13 +38,15 @@ type Target struct {
 	runtime        Runtime
 	locator        map[string]string
 	// canObserve and canExecute are what the Cluster's agent last reported
-	// it can do in this namespace. They are set by the agent's heartbeat,
-	// never by the Target's configuration methods.
-	canObserve bool
-	canExecute bool
-	createdAt  time.Time
-	updatedAt  time.Time
-	deletedAt  *time.Time
+	// it can do in this namespace, and capabilityReason why a capability is
+	// missing. They are set by the agent's heartbeat, never by the Target's
+	// configuration methods.
+	canObserve       bool
+	canExecute       bool
+	capabilityReason string
+	createdAt        time.Time
+	updatedAt        time.Time
+	deletedAt        *time.Time
 }
 
 // TargetSnapshot is a Target's state, for repositories, audit records, and
@@ -60,9 +62,12 @@ type TargetSnapshot struct {
 	Locator        map[string]string `json:"locator"`
 	CanObserve     bool              `json:"can_observe"`
 	CanExecute     bool              `json:"can_execute"`
-	CreatedAt      time.Time         `json:"created_at"`
-	UpdatedAt      time.Time         `json:"updated_at"`
-	DeletedAt      *time.Time        `json:"deleted_at"`
+	// CapabilityReason is why the agent cannot observe or execute, when it
+	// cannot; empty otherwise.
+	CapabilityReason string     `json:"capability_reason"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+	DeletedAt        *time.Time `json:"deleted_at"`
 }
 
 // NewTargetProps describes a Target. A new one leaves the timestamps nil; a
@@ -79,12 +84,13 @@ type NewTargetProps struct {
 	Runtime     Runtime
 	// Locator is the runtime's non-secret address. For Kubernetes it has
 	// LocatorCluster and LocatorNamespace.
-	Locator    map[string]string
-	CanObserve bool
-	CanExecute bool
-	CreatedAt  *time.Time
-	UpdatedAt  *time.Time
-	DeletedAt  *time.Time
+	Locator          map[string]string
+	CanObserve       bool
+	CanExecute       bool
+	CapabilityReason string
+	CreatedAt        *time.Time
+	UpdatedAt        *time.Time
+	DeletedAt        *time.Time
 }
 
 // UpdateTargetProps changes the fields that are set.
@@ -122,22 +128,26 @@ func NewTarget(props NewTargetProps, targetID *string) (*Target, error) {
 	if err := validateLocator(props.Runtime, props.Locator); err != nil {
 		return nil, err
 	}
+	if err := validateCapabilityReason(props.CapabilityReason); err != nil {
+		return nil, err
+	}
 
 	now := clock.Now()
 	t := &Target{
-		Root:           root,
-		organizationID: props.OrganizationID,
-		environmentID:  props.EnvironmentID,
-		clusterID:      props.ClusterID,
-		slug:           s,
-		displayName:    props.DisplayName,
-		runtime:        props.Runtime,
-		locator:        copyLabels(props.Locator),
-		canObserve:     props.CanObserve,
-		canExecute:     props.CanExecute,
-		createdAt:      timeOr(props.CreatedAt, now),
-		updatedAt:      timeOr(props.UpdatedAt, now),
-		deletedAt:      clock.CopyTime(props.DeletedAt),
+		Root:             root,
+		organizationID:   props.OrganizationID,
+		environmentID:    props.EnvironmentID,
+		clusterID:        props.ClusterID,
+		slug:             s,
+		displayName:      props.DisplayName,
+		runtime:          props.Runtime,
+		locator:          copyLabels(props.Locator),
+		canObserve:       props.CanObserve,
+		canExecute:       props.CanExecute,
+		capabilityReason: capabilityReason(props.CanObserve, props.CanExecute, props.CapabilityReason),
+		createdAt:        timeOr(props.CreatedAt, now),
+		updatedAt:        timeOr(props.UpdatedAt, now),
+		deletedAt:        clock.CopyTime(props.DeletedAt),
 	}
 	if t.IsNew() {
 		t.RecordEvent(TargetCreated{t.Snapshot()})
@@ -178,6 +188,7 @@ func (t *Target) Runtime() Runtime           { return t.runtime }
 func (t *Target) Locator() map[string]string { return copyLabels(t.locator) }
 func (t *Target) CanObserve() bool           { return t.canObserve }
 func (t *Target) CanExecute() bool           { return t.canExecute }
+func (t *Target) CapabilityReason() string   { return t.capabilityReason }
 func (t *Target) CreatedAt() time.Time       { return t.createdAt }
 func (t *Target) UpdatedAt() time.Time       { return t.updatedAt }
 func (t *Target) DeletedAt() *time.Time      { return clock.CopyTime(t.deletedAt) }
@@ -186,19 +197,20 @@ func (t *Target) Archived() bool { return t.deletedAt != nil }
 
 func (t *Target) Snapshot() TargetSnapshot {
 	return TargetSnapshot{
-		ID:             t.ID(),
-		OrganizationID: t.organizationID,
-		EnvironmentID:  t.environmentID,
-		ClusterID:      t.clusterID,
-		Slug:           t.slug,
-		DisplayName:    t.displayName,
-		Runtime:        t.runtime,
-		Locator:        copyLabels(t.locator),
-		CanObserve:     t.canObserve,
-		CanExecute:     t.canExecute,
-		CreatedAt:      t.createdAt,
-		UpdatedAt:      t.updatedAt,
-		DeletedAt:      clock.CopyTime(t.deletedAt),
+		ID:               t.ID(),
+		OrganizationID:   t.organizationID,
+		EnvironmentID:    t.environmentID,
+		ClusterID:        t.clusterID,
+		Slug:             t.slug,
+		DisplayName:      t.displayName,
+		Runtime:          t.runtime,
+		Locator:          copyLabels(t.locator),
+		CanObserve:       t.canObserve,
+		CanExecute:       t.canExecute,
+		CapabilityReason: t.capabilityReason,
+		CreatedAt:        t.createdAt,
+		UpdatedAt:        t.updatedAt,
+		DeletedAt:        clock.CopyTime(t.deletedAt),
 	}
 }
 
@@ -251,15 +263,43 @@ func (t *Target) Update(props UpdateTargetProps) error {
 }
 
 // SetCapabilities records what the Cluster's agent last reported it can do in
-// the Target's namespace, and reports whether anything changed. Only the
-// service that checked the caller is the Cluster's agent may call it.
-func (t *Target) SetCapabilities(canObserve, canExecute bool) bool {
-	if t.canObserve == canObserve && t.canExecute == canExecute {
-		return false
+// the Target's namespace and why a capability is missing, and reports whether
+// anything changed. A reason is kept only while a capability is missing. Only
+// the service that checked the caller is the Cluster's agent may call it.
+func (t *Target) SetCapabilities(canObserve, canExecute bool, reason string) (bool, error) {
+	if err := validateCapabilityReason(reason); err != nil {
+		return false, err
+	}
+	reason = capabilityReason(canObserve, canExecute, reason)
+	if t.canObserve == canObserve && t.canExecute == canExecute && t.capabilityReason == reason {
+		return false, nil
 	}
 	t.canObserve = canObserve
 	t.canExecute = canExecute
-	return true
+	t.capabilityReason = reason
+	return true, nil
+}
+
+// HasCapabilities reports whether SetCapabilities with these values would
+// change nothing, so a heartbeat can skip locking a Target that is unchanged.
+func (t *Target) HasCapabilities(canObserve, canExecute bool, reason string) bool {
+	return t.canObserve == canObserve && t.canExecute == canExecute &&
+		t.capabilityReason == capabilityReason(canObserve, canExecute, reason)
+}
+
+func validateCapabilityReason(reason string) error {
+	if len(reason) > maxCapabilityReasonLength {
+		return NewErrInvalidInput(fmt.Sprintf("a capability reason must be at most %d characters", maxCapabilityReasonLength))
+	}
+	return nil
+}
+
+// capabilityReason drops the reason once nothing is missing.
+func capabilityReason(canObserve, canExecute bool, reason string) string {
+	if canObserve && canExecute {
+		return ""
+	}
+	return reason
 }
 
 // Archive soft-deletes the Target. Archiving an archived one does nothing.

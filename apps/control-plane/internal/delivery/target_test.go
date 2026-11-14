@@ -235,15 +235,32 @@ func TestTargetSetCapabilities(t *testing.T) {
 	clock.Fix(t, domT0)
 	tgt := domNewTarget(t)
 
-	assert.True(t, tgt.SetCapabilities(true, false))
+	changed, err := tgt.SetCapabilities(true, false, "RBAC denies create on pods")
+	require.NoError(t, err)
+	assert.True(t, changed)
 	assert.True(t, tgt.CanObserve())
 	assert.False(t, tgt.CanExecute())
+	assert.Equal(t, "RBAC denies create on pods", tgt.CapabilityReason())
+	assert.True(t, tgt.HasCapabilities(true, false, "RBAC denies create on pods"))
 
-	assert.False(t, tgt.SetCapabilities(true, false), "the same capabilities change nothing")
+	changed, err = tgt.SetCapabilities(true, false, "RBAC denies create on pods")
+	require.NoError(t, err)
+	assert.False(t, changed, "the same capabilities change nothing")
 	assert.Equal(t, domT0, tgt.UpdatedAt(), "capabilities are not a configuration change")
 
-	assert.True(t, tgt.SetCapabilities(true, true))
+	changed, err = tgt.SetCapabilities(true, false, "RBAC denies patch on deployments")
+	require.NoError(t, err)
+	assert.True(t, changed, "a new reason is a change")
+
+	changed, err = tgt.SetCapabilities(true, true, "left over")
+	require.NoError(t, err)
+	assert.True(t, changed)
 	assert.True(t, tgt.CanExecute())
+	assert.Empty(t, tgt.CapabilityReason(), "nothing is missing, so there is no reason")
+
+	_, err = tgt.SetCapabilities(false, false, strings.Repeat("r", maxCapabilityReasonLength+1))
+	require.ErrorIs(t, err, ErrInvalid)
+	assert.True(t, tgt.CanExecute(), "a refused report changes nothing")
 }
 
 func TestTargetArchiveAndRestore(t *testing.T) {

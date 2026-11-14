@@ -175,6 +175,15 @@ func (s *store) GetReleaseForUpdate(ctx context.Context, organizationID, release
 	return s.GetRelease(ctx, organizationID, releaseID)
 }
 
+func (s *store) GetReleaseByVersion(_ context.Context, organizationID, applicationID, version string) (*delivery.Release, error) {
+	for _, snap := range s.releases {
+		if snap.OrganizationID == organizationID && snap.ApplicationID == applicationID && snap.Version == version {
+			return loadRelease(snap), nil
+		}
+	}
+	return nil, delivery.ErrNotFound
+}
+
 func (s *store) ListReleases(_ context.Context, q delivery.ListReleasesQuery) (*pagination.Result[*delivery.Release], error) {
 	var items []*delivery.Release
 	for _, snap := range s.releases {

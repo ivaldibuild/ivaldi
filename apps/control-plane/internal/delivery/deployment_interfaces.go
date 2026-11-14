@@ -18,7 +18,10 @@ type ListDeploymentsQuery struct {
 	ApplicationID  string
 	ReleaseID      string
 	TargetID       string
-	Status         release.DeploymentStatus
+	// ClusterID, when set, keeps only Deployments on the Cluster's active
+	// Targets, so an agent's assignments are one query.
+	ClusterID string
+	Status    release.DeploymentStatus
 	// Statuses, when set, keeps only Deployments in one of them.
 	Statuses []release.DeploymentStatus
 	Page     pagination.Query
@@ -128,20 +131,53 @@ type ReportDeploymentInput struct {
 	OccurredAt     *time.Time
 }
 
+// ObserveInput is one observation from a Cluster's agent: the images an
+// Application is running on a Target, and the workloads they came from.
+type ObserveInput struct {
+	OrganizationID string
+	ClusterID      string
+	TargetID       string
+	ApplicationID  string
+	// Artifacts are the images the agent saw, by published artifact name.
+	Artifacts []ObservedArtifact
+	// Workloads name what the images came from, for the Deployment's record.
+	Workloads []ObservedWorkload
+	// ExternalRef names the deployer, when the agent can tell.
+	ExternalRef json.RawMessage
+	// ReportID makes a retried observation recognizable in the record.
+	ReportID   string
+	ObservedAt *time.Time
+}
+
+// ObservedArtifact is one image the agent saw running, by digest.
+type ObservedArtifact struct {
+	ArtifactName string `json:"artifact_name"`
+	Digest       string `json:"digest"`
+}
+
+// ObservedWorkload names a workload an observation came from.
+type ObservedWorkload struct {
+	Kind      string `json:"kind"`
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+	Revision  string `json:"revision,omitempty"`
+}
+
 // DeploymentService requests, reads, cancels, and reports Deployments.
 type DeploymentService interface {
 	RequestDeployments(ctx context.Context, actor identity.Actor, in RequestDeploymentsInput) ([]*Deployment, error)
 	GetDeployment(ctx context.Context, actor identity.Actor, organizationID, deploymentID string) (*DeploymentDetail, error)
 	ListDeployments(ctx context.Context, actor identity.Actor, query ListDeploymentsQuery) (*pagination.Result[DeploymentSnapshot], error)
 	CancelDeployment(ctx context.Context, actor identity.Actor, organizationID, deploymentID string) (*DeploymentDetail, error)
-	// ListAssignments returns the active Deployments for the Target. Only the
-	// Target's assigned agent may call it.
-	ListAssignments(ctx context.Context, actor identity.Actor, organizationID, targetID string) ([]DeploymentAssignment, error)
-	// ReportDeployment records a progress or health report from the Target's
+	// ListClusterAssignments returns the active Deployments on any of the
+	// Cluster's Targets. Only the Cluster's assigned agent may call it.
+	ListClusterAssignments(ctx context.Context, actor identity.Actor, organizationID, clusterID string) ([]DeploymentAssignment, error)
+	// ReportDeployment records a progress or health report from the Cluster's
 	// assigned agent.
 	ReportDeployment(ctx context.Context, actor identity.Actor, in ReportDeploymentInput) (*DeploymentDetail, error)
-	// RecordTargetHeartbeat notes that the Target's agent is in contact.
-	RecordTargetHeartbeat(ctx context.Context, actor identity.Actor, organizationID, targetID string) error
+	// Observe records what the Cluster's agent sees running on a Target,
+	// creating an observed Deployment when it differs from the current one.
+	Observe(ctx context.Context, actor identity.Actor, in ObserveInput) (*DeploymentDetail, error)
 	// ReleaseChanges returns what the Release would change on the Target and
 	// its pre-flight checks.
 	ReleaseChanges(ctx context.Context, actor identity.Actor, organizationID, releaseID, targetID string) (*ReleaseChanges, error)

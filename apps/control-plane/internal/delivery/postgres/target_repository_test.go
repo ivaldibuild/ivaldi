@@ -79,7 +79,7 @@ func TestTargetRepository(t *testing.T) {
 			DisplayName: new("Updated"),
 			Locator:     map[string]string{delivery.LocatorCluster: "cluster-1", delivery.LocatorNamespace: "moved"},
 		}))
-		assert.True(t, tg.SetCapabilities(true, true))
+		assert.True(t, must(tg.SetCapabilities(true, true, "")))
 		require.NoError(t, f.targets.UpdateTarget(ctx, tg))
 		got, err := f.targets.GetTarget(ctx, orgA, tg.ID())
 		require.NoError(t, err)
@@ -90,12 +90,13 @@ func TestTargetRepository(t *testing.T) {
 		assert.Equal(t, "moved", got.Locator()[delivery.LocatorNamespace])
 
 		at(t, 2*time.Minute)
-		assert.True(t, tg.SetCapabilities(false, false))
+		assert.True(t, must(tg.SetCapabilities(false, false, "namespace not found")))
 		require.NoError(t, f.targets.UpdateTarget(ctx, tg))
 		got, err = f.targets.GetTarget(ctx, orgA, tg.ID())
 		require.NoError(t, err)
 		assert.Equal(t, tg.Snapshot(), got.Snapshot())
 		assert.False(t, got.CanObserve(), "a heartbeat can withdraw a capability")
+		assert.Equal(t, "namespace not found", got.CapabilityReason())
 
 		at(t, 3*time.Minute)
 		tg.Archive()

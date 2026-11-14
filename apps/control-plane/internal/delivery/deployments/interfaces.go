@@ -14,7 +14,15 @@ type Applications interface {
 	GetPlacement(ctx context.Context, organizationID, applicationID, targetID string) (*delivery.Placement, error)
 	ListArtifacts(ctx context.Context, organizationID, applicationID string, includeArchived bool) ([]*delivery.Artifact, error)
 	GetChannel(ctx context.Context, organizationID, channelID string) (*delivery.Channel, error)
+	GetDefaultChannel(ctx context.Context, organizationID, applicationID string) (*delivery.Channel, error)
 	UpdatePlacementCurrent(ctx context.Context, p *delivery.Placement) error
+	// CreateArtifact records an image the agent saw that the Application did
+	// not declare.
+	CreateArtifact(ctx context.Context, a *delivery.Artifact) error
+	// CreatePlacementIfAbsent records an Application the agent saw running
+	// on a Target, when nobody had placed it, and reports whether it inserted
+	// it. It never fails because the placement exists.
+	CreatePlacementIfAbsent(ctx context.Context, p *delivery.Placement) (bool, error)
 }
 
 type Environments interface {
@@ -44,8 +52,16 @@ type Lifecycles interface {
 
 type Releases interface {
 	GetRelease(ctx context.Context, organizationID, releaseID string) (*delivery.Release, error)
+	GetReleaseByVersion(ctx context.Context, organizationID, applicationID, version string) (*delivery.Release, error)
+	CreateRelease(ctx context.Context, r *delivery.Release) error
 }
 
 type Builds interface {
 	GetBuilds(ctx context.Context, organizationID string, buildIDs []string) ([]*delivery.Build, error)
+	// CreateBuild inserts the Build unless one with its artifact name and
+	// digest exists, and reports whether it inserted it.
+	CreateBuild(ctx context.Context, b *delivery.Build) (bool, error)
+	// GetBuildByDigestForUpdate returns the Build of artifactName with
+	// digest, locked until the transaction ends.
+	GetBuildByDigestForUpdate(ctx context.Context, organizationID, artifactName, digest string) (*delivery.Build, error)
 }

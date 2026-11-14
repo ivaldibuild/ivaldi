@@ -125,16 +125,20 @@ func (a *authorized) CancelDeployment(ctx context.Context, actor identity.Actor,
 	return a.next.CancelDeployment(ctx, actor, organizationID, deploymentID)
 }
 
-func (a *authorized) ListAssignments(ctx context.Context, actor identity.Actor, organizationID, targetID string) ([]delivery.DeploymentAssignment, error) {
-	return a.next.ListAssignments(ctx, actor, organizationID, targetID)
+// ListClusterAssignments is not checked by the authorizer: only the
+// Cluster's agent may read its assignments, which the service enforces.
+func (a *authorized) ListClusterAssignments(ctx context.Context, actor identity.Actor, organizationID, clusterID string) ([]delivery.DeploymentAssignment, error) {
+	return a.next.ListClusterAssignments(ctx, actor, organizationID, clusterID)
 }
 
 func (a *authorized) ReportDeployment(ctx context.Context, actor identity.Actor, in delivery.ReportDeploymentInput) (*delivery.DeploymentDetail, error) {
 	return a.next.ReportDeployment(ctx, actor, in)
 }
 
-func (a *authorized) RecordTargetHeartbeat(ctx context.Context, actor identity.Actor, organizationID, targetID string) error {
-	return a.next.RecordTargetHeartbeat(ctx, actor, organizationID, targetID)
+// Observe is not checked by the authorizer: only the Cluster's agent may
+// report what it sees, which the service enforces.
+func (a *authorized) Observe(ctx context.Context, actor identity.Actor, in delivery.ObserveInput) (*delivery.DeploymentDetail, error) {
+	return a.next.Observe(ctx, actor, in)
 }
 
 func (a *authorized) ReleaseChanges(ctx context.Context, actor identity.Actor, organizationID, releaseID, targetID string) (*delivery.ReleaseChanges, error) {

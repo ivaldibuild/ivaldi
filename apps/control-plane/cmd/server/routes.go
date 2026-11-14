@@ -3,6 +3,7 @@ package server
 import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/api"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/agentapi"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/applications"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/clusters"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/deployments"
@@ -63,6 +64,7 @@ type services struct {
 	settings        workspace.SettingService
 	environments    delivery.EnvironmentService
 	clusters        delivery.ClusterService
+	agent           agentapi.Service
 	registries      delivery.RegistryService
 	lifecycles      delivery.LifecycleService
 	applications    delivery.ApplicationService
@@ -92,6 +94,7 @@ func (s services) routes(describe bool) []api.Routes {
 		settings.NewSettingController(s.settings),
 		environments.NewEnvironmentController(s.environments),
 		clusters.NewController(s.clusters),
+		agentapi.NewController(s.agent),
 		registries.NewRegistryController(s.registries),
 		lifecycles.NewLifecycleController(s.lifecycles),
 		applications.NewApplicationController(s.applications),

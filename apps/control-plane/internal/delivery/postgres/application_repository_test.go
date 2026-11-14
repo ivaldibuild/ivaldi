@@ -644,6 +644,28 @@ func TestPlacementRepository(t *testing.T) {
 		assert.Equal(t, 1, f.count(t, "SELECT count(*) FROM delivery.application_targets WHERE target_id = ? AND apply_config IS NULL", two.ID()), "and is stored as NULL")
 	})
 
+	t.Run("create if absent leaves the transaction usable", func(t *testing.T) {
+		err := f.tx.WithinTx(ctx, func(ctx context.Context) error {
+			again := must(delivery.NewPlacement(delivery.NewPlacementProps{
+				OrganizationID: orgA, ApplicationID: app.ID(), TargetID: two.ID(), Source: delivery.PlacementObserved,
+			}))
+			inserted, err := f.apps.CreatePlacementIfAbsent(ctx, again)
+			require.NoError(t, err)
+			assert.False(t, inserted, "the placement exists")
+
+			got, err := f.apps.GetPlacement(ctx, orgA, app.ID(), two.ID())
+			require.NoError(t, err, "the transaction is still usable")
+			assert.Equal(t, tracked.Snapshot(), got.Snapshot(), "the existing placement is kept")
+			return nil
+		})
+		require.NoError(t, err)
+
+		list, err := f.apps.ListPlacementsByTarget(ctx, orgA, two.ID())
+		require.NoError(t, err)
+		require.Len(t, list, 1)
+		assert.Equal(t, tracked.Snapshot(), list[0].Snapshot())
+	})
+
 	t.Run("list", func(t *testing.T) {
 		list, err := f.apps.ListPlacements(ctx, orgA, app.ID())
 		require.NoError(t, err)

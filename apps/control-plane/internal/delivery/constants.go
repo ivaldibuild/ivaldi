@@ -35,6 +35,9 @@ const (
 	// maxAgentFailureReasonLength bounds the explanation shown to whoever is
 	// enrolling a Cluster's agent.
 	maxAgentFailureReasonLength = 512
+	// maxCapabilityReasonLength bounds why an agent says it cannot observe or
+	// execute in a Target's namespace.
+	maxCapabilityReasonLength = 512
 )
 
 // AssignmentPageSize is how many in-flight Deployments are read per query
@@ -238,6 +241,7 @@ const (
 	EventReleaseWithdrawn = "release.withdrawn"
 
 	EventDeploymentRequested     = "deployment.requested"
+	EventDeploymentObserved      = "deployment.observed"
 	EventDeploymentCancelled     = "deployment.cancelled"
 	EventDeploymentFinished      = "deployment.finished"
 	EventDeploymentFailed        = "deployment.failed"

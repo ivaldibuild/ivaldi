@@ -67,19 +67,20 @@ func (lifecyclePhaseEnvironmentEntity) TableName() string {
 }
 
 type targetEntity struct {
-	ID             string     `gorm:"column:id;primaryKey"`
-	OrganizationID string     `gorm:"column:organization_id"`
-	EnvironmentID  string     `gorm:"column:environment_id"`
-	ClusterID      string     `gorm:"column:cluster_id"`
-	Slug           string     `gorm:"column:slug"`
-	DisplayName    string     `gorm:"column:display_name"`
-	Runtime        string     `gorm:"column:runtime"`
-	Locator        []byte     `gorm:"column:locator;type:jsonb"`
-	CanObserve     bool       `gorm:"column:can_observe"`
-	CanExecute     bool       `gorm:"column:can_execute"`
-	CreatedAt      time.Time  `gorm:"column:created_at;autoCreateTime:false"`
-	UpdatedAt      time.Time  `gorm:"column:updated_at;autoUpdateTime:false"`
-	DeletedAt      *time.Time `gorm:"column:deleted_at"`
+	ID               string     `gorm:"column:id;primaryKey"`
+	OrganizationID   string     `gorm:"column:organization_id"`
+	EnvironmentID    string     `gorm:"column:environment_id"`
+	ClusterID        string     `gorm:"column:cluster_id"`
+	Slug             string     `gorm:"column:slug"`
+	DisplayName      string     `gorm:"column:display_name"`
+	Runtime          string     `gorm:"column:runtime"`
+	Locator          []byte     `gorm:"column:locator;type:jsonb"`
+	CanObserve       bool       `gorm:"column:can_observe"`
+	CanExecute       bool       `gorm:"column:can_execute"`
+	CapabilityReason string     `gorm:"column:capability_reason"`
+	CreatedAt        time.Time  `gorm:"column:created_at;autoCreateTime:false"`
+	UpdatedAt        time.Time  `gorm:"column:updated_at;autoUpdateTime:false"`
+	DeletedAt        *time.Time `gorm:"column:deleted_at"`
 }
 
 func (targetEntity) TableName() string { return "delivery.targets" }

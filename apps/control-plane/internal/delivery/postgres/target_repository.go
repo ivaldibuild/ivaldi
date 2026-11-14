@@ -90,14 +90,15 @@ func (r *targetRepository) UpdateTarget(ctx context.Context, t *delivery.Target)
 	return updated(r.conn(ctx).Model(&targetEntity{}).
 		Where("organization_id = ? AND id = ?", e.OrganizationID, e.ID).
 		Updates(map[string]any{
-			"cluster_id":   e.ClusterID,
-			"slug":         e.Slug,
-			"display_name": e.DisplayName,
-			"locator":      e.Locator,
-			"can_observe":  e.CanObserve,
-			"can_execute":  e.CanExecute,
-			"updated_at":   e.UpdatedAt,
-			"deleted_at":   e.DeletedAt,
+			"cluster_id":        e.ClusterID,
+			"slug":              e.Slug,
+			"display_name":      e.DisplayName,
+			"locator":           e.Locator,
+			"can_observe":       e.CanObserve,
+			"can_execute":       e.CanExecute,
+			"capability_reason": e.CapabilityReason,
+			"updated_at":        e.UpdatedAt,
+			"deleted_at":        e.DeletedAt,
 		}))
 }
 

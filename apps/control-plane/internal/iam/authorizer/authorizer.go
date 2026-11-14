@@ -21,16 +21,9 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
-	"github.com/ivaldibuild/ivaldi/pkg/id"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
 	"github.com/ivaldibuild/ivaldi/pkg/logging"
 )
-
-// decisionPrefix starts every decision's ID. Audit records carry it, so a
-// change can be traced to the decision that allowed it.
-const decisionPrefix = "dcn"
-
-func init() { id.MustRegister(decisionPrefix, "authorization.Decision") }
 
 type Option func(*options)
 
@@ -84,7 +77,7 @@ func (a *authorizer) Authorize(ctx context.Context, req authorization.Request) (
 	if err := check(req); err != nil {
 		return authorization.Decision{}, err
 	}
-	d := authorization.Decision{ID: id.New(decisionPrefix)}
+	d := authorization.Decision{ID: authorization.NewDecisionID()}
 	reason, err := a.refusal(ctx, req)
 	if err != nil {
 		return authorization.Decision{}, err

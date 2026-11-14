@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+  '/v1/agent/assignments': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List the in-flight Deployments on the caller's Cluster's Targets */
+    get: operations['agent-assignments'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/agent/credentials/renew': {
     parameters: {
       query?: never;
@@ -32,6 +49,57 @@ export interface paths {
     put?: never;
     /** Redeem a Cluster enrolment token for a workload credential */
     post: operations['redeem-cluster-enrolment'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/agent/heartbeat': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Report that the agent is in contact and what it can do */
+    post: operations['agent-heartbeat'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/agent/observations': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Report what the agent sees running on a Target */
+    post: operations['agent-observation'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/agent/targets': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List what the caller's Cluster's agent watches */
+    get: operations['agent-targets'];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -1859,40 +1927,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/v1/targets/{target_id}/assignments': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List the active Deployment assignments for the Target's agent */
-    get: operations['list-target-assignments'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/v1/targets/{target_id}/reports': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Note that the Target's agent is in contact */
-    post: operations['report-target-heartbeat'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   '/v1/targets/{target_id}/restore': {
     parameters: {
       query?: never;
@@ -2354,6 +2388,15 @@ export interface components {
       };
       workspace_id: string;
     };
+    ApplicationView: {
+      artifacts: components['schemas']['ArtifactView'][];
+      current_deployment_id: string | null;
+      id: string;
+      slug: string;
+      workload_selector: {
+        [key: string]: string;
+      };
+    };
     ApplyConfig: {
       definition_artifact: string;
       values_refs?: string[];
@@ -2390,6 +2433,10 @@ export interface components {
       source: 'declared' | 'observed';
       /** Format: date-time */
       updated_at: string;
+    };
+    ArtifactView: {
+      artifact_name: string;
+      name: string;
     };
     AssignmentArtifact: {
       artifact_id: string;
@@ -2455,6 +2502,11 @@ export interface components {
       /** Format: date-time */
       updated_at: string;
       version: string | null;
+    };
+    CapabilityView: {
+      execute: boolean;
+      observe: boolean;
+      reason?: string;
     };
     ChangeSettingRequestBody: {
       /**
@@ -2535,6 +2587,11 @@ export interface components {
       slug: string;
       /** Format: date-time */
       updated_at: string;
+    };
+    ClusterView: {
+      display_name: string;
+      id: string;
+      slug: string;
     };
     CompleteInstallationRequestBody: {
       /**
@@ -3139,6 +3196,29 @@ export interface components {
       source: string;
       team_id: string | null;
     };
+    HeartbeatRequestBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/HeartbeatRequestBody.json
+       */
+      readonly $schema?: string;
+      /** @description The agent's version */
+      agent_version: string;
+      /** @description The deployers the agent has, such as helm */
+      deployers?: string[];
+      /** @description The Kubernetes version the agent runs on */
+      kubernetes_version: string;
+      /** @description The secret-store kinds the agent can read */
+      secret_store_kinds?: string[];
+      /** @description What the agent can do in each Target's namespace */
+      targets?: components['schemas']['TargetHeartbeatRequest'][];
+      /**
+       * @description Whether the agent watches the whole cluster or only listed namespaces
+       * @enum {string}
+       */
+      watch_mode: 'cluster' | 'namespaces';
+    };
     InstallationStartSnapshot: {
       /**
        * Format: date-time
@@ -3288,6 +3368,43 @@ export interface components {
       status: 'active' | 'suspended' | 'deactivated';
       /** @description The Teams an Agent belongs to, archived ones included with their archived_at; empty for every other kind */
       teams: components['schemas']['PrincipalTeam'][];
+    };
+    ObservationRequestBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ObservationRequestBody.json
+       */
+      readonly $schema?: string;
+      /** @description The Application the images belong to */
+      application_id: string;
+      /** @description The images the agent saw, by published artifact name */
+      artifacts: components['schemas']['ObservedArtifactRequest'][];
+      /** @description Who deployed it, when the agent can tell */
+      external_ref?: unknown;
+      /**
+       * Format: date-time
+       * @description When the agent saw it, by its clock
+       */
+      observed_at?: string;
+      /** @description The agent's idempotent report ID */
+      report_id: string;
+      /** @description The Target the images run on */
+      target_id: string;
+      /** @description The workloads the images came from, kept on the Deployment's first status event */
+      workloads?: components['schemas']['ObservedWorkload'][];
+    };
+    ObservedArtifactRequest: {
+      /** @description The image's published name, such as ghcr.io/acme/api */
+      artifact_name: string;
+      /** @description The image's digest, such as sha256:… */
+      digest: string;
+    };
+    ObservedWorkload: {
+      kind: string;
+      name: string;
+      namespace: string;
+      revision?: string;
     };
     OnboardingHttpRequestBody: {
       /**
@@ -3852,6 +3969,20 @@ export interface components {
       readonly $schema?: string;
       /** @description Response payload, always present: an empty list is [], not omitted */
       data: components['schemas']['DeploymentDetail'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
+    ResponseDeploymentSnapshot: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseDeploymentSnapshot.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['DeploymentSnapshot'];
       /** @description Human-readable message */
       message?: string;
       /** @description Request status */
@@ -4571,6 +4702,20 @@ export interface components {
       /** @description Request status */
       status: string;
     };
+    ResponseTargetsResponse: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseTargetsResponse.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['TargetsResponse'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
     ResponseTeamSnapshot: {
       /**
        * Format: uri
@@ -4954,9 +5099,20 @@ export interface components {
        */
       provider: 'github';
     };
+    TargetHeartbeatRequest: {
+      /** @description Whether the agent can change the namespace */
+      execute: boolean;
+      /** @description Whether the agent can read the namespace */
+      observe: boolean;
+      /** @description Why a capability is false, when it is */
+      reason?: string;
+      /** @description The Target */
+      target_id: string;
+    };
     TargetSnapshot: {
       can_execute: boolean;
       can_observe: boolean;
+      capability_reason: string;
       cluster_id: string;
       /** Format: date-time */
       created_at: string;
@@ -4973,6 +5129,24 @@ export interface components {
       slug: string;
       /** Format: date-time */
       updated_at: string;
+    };
+    TargetView: {
+      applications: components['schemas']['ApplicationView'][];
+      capabilities: components['schemas']['CapabilityView'];
+      display_name: string;
+      id: string;
+      namespace: string;
+      slug: string;
+    };
+    TargetsResponse: {
+      cluster: components['schemas']['ClusterView'];
+      /** Format: int64 */
+      heartbeat_interval_seconds: number;
+      /** Format: int64 */
+      poll_interval_seconds: number;
+      targets: components['schemas']['TargetView'][];
+      /** Format: int64 */
+      watch_interval_seconds: number;
     };
     TeamMemberSnapshot: {
       /** Format: date-time */
@@ -5237,6 +5411,35 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  'agent-assignments': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseListDeploymentAssignment'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
   'renew-workload-credential': {
     parameters: {
       query?: never;
@@ -5290,6 +5493,99 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ResponseRedeemed'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'agent-heartbeat': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['HeartbeatRequestBody'];
+      };
+    };
+    responses: {
+      /** @description No Content */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'agent-observation': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ObservationRequestBody'];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseDeploymentSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'agent-targets': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseTargetsResponse'];
         };
       };
       /** @description Error */
@@ -9884,68 +10180,6 @@ export interface operations {
         content: {
           'application/json': components['schemas']['ResponseTargetSnapshot'];
         };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/problem+json': components['schemas']['ErrorModel'];
-        };
-      };
-    };
-  };
-  'list-target-assignments': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description The Target */
-        target_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ResponseListDeploymentAssignment'];
-        };
-      };
-      /** @description Error */
-      default: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/problem+json': components['schemas']['ErrorModel'];
-        };
-      };
-    };
-  };
-  'report-target-heartbeat': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description The Target */
-        target_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description No Content */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
       };
       /** @description Error */
       default: {

@@ -42,12 +42,8 @@ func (c *Controller) RegisterRoutes(h huma.API) {
 		"Cancel a Deployment before it is applied", 0, c.CancelDeployment)
 	register(h, "release-changes", http.MethodGet, "/releases/{release_id}/changes",
 		"Show what a Release would change on a Target, and its pre-flight checks", 0, c.ReleaseChanges)
-	register(h, "list-target-assignments", http.MethodGet, "/targets/{target_id}/assignments",
-		"List the active Deployment assignments for the Target's agent", 0, c.ListAssignments)
 	register(h, "report-deployment", http.MethodPost, "/deployments/{deployment_id}/events",
 		"Report a Deployment's progress or health as its Target's agent", 0, c.ReportDeployment)
-	register(h, "report-target-heartbeat", http.MethodPost, "/targets/{target_id}/reports",
-		"Note that the Target's agent is in contact", http.StatusNoContent, c.ReportTargetHeartbeat)
 }
 
 func register[I, O any](h huma.API, id, method, path, summary string, status int, handler func(context.Context, *I) (*O, error)) {
@@ -99,10 +95,6 @@ type ReleaseChangesRequest struct {
 	TargetID  string `query:"target_id" required:"true" doc:"The Target to compare against"`
 }
 
-type TargetRequest struct {
-	TargetID string `path:"target_id" doc:"The Target"`
-}
-
 type ReportDeploymentRequest struct {
 	DeploymentID string `path:"deployment_id" doc:"The Deployment"`
 	Body         struct {
@@ -126,15 +118,9 @@ type DeploymentListResponse struct {
 	Body api.Response[pagination.Result[delivery.DeploymentSnapshot]]
 }
 
-type AssignmentsResponse struct {
-	Body api.Response[[]delivery.DeploymentAssignment]
-}
-
 type ChangesResponse struct {
 	Body api.Response[delivery.ReleaseChanges]
 }
-
-type HeartbeatResponse struct{}
 
 func caller(ctx context.Context) (identity.Caller, error) {
 	c, ok := identity.CallerFrom(ctx)
@@ -208,18 +194,6 @@ func (c *Controller) ReleaseChanges(ctx context.Context, req *ReleaseChangesRequ
 	return &ChangesResponse{Body: api.SuccessResponse(nil, *changes)}, nil
 }
 
-func (c *Controller) ListAssignments(ctx context.Context, req *TargetRequest) (*AssignmentsResponse, error) {
-	who, err := caller(ctx)
-	if err != nil {
-		return nil, err
-	}
-	items, err := c.service.ListAssignments(ctx, who.Actor, who.OrganizationID, req.TargetID)
-	if err != nil {
-		return nil, translateToHttpError(ctx, err)
-	}
-	return &AssignmentsResponse{Body: api.SuccessResponse(nil, items)}, nil
-}
-
 func (c *Controller) ReportDeployment(ctx context.Context, req *ReportDeploymentRequest) (*DeploymentResponse, error) {
 	who, err := caller(ctx)
 	if err != nil {
@@ -238,17 +212,6 @@ func (c *Controller) ReportDeployment(ctx context.Context, req *ReportDeployment
 		return nil, translateToHttpError(ctx, err)
 	}
 	return &DeploymentResponse{Body: api.SuccessResponse(nil, *d)}, nil
-}
-
-func (c *Controller) ReportTargetHeartbeat(ctx context.Context, req *TargetRequest) (*HeartbeatResponse, error) {
-	who, err := caller(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := c.service.RecordTargetHeartbeat(ctx, who.Actor, who.OrganizationID, req.TargetID); err != nil {
-		return nil, translateToHttpError(ctx, err)
-	}
-	return &HeartbeatResponse{}, nil
 }
 
 func translateToHttpError(ctx context.Context, err error) error {

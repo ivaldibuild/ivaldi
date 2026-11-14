@@ -122,6 +122,11 @@ func (r *releaseRepository) GetReleaseForUpdate(ctx context.Context, organizatio
 		Where("organization_id = ? AND id = ?", organizationID, releaseID))
 }
 
+func (r *releaseRepository) GetReleaseByVersion(ctx context.Context, organizationID, applicationID, version string) (*delivery.Release, error) {
+	return r.get(r.conn(ctx), r.conn(ctx).Where(
+		"organization_id = ? AND application_id = ? AND version = ?", organizationID, applicationID, version))
+}
+
 func (r *releaseRepository) get(db, q *gorm.DB) (*delivery.Release, error) {
 	var e releaseEntity
 	if err := q.Take(&e).Error; err != nil {

@@ -83,7 +83,4 @@ func TestOverHTTP(t *testing.T) {
 	code, out = call(http.MethodPost, "/deployments/"+awaiting.ID()+"/cancel", "ada", "")
 	require.Equal(t, http.StatusOK, code, out)
 	assert.Equal(t, "cancelled", out["data"].(map[string]any)["deployment"].(map[string]any)["status"])
-
-	code, _ = call(http.MethodPost, "/targets/"+targetID+"/reports", "agent", "")
-	assert.Equal(t, http.StatusNoContent, code)
 }

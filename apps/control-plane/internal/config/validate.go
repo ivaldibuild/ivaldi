@@ -52,6 +52,18 @@ func (c *Config) Validate() error {
 }
 
 func (c *Config) validateAuth(v *validator) {
+	// The control plane sends these intervals to runtime agents, which have
+	// no flags of their own: a zero would tell an agent to poll constantly.
+	for name, d := range map[string]int64{
+		"runners.heartbeat_interval":   int64(c.Runners.HeartbeatInterval),
+		"runners.agent_poll_interval":  int64(c.Runners.AgentPollInterval),
+		"runners.agent_watch_interval": int64(c.Runners.AgentWatchInterval),
+	} {
+		if d <= 0 {
+			v.addf("%s must be positive", name)
+		}
+	}
+
 	a := c.Auth
 	if len(a.SigningKeyFiles) == 0 && !a.EphemeralSigningKey {
 		v.addf("auth.signing_key_files needs at least one PEM private key, or set auth.ephemeral_signing_key for local development")

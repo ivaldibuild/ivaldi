@@ -208,6 +208,10 @@ func (r *deploymentRepository) ListDeployments(ctx context.Context, query delive
 		if query.TargetID != "" {
 			q = q.Where("target_id = ?", query.TargetID)
 		}
+		if query.ClusterID != "" {
+			q = q.Where("target_id IN (SELECT id FROM delivery.targets WHERE organization_id = ? AND cluster_id = ? AND deleted_at IS NULL)",
+				query.OrganizationID, query.ClusterID)
+		}
 		if query.Status != "" {
 			q = q.Where("status = ?", string(query.Status))
 		}

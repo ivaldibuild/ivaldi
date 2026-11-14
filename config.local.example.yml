@@ -26,6 +26,14 @@ redis:
   address: 127.0.0.1:6379
   password_file: .local/valkey-password
 
+# Runtime agents. The control plane tells an enrolled agent these intervals
+# through GET /v1/agent/targets, so the agent has no interval flags of its own.
+# One silent for three heartbeat intervals is treated as offline.
+runners:
+  heartbeat_interval: 30s
+  agent_poll_interval: 5s
+  agent_watch_interval: 60s
+
 # Platform workloads (ADR 0015) are components that serve every
 # Organization, such as the gateway. The control plane creates, updates, and
 # suspends them to match this list on every start. `make local_secrets`

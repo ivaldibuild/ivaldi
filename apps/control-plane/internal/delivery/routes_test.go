@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/api"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/agentapi"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/applications"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/clusters"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/deployments"
@@ -29,6 +30,7 @@ func TestControllersFitTogether(t *testing.T) {
 		applications.NewApplicationController(nil),
 		releases.NewReleaseController(nil),
 		deployments.NewController(nil),
+		agentapi.NewController(nil),
 	} {
 		r.RegisterRoutes(h)
 	}
@@ -49,5 +51,5 @@ func TestControllersFitTogether(t *testing.T) {
 			assert.NotEmpty(t, op.Security, "%s needs a token", where)
 		}
 	}
-	assert.Len(t, ids, 13+6+10+8+32+6+7)
+	assert.Len(t, ids, 13+6+10+8+32+6+5+4)
 }

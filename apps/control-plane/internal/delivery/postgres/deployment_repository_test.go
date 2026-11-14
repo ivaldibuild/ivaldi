@@ -68,6 +68,11 @@ func TestDeploymentRepository(t *testing.T) {
 		require.NoError(t, err)
 		assert.Len(t, page.Items, want, "statuses %s", statuses)
 	}
+	for cluster, want := range map[string]int{target.ClusterID(): 1, f.cluster(t, orgA, "elsewhere").ID(): 0} {
+		page, err := deployments.ListDeployments(f.ctx, delivery.ListDeploymentsQuery{OrganizationID: orgA, ClusterID: cluster})
+		require.NoError(t, err)
+		assert.Len(t, page.Items, want, "deployments on cluster %s's targets", cluster)
+	}
 
 	eventStatus := release.DeploymentApplying
 	event := must(delivery.NewDeploymentEvent(delivery.NewDeploymentEventProps{

@@ -5,10 +5,14 @@ package deployments
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/audit"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/change"
@@ -192,7 +196,7 @@ func (s *service) RequestDeployments(ctx context.Context, actor identity.Actor, 
 			if err := s.deployments.CreateDeployment(ctx, d); err != nil {
 				return err
 			}
-			if err := s.appendStatusEvent(ctx, d, nil); err != nil {
+			if err := s.appendStatusEvent(ctx, d, nil, nil, nil); err != nil {
 				return err
 			}
 			dctx := authorization.WithDecision(ctx, d.ID(), decision)
@@ -253,7 +257,7 @@ func (s *service) CancelDeployment(ctx context.Context, actor identity.Actor, or
 		if err := s.deployments.UpdateDeployment(ctx, d); err != nil {
 			return err
 		}
-		if err := s.appendStatusEvent(ctx, d, nil); err != nil {
+		if err := s.appendStatusEvent(ctx, d, nil, nil, nil); err != nil {
 			return err
 		}
 		if err := s.writer.Events(ctx, delivery.AggregateDeployment, d.ID(), d); err != nil {
@@ -270,20 +274,22 @@ func (s *service) CancelDeployment(ctx context.Context, actor identity.Actor, or
 	return s.detail(ctx, d)
 }
 
-func (s *service) ListAssignments(ctx context.Context, actor identity.Actor, organizationID, targetID string) ([]delivery.DeploymentAssignment, error) {
-	target, err := s.targets.GetTarget(ctx, organizationID, targetID)
+// ListClusterAssignments returns the active Deployments on any of the
+// Cluster's Targets. Only the Cluster's assigned agent may call it.
+func (s *service) ListClusterAssignments(ctx context.Context, actor identity.Actor, organizationID, clusterID string) ([]delivery.DeploymentAssignment, error) {
+	cluster, err := s.clusters.GetCluster(ctx, organizationID, clusterID)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.checkTargetAgent(ctx, organizationID, target, actor.PrincipalID); err != nil {
+	if err := requireClusterAgent(cluster, actor.PrincipalID); err != nil {
 		return nil, err
 	}
-	// The statuses are filtered in the query, not after it, so a Target's
-	// finished history never pushes its in-flight work off the page. At most
-	// one Deployment per Application is in flight on a Target, but every page
-	// is read regardless.
+	// The statuses are filtered in the query, not after it, so finished
+	// history never pushes in-flight work off the page, and the Cluster's
+	// Targets are matched in the same query: an agent polls this every few
+	// seconds, so it costs one query however many Targets the Cluster has.
 	query := delivery.ListDeploymentsQuery{
-		OrganizationID: organizationID, TargetID: targetID,
+		OrganizationID: organizationID, ClusterID: clusterID,
 		Statuses: []release.DeploymentStatus{release.DeploymentApplying, release.DeploymentProgressing},
 		Page:     pagination.Query{Limit: delivery.AssignmentPageSize},
 	}
@@ -367,21 +373,13 @@ func (s *service) ReportDeployment(ctx context.Context, actor identity.Actor, in
 // RecordTargetHeartbeat notes that the Target's Cluster agent is in contact.
 // Liveness is the Cluster's now, so this only checks the caller; the
 // cluster-wide heartbeat replaces it.
-func (s *service) RecordTargetHeartbeat(ctx context.Context, actor identity.Actor, organizationID, targetID string) error {
-	target, err := s.targets.GetTarget(ctx, organizationID, targetID)
-	if err != nil {
-		return err
-	}
-	return s.checkTargetAgent(ctx, organizationID, target, actor.PrincipalID)
-}
-
 // checkTargetAgent refuses anyone but the agent of the Target's Cluster.
 func (s *service) checkTargetAgent(ctx context.Context, organizationID string, target *delivery.Target, principalID string) error {
 	cluster, err := s.clusters.GetCluster(ctx, organizationID, target.ClusterID())
 	if err != nil {
 		return err
 	}
-	return requireClusterAgent(cluster, target, principalID)
+	return requireClusterAgent(cluster, principalID)
 }
 
 // checkTargetAgentLocked is checkTargetAgent that also takes a shared lock on
@@ -393,13 +391,13 @@ func (s *service) checkTargetAgentLocked(ctx context.Context, organizationID str
 	if err != nil {
 		return err
 	}
-	return requireClusterAgent(cluster, target, principalID)
+	return requireClusterAgent(cluster, principalID)
 }
 
-func requireClusterAgent(cluster *delivery.Cluster, target *delivery.Target, principalID string) error {
+func requireClusterAgent(cluster *delivery.Cluster, principalID string) error {
 	agent := cluster.AgentPrincipalID()
 	if agent == nil || *agent != principalID {
-		return fmt.Errorf("%w: %s does not serve target %s", delivery.ErrNotDeploymentAgent, principalID, target.ID())
+		return fmt.Errorf("%w: %s does not serve cluster %s", delivery.ErrNotDeploymentAgent, principalID, cluster.ID())
 	}
 	return nil
 }
@@ -821,6 +819,12 @@ func (s *service) applyCurrent(ctx context.Context, d *delivery.Deployment) erro
 	if err != nil {
 		return err
 	}
+	return s.setCurrent(ctx, placement, d)
+}
+
+// setCurrent supersedes the placement's previous Deployment and makes d the
+// one running there. It is shared by executed and observed Deployments.
+func (s *service) setCurrent(ctx context.Context, placement *delivery.Placement, d *delivery.Deployment) error {
 	if placement.CurrentDeploymentID() != nil && *placement.CurrentDeploymentID() != d.ID() {
 		previous, err := s.deployments.GetDeploymentForUpdate(ctx, d.OrganizationID(), *placement.CurrentDeploymentID())
 		if err != nil {
@@ -833,7 +837,7 @@ func (s *service) applyCurrent(ctx context.Context, d *delivery.Deployment) erro
 			if err := s.deployments.UpdateDeployment(ctx, previous); err != nil {
 				return err
 			}
-			if err := s.appendStatusEvent(ctx, previous, nil); err != nil {
+			if err := s.appendStatusEvent(ctx, previous, nil, nil, nil); err != nil {
 				return err
 			}
 			if err := s.writer.Events(ctx, delivery.AggregateDeployment, previous.ID(), previous); err != nil {
@@ -847,11 +851,414 @@ func (s *service) applyCurrent(ctx context.Context, d *delivery.Deployment) erro
 	return s.applications.UpdatePlacementCurrent(ctx, placement)
 }
 
-func (s *service) appendStatusEvent(ctx context.Context, d *delivery.Deployment, reportedBy *string) error {
+// Observe records what a Cluster's agent sees running on a Target. When the
+// images match the placement's current Release, it changes nothing and
+// returns the current Deployment; otherwise it records the missing artifacts
+// and Builds, an observed Release, and an observed Deployment, then makes it
+// current.
+func (s *service) Observe(ctx context.Context, actor identity.Actor, in delivery.ObserveInput) (*delivery.DeploymentDetail, error) {
+	if len(in.Artifacts) == 0 {
+		return nil, delivery.NewErrInvalidInput("an observation needs at least one image")
+	}
+	seen := map[string]string{}
+	for _, a := range in.Artifacts {
+		if a.ArtifactName == "" {
+			return nil, delivery.NewErrInvalidInput("every observed image needs an artifact name")
+		}
+		if err := delivery.ValidateDigest(a.Digest); err != nil {
+			return nil, err
+		}
+		if _, ok := seen[a.ArtifactName]; ok {
+			return nil, delivery.NewErrInvalidInput(fmt.Sprintf("artifact %s is reported twice", a.ArtifactName))
+		}
+		seen[a.ArtifactName] = a.Digest
+	}
+
+	var out *delivery.Deployment
+	err := s.writer.Tx.WithinTx(ctx, func(ctx context.Context) error {
+		// The Target is locked before the Cluster, the order reports, Target
+		// restores, and heartbeats use, so they cannot deadlock. The Target
+		// cannot be archived mid-observation, and the Cluster's shared lock
+		// keeps a re-enrolment from swapping the agent.
+		target, err := s.targets.GetTargetForUpdate(ctx, in.OrganizationID, in.TargetID)
+		if err != nil {
+			return err
+		}
+		if target.ClusterID() != in.ClusterID {
+			return delivery.NewErrInvalidInput("the target is not in this cluster")
+		}
+		cluster, err := s.clusters.GetClusterForShare(ctx, in.OrganizationID, in.ClusterID)
+		if err != nil {
+			return err
+		}
+		if err := requireClusterAgent(cluster, actor.PrincipalID); err != nil {
+			return err
+		}
+		if target.Archived() {
+			return fmt.Errorf("%w: target %s", delivery.ErrArchived, target.ID())
+		}
+		env, err := s.environments.GetEnvironment(ctx, in.OrganizationID, target.EnvironmentID())
+		if err != nil {
+			return err
+		}
+		if env.Archived() {
+			return fmt.Errorf("%w: environment %s", delivery.ErrArchived, env.ID())
+		}
+		app, err := s.applications.GetApplication(ctx, in.OrganizationID, in.ApplicationID)
+		if err != nil {
+			return err
+		}
+		if app.Archived() {
+			return fmt.Errorf("%w: application %s", delivery.ErrArchived, app.ID())
+		}
+		if app.WorkspaceID() != env.WorkspaceID() {
+			return delivery.NewErrInvalidInput("the application runs in another workspace")
+		}
+		// While Ivaldi is applying a Deployment, the agent sees its images
+		// mid-rollout. That rollout owns the placement until it finishes, so
+		// the observation records nothing and returns it. A Deployment that is
+		// only pending or awaiting approval has not touched the cluster, so it
+		// does not hold observations back.
+		inFlight, err := s.deployments.GetInFlightDeployment(ctx, in.OrganizationID, app.ID(), target.ID())
+		if err != nil && !errors.Is(err, delivery.ErrNotFound) {
+			return err
+		}
+		if err == nil && (inFlight.Status() == release.DeploymentApplying || inFlight.Status() == release.DeploymentProgressing) {
+			out = inFlight
+			return nil
+		}
+
+		placement, created, err := s.placementForObserve(ctx, in, target)
+		if err != nil {
+			return err
+		}
+		if placement.CurrentDeploymentID() != nil {
+			current, err := s.deployments.GetDeployment(ctx, in.OrganizationID, *placement.CurrentDeploymentID())
+			if err != nil && !errors.Is(err, delivery.ErrNotFound) {
+				return err
+			}
+			if err == nil {
+				same, err := s.sameDigests(ctx, current, in.Artifacts)
+				if err != nil {
+					return err
+				}
+				if same {
+					out = current
+					if created {
+						return s.writer.Events(ctx, delivery.AggregatePlacement, placement.Key(), placement)
+					}
+					return nil
+				}
+			}
+		}
+
+		now := clock.Now()
+		// The agent's clock may be skewed: an observation is never later
+		// than the server's now.
+		observedAt := now
+		if in.ObservedAt != nil && in.ObservedAt.Before(now) {
+			observedAt = in.ObservedAt.UTC().Truncate(time.Microsecond)
+		}
+		releaseBuilds, err := s.observedBuilds(ctx, in.OrganizationID, app.ID(), in.Artifacts)
+		if err != nil {
+			return err
+		}
+		version := observedVersion(in.Artifacts)
+		rel, err := s.releases.GetReleaseByVersion(ctx, in.OrganizationID, app.ID(), version)
+		if errors.Is(err, delivery.ErrNotFound) {
+			channel, err := s.observedChannel(ctx, in.OrganizationID, app.ID(), placement)
+			if err != nil {
+				return err
+			}
+			rel, err = delivery.NewRelease(delivery.NewReleaseProps{
+				OrganizationID: in.OrganizationID, ApplicationID: app.ID(), ChannelID: channel.ID(),
+				Version: version, Status: release.StatusPublished, Source: delivery.ReleaseObserved,
+				PublishedAt: &now, Builds: releaseBuilds,
+			}, nil)
+			if err != nil {
+				return err
+			}
+			if err := s.releases.CreateRelease(ctx, rel); err != nil {
+				if !errors.Is(err, delivery.ErrAlreadyExists) {
+					return err
+				}
+				rel, err = s.releases.GetReleaseByVersion(ctx, in.OrganizationID, app.ID(), version)
+				if err != nil {
+					return err
+				}
+			} else if err := s.writer.Events(ctx, delivery.AggregateRelease, rel.ID(), rel); err != nil {
+				return err
+			}
+		} else if err != nil {
+			return err
+		}
+
+		d, err := delivery.NewDeployment(delivery.NewDeploymentProps{
+			OrganizationID: in.OrganizationID, ApplicationID: app.ID(), ReleaseID: rel.ID(),
+			EnvironmentID: env.ID(), TargetID: target.ID(),
+			Source: delivery.DeploymentObserved, Reason: delivery.DeploymentRollout,
+			Status: release.DeploymentHealthy, PreviousDeploymentID: placement.CurrentDeploymentID(),
+			ExternalRef: in.ExternalRef, RequestedAt: &observedAt, StartedAt: &observedAt, FinishedAt: &observedAt, SucceededAt: &observedAt,
+		}, nil)
+		if err != nil {
+			return err
+		}
+		if err := s.deployments.CreateDeployment(ctx, d); err != nil {
+			return err
+		}
+		if err := s.writer.Events(ctx, delivery.AggregateDeployment, d.ID(), d); err != nil {
+			return err
+		}
+		detail, err := observedDetail(in.Workloads)
+		if err != nil {
+			return err
+		}
+		if err := s.appendStatusEvent(ctx, d, &actor.PrincipalID, &in.ReportID, detail); err != nil {
+			return err
+		}
+		if err := s.setCurrent(ctx, placement, d); err != nil {
+			return err
+		}
+		if created {
+			if err := s.writer.Events(ctx, delivery.AggregatePlacement, placement.Key(), placement); err != nil {
+				return err
+			}
+		}
+		out = d
+		return s.writer.AuditRecord(ctx, audit.Event{
+			Type: delivery.EventDeploymentObserved, OrganizationID: in.OrganizationID,
+			ResourceID: d.ID(), Actor: actor, After: d.Snapshot(),
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.detail(ctx, out)
+}
+
+// placementForObserve returns the Application's placement on the Target,
+// recording an observed one when nobody had placed it.
+func (s *service) placementForObserve(ctx context.Context, in delivery.ObserveInput, target *delivery.Target) (*delivery.Placement, bool, error) {
+	placement, err := s.applications.GetPlacement(ctx, in.OrganizationID, in.ApplicationID, target.ID())
+	if err == nil {
+		return placement, false, nil
+	}
+	if !errors.Is(err, delivery.ErrNotFound) {
+		return nil, false, err
+	}
+	placement, err = delivery.NewPlacement(delivery.NewPlacementProps{
+		OrganizationID: in.OrganizationID, ApplicationID: in.ApplicationID, TargetID: target.ID(),
+		Source: delivery.PlacementObserved,
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	// Inserted only if absent: a plain insert that lost a race would abort
+	// the transaction, and the read below could not run.
+	inserted, err := s.applications.CreatePlacementIfAbsent(ctx, placement)
+	if err != nil {
+		return nil, false, err
+	}
+	if !inserted {
+		placement, err = s.applications.GetPlacement(ctx, in.OrganizationID, in.ApplicationID, target.ID())
+		return placement, false, err
+	}
+	return placement, true, nil
+}
+
+// observedDetail is the first status event's detail for an observed
+// Deployment: the workloads the images came from.
+func observedDetail(workloads []delivery.ObservedWorkload) (json.RawMessage, error) {
+	if len(workloads) == 0 {
+		return nil, nil
+	}
+	detail, err := json.Marshal(struct {
+		Workloads []delivery.ObservedWorkload `json:"workloads"`
+	}{workloads})
+	if err != nil {
+		return nil, fmt.Errorf("encode observed workloads: %w", err)
+	}
+	return detail, nil
+}
+
+// sameDigests reports whether the Deployment's Release runs exactly the
+// images the agent reported.
+func (s *service) sameDigests(ctx context.Context, current *delivery.Deployment, reported []delivery.ObservedArtifact) (bool, error) {
+	rel, err := s.releases.GetRelease(ctx, current.OrganizationID(), current.ReleaseID())
+	if err != nil {
+		return false, err
+	}
+	builds, err := s.buildsOf(ctx, rel)
+	if err != nil {
+		return false, err
+	}
+	artifacts, err := s.applications.ListArtifacts(ctx, current.OrganizationID(), current.ApplicationID(), true)
+	if err != nil {
+		return false, err
+	}
+	byID := map[string]*delivery.Artifact{}
+	for _, a := range artifacts {
+		byID[a.ID()] = a
+	}
+	currentSet := map[string]string{}
+	for _, rb := range rel.Builds() {
+		a, b := byID[rb.ArtifactID], builds[rb.ArtifactID]
+		// Only images are observed; a chart in the Release does not run.
+		if a == nil || b == nil || a.ArtifactKind() != delivery.ArtifactContainerImage {
+			continue
+		}
+		currentSet[a.ArtifactName()] = b.Digest()
+	}
+	if len(currentSet) != len(reported) {
+		return false, nil
+	}
+	for _, a := range reported {
+		if currentSet[a.ArtifactName] != a.Digest {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// observedBuilds records the Artifacts and Builds the reported images name,
+// creating the ones that are missing. It returns the Release's Builds.
+func (s *service) observedBuilds(ctx context.Context, organizationID, applicationID string, reported []delivery.ObservedArtifact) ([]delivery.NewReleaseBuildProps, error) {
+	existing, err := s.applications.ListArtifacts(ctx, organizationID, applicationID, false)
+	if err != nil {
+		return nil, err
+	}
+	byPublished := map[string]*delivery.Artifact{}
+	names := map[string]bool{}
+	for _, a := range existing {
+		byPublished[a.ArtifactName()] = a
+		names[a.Name()] = true
+	}
+	var builds []delivery.NewReleaseBuildProps
+	for _, reportedArtifact := range reported {
+		artifact := byPublished[reportedArtifact.ArtifactName]
+		if artifact == nil {
+			name := uniqueArtifactName(artifactNameFromRepository(reportedArtifact.ArtifactName), names)
+			artifact, err = delivery.NewArtifact(delivery.NewArtifactProps{
+				OrganizationID: organizationID, ApplicationID: applicationID, Name: name,
+				ArtifactKind: delivery.ArtifactContainerImage, ArtifactName: reportedArtifact.ArtifactName,
+				Source: delivery.ArtifactObserved,
+			}, nil)
+			if err != nil {
+				return nil, err
+			}
+			if err := s.applications.CreateArtifact(ctx, artifact); err != nil {
+				return nil, err
+			}
+			if err := s.writer.Events(ctx, delivery.AggregateArtifact, artifact.ID(), artifact); err != nil {
+				return nil, err
+			}
+			byPublished[reportedArtifact.ArtifactName] = artifact
+			names[name] = true
+		}
+		build, err := s.builds.GetBuildByDigestForUpdate(ctx, organizationID, reportedArtifact.ArtifactName, reportedArtifact.Digest)
+		if errors.Is(err, delivery.ErrNotFound) {
+			build, err = delivery.NewBuild(delivery.NewBuildProps{
+				OrganizationID: organizationID, ArtifactKind: delivery.ArtifactContainerImage,
+				ArtifactName: reportedArtifact.ArtifactName, Digest: reportedArtifact.Digest,
+				Provenance: delivery.BuildObserved,
+			}, nil)
+			if err != nil {
+				return nil, err
+			}
+			inserted, err := s.builds.CreateBuild(ctx, build)
+			if err != nil {
+				return nil, err
+			}
+			if !inserted {
+				build, err = s.builds.GetBuildByDigestForUpdate(ctx, organizationID, reportedArtifact.ArtifactName, reportedArtifact.Digest)
+				if err != nil {
+					return nil, err
+				}
+			} else if err := s.writer.Events(ctx, delivery.AggregateBuild, build.ID(), build); err != nil {
+				return nil, err
+			}
+		} else if err != nil {
+			return nil, err
+		}
+		builds = append(builds, delivery.NewReleaseBuildProps{ArtifactID: artifact.ID(), BuildID: build.ID()})
+	}
+	return builds, nil
+}
+
+// observedChannel reuses the channel of the current Release, so an observed
+// Deployment does not move the Application to another channel.
+func (s *service) observedChannel(ctx context.Context, organizationID, applicationID string, placement *delivery.Placement) (*delivery.Channel, error) {
+	if placement.CurrentDeploymentID() != nil {
+		if d, err := s.deployments.GetDeployment(ctx, organizationID, *placement.CurrentDeploymentID()); err == nil {
+			if rel, err := s.releases.GetRelease(ctx, organizationID, d.ReleaseID()); err == nil {
+				return s.applications.GetChannel(ctx, organizationID, rel.ChannelID())
+			}
+		}
+	}
+	return s.applications.GetDefaultChannel(ctx, organizationID, applicationID)
+}
+
+// observedVersion names an observed Release after the images it runs, so a
+// retried observation finds the same Release instead of making another.
+func observedVersion(artifacts []delivery.ObservedArtifact) string {
+	sorted := append([]delivery.ObservedArtifact(nil), artifacts...)
+	slices.SortFunc(sorted, func(a, b delivery.ObservedArtifact) int {
+		return strings.Compare(a.ArtifactName, b.ArtifactName)
+	})
+	hash := sha256.New()
+	for _, a := range sorted {
+		fmt.Fprintf(hash, "%s@%s\n", a.ArtifactName, a.Digest)
+	}
+	return "observed-" + hex.EncodeToString(hash.Sum(nil))[:16]
+}
+
+// artifactNameFromRepository derives a slug-shaped artifact name from the
+// repository an image is published under.
+func artifactNameFromRepository(published string) string {
+	base := published
+	if i := strings.LastIndex(base, "/"); i >= 0 {
+		base = base[i+1:]
+	}
+	var b strings.Builder
+	for _, r := range strings.ToLower(base) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-', r == '_', r == '.':
+			b.WriteRune('-')
+		}
+	}
+	name := strings.Trim(b.String(), "-")
+	for strings.Contains(name, "--") {
+		name = strings.ReplaceAll(name, "--", "-")
+	}
+	if len(name) > 40 {
+		name = strings.TrimRight(name[:40], "-")
+	}
+	if name == "" {
+		name = "observed"
+	}
+	return name
+}
+
+// uniqueArtifactName adds a short suffix when the derived name is taken.
+func uniqueArtifactName(name string, taken map[string]bool) string {
+	if !taken[name] {
+		return name
+	}
+	for i := 2; ; i++ {
+		candidate := fmt.Sprintf("%s-%d", name, i)
+		if !taken[candidate] {
+			return candidate
+		}
+	}
+}
+
+func (s *service) appendStatusEvent(ctx context.Context, d *delivery.Deployment, reportedBy, reportID *string, detail json.RawMessage) error {
 	status := d.Status()
 	event, err := delivery.NewDeploymentEvent(delivery.NewDeploymentEventProps{
 		OrganizationID: d.OrganizationID(), DeploymentID: d.ID(), Kind: delivery.DeploymentEventStatusChanged,
-		Status: &status, ReportedByPrincipalID: reportedBy,
+		Status: &status, ReportedByPrincipalID: reportedBy, ReportID: reportID, Detail: detail,
 	}, nil)
 	if err != nil {
 		return err

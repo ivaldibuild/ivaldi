@@ -30,8 +30,6 @@ func translateToHttpError(ctx context.Context, err error) error {
 		errors.Is(err, delivery.ErrArchived),
 		errors.Is(err, delivery.ErrInUse):
 		return huma.Error409Conflict(err.Error())
-	case errors.Is(err, delivery.ErrNotTargetAgent):
-		return huma.Error403Forbidden("only the target's agent may report on it")
 	case errors.As(err, &approval):
 		return huma.Error403Forbidden("the change needs approval; decision " + approval.DecisionID)
 	case errors.Is(err, authorization.ErrDenied):

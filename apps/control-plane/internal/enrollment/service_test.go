@@ -498,4 +498,9 @@ func TestReenrolmentRefusesAnIdentityUsedByAnotherCluster(t *testing.T) {
 	require.NotNil(t, w.clusters[otherClusterID].AgentLastFailure())
 	assert.Contains(t, w.clusters[otherClusterID].AgentLastFailure().Reason, "identity_in_use")
 	assert.Contains(t, w.clusters[otherClusterID].AgentLastFailure().Reason, "cluster")
+
+	refused := w.audit[len(w.audit)-1]
+	assert.Equal(t, iam.EventWorkloadEnrollmentRefused, refused.Type, "the refusal is audited")
+	assert.True(t, refused.Actor.IsSystem(), "the caller holds only a token, so Ivaldi is the actor")
+	assert.Equal(t, refusedEnrolment{ClusterID: otherClusterID, Failure: w.clusters[otherClusterID].AgentLastFailure()}, refused.After)
 }

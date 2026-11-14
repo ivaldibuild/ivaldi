@@ -41,6 +41,8 @@ func translate(err error) error {
 			return fmt.Errorf("%w: %w", delivery.ErrAlreadyExists, err)
 		case c == "idx_deployments_in_flight":
 			return fmt.Errorf("%w: %w", delivery.ErrDeploymentInFlight, err)
+		case c == "idx_targets_cluster_namespace":
+			return fmt.Errorf("%w: %w", delivery.ErrNamespaceTaken, err)
 		default:
 			return fmt.Errorf("%w: %w", delivery.ErrConflict, err)
 		}

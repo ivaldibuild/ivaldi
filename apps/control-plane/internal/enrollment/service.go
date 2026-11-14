@@ -15,6 +15,7 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
+	"github.com/ivaldibuild/ivaldi/pkg/logging"
 	"github.com/ivaldibuild/ivaldi/pkg/transaction"
 )
 
@@ -32,6 +33,7 @@ type options struct {
 	enrolTTL      time.Duration
 	credentialTTL time.Duration
 	grace         time.Duration
+	logger        logging.Logger
 }
 
 func WithWorkloadRepo(r iam.WorkloadRepository) ServiceOption {
@@ -48,6 +50,12 @@ func WithPrincipalRepo(r iam.PrincipalRepository) ServiceOption {
 }
 func WithClusters(r Clusters) ServiceOption {
 	return func(o *options) { o.clusters = r }
+}
+
+// WithLogger logs what the service cannot report to its caller, such as a
+// refused enrolment it failed to record. It defaults to discarding.
+func WithLogger(l logging.Logger) ServiceOption {
+	return func(o *options) { o.logger = l }
 }
 func WithKubernetesVerifier(v workloadauth.KubernetesVerifier) ServiceOption {
 	return func(o *options) { o.kubernetes = v }
@@ -106,6 +114,9 @@ func NewService(opts ...ServiceOption) (Service, error) {
 	}
 	if o.grace <= 0 {
 		o.grace = DefaultGracePeriod
+	}
+	if o.logger == nil {
+		o.logger = logging.Nop()
 	}
 	return &authorized{next: &service{options: o}, authz: o.authz}, nil
 }
@@ -175,7 +186,7 @@ func (s *service) Redeem(ctx context.Context, in RedeemInput) (*Redeemed, error)
 	// transaction that refused it, on the Cluster being enrolled.
 	outer := ctx
 	var conflict *identityInUseError
-	var organizationID, clusterID string
+	var organizationID, clusterID, tokenID string
 	var out *Redeemed
 	err = s.writer.Tx.WithinTx(ctx, func(ctx context.Context) error {
 		token, err := s.tokens.GetByHashForUpdate(ctx, iam.HashWorkloadEnrollmentToken(in.Token))
@@ -192,7 +203,7 @@ func (s *service) Redeem(ctx context.Context, in RedeemInput) (*Redeemed, error)
 		case token.CredentialKind() != in.Method.Kind():
 			return delivery.NewErrInvalidInput("enrollment token is for another credential method")
 		}
-		organizationID, clusterID = token.OrganizationID(), *token.ClusterID()
+		organizationID, clusterID, tokenID = token.OrganizationID(), *token.ClusterID(), token.ID()
 		// Locked so an archive cannot land between the check and the write.
 		cluster, err := s.clusters.GetClusterForUpdate(ctx, organizationID, clusterID)
 		if err != nil {
@@ -259,7 +270,7 @@ func (s *service) Redeem(ctx context.Context, in RedeemInput) (*Redeemed, error)
 	})
 	if err != nil {
 		if conflict != nil {
-			s.recordAgentFailure(outer, organizationID, clusterID, conflict.reason())
+			s.recordAgentFailure(outer, organizationID, clusterID, tokenID, conflict.reason())
 		}
 		return nil, err
 	}
@@ -283,11 +294,12 @@ func (e *identityInUseError) reason() string {
 	return "identity_in_use: this workload identity already serves cluster " + e.clusterSlug
 }
 
-// recordAgentFailure notes a refused redeem on the Cluster being enrolled, in
-// its own transaction so the refusal survives the rollback. It is best
-// effort: the redeem already failed, and its error is what the caller sees.
-func (s *service) recordAgentFailure(ctx context.Context, organizationID, clusterID, reason string) {
-	_ = s.writer.Tx.WithinTx(ctx, func(ctx context.Context) error {
+// recordAgentFailure notes a refused redeem on the Cluster being enrolled and
+// audits it, in its own transaction so the refusal survives the rollback. It
+// is best effort: the redeem already failed, and its error is what the caller
+// sees, so a failure here is logged rather than returned.
+func (s *service) recordAgentFailure(ctx context.Context, organizationID, clusterID, tokenID, reason string) {
+	err := s.writer.Tx.WithinTx(ctx, func(ctx context.Context) error {
 		cluster, err := s.clusters.GetClusterForUpdate(ctx, organizationID, clusterID)
 		if err != nil {
 			return err
@@ -295,8 +307,27 @@ func (s *service) recordAgentFailure(ctx context.Context, organizationID, cluste
 		if err := cluster.RecordAgentFailure(reason); err != nil {
 			return err
 		}
-		return s.clusters.UpdateCluster(ctx, cluster)
+		if err := s.clusters.UpdateCluster(ctx, cluster); err != nil {
+			return err
+		}
+		// The caller holds only a token, so Ivaldi itself is the actor.
+		return s.auditRecord(ctx, identity.Actor{Kind: identity.ActorSystem},
+			iam.EventWorkloadEnrollmentRefused, organizationID, tokenID, refusedEnrolment{
+				ClusterID: clusterID, Failure: cluster.AgentLastFailure(),
+			})
 	})
+	if err != nil {
+		s.logger.Error("record a refused enrolment",
+			logging.F("organization_id", organizationID),
+			logging.F("cluster_id", clusterID),
+			logging.F("error", err.Error()))
+	}
+}
+
+// refusedEnrolment is the audit record of a refused redeem.
+type refusedEnrolment struct {
+	ClusterID string                 `json:"cluster_id"`
+	Failure   *delivery.AgentFailure `json:"failure"`
 }
 
 // verifyKubernetes verifies the projected service-account token of a
@@ -501,6 +532,10 @@ func (s *service) Status(ctx context.Context, _ identity.Actor, organizationID, 
 	out.Component = workload.Component()
 	enrolledAt := workload.EnrolledAt()
 	out.RedeemedAt = &enrolledAt
+	// The agent's own last-seen time wins over the Cluster's last heartbeat:
+	// the verifier stamps it on every authenticated request (renewals and
+	// reports too), so it is the truest sign of contact. The heartbeat is the
+	// fallback for an agent that has not been stamped yet.
 	if workload.LastSeenAt() != nil {
 		out.LastSeenAt = workload.LastSeenAt()
 	}

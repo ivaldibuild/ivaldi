@@ -101,6 +101,10 @@ func (s *store) GetClusterForUpdate(ctx context.Context, organizationID, cluster
 	return s.GetCluster(ctx, organizationID, clusterID)
 }
 
+func (s *store) GetClusterForShare(ctx context.Context, organizationID, clusterID string) (*delivery.Cluster, error) {
+	return s.GetCluster(ctx, organizationID, clusterID)
+}
+
 func (s *store) GetClusterBySlug(_ context.Context, organizationID, slug string) (*delivery.Cluster, error) {
 	for _, snapshot := range s.clusters {
 		if snapshot.OrganizationID == organizationID && snapshot.Slug == slug && snapshot.DeletedAt == nil {

@@ -33,9 +33,9 @@ type Targets interface {
 // agent of the Cluster it names.
 type Clusters interface {
 	GetCluster(ctx context.Context, organizationID, clusterID string) (*delivery.Cluster, error)
-	// GetClusterForUpdate is GetCluster that also locks the row until the
-	// transaction ends.
-	GetClusterForUpdate(ctx context.Context, organizationID, clusterID string) (*delivery.Cluster, error)
+	// GetClusterForShare is GetCluster that takes a shared lock until the
+	// transaction ends, so re-enrolment cannot change the agent meanwhile.
+	GetClusterForShare(ctx context.Context, organizationID, clusterID string) (*delivery.Cluster, error)
 }
 
 type Lifecycles interface {

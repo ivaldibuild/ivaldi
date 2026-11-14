@@ -267,7 +267,7 @@ func translateToHttpError(ctx context.Context, err error) error {
 		errors.Is(err, delivery.ErrArchived), errors.Is(err, delivery.ErrConflict),
 		errors.Is(err, delivery.ErrAlreadyExists):
 		return huma.Error409Conflict(err.Error())
-	case errors.Is(err, delivery.ErrNotDeploymentAgent), errors.Is(err, delivery.ErrNotTargetAgent):
+	case errors.Is(err, delivery.ErrNotDeploymentAgent):
 		return huma.Error403Forbidden(err.Error())
 	case errors.As(err, &approval):
 		return huma.Error403Forbidden("the change needs approval; decision " + approval.DecisionID)

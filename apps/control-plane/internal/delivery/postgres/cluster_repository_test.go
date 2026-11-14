@@ -160,6 +160,20 @@ func TestClusterForUpdate(t *testing.T) {
 		assert.Equal(t, "Locked and updated", got.DisplayName())
 	})
 
+	t.Run("a shared lock keeps writers out but lets readers in", func(t *testing.T) {
+		err := f.tx.WithinTx(f.ctx, func(ctx context.Context) error {
+			got, err := f.clusters.GetClusterForShare(ctx, orgA, c.ID())
+			require.NoError(t, err)
+			assert.Equal(t, c.ID(), got.ID())
+			f.assertLocked(t, "clusters", c.ID())
+			require.NoError(t, f.db.Exec("SELECT 1 FROM delivery.clusters WHERE id = ? FOR SHARE NOWAIT", c.ID()).Error,
+				"another shared lock is granted")
+			return nil
+		})
+		require.NoError(t, err)
+		f.assertNotLocked(t, "clusters", c.ID())
+	})
+
 	t.Run("a plain get does not lock", func(t *testing.T) {
 		err := f.tx.WithinTx(f.ctx, func(ctx context.Context) error {
 			_, err := f.clusters.GetCluster(ctx, orgA, c.ID())

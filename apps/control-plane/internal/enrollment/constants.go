@@ -9,8 +9,8 @@ const (
 	DefaultGracePeriod        = 5 * time.Minute
 )
 
-// Authorizer action names.
+// Authorizer action names. Creating an enrolment token uses delivery's
+// ActionClusterCreateEnrolment, so a policy names one action for it.
 const (
-	ActionClusterEnrol       = "cluster.enrol"
 	ActionClusterAgentStatus = "cluster.agent_status"
 )

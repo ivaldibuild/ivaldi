@@ -43,6 +43,11 @@ func (r *clusterRepository) GetClusterForUpdate(ctx context.Context, organizatio
 		Where("organization_id = ? AND id = ?", organizationID, clusterID))
 }
 
+func (r *clusterRepository) GetClusterForShare(ctx context.Context, organizationID, clusterID string) (*delivery.Cluster, error) {
+	return r.get(r.conn(ctx).Clauses(clause.Locking{Strength: clause.LockingStrengthShare}).
+		Where("organization_id = ? AND id = ?", organizationID, clusterID))
+}
+
 func (r *clusterRepository) GetClusterBySlug(ctx context.Context, organizationID, slug string) (*delivery.Cluster, error) {
 	return r.get(r.conn(ctx).Where(
 		"organization_id = ? AND slug = ? AND deleted_at IS NULL", organizationID, slug))

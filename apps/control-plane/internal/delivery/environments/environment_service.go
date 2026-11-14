@@ -21,7 +21,6 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/outbox"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
-	"github.com/ivaldibuild/ivaldi/pkg/database"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
 	"github.com/ivaldibuild/ivaldi/pkg/pagination"
 	"github.com/ivaldibuild/ivaldi/pkg/transaction"
@@ -351,7 +350,7 @@ func (s *service) CreateTarget(ctx context.Context, actor identity.Actor, in del
 			return delivery.NewErrInvalidInput(fmt.Sprintf("cluster %q is not an active cluster in this organization", in.Locator[delivery.LocatorCluster]))
 		}
 		if err := s.targets.CreateTarget(ctx, t); err != nil {
-			return s.targetWriteError(ctx, t, err)
+			return fmt.Errorf("create target: %w", err)
 		}
 		if err := s.w.Events(ctx, delivery.AggregateTarget, t.ID(), t); err != nil {
 			return err
@@ -359,7 +358,10 @@ func (s *service) CreateTarget(ctx context.Context, actor identity.Actor, in del
 		return s.w.AuditRecord(ctx, audit.Event{Type: delivery.EventTargetCreated, OrganizationID: t.OrganizationID(), ResourceID: t.ID(), Actor: actor, After: t.Snapshot()})
 	})
 	if err != nil {
-		return nil, err
+		// Named after the transaction ends: PostgreSQL ignores every command
+		// in a transaction after a failed insert, so the lookup must not run
+		// inside it.
+		return nil, s.targetWriteError(ctx, t, err)
 	}
 	return t, nil
 }
@@ -461,7 +463,7 @@ func (s *service) RestoreTarget(ctx context.Context, actor identity.Actor, organ
 
 // targetWriteError turns the namespace uniqueness violation into the
 // explanation the person creating the Target needs. Every other error is
-// returned unchanged.
+// returned unchanged. Call it with a context outside the failed transaction.
 func (s *service) targetWriteError(ctx context.Context, t *delivery.Target, err error) error {
 	if !isNamespaceConflict(err) {
 		return err
@@ -470,8 +472,7 @@ func (s *service) targetWriteError(ctx context.Context, t *delivery.Target, err 
 }
 
 func isNamespaceConflict(err error) bool {
-	constraint, ok := database.UniqueViolation(err)
-	return ok && constraint == "idx_targets_cluster_namespace"
+	return errors.Is(err, delivery.ErrNamespaceTaken)
 }
 
 // namespaceTakenError names the Target that already has the namespace, so the

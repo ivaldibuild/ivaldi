@@ -107,8 +107,11 @@ const (
 
 	EventWorkloadEnrollmentCreated  = "workload_enrollment.created"
 	EventWorkloadEnrollmentRedeemed = "workload_enrollment.redeemed"
-	EventWorkloadCredentialRenewed  = "workload_credential.renewed"
-	EventAgentUpdated               = "agent.updated"
-	EventAgentSuspended             = "agent.suspended"
-	EventAgentReactivated           = "agent.reactivated"
+	// EventWorkloadEnrollmentRefused records a redeem refused because the
+	// workload identity already serves another Cluster.
+	EventWorkloadEnrollmentRefused = "workload_enrollment.refused"
+	EventWorkloadCredentialRenewed = "workload_credential.renewed"
+	EventAgentUpdated              = "agent.updated"
+	EventAgentSuspended            = "agent.suspended"
+	EventAgentReactivated          = "agent.reactivated"
 )

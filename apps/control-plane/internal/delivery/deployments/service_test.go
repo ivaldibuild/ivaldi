@@ -158,7 +158,7 @@ func (f fakeClusters) GetCluster(_ context.Context, organizationID, id string) (
 	return c, nil
 }
 
-func (f fakeClusters) GetClusterForUpdate(ctx context.Context, organizationID, id string) (*delivery.Cluster, error) {
+func (f fakeClusters) GetClusterForShare(ctx context.Context, organizationID, id string) (*delivery.Cluster, error) {
 	return f.GetCluster(ctx, organizationID, id)
 }
 

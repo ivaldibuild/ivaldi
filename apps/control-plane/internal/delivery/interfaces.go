@@ -86,8 +86,9 @@ type LifecycleRepository interface {
 	CountActiveLifecyclesWithEnvironment(ctx context.Context, organizationID, environmentID string) (int, error)
 }
 
-// ListTargetsQuery lists Targets in an Environment, a Cluster, or the whole
-// Organization when the other is empty. It sorts by "created_at" (the
+// ListTargetsQuery lists Targets. The repository filters by Environment, by
+// Cluster, or both; EnvironmentService.ListTargets authorizes on the
+// Environment, so it always needs one. It sorts by "created_at" (the
 // default), "slug", or "display_name".
 type ListTargetsQuery struct {
 	OrganizationID  string
@@ -128,6 +129,10 @@ type ClusterRepository interface {
 	// GetClusterForUpdate is GetCluster that also locks the row until the
 	// transaction ends. It must be called inside a transaction.
 	GetClusterForUpdate(ctx context.Context, organizationID, clusterID string) (*Cluster, error)
+	// GetClusterForShare is GetCluster that takes a shared lock until the
+	// transaction ends: other readers proceed, but a writer such as
+	// re-enrolment waits. It must be called inside a transaction.
+	GetClusterForShare(ctx context.Context, organizationID, clusterID string) (*Cluster, error)
 	// GetClusterBySlug returns the active Cluster with the slug. Target
 	// locators name their Cluster by slug, so this is how a Target is
 	// resolved to its Cluster.

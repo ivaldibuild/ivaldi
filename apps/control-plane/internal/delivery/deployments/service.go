@@ -320,7 +320,7 @@ func (s *service) ReportDeployment(ctx context.Context, actor identity.Actor, in
 		if err != nil {
 			return err
 		}
-		if err := s.checkTargetAgentForUpdate(ctx, in.OrganizationID, target, actor.PrincipalID); err != nil {
+		if err := s.checkTargetAgentLocked(ctx, in.OrganizationID, target, actor.PrincipalID); err != nil {
 			return err
 		}
 		event, err := delivery.NewDeploymentEvent(delivery.NewDeploymentEventProps{
@@ -384,10 +384,12 @@ func (s *service) checkTargetAgent(ctx context.Context, organizationID string, t
 	return requireClusterAgent(cluster, target, principalID)
 }
 
-// checkTargetAgentForUpdate is checkTargetAgent that also locks the Cluster,
-// so a re-enrolment cannot change the agent between the check and the write.
-func (s *service) checkTargetAgentForUpdate(ctx context.Context, organizationID string, target *delivery.Target, principalID string) error {
-	cluster, err := s.clusters.GetClusterForUpdate(ctx, organizationID, target.ClusterID())
+// checkTargetAgentLocked is checkTargetAgent that also takes a shared lock on
+// the Cluster, so a re-enrolment cannot change the agent between the check
+// and the write. The lock is shared so a Cluster's reports do not queue
+// behind each other.
+func (s *service) checkTargetAgentLocked(ctx context.Context, organizationID string, target *delivery.Target, principalID string) error {
+	cluster, err := s.clusters.GetClusterForShare(ctx, organizationID, target.ClusterID())
 	if err != nil {
 		return err
 	}

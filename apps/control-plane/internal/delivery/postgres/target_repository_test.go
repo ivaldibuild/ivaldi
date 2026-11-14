@@ -149,7 +149,7 @@ func TestTargetRepository(t *testing.T) {
 		secondLocator := second.Locator()
 		secondLocator[delivery.LocatorNamespace] = "shared"
 		require.NoError(t, second.Update(delivery.UpdateTargetProps{Locator: secondLocator}))
-		assert.ErrorIs(t, f.targets.CreateTarget(ctx, second), delivery.ErrConflict, "the duplicate is refused by the unique index")
+		assert.ErrorIs(t, f.targets.CreateTarget(ctx, second), delivery.ErrNamespaceTaken, "the duplicate is refused by the unique index")
 
 		// The service turns that conflict into the name of the first Target.
 		existing, err := f.targets.GetTargetByNamespace(ctx, orgA, cluster.ID(), "shared")

@@ -118,9 +118,7 @@ func NewTarget(props NewTargetProps, targetID *string) (*Target, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := validateRuntime(props.Runtime); err != nil {
-		return nil, err
-	}
+	// validateLocator checks the runtime first.
 	if err := validateLocator(props.Runtime, props.Locator); err != nil {
 		return nil, err
 	}
@@ -170,19 +168,19 @@ func validateLocator(runtime Runtime, locator map[string]string) error {
 	return nil
 }
 
-func (Target) Prefix() string                  { return "tgt" }
-func (t *Target) OrganizationID() string       { return t.organizationID }
-func (t *Target) EnvironmentID() string        { return t.environmentID }
-func (t *Target) ClusterID() string            { return t.clusterID }
-func (t *Target) Slug() string                 { return t.slug }
-func (t *Target) DisplayName() string          { return t.displayName }
-func (t *Target) Runtime() Runtime             { return t.runtime }
-func (t *Target) Locator() map[string]string   { return copyLabels(t.locator) }
-func (t *Target) CanObserve() bool             { return t.canObserve }
-func (t *Target) CanExecute() bool             { return t.canExecute }
-func (t *Target) CreatedAt() time.Time         { return t.createdAt }
-func (t *Target) UpdatedAt() time.Time         { return t.updatedAt }
-func (t *Target) DeletedAt() *time.Time        { return clock.CopyTime(t.deletedAt) }
+func (Target) Prefix() string                { return "tgt" }
+func (t *Target) OrganizationID() string     { return t.organizationID }
+func (t *Target) EnvironmentID() string      { return t.environmentID }
+func (t *Target) ClusterID() string          { return t.clusterID }
+func (t *Target) Slug() string               { return t.slug }
+func (t *Target) DisplayName() string        { return t.displayName }
+func (t *Target) Runtime() Runtime           { return t.runtime }
+func (t *Target) Locator() map[string]string { return copyLabels(t.locator) }
+func (t *Target) CanObserve() bool           { return t.canObserve }
+func (t *Target) CanExecute() bool           { return t.canExecute }
+func (t *Target) CreatedAt() time.Time       { return t.createdAt }
+func (t *Target) UpdatedAt() time.Time       { return t.updatedAt }
+func (t *Target) DeletedAt() *time.Time      { return clock.CopyTime(t.deletedAt) }
 
 func (t *Target) Archived() bool { return t.deletedAt != nil }
 

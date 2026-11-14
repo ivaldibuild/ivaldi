@@ -125,7 +125,7 @@ func TestOperationsAreAuthorizedOnTheirResource(t *testing.T) {
 			return err
 		}, delivery.PermissionEnvironmentManage, delivery.ActionEnvironmentRestore, wsActive},
 		{"create target", func() error {
-			_, err := w.svc.CreateTarget(ctx, ada, delivery.CreateTargetInput{OrganizationID: org, EnvironmentID: env.ID(), DisplayName: "Workers", Runtime: delivery.RuntimeKubernetes, Locator: locator()})
+			_, err := w.svc.CreateTarget(ctx, ada, delivery.CreateTargetInput{OrganizationID: org, EnvironmentID: env.ID(), DisplayName: "Workers", Runtime: delivery.RuntimeKubernetes, Locator: locatorIn("workers")})
 			return err
 		}, delivery.PermissionEnvironmentManage, delivery.ActionTargetCreate, env.ID()},
 		{"get target", func() error {
@@ -181,7 +181,7 @@ func TestRefusedChangesWriteNothing(t *testing.T) {
 			return err
 		},
 		"create target": func(w *world, env *delivery.Environment, _ *delivery.Target) error {
-			_, err := w.svc.CreateTarget(ctx, ada, delivery.CreateTargetInput{OrganizationID: org, EnvironmentID: env.ID(), DisplayName: "Workers", Runtime: delivery.RuntimeKubernetes, Locator: locator()})
+			_, err := w.svc.CreateTarget(ctx, ada, delivery.CreateTargetInput{OrganizationID: org, EnvironmentID: env.ID(), DisplayName: "Workers", Runtime: delivery.RuntimeKubernetes, Locator: locatorIn("workers")})
 			return err
 		},
 		"update target": func(w *world, _ *delivery.Environment, tg *delivery.Target) error {
@@ -382,6 +382,22 @@ func TestCreateTarget(t *testing.T) {
 		_, err := w.svc.CreateTarget(ctx, ada, in(env.ID()))
 		require.ErrorIs(t, err, delivery.ErrArchived)
 		assert.Empty(t, w.targets)
+	})
+
+	t.Run("names the target that already has the namespace", func(t *testing.T) {
+		w := newWorld(t)
+		production := w.env(t, wsActive, "production", false)
+		w.target(t, production.ID(), "web", false)
+		staging := w.env(t, wsActive, "staging", false)
+		w.reset()
+
+		_, err := w.svc.CreateTarget(ctx, ada, in(staging.ID()))
+
+		var invalid *delivery.ErrInvalidInput
+		require.ErrorAs(t, err, &invalid)
+		assert.Equal(t, "namespace web in cluster prod-1 is already target web in environment production", invalid.Message)
+		assert.Len(t, w.targets, 1)
+		assert.Empty(t, w.audit)
 	})
 }
 

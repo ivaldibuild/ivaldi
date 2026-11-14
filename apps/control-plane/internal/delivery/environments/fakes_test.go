@@ -49,6 +49,36 @@ type store struct {
 	state
 	workspaces   map[string]*workspace.Workspace
 	lifecycleUse map[string]int
+	// inTx and aborted fake PostgreSQL's rule that a transaction ignores
+	// every command after a failed write, so a service that looks something
+	// up in the transaction that just failed is caught.
+	inTx    int
+	aborted bool
+}
+
+var errTxAborted = errors.New("current transaction is aborted, commands ignored until end of transaction block")
+
+// failWrite marks the transaction aborted, as PostgreSQL does on a failed
+// write, and returns err.
+func (s *store) failWrite(err error) error {
+	if s.inTx > 0 {
+		s.aborted = true
+	}
+	return err
+}
+
+// namespaceTaken fakes idx_targets_cluster_namespace.
+func (s *store) namespaceTaken(t delivery.TargetSnapshot) bool {
+	if t.DeletedAt != nil {
+		return false
+	}
+	for _, o := range s.targets {
+		if o.ID != t.ID && o.OrganizationID == t.OrganizationID && o.ClusterID == t.ClusterID &&
+			o.Locator[delivery.LocatorNamespace] == t.Locator[delivery.LocatorNamespace] && o.DeletedAt == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func newStore() *store {
@@ -74,6 +104,13 @@ func must[T any](v T, err error) T {
 
 func (s *store) WithinTx(ctx context.Context, fn func(context.Context) error) error {
 	saved := s.state.clone()
+	s.inTx++
+	defer func() {
+		s.inTx--
+		if s.inTx == 0 {
+			s.aborted = false
+		}
+	}()
 	if err := fn(ctx); err != nil {
 		s.state = saved
 		return err
@@ -103,6 +140,9 @@ func (s *store) CreateEnvironment(_ context.Context, e *delivery.Environment) er
 }
 
 func (s *store) GetEnvironment(_ context.Context, organizationID, id string) (*delivery.Environment, error) {
+	if s.aborted {
+		return nil, errTxAborted
+	}
 	snap, ok := s.environments[id]
 	if !ok || snap.OrganizationID != organizationID {
 		return nil, delivery.ErrNotFound
@@ -215,11 +255,17 @@ func (s *store) GetClusterForUpdate(ctx context.Context, organizationID, cluster
 
 func (s *store) CreateTarget(_ context.Context, t *delivery.Target) error {
 	snap := t.Snapshot()
+	if s.namespaceTaken(snap) {
+		return s.failWrite(delivery.ErrNamespaceTaken)
+	}
 	s.targets[snap.ID] = snap
 	return nil
 }
 
 func (s *store) GetTarget(_ context.Context, organizationID, id string) (*delivery.Target, error) {
+	if s.aborted {
+		return nil, errTxAborted
+	}
 	snap, ok := s.targets[id]
 	if !ok || snap.OrganizationID != organizationID {
 		return nil, delivery.ErrNotFound
@@ -241,6 +287,9 @@ func (s *store) GetTargetBySlug(_ context.Context, organizationID, environmentID
 }
 
 func (s *store) GetTargetByNamespace(_ context.Context, organizationID, clusterID, namespace string) (*delivery.Target, error) {
+	if s.aborted {
+		return nil, errTxAborted
+	}
 	for _, snap := range s.targets {
 		if snap.OrganizationID == organizationID && snap.ClusterID == clusterID &&
 			snap.Locator[delivery.LocatorNamespace] == namespace && snap.DeletedAt == nil {
@@ -264,6 +313,9 @@ func (s *store) ListTargets(_ context.Context, q delivery.ListTargetsQuery) (*pa
 func (s *store) UpdateTarget(_ context.Context, t *delivery.Target) error {
 	if _, ok := s.targets[t.ID()]; !ok {
 		return delivery.ErrNotFound
+	}
+	if s.namespaceTaken(t.Snapshot()) {
+		return s.failWrite(delivery.ErrNamespaceTaken)
 	}
 	s.targets[t.ID()] = t.Snapshot()
 	return nil
@@ -426,7 +478,7 @@ func (w *world) target(t *testing.T, environmentID, slug string, archived bool) 
 	tg := must(delivery.NewTarget(delivery.NewTargetProps{
 		OrganizationID: org, EnvironmentID: environmentID, ClusterID: testClusterID,
 		Slug: slug, DisplayName: slug,
-		Runtime: delivery.RuntimeKubernetes, Locator: locator(),
+		Runtime: delivery.RuntimeKubernetes, Locator: locatorIn(slug),
 	}, nil))
 	if archived {
 		tg.Archive()
@@ -436,8 +488,11 @@ func (w *world) target(t *testing.T, environmentID, slug string, archived bool) 
 	return tg
 }
 
-func locator() map[string]string {
-	return map[string]string{delivery.LocatorCluster: "prod-1", delivery.LocatorNamespace: "web"}
+func locator() map[string]string { return locatorIn("web") }
+
+// locatorIn is the test Cluster's locator for a namespace.
+func locatorIn(namespace string) map[string]string {
+	return map[string]string{delivery.LocatorCluster: "prod-1", delivery.LocatorNamespace: namespace}
 }
 
 // reset forgets what was recorded so far.

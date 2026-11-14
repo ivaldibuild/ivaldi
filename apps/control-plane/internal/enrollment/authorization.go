@@ -21,7 +21,7 @@ var _ Service = (*authorized)(nil)
 func (a *authorized) Create(ctx context.Context, actor identity.Actor, in CreateInput) (*IssuedEnrolment, error) {
 	d, err := authorization.Require(ctx, a.authz, authorization.Request{
 		Actor: actor, Permission: delivery.PermissionClusterManage, OrganizationID: in.OrganizationID,
-		ResourceID: in.OrganizationID, Action: ActionClusterEnrol, Proposal: in,
+		ResourceID: in.OrganizationID, Action: delivery.ActionClusterCreateEnrolment, Proposal: in,
 	})
 	if err != nil {
 		return nil, err

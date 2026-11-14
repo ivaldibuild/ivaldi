@@ -291,7 +291,7 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 	if err := a.wireServiceAccounts(); err != nil {
 		return nil, nil, err
 	}
-	if err := a.wireEnrollment(cfg.Runners); err != nil {
+	if err := a.wireEnrollment(cfg.Runners, logger); err != nil {
 		return nil, nil, err
 	}
 
@@ -510,8 +510,8 @@ func (a *app) wireServiceAccounts() error {
 	return nil
 }
 
-// wireEnrollment serves Target enrolment and workload credential renewal.
-func (a *app) wireEnrollment(runners config.Runners) error {
+// wireEnrollment serves Cluster enrolment and workload credential renewal.
+func (a *app) wireEnrollment(runners config.Runners, logger logging.Logger) error {
 	svc, err := enrollment.NewService(
 		enrollment.WithWorkloadRepo(iampg.NewWorkloadRepository(a.db)),
 		enrollment.WithEnrollmentTokenRepo(iampg.NewWorkloadEnrollmentTokenRepository(a.db)),
@@ -525,6 +525,7 @@ func (a *app) wireEnrollment(runners config.Runners) error {
 		enrollment.WithAuditRecorder(a.audit),
 		enrollment.WithEnrollmentTokenTTL(runners.EnrollmentTokenTTL),
 		enrollment.WithCredentialTTL(runners.WorkloadCredentialTTL),
+		enrollment.WithLogger(logger),
 	)
 	if err != nil {
 		return err

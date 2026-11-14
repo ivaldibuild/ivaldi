@@ -31,10 +31,11 @@ var (
 	ErrDefaultChannel = errors.New("not allowed on the default channel")
 	// ErrInactiveTeam means the owning Team does not exist, is inactive, or is in another Organization.
 	ErrInactiveTeam = errors.New("team is not an active team in the organization")
-	// ErrNotTargetAgent means the caller is not the runtime agent that serves the Target.
-	ErrNotTargetAgent = errors.New("not the target's agent")
 	// ErrNotClusterAgent means the caller is not the runtime agent that serves the Cluster.
 	ErrNotClusterAgent = errors.New("not the cluster's agent")
+	// ErrNamespaceTaken means another active Target already uses the
+	// namespace in the same Cluster.
+	ErrNamespaceTaken = errors.New("namespace already has an active target in the cluster")
 	// ErrIdentityInUse means the workload identity enrolling already serves
 	// another active Cluster, which would leave that Cluster without an agent.
 	ErrIdentityInUse = errors.New("workload identity already serves another cluster")

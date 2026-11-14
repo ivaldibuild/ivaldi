@@ -177,7 +177,7 @@ func translateToHttpError(ctx context.Context, err error) error {
 		return huma.Error409Conflict(err.Error())
 	case errors.Is(err, delivery.ErrIdentityInUse):
 		return huma.Error409Conflict("this workload identity already serves another cluster")
-	case errors.Is(err, delivery.ErrNotClusterAgent), errors.Is(err, delivery.ErrNotTargetAgent):
+	case errors.Is(err, delivery.ErrNotClusterAgent):
 		return huma.Error403Forbidden(err.Error())
 	case errors.Is(err, identity.ErrInvalidToken):
 		return huma.Error401Unauthorized("the credential is not valid")

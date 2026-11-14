@@ -17,6 +17,48 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
+// Defines values for ApplicationViewCurrentDeploymentStatus.
+const (
+	ApplicationViewCurrentDeploymentStatusApplying         ApplicationViewCurrentDeploymentStatus = "applying"
+	ApplicationViewCurrentDeploymentStatusAwaitingApproval ApplicationViewCurrentDeploymentStatus = "awaiting_approval"
+	ApplicationViewCurrentDeploymentStatusCancelled        ApplicationViewCurrentDeploymentStatus = "cancelled"
+	ApplicationViewCurrentDeploymentStatusDegraded         ApplicationViewCurrentDeploymentStatus = "degraded"
+	ApplicationViewCurrentDeploymentStatusFailed           ApplicationViewCurrentDeploymentStatus = "failed"
+	ApplicationViewCurrentDeploymentStatusHealthy          ApplicationViewCurrentDeploymentStatus = "healthy"
+	ApplicationViewCurrentDeploymentStatusPending          ApplicationViewCurrentDeploymentStatus = "pending"
+	ApplicationViewCurrentDeploymentStatusProgressing      ApplicationViewCurrentDeploymentStatus = "progressing"
+	ApplicationViewCurrentDeploymentStatusRejected         ApplicationViewCurrentDeploymentStatus = "rejected"
+	ApplicationViewCurrentDeploymentStatusSuperseded       ApplicationViewCurrentDeploymentStatus = "superseded"
+)
+
+// Valid indicates whether the value is a known member of the ApplicationViewCurrentDeploymentStatus enum.
+func (e ApplicationViewCurrentDeploymentStatus) Valid() bool {
+	switch e {
+	case ApplicationViewCurrentDeploymentStatusApplying:
+		return true
+	case ApplicationViewCurrentDeploymentStatusAwaitingApproval:
+		return true
+	case ApplicationViewCurrentDeploymentStatusCancelled:
+		return true
+	case ApplicationViewCurrentDeploymentStatusDegraded:
+		return true
+	case ApplicationViewCurrentDeploymentStatusFailed:
+		return true
+	case ApplicationViewCurrentDeploymentStatusHealthy:
+		return true
+	case ApplicationViewCurrentDeploymentStatusPending:
+		return true
+	case ApplicationViewCurrentDeploymentStatusProgressing:
+		return true
+	case ApplicationViewCurrentDeploymentStatusRejected:
+		return true
+	case ApplicationViewCurrentDeploymentStatusSuperseded:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ApplyAssignmentDeployer.
 const (
 	ApplyAssignmentDeployerHelm ApplyAssignmentDeployer = "helm"
@@ -445,12 +487,16 @@ type AWSStore struct {
 
 // ApplicationView defines model for ApplicationView.
 type ApplicationView struct {
-	Artifacts           []ArtifactView    `json:"artifacts"`
-	CurrentDeploymentId *string           `json:"current_deployment_id"`
-	Id                  string            `json:"id"`
-	Slug                string            `json:"slug"`
-	WorkloadSelector    map[string]string `json:"workload_selector"`
+	Artifacts               []ArtifactView                          `json:"artifacts"`
+	CurrentDeploymentId     *string                                 `json:"current_deployment_id"`
+	CurrentDeploymentStatus *ApplicationViewCurrentDeploymentStatus `json:"current_deployment_status"`
+	Id                      string                                  `json:"id"`
+	Slug                    string                                  `json:"slug"`
+	WorkloadSelector        map[string]string                       `json:"workload_selector"`
 }
+
+// ApplicationViewCurrentDeploymentStatus defines model for ApplicationView.CurrentDeploymentStatus.
+type ApplicationViewCurrentDeploymentStatus string
 
 // ApplyAssignment defines model for ApplyAssignment.
 type ApplyAssignment struct {

@@ -49,11 +49,11 @@ func deployerNames(deployers map[string]deploy.Deployer) []string {
 
 // poll fetches the assignments and starts an apply for each Deployment in
 // applying that is not already running, while slots are free. The rest are
-// picked up by a later poll.
-func (e *executor) poll(ctx context.Context, clusterSlug string) error {
+// picked up by a later poll. It returns the assignments.
+func (e *executor) poll(ctx context.Context, clusterSlug string) ([]apiclient.DeploymentAssignment, error) {
 	assignments, err := e.cp.Assignments(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for _, a := range assignments {
 		if a.Deployment.Status != apiclient.DeploymentSnapshotStatusApplying {
@@ -69,7 +69,7 @@ func (e *executor) poll(ctx context.Context, clusterSlug string) error {
 		select {
 		case e.slots <- struct{}{}:
 		default:
-			return nil
+			return assignments, nil
 		}
 		e.mu.Lock()
 		e.running[id] = true
@@ -86,7 +86,7 @@ func (e *executor) poll(ctx context.Context, clusterSlug string) error {
 			e.apply(ctx, deploy.FromAPI(a, clusterSlug))
 		}()
 	}
-	return nil
+	return assignments, nil
 }
 
 // wait waits for the applies in flight to finish their reports.

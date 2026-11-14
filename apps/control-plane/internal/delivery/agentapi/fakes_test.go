@@ -28,6 +28,7 @@ type store struct {
 	placements   map[string][]*delivery.Placement
 	apps         map[string]*delivery.Application
 	artifacts    map[string][]*delivery.Artifact
+	deployments  map[string]*delivery.Deployment
 	assignments  []delivery.DeploymentAssignment
 	observed     []delivery.ObserveInput
 	observedCtx  []context.Context
@@ -42,7 +43,7 @@ func newStore() *store {
 	return &store{
 		clusters: map[string]*delivery.Cluster{}, targets: map[string]*delivery.Target{},
 		placements: map[string][]*delivery.Placement{}, apps: map[string]*delivery.Application{},
-		artifacts: map[string][]*delivery.Artifact{},
+		artifacts: map[string][]*delivery.Artifact{}, deployments: map[string]*delivery.Deployment{},
 	}
 }
 
@@ -163,6 +164,16 @@ func (f fakeAssignments) ListClusterAssignments(_ context.Context, _ identity.Ac
 	return f.assignments, nil
 }
 
+type fakeDeployments struct{ *store }
+
+func (f fakeDeployments) GetDeployment(_ context.Context, organizationID, id string) (*delivery.Deployment, error) {
+	d, ok := f.deployments[id]
+	if !ok || organizationID != org {
+		return nil, delivery.ErrNotFound
+	}
+	return d, nil
+}
+
 type fakeObservations struct{ *store }
 
 func (f fakeObservations) Observe(ctx context.Context, _ identity.Actor, in delivery.ObserveInput) (*delivery.DeploymentDetail, error) {
@@ -218,6 +229,7 @@ func newWorld(t *testing.T) *world {
 
 	svc, err := NewService(
 		WithClusters(fakeClusters{s}), WithTargets(fakeTargets{s}), WithApplications(fakeApplications{s}),
+		WithDeployments(fakeDeployments{s}),
 		WithAssignments(fakeAssignments{s}), WithObservations(fakeObservations{s}), WithTransactor(s),
 		WithIntervals(Intervals{Heartbeat: 30 * time.Second, Poll: 5 * time.Second, Watch: 60 * time.Second}),
 	)

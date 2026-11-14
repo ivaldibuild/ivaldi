@@ -198,6 +198,7 @@ type fakeControlPlane struct {
 	heartbeats   []apiclient.HeartbeatRequestBody
 	heartbeatErr error
 	targetsErr   error
+	reportErr    error
 	assignments  []apiclient.DeploymentAssignment
 	reports      []apiclient.ReportDeploymentRequestBody
 }
@@ -212,7 +213,7 @@ func (f *fakeControlPlane) ReportDeployment(_ context.Context, _ string, body ap
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.reports = append(f.reports, body)
-	return nil
+	return f.reportErr
 }
 
 func (f *fakeControlPlane) reportIDs() []string {
@@ -466,7 +467,8 @@ func TestExecutor(t *testing.T) {
 			}
 			log := slog.New(slog.DiscardHandler)
 			exec := newExecutor(cp, map[string]deploy.Deployer{"helm": tt.deployer}, report.New(cp, log), log, 1)
-			require.NoError(t, exec.poll(t.Context(), "prod-eu"))
+			_, err := exec.poll(t.Context(), "prod-eu")
+			require.NoError(t, err)
 			exec.wait()
 			assert.Equal(t, tt.want, cp.reportIDs())
 			if len(tt.want) == 2 && tt.want[1] == "dep_1:failed" {
@@ -482,10 +484,12 @@ func TestExecutor_ReportsNothingFinalWhenStoppedMidApply(t *testing.T) {
 	exec := newExecutor(cp, map[string]deploy.Deployer{"helm": &fakeDeployer{block: true}}, report.New(cp, log), log, 1)
 	ctx, cancel := context.WithCancel(t.Context())
 
-	require.NoError(t, exec.poll(ctx, "prod-eu"))
+	_, err := exec.poll(ctx, "prod-eu")
+	require.NoError(t, err)
 	require.Eventually(t, func() bool { return len(cp.reportIDs()) == 1 }, 5*time.Second, 10*time.Millisecond)
 	// One slot: the second Deployment waits for a later poll.
-	require.NoError(t, exec.poll(ctx, "prod-eu"))
+	_, err = exec.poll(ctx, "prod-eu")
+	require.NoError(t, err)
 	cancel()
 	exec.wait()
 	assert.Equal(t, []string{"dep_1:fetching"}, cp.reportIDs())

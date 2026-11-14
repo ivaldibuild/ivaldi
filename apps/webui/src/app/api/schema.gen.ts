@@ -2395,6 +2395,19 @@ export interface components {
     ApplicationView: {
       artifacts: components['schemas']['ArtifactView'][];
       current_deployment_id: string | null;
+      /** @enum {string|null} */
+      current_deployment_status:
+        | 'pending'
+        | 'awaiting_approval'
+        | 'rejected'
+        | 'cancelled'
+        | 'applying'
+        | 'progressing'
+        | 'healthy'
+        | 'degraded'
+        | 'failed'
+        | 'superseded'
+        | null;
       id: string;
       slug: string;
       workload_selector: {

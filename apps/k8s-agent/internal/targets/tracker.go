@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/apiclient"
@@ -98,6 +99,9 @@ type Tracker interface {
 	// KubernetesVersion returns the cluster's version, reading it from
 	// the API server when it has not been read yet.
 	KubernetesVersion() (string, error)
+	// Workloads returns an Application's workloads from the informer
+	// caches; see Informers.Workloads.
+	Workloads(namespace string, selector map[string]string) ([]*unstructured.Unstructured, error)
 	// Stop stops the informers.
 	Stop()
 }
@@ -226,6 +230,10 @@ func (t *tracker) Current() Set {
 }
 
 func (t *tracker) Stop() { t.informers.Stop() }
+
+func (t *tracker) Workloads(namespace string, selector map[string]string) ([]*unstructured.Unstructured, error) {
+	return t.informers.Workloads(namespace, selector)
+}
 
 func seconds(n int64, fallback time.Duration) time.Duration {
 	if n <= 0 {

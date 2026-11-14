@@ -15,6 +15,7 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
 	"github.com/ivaldibuild/ivaldi/pkg/pagination"
+	"github.com/ivaldibuild/ivaldi/pkg/release"
 	"github.com/ivaldibuild/ivaldi/pkg/transaction"
 )
 
@@ -38,6 +39,11 @@ type Applications interface {
 	ListArtifacts(ctx context.Context, organizationID, applicationID string, includeArchived bool) ([]*delivery.Artifact, error)
 }
 
+// Deployments reads a placement's current Deployment, for its status.
+type Deployments interface {
+	GetDeployment(ctx context.Context, organizationID, deploymentID string) (*delivery.Deployment, error)
+}
+
 type Assignments interface {
 	ListClusterAssignments(ctx context.Context, actor identity.Actor, organizationID, clusterID string) ([]delivery.DeploymentAssignment, error)
 }
@@ -59,6 +65,7 @@ type options struct {
 	clusters     Clusters
 	targets      Targets
 	applications Applications
+	deployments  Deployments
 	assignments  Assignments
 	observations Observations
 	tx           transaction.Transactor
@@ -69,6 +76,7 @@ func WithClusters(c Clusters) ServiceOption         { return func(o *options) { 
 func WithTargets(t Targets) ServiceOption           { return func(o *options) { o.targets = t } }
 func WithApplications(a Applications) ServiceOption { return func(o *options) { o.applications = a } }
 func WithAssignments(a Assignments) ServiceOption   { return func(o *options) { o.assignments = a } }
+func WithDeployments(d Deployments) ServiceOption   { return func(o *options) { o.deployments = d } }
 func WithObservations(o2 Observations) ServiceOption {
 	return func(o *options) { o.observations = o2 }
 }
@@ -89,6 +97,7 @@ func NewService(opts ...ServiceOption) (Service, error) {
 		{"Clusters", o.clusters != nil},
 		{"Targets", o.targets != nil},
 		{"Applications", o.applications != nil},
+		{"Deployments", o.deployments != nil},
 		{"Assignments", o.assignments != nil},
 		{"Observations", o.observations != nil},
 		{"Transactor", o.tx != nil},
@@ -158,6 +167,9 @@ type ApplicationView struct {
 	WorkloadSelector    map[string]string `json:"workload_selector"`
 	Artifacts           []ArtifactView    `json:"artifacts"`
 	CurrentDeploymentID *string           `json:"current_deployment_id"`
+	// CurrentDeploymentStatus is the current Deployment's status, so an
+	// agent that restarts resumes tracking its health from where it was.
+	CurrentDeploymentStatus *release.DeploymentStatus `json:"current_deployment_status" enum:"pending,awaiting_approval,rejected,cancelled,applying,progressing,healthy,degraded,failed,superseded"`
 }
 
 type ArtifactView struct {
@@ -225,6 +237,14 @@ func (s *service) targetView(ctx context.Context, organizationID string, target 
 		appView := ApplicationView{
 			ID: app.ID(), Slug: app.Slug(), WorkloadSelector: app.WorkloadSelector(),
 			CurrentDeploymentID: placement.CurrentDeploymentID(),
+		}
+		if id := placement.CurrentDeploymentID(); id != nil {
+			current, err := s.deployments.GetDeployment(ctx, organizationID, *id)
+			if err != nil {
+				return nil, err
+			}
+			status := current.Status()
+			appView.CurrentDeploymentStatus = &status
 		}
 		for _, artifact := range artifacts {
 			appView.Artifacts = append(appView.Artifacts, ArtifactView{Name: artifact.Name(), ArtifactName: artifact.ArtifactName()})

@@ -192,7 +192,7 @@ The chart creates one ServiceAccount in the agent's namespace, and:
 | Binding | Grants | Where |
 |---|---|---|
 | Role in its own namespace | `get`/`update` on its state Secret, `get`/`update` on its fingerprint-key Secret, `get` on its enrolment Secret, `get`/`create`/`update` on its Lease | Always |
-| ClusterRole `ivaldi-agent-observe` | `get`, `list`, `watch` on Deployments, StatefulSets, DaemonSets, ReplicaSets, Pods, Events. Not Secrets. | Bound cluster-wide with a ClusterRoleBinding when `observe.namespaces` is empty; otherwise with a RoleBinding in each listed namespace |
+| ClusterRole `ivaldi-agent-observe` | `get`, `list`, `watch` on Deployments, StatefulSets, DaemonSets, ReplicaSets, ControllerRevisions (a DaemonSet's current revision), Pods, Events. Not Secrets. | Bound cluster-wide with a ClusterRoleBinding when `observe.namespaces` is empty; otherwise with a RoleBinding in each listed namespace |
 | RoleBinding to the built-in `edit` ClusterRole | Create and change most namespaced objects, including Secrets, but not Roles or RoleBindings | Each namespace in `execute.namespaces` |
 | RoleBinding to `admin` instead | Also Roles and RoleBindings, for charts that create them | Each namespace in `execute.namespaces` when `execute.allowRBAC` is true |
 | RoleBinding to a `secrets-read` Role | `get` on Secrets | Each namespace with a `kubernetes` Secret Store in use, listed in `secrets.kubernetesNamespaces` |

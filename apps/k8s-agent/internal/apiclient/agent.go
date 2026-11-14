@@ -56,6 +56,9 @@ type ControlPlane interface {
 	// ReportDeployment records one report about a Deployment. A report
 	// with a report ID already recorded is stored once.
 	ReportDeployment(ctx context.Context, deploymentID string, body ReportDeploymentRequestBody) error
+	// Observe reports the images an Application runs on a Target. An
+	// observation with a report ID already recorded is stored once.
+	Observe(ctx context.Context, body ObservationRequestBody) error
 }
 
 // NewControlPlane returns the ControlPlane at serverURL. client must
@@ -112,6 +115,17 @@ func (c *controlPlane) ReportDeployment(ctx context.Context, deploymentID string
 	}
 	if resp.JSON200 == nil {
 		return statusError("report deployment "+deploymentID, resp.StatusCode(), resp.ApplicationproblemJSONDefault)
+	}
+	return nil
+}
+
+func (c *controlPlane) Observe(ctx context.Context, body ObservationRequestBody) error {
+	resp, err := c.client.AgentObservationWithResponse(ctx, body)
+	if err != nil {
+		return fmt.Errorf("agent observation: %w", err)
+	}
+	if resp.JSON200 == nil {
+		return statusError("agent observation", resp.StatusCode(), resp.ApplicationproblemJSONDefault)
 	}
 	return nil
 }

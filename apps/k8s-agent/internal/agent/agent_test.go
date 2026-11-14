@@ -201,6 +201,7 @@ type fakeControlPlane struct {
 	reportErr    error
 	assignments  []apiclient.DeploymentAssignment
 	reports      []apiclient.ReportDeploymentRequestBody
+	observations []apiclient.ObservationRequestBody
 }
 
 func (f *fakeControlPlane) Assignments(context.Context) ([]apiclient.DeploymentAssignment, error) {
@@ -214,6 +215,13 @@ func (f *fakeControlPlane) ReportDeployment(_ context.Context, _ string, body ap
 	defer f.mu.Unlock()
 	f.reports = append(f.reports, body)
 	return f.reportErr
+}
+
+func (f *fakeControlPlane) Observe(_ context.Context, body apiclient.ObservationRequestBody) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.observations = append(f.observations, body)
+	return nil
 }
 
 func (f *fakeControlPlane) reportIDs() []string {

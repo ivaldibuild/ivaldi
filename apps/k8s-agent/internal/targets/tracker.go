@@ -102,6 +102,8 @@ type Tracker interface {
 	// Workloads returns an Application's workloads from the informer
 	// caches; see Informers.Workloads.
 	Workloads(namespace string, selector map[string]string) ([]*unstructured.Unstructured, error)
+	// Lister reads a watched namespace from the informer caches.
+	Lister(namespace string) (Lister, error)
 	// Stop stops the informers.
 	Stop()
 }
@@ -230,6 +232,8 @@ func (t *tracker) Current() Set {
 }
 
 func (t *tracker) Stop() { t.informers.Stop() }
+
+func (t *tracker) Lister(namespace string) (Lister, error) { return t.informers.Lister(namespace) }
 
 func (t *tracker) Workloads(namespace string, selector map[string]string) ([]*unstructured.Unstructured, error) {
 	return t.informers.Workloads(namespace, selector)

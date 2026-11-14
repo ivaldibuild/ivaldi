@@ -95,6 +95,10 @@ func (f *fakeControlPlane) ReportDeployment(context.Context, string, apiclient.R
 	return nil
 }
 
+func (f *fakeControlPlane) Observe(context.Context, apiclient.ObservationRequestBody) error {
+	return nil
+}
+
 func TestTracker_RefreshChecksAccessAndWatchesTheNamespacesItCanRead(t *testing.T) {
 	kube := fakeKube(map[string][]authorizationv1.ResourceRule{
 		"payments":  {readRule, editRule},

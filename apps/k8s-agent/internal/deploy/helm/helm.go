@@ -125,7 +125,11 @@ func (d *deployer) Apply(ctx context.Context, a deploy.Assignment, progress depl
 		return deploy.Applied{}, &deploy.Failure{Reason: "could not build the values", Err: err}
 	}
 
-	progress(deploy.StepApplying, fmt.Sprintf("applying Helm release %s in %s", a.HelmReleaseName, a.Namespace))
+	message := fmt.Sprintf("applying Helm release %s in %s", a.HelmReleaseName, a.Namespace)
+	if a.IsRollback() {
+		message = fmt.Sprintf("rolling back Helm release %s in %s to what Deployment %s applied", a.HelmReleaseName, a.Namespace, a.Restores)
+	}
+	progress(deploy.StepApplying, message)
 	renderer := &postRenderer{
 		applicationID: a.ApplicationID, deploymentID: a.DeploymentID, releaseID: a.ReleaseID,
 		namespace: a.Namespace, mapper: d.mapper,

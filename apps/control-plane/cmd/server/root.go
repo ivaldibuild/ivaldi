@@ -55,7 +55,7 @@ func runServe(cmd *cobra.Command, version string) error {
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	a, closeDB, err := wire(ctx, &cfg, logger)
+	a, closeDB, err := wire(ctx, &cfg, version, logger)
 	if err != nil {
 		return err
 	}

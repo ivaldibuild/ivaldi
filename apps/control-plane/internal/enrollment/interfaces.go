@@ -48,13 +48,25 @@ type CreateInput struct {
 	Method         CredentialMethod
 }
 
-// IssuedEnrolment is a new single-use enrolment token.
+// IssuedEnrolment is a new single-use enrolment token, and how to install
+// the agent that redeems it.
 type IssuedEnrolment struct {
 	ClusterID string           `json:"cluster_id"`
 	Method    CredentialMethod `json:"method"`
 	Token     string           `json:"token"`
 	Pool      string           `json:"pool"`
 	ExpiresAt time.Time        `json:"expires_at"`
+	Install   InstallDetails   `json:"install"`
+}
+
+// InstallDetails is what the onboarding guide shows to connect a cluster. It
+// names the control plane and the agent chart, and the credential methods
+// this control plane accepts.
+type InstallDetails struct {
+	ServerURL       string   `json:"server_url"`
+	Chart           string   `json:"chart"`
+	ChartVersion    string   `json:"chart_version"`
+	CredentialKinds []string `json:"credential_kinds" enum:"bearer,mtls,kubernetes"`
 }
 
 // RedeemInput exchanges an enrolment token for a workload credential.

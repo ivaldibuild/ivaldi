@@ -24,6 +24,21 @@ const staging = {
   execution_enabled: true,
   deleted_at: null,
 };
+const cluster = {
+  id: 'cls_1',
+  organization_id: 'org_1',
+  slug: 'eu',
+  display_name: 'EU',
+  runtime: 'kubernetes',
+  agent_principal_id: null,
+  agent_capabilities: {},
+  agent_last_failure: null,
+  last_reported_at: null,
+  created_at: '2026-10-20T09:30:15Z',
+  updated_at: '2026-10-20T09:30:15Z',
+  deleted_at: null,
+};
+const usCluster = { ...cluster, id: 'cls_2', slug: 'us-east-1', display_name: 'US East' };
 const target = {
   id: 'tgt_1',
   environment_id: 'env_stg',
@@ -176,6 +191,7 @@ describe('Environment pages', () => {
       http
         .expectOne(`${v1}/environments/env_stg/targets?include_archived=true`)
         .flush(page(targets));
+      http.expectOne(`${v1}/clusters`).flush(page([cluster, usCluster]));
     }
 
     it('saves only what changed', async () => {

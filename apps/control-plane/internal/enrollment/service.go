@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/audit"
@@ -34,6 +35,7 @@ type options struct {
 	credentialTTL time.Duration
 	grace         time.Duration
 	logger        logging.Logger
+	install       InstallDetails
 }
 
 func WithWorkloadRepo(r iam.WorkloadRepository) ServiceOption {
@@ -82,6 +84,11 @@ func WithGracePeriod(d time.Duration) ServiceOption {
 	return func(o *options) { o.grace = d }
 }
 
+// WithInstall sets what the onboarding guide shows for installing the agent.
+func WithInstall(d InstallDetails) ServiceOption {
+	return func(o *options) { o.install = d }
+}
+
 // NewService returns the enrollment Service, authorizing administrative
 // operations and validating its dependencies.
 func NewService(opts ...ServiceOption) (Service, error) {
@@ -127,6 +134,12 @@ func (s *service) Create(ctx context.Context, actor identity.Actor, in CreateInp
 	if !in.Method.Valid() {
 		return nil, delivery.NewErrInvalidInput("credential method must be bearer, mtls, or kubernetes")
 	}
+	// A projected-token enrolment can only be redeemed when this control
+	// plane trusts the cluster's OIDC issuer, so a token it could never
+	// redeem is refused now rather than failing silently in the cluster.
+	if in.Method == MethodKubernetes && !slices.Contains(s.install.CredentialKinds, string(MethodKubernetes)) {
+		return nil, delivery.NewErrInvalidInput("this control plane trusts no Kubernetes OIDC issuer, so the agent must use a bearer token; set runners.kubernetes_issuers to enable projected tokens")
+	}
 	secret, err := iam.NewWorkloadEnrollmentTokenSecret()
 	if err != nil {
 		return nil, err
@@ -157,7 +170,7 @@ func (s *service) Create(ctx context.Context, actor identity.Actor, in CreateInp
 		if err := s.writer.Events(ctx, iam.AggregateWorkloadEnrollmentToken, token.ID(), token); err != nil {
 			return err
 		}
-		out = &IssuedEnrolment{ClusterID: cluster.ID(), Method: in.Method, Token: secret.Secret, Pool: pool, ExpiresAt: expires}
+		out = &IssuedEnrolment{ClusterID: cluster.ID(), Method: in.Method, Token: secret.Secret, Pool: pool, ExpiresAt: expires, Install: s.install}
 		return s.writer.AuditRecord(ctx, audit.Event{
 			Type: iam.EventWorkloadEnrollmentCreated, OrganizationID: in.OrganizationID,
 			ResourceID: token.ID(), Actor: actor, After: token.Snapshot(),

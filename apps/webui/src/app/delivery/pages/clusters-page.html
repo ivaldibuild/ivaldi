@@ -1,0 +1,127 @@
+<app-page-header
+  heading="Clusters"
+  lead="Kubernetes clusters this Organization deploys to. One runtime agent in each cluster serves every Target in it."
+>
+  @if (canManage()) {
+    <button
+      hlmBtn
+      type="button"
+      pageActions
+      [disabled]="creating()"
+      (click)="creating.set(true)"
+    >
+      <ng-icon name="lucidePlus" aria-hidden="true" /> Connect cluster
+    </button>
+  }
+</app-page-header>
+
+@if (creating()) {
+  <form class="border-border grid gap-4 border p-5 md:grid-cols-2" novalidate (submit)="create($event)">
+    <h2 class="text-heading text-lg font-semibold md:col-span-2">Connect a cluster</h2>
+    <div hlmField>
+      <label hlmFieldLabel for="cluster-name">Name</label>
+      <input
+        hlmInput
+        id="cluster-name"
+        class="h-10"
+        placeholder="Prod EU"
+        [formField]="createForm.display_name"
+        (input)="nameChanged()"
+      />
+      @if (createForm.display_name().touched() && createForm.display_name().invalid()) {
+        <hlm-field-error forceShow>{{
+          createForm.display_name().errors()[0].message
+        }}</hlm-field-error>
+      }
+    </div>
+    <div hlmField>
+      <label hlmFieldLabel for="cluster-slug">Address</label>
+      <input
+        hlmInput
+        id="cluster-slug"
+        class="h-10"
+        placeholder="prod-eu"
+        [formField]="createForm.slug"
+        (input)="slugChanged()"
+      />
+      <p class="text-muted-foreground text-[13px]">
+        Targets name the cluster by this address. It cannot change later.
+      </p>
+      @if (createForm.slug().touched() && createForm.slug().invalid()) {
+        <hlm-field-error forceShow>{{ createForm.slug().errors()[0].message }}</hlm-field-error>
+      }
+    </div>
+    @if (createStatus.error(); as message) {
+      <div hlmAlert variant="destructive" role="alert" class="md:col-span-2">
+        <h2 hlmAlertTitle>The cluster wasn't created</h2>
+        <p hlmAlertDescription>{{ message }}</p>
+      </div>
+    }
+    <div class="flex flex-wrap gap-2 md:col-span-2">
+      <button hlmBtn type="submit" [disabled]="createStatus.saving()">
+        @if (createStatus.saving()) {
+          <hlm-spinner aria-hidden="true" /> Creating…
+        } @else {
+          Create cluster
+        }
+      </button>
+      <button hlmBtn variant="outline" type="button" (click)="cancelCreate()">Cancel</button>
+    </div>
+  </form>
+}
+
+<label class="flex items-center gap-2 self-start text-sm">
+  <input
+    type="checkbox"
+    class="accent-primary size-4"
+    [checked]="showArchived()"
+    (change)="showArchived.set($any($event.target).checked)"
+  />
+  Show archived clusters
+</label>
+
+@if (failure(); as message) {
+  <div hlmAlert variant="destructive" role="alert">
+    <h2 hlmAlertTitle>Clusters didn't load</h2>
+    <p hlmAlertDescription>{{ message }}</p>
+  </div>
+} @else if (data.isLoading() && !data.hasValue()) {
+  <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+    <hlm-spinner aria-hidden="true" /> Loading clusters…
+  </p>
+} @else if (clusters().length === 0) {
+  <p class="text-foreground text-sm">
+    No clusters yet. Connect one to install its agent and start reporting what runs there.
+  </p>
+} @else {
+  <ul class="border-border flex flex-col border">
+    @for (cluster of clusters(); track cluster.id) {
+      <li class="border-border flex flex-wrap items-center justify-between gap-3 border-b p-4 last:border-b-0">
+        <div class="flex flex-col gap-1">
+          <span class="flex flex-wrap items-center gap-2">
+            <ng-icon name="lucideServer" aria-hidden="true" class="text-muted-foreground" />
+            <a
+              class="text-heading font-semibold underline-offset-4 hover:underline"
+              [routerLink]="['/clusters', cluster.id]"
+              >{{ cluster.display_name }}</a
+            >
+            <span hlmBadge variant="outline">{{ cluster.slug }}</span>
+            @if (cluster.deleted_at) {
+              <span hlmBadge variant="outline">Archived</span>
+            }
+          </span>
+          <span class="text-muted-foreground text-sm">
+            @if (cluster.agent_principal_id) {
+              Agent connected
+              @if (cluster.last_reported_at) {
+                · last reported {{ cluster.last_reported_at | date: 'medium' }}
+              }
+            } @else {
+              No agent yet
+            }
+          </span>
+        </div>
+      </li>
+    }
+  </ul>
+}

@@ -3272,6 +3272,12 @@ export interface components {
     HelmApply: {
       release_name: string;
     };
+    InstallDetails: {
+      chart: string;
+      chart_version: string;
+      credential_kinds: ('bearer' | 'mtls' | 'kubernetes')[];
+      server_url: string;
+    };
     InstallationStartSnapshot: {
       /**
        * Format: date-time
@@ -3285,6 +3291,7 @@ export interface components {
       cluster_id: string;
       /** Format: date-time */
       expires_at: string;
+      install: components['schemas']['InstallDetails'];
       method: string;
       pool: string;
       token: string;

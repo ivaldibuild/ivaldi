@@ -223,7 +223,7 @@ describe('deployments', () => {
       expect(groups[0]).toContain('staging-eu-1');
       expect(groups[0]).toContain('Runs 1.4.0');
       expect(groups[1]).toContain('prod-eu-1');
-      expect(groups[1]).toContain('Nothing deployed yet · no runtime agent');
+      expect(groups[1]).toContain('Nothing deployed yet');
       expect(button(el, 'Deploy 1.5.0')?.disabled).toBe(true);
     });
 
@@ -262,7 +262,7 @@ describe('deployments', () => {
       );
       await settle(fixture);
 
-      expect(el.textContent).toContain('Failed: A runtime agent is assigned to the Target');
+      expect(el.textContent).toContain('Failed: A runtime agent serves the Target’s Cluster');
       expect(el.textContent).toContain('the target has no agent assigned');
       expect(button(el, 'Deploy 1.5.0')?.disabled).toBe(true);
       expect(el.textContent).toContain('Every chosen Target must pass its checks.');

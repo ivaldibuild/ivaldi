@@ -1,126 +1,25 @@
-<app-setup-step step="cluster" heading="Record where your software runs">
+<app-setup-step step="cluster" heading="Connect your cluster">
   <ng-container setupLead>
-    A Target is a namespace in a Kubernetes cluster that one Environment runs in. Ivaldi holds no
-    cluster credentials: a runtime agent inside the cluster will report what's running and apply the
-    Deployments Ivaldi is allowed to make.
+    Install the Ivaldi agent once in the cluster. It serves every Target in it: it applies the
+    Deployments Ivaldi is allowed to make, and reports what it sees running. Ivaldi holds no cluster
+    credentials.
   </ng-container>
 
-  @if (status.error(); as message) {
+  @if (failure(); as message) {
     <div hlmAlert variant="destructive" role="alert">
-      <h2 hlmAlertTitle>The Target wasn't created</h2>
+      <h2 hlmAlertTitle>The setup didn't load</h2>
       <p hlmAlertDescription>{{ message }}</p>
     </div>
-  }
-
-  @if (status.loading()) {
+  } @else if (loading()) {
     <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
       <hlm-spinner aria-hidden="true" /> Loading Environments…
     </p>
-  } @else if (target(); as created) {
-    <div hlmAlert role="status">
-      <ng-icon name="lucideCircleCheck" aria-hidden="true" />
-      <h2 hlmAlertTitle>{{ created.display_name }} is ready for an agent</h2>
-      <p hlmAlertDescription>
-        Namespace <code>{{ created.locator['namespace'] }}</code> in cluster
-        <code>{{ created.locator['cluster'] }}</code
-        >, for {{ environmentName(created.environment_id) }}.
-      </p>
-    </div>
-  } @else if (environments().length === 0) {
-    <p class="text-foreground text-sm">
-      Add an Environment first, so the Target has somewhere to belong.
-      <a routerLink="/setup/environments">Set up Environments</a>
-    </p>
   } @else {
-    <form id="target-form" class="grid gap-4 md:grid-cols-2" novalidate (submit)="create($event)">
-      <div hlmField>
-        <label hlmFieldLabel for="target-environment">Environment</label>
-        <select
-          id="target-environment"
-          class="border-input bg-background text-foreground h-10 border px-2"
-          [formField]="targetForm.environment_id"
-        >
-          @for (environment of environments(); track environment.id) {
-            <option [value]="environment.id">{{ environment.display_name }}</option>
-          }
-        </select>
-      </div>
-      <div hlmField>
-        <label hlmFieldLabel for="target-name">Target name</label>
-        <input
-          hlmInput
-          id="target-name"
-          class="h-10"
-          placeholder="staging-eu-1"
-          [formField]="targetForm.display_name"
-        />
-        @if (targetForm.display_name().touched() && targetForm.display_name().invalid()) {
-          <hlm-field-error forceShow>{{
-            targetForm.display_name().errors()[0].message
-          }}</hlm-field-error>
-        }
-      </div>
-      <div hlmField>
-        <label hlmFieldLabel for="target-cluster">Cluster</label>
-        <input
-          hlmInput
-          id="target-cluster"
-          class="h-10"
-          placeholder="eu-west-1-main"
-          [formField]="targetForm.cluster"
-        />
-        @if (targetForm.cluster().touched() && targetForm.cluster().invalid()) {
-          <hlm-field-error forceShow>{{
-            targetForm.cluster().errors()[0].message
-          }}</hlm-field-error>
-        }
-      </div>
-      <div hlmField>
-        <label hlmFieldLabel for="target-namespace">Namespace</label>
-        <input
-          hlmInput
-          id="target-namespace"
-          class="h-10"
-          placeholder="payments"
-          [formField]="targetForm.namespace"
-        />
-        @if (targetForm.namespace().touched() && targetForm.namespace().invalid()) {
-          <hlm-field-error forceShow>{{
-            targetForm.namespace().errors()[0].message
-          }}</hlm-field-error>
-        }
-      </div>
-    </form>
+    <app-cluster-guide mode="setup" [startAt]="1" [environments]="environments()" />
   }
 
-  <div hlmAlert role="note">
-    <ng-icon name="lucideInfo" aria-hidden="true" />
-    <h2 hlmAlertTitle>The runtime agent is on its way</h2>
-    <p hlmAlertDescription>
-      There's nothing to install in the cluster yet. Once the agent is released, you'll install it
-      there and it will start reporting on this Target.
-    </p>
-  </div>
-
   <ng-container setupActions>
-    @if (target() || environments().length === 0) {
-      <a hlmBtn size="lg" routerLink="/setup/done">Finish setup</a>
-    } @else {
-      <button
-        hlmBtn
-        size="lg"
-        type="submit"
-        form="target-form"
-        [disabled]="status.loading() || status.saving()"
-      >
-        @if (status.saving()) {
-          <hlm-spinner aria-hidden="true" /> Creating…
-        } @else {
-          Create Target
-        }
-      </button>
-      <a hlmBtn size="lg" variant="ghost" routerLink="/setup/done">Skip for now</a>
-    }
+    <a hlmBtn size="lg" variant="ghost" routerLink="/setup/done">Skip for now</a>
     <a hlmBtn size="lg" variant="outline" routerLink="/setup/environments">Back</a>
   </ng-container>
 </app-setup-step>

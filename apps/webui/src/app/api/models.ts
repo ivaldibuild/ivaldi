@@ -27,6 +27,13 @@ export type AgentSummary = Schemas['AgentSummary'];
 /** One Agent with its system prompt and Teams. */
 export type AgentDetail = Schemas['AgentDetail'];
 
+export type Cluster = Schemas['ClusterSnapshot'];
+/** A Cluster's enrolled agent and credential state, from `GET /v1/clusters/{id}/agent`. */
+export type AgentStatus = Schemas['AgentStatus'];
+/** A new enrolment token and how to install the agent that redeems it. */
+export type IssuedEnrolment = Schemas['IssuedEnrolment'];
+export type InstallDetails = Schemas['InstallDetails'];
+
 export type Environment = Schemas['EnvironmentSnapshot'];
 export type Tier = Environment['tier'];
 export type Target = Schemas['TargetSnapshot'];

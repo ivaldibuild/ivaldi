@@ -11,8 +11,9 @@ import { HlmInputImports } from '@spartan-ng/helm/input';
 import { HlmSpinnerImports } from '@spartan-ng/helm/spinner';
 import { ApiError } from '../../api/api-client';
 import { CurrentUser } from '../../api/current-user';
-import { Environment, Target, Tier } from '../../api/models';
+import { Cluster, Environment, Target, Tier } from '../../api/models';
 import { RequestStatus } from '../../shared/request-status';
+import { ClustersApi } from '../clusters-api';
 import { DeliveryApi, EnvironmentFields, TargetFields } from '../delivery-api';
 import { PageHeader } from '../page-header';
 import { tierLabels, tierOptions } from './environments-page';
@@ -52,6 +53,7 @@ function targetFields(target: Target): TargetFields {
 })
 export class EnvironmentPage {
   private readonly api = inject(DeliveryApi);
+  private readonly clustersApi = inject(ClustersApi);
   private readonly user = inject(CurrentUser);
 
   /** The `:id` route parameter. */
@@ -64,11 +66,12 @@ export class EnvironmentPage {
   protected readonly details = resource({
     params: () => this.id(),
     loader: async ({ params: id }) => {
-      const [environment, targets] = await Promise.all([
+      const [environment, targets, clusters] = await Promise.all([
         this.api.environment(id),
         this.api.targets(id, true),
+        this.clustersApi.clusters(),
       ]);
-      return { environment, targets };
+      return { environment, targets, clusters };
     },
   });
 
@@ -83,6 +86,7 @@ export class EnvironmentPage {
   protected readonly environment = computed(() => this.loaded()?.environment ?? null);
   protected readonly archived = computed(() => !!this.environment()?.deleted_at);
   protected readonly targets = computed(() => this.loaded()?.targets ?? []);
+  protected readonly clusters = computed<Cluster[]>(() => this.loaded()?.clusters ?? []);
   protected readonly failure = computed(() => {
     const error = this.details.error();
     return error ? (error instanceof ApiError ? error.message : 'Something went wrong.') : null;

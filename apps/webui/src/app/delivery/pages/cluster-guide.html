@@ -1,0 +1,458 @@
+<section
+  class="border-border flex flex-col gap-6 border p-5"
+  aria-labelledby="cluster-guide-heading"
+>
+  <header class="flex flex-col gap-2">
+    <div class="flex flex-wrap items-center gap-2">
+      <ng-icon name="lucideServer" aria-hidden="true" class="text-muted-foreground" />
+      <h2 id="cluster-guide-heading" class="text-heading text-lg font-semibold">
+        Connect the cluster
+      </h2>
+      <span hlmBadge variant="outline">Preview</span>
+    </div>
+    <p class="text-muted-foreground text-sm">
+      Name the cluster, install its agent, and wait for the first heartbeat. The guide never stores
+      a credential: the enrolment token is shown once and can be minted again here.
+    </p>
+  </header>
+
+  <ol class="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-[13px]" aria-label="Steps">
+    @for (label of ['Name', 'Permissions', 'Install', 'Wait', 'Targets']; track $index) {
+      <li
+        [class.text-foreground]="step() === $index + 1"
+        [class.font-semibold]="step() === $index + 1"
+        [attr.aria-current]="step() === $index + 1 ? 'step' : null"
+      >
+        {{ $index + 1 }}. {{ label }}
+      </li>
+    }
+  </ol>
+
+  @switch (step()) {
+    @case (1) {
+      <form
+        id="cluster-form"
+        class="grid gap-4 md:grid-cols-2"
+        novalidate
+        (submit)="createCluster($event)"
+      >
+        <div hlmField>
+          <label hlmFieldLabel for="guide-cluster-name">Name</label>
+          <input
+            hlmInput
+            id="guide-cluster-name"
+            class="h-10"
+            placeholder="Prod EU"
+            [formField]="clusterForm.display_name"
+            (input)="nameChanged()"
+          />
+          @if (clusterForm.display_name().touched() && clusterForm.display_name().invalid()) {
+            <hlm-field-error forceShow>{{
+              clusterForm.display_name().errors()[0].message
+            }}</hlm-field-error>
+          }
+        </div>
+        <div hlmField>
+          <label hlmFieldLabel for="guide-cluster-slug">Address</label>
+          <input
+            hlmInput
+            id="guide-cluster-slug"
+            class="h-10"
+            placeholder="prod-eu"
+            [formField]="clusterForm.slug"
+            (input)="slugChanged()"
+          />
+          <p class="text-muted-foreground text-[13px]">
+            Targets name the cluster by this address. It cannot change later.
+          </p>
+          @if (clusterForm.slug().touched() && clusterForm.slug().invalid()) {
+            <hlm-field-error forceShow>{{
+              clusterForm.slug().errors()[0].message
+            }}</hlm-field-error>
+          }
+        </div>
+        @if (createError(); as message) {
+          <p class="text-destructive-text text-sm md:col-span-2" role="alert">{{ message }}</p>
+        }
+        <div class="md:col-span-2">
+          <button hlmBtn type="submit" [disabled]="creating.saving()">
+            @if (creating.saving()) {
+              <hlm-spinner aria-hidden="true" /> Creating…
+            } @else {
+              Create cluster
+            }
+          </button>
+        </div>
+      </form>
+    }
+
+    @case (2) {
+      <div class="flex flex-col gap-5">
+        <fieldset class="flex flex-col gap-2">
+          <legend class="text-heading font-semibold">What may the agent observe?</legend>
+          <label class="flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              name="observe"
+              class="accent-primary size-4"
+              [checked]="observeAll()"
+              (change)="setObserveAll(true)"
+            />
+            The whole cluster, read-only
+          </label>
+          <label class="flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              name="observe"
+              class="accent-primary size-4"
+              [checked]="!observeAll()"
+              (change)="setObserveAll(false)"
+            />
+            Only the namespaces listed below
+          </label>
+          @if (!observeAll()) {
+            <label class="sr-only" for="guide-observe">Namespaces the agent may observe</label>
+            <input
+              hlmInput
+              id="guide-observe"
+              class="h-10"
+              placeholder="payments-staging, payments-prod"
+              [value]="choices().observeNamespaces"
+              (input)="setObserveNamespaces($any($event.target).value)"
+            />
+          }
+        </fieldset>
+        <div hlmField>
+          <label hlmFieldLabel for="guide-execute">Namespaces the agent may deploy in</label>
+          <input
+            hlmInput
+            id="guide-execute"
+            class="h-10"
+            placeholder="payments-staging, payments-prod"
+            [value]="choices().executeNamespaces"
+            (input)="setExecuteNamespaces($any($event.target).value)"
+          />
+          <p class="text-muted-foreground text-[13px]">
+            Comma-separated. The chart grants write access only there; Ivaldi cannot widen it.
+          </p>
+        </div>
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div hlmField>
+            <label hlmFieldLabel for="guide-namespace">Agent namespace</label>
+            <input
+              hlmInput
+              id="guide-namespace"
+              class="h-10"
+              [value]="agentNamespace()"
+              (input)="setAgentNamespace($any($event.target).value)"
+            />
+          </div>
+          <div hlmField>
+            <label hlmFieldLabel for="guide-auth">How it authenticates</label>
+            <select
+              id="guide-auth"
+              class="border-input bg-background text-foreground h-10 border px-2"
+              [value]="choices().authentication"
+              (change)="setAuthentication($any($event.target).value)"
+            >
+              <option value="bearer">Bearer token</option>
+              <option value="kubernetes">Projected service-account token</option>
+            </select>
+          </div>
+        </div>
+        <div hlmAlert role="note">
+          <ng-icon name="lucideInfo" aria-hidden="true" />
+          <h3 hlmAlertTitle>Nothing here is stored in Ivaldi</h3>
+          <p hlmAlertDescription>
+            These choices only shape the chart values. Kubernetes RBAC in the cluster is what limits
+            the agent.
+          </p>
+        </div>
+      </div>
+      @if (choicesError(); as message) {
+        <p class="text-destructive-text text-sm" role="alert">{{ message }}</p>
+      }
+      @if (mintError(); as message) {
+        <p class="text-destructive-text text-sm" role="alert">{{ message }}</p>
+      }
+      <div class="flex flex-wrap gap-2">
+        <button
+          hlmBtn
+          type="button"
+          (click)="install()"
+          [disabled]="minting.saving() || !!choicesError()"
+        >
+          @if (minting.saving()) {
+            <hlm-spinner aria-hidden="true" /> Preparing…
+          } @else {
+            Continue
+          }
+        </button>
+        @if (mode() === 'setup') {
+          <button hlmBtn variant="outline" type="button" (click)="goTo(1)">Back</button>
+        }
+      </div>
+    }
+
+    @case (3) {
+      @if (enrolment(); as issued) {
+        <div class="flex flex-col gap-5">
+          <div hlmAlert role="status">
+            <ng-icon name="lucideCircleCheck" aria-hidden="true" />
+            <h3 hlmAlertTitle>Enrolment token minted</h3>
+            <p hlmAlertDescription>
+              It can be used once, and expires {{ issued.expires_at | date: 'medium' }}. It is shown
+              only here; mint another if you lose it.
+            </p>
+          </div>
+
+          <div class="flex flex-col gap-2">
+            <div class="flex items-center justify-between gap-2">
+              <h3 class="text-heading font-semibold">Enrolment token</h3>
+              <button
+                hlmBtn
+                variant="outline"
+                size="sm"
+                type="button"
+                (click)="copy(issued.token, 'token')"
+              >
+                <ng-icon name="lucideCopy" aria-hidden="true" />
+                {{ copied() === 'token' ? 'Copied' : 'Copy' }}
+              </button>
+            </div>
+            <pre
+              class="bg-muted overflow-x-auto p-3 text-[13px]"
+            ><code>{{ issued.token }}</code></pre>
+            <p class="text-muted-foreground text-[13px]">
+              Paste it at the prompt the commands below open, so it never lands in your shell's
+              history.
+            </p>
+          </div>
+
+          <div class="flex flex-col gap-2">
+            <div class="flex items-center justify-between gap-2">
+              <h3 class="text-heading font-semibold">values.yaml</h3>
+              <button
+                hlmBtn
+                variant="outline"
+                size="sm"
+                type="button"
+                (click)="copy(valuesYaml(), 'values')"
+              >
+                <ng-icon name="lucideCopy" aria-hidden="true" />
+                {{ copied() === 'values' ? 'Copied' : 'Copy' }}
+              </button>
+            </div>
+            <pre
+              class="bg-muted overflow-x-auto p-3 text-[13px]"
+            ><code>{{ valuesYaml() }}</code></pre>
+          </div>
+
+          <div class="flex flex-col gap-2">
+            <div class="flex items-center justify-between gap-2">
+              <h3 class="text-heading font-semibold">Install it</h3>
+              <button
+                hlmBtn
+                variant="outline"
+                size="sm"
+                type="button"
+                (click)="
+                  copy(
+                    namespaceCommand() + '\n' + secretCommand() + '\n' + helmCommand(),
+                    'commands'
+                  )
+                "
+              >
+                <ng-icon name="lucideCopy" aria-hidden="true" />
+                {{ copied() === 'commands' ? 'Copied' : 'Copy all' }}
+              </button>
+            </div>
+            <pre class="bg-muted overflow-x-auto p-3 text-[13px]"><code>{{ namespaceCommand() }}
+{{ secretCommand() }}
+{{ helmCommand() }}</code></pre>
+            <p class="text-muted-foreground text-[13px]">
+              The token goes into a Kubernetes Secret, not into the values file, so it is not
+              committed with the chart.
+              @if (!issued.install.chart_version) {
+                This control plane is not a release build, so the chart's version is left out and
+                Helm installs the latest.
+              }
+            </p>
+          </div>
+          @if (copyError(); as message) {
+            <p class="text-destructive-text text-sm" role="alert">{{ message }}</p>
+          }
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button hlmBtn type="button" (click)="startWaiting()">I've installed it</button>
+          <button
+            hlmBtn
+            variant="outline"
+            type="button"
+            (click)="install()"
+            [disabled]="minting.saving()"
+          >
+            Mint another token
+          </button>
+          <button hlmBtn variant="ghost" type="button" (click)="goTo(2)">Back</button>
+        </div>
+      } @else {
+        <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+          <hlm-spinner aria-hidden="true" /> Minting an enrolment token…
+        </p>
+      }
+    }
+
+    @case (4) {
+      <div class="flex flex-col gap-4">
+        <ul class="flex flex-col gap-2 text-sm">
+          @for (check of checks(); track check.label) {
+            <li class="flex items-center gap-2">
+              @if (check.ok) {
+                <ng-icon name="lucideCheck" aria-hidden="true" />
+              } @else {
+                <ng-icon name="lucideX" class="text-muted-foreground" aria-hidden="true" />
+              }
+              {{ check.label }}
+            </li>
+          }
+        </ul>
+        @if (refusal(); as failure) {
+          <div hlmAlert variant="destructive" role="alert">
+            <h3 hlmAlertTitle>The last enrolment was refused</h3>
+            <p hlmAlertDescription>
+              {{ failure.reason }}. Archive the cluster that identity already serves, or install
+              this agent with a different ServiceAccount or certificate.
+            </p>
+          </div>
+        }
+        @if (connected()) {
+          <div hlmAlert role="status">
+            <ng-icon name="lucideCircleCheck" aria-hidden="true" />
+            <p hlmAlertDescription>The agent is in contact.</p>
+          </div>
+        } @else if (tokenExpired()) {
+          <div hlmAlert variant="destructive" role="alert">
+            <h3 hlmAlertTitle>The enrolment token expired</h3>
+            <p hlmAlertDescription>
+              No agent redeemed it in time. Mint a new one and create the Secret again.
+            </p>
+          </div>
+        } @else if (troubleshooting().length > 0) {
+          <div hlmAlert role="note">
+            <ng-icon name="lucideInfo" aria-hidden="true" />
+            <h3 hlmAlertTitle>No progress for two minutes</h3>
+            <ul hlmAlertDescription class="list-disc pl-5">
+              @for (tip of troubleshooting(); track tip) {
+                <li>{{ tip }}</li>
+              }
+            </ul>
+          </div>
+        } @else {
+          <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+            <hlm-spinner aria-hidden="true" /> Waiting for the agent…
+          </p>
+        }
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <button hlmBtn type="button" (click)="goTo(5)">Continue</button>
+        <button
+          hlmBtn
+          variant="outline"
+          type="button"
+          (click)="install()"
+          [disabled]="minting.saving()"
+        >
+          Mint a new token
+        </button>
+      </div>
+    }
+
+    @case (5) {
+      <div class="flex flex-col gap-4">
+        <p class="text-muted-foreground text-sm">
+          A Target is a namespace in this cluster. Each Target is served by the same agent, and
+          shows what it can do there after its next heartbeat.
+        </p>
+        @if (environments().length === 0) {
+          <p class="text-foreground text-sm">
+            Add an Environment first, so the Target has somewhere to belong.
+          </p>
+        } @else {
+          <form
+            id="target-form"
+            class="grid gap-4 md:grid-cols-2"
+            novalidate
+            (submit)="addTarget($event)"
+          >
+            <div hlmField>
+              <label hlmFieldLabel for="guide-target-environment">Environment</label>
+              <select
+                id="guide-target-environment"
+                class="border-input bg-background text-foreground h-10 border px-2"
+                [formField]="targetForm.environment_id"
+              >
+                @for (environment of environments(); track environment.id) {
+                  <option [value]="environment.id">{{ environment.display_name }}</option>
+                }
+              </select>
+            </div>
+            <div hlmField>
+              <label hlmFieldLabel for="guide-target-name">Target name</label>
+              <input
+                hlmInput
+                id="guide-target-name"
+                class="h-10"
+                placeholder="payments-prod"
+                [formField]="targetForm.display_name"
+              />
+              @if (targetForm.display_name().touched() && targetForm.display_name().invalid()) {
+                <hlm-field-error forceShow>{{
+                  targetForm.display_name().errors()[0].message
+                }}</hlm-field-error>
+              }
+            </div>
+            <div hlmField>
+              <label hlmFieldLabel for="guide-target-namespace">Namespace</label>
+              <input
+                hlmInput
+                id="guide-target-namespace"
+                class="h-10"
+                placeholder="payments-prod"
+                [formField]="targetForm.namespace"
+              />
+              @if (targetForm.namespace().touched() && targetForm.namespace().invalid()) {
+                <hlm-field-error forceShow>{{
+                  targetForm.namespace().errors()[0].message
+                }}</hlm-field-error>
+              }
+            </div>
+            <div class="flex items-end">
+              <button hlmBtn type="submit" [disabled]="addingTarget.saving()">
+                @if (addingTarget.saving()) {
+                  <hlm-spinner aria-hidden="true" /> Adding…
+                } @else {
+                  Add Target
+                }
+              </button>
+            </div>
+            @if (targetError(); as message) {
+              <p class="text-destructive-text text-sm md:col-span-2" role="alert">{{ message }}</p>
+            }
+            @if (addedTarget(); as name) {
+              <p class="text-foreground text-sm md:col-span-2" role="status">
+                {{ name }} was added. Its capabilities appear after the next heartbeat.
+              </p>
+            }
+          </form>
+        }
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <button hlmBtn type="button" (click)="finish()">
+          {{ mode() === 'setup' ? 'Finish setup' : 'Done' }}
+        </button>
+        <button hlmBtn variant="outline" type="button" (click)="startWaiting()">Back</button>
+      </div>
+    }
+  }
+</section>

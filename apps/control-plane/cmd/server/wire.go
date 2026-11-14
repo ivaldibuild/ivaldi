@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -85,6 +87,9 @@ type app struct {
 	kubernetes workloadauth.KubernetesVerifier
 	// services serve the API's operations; root.go builds its routes from them.
 	services services
+	// version is the binary's, used to name the agent chart when no version is
+	// configured.
+	version string
 	// commitHistory reads commit ranges for delivery's release notes.
 	commitHistory vcs.History
 	// changes reads recorded Changes for release notes.
@@ -113,7 +118,7 @@ type iamRepositories struct {
 
 // wire opens the database and builds the capabilities. The caller closes the
 // database and the Redis connection with close once the server has stopped.
-func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *app, close func() error, err error) {
+func wire(ctx context.Context, cfg *config.Config, version string, logger logging.Logger) (a *app, close func() error, err error) {
 	db, closeDB, err := openDatabase(ctx, cfg)
 	if err != nil {
 		return nil, nil, err
@@ -134,10 +139,11 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 	logger.Info("database connected")
 
 	a = &app{
-		db:     db,
-		tx:     database.NewTransactor(db),
-		outbox: outboxpg.NewRepository(db),
-		redis:  redisClient,
+		db:      db,
+		tx:      database.NewTransactor(db),
+		outbox:  outboxpg.NewRepository(db),
+		redis:   redisClient,
+		version: version,
 		iam: iamRepositories{
 			orgs:      iampg.NewOrganizationRepository(db),
 			accounts:  iampg.NewAccountRepository(db),
@@ -291,7 +297,7 @@ func wire(ctx context.Context, cfg *config.Config, logger logging.Logger) (a *ap
 	if err := a.wireServiceAccounts(); err != nil {
 		return nil, nil, err
 	}
-	if err := a.wireEnrollment(cfg.Runners, logger); err != nil {
+	if err := a.wireEnrollment(cfg.Runners, cfg.ExternalURL, logger); err != nil {
 		return nil, nil, err
 	}
 
@@ -511,7 +517,7 @@ func (a *app) wireServiceAccounts() error {
 }
 
 // wireEnrollment serves Cluster enrolment and workload credential renewal.
-func (a *app) wireEnrollment(runners config.Runners, logger logging.Logger) error {
+func (a *app) wireEnrollment(runners config.Runners, externalURL string, logger logging.Logger) error {
 	svc, err := enrollment.NewService(
 		enrollment.WithWorkloadRepo(iampg.NewWorkloadRepository(a.db)),
 		enrollment.WithEnrollmentTokenRepo(iampg.NewWorkloadEnrollmentTokenRepository(a.db)),
@@ -526,12 +532,45 @@ func (a *app) wireEnrollment(runners config.Runners, logger logging.Logger) erro
 		enrollment.WithEnrollmentTokenTTL(runners.EnrollmentTokenTTL),
 		enrollment.WithCredentialTTL(runners.WorkloadCredentialTTL),
 		enrollment.WithLogger(logger),
+		enrollment.WithInstall(a.enrollmentInstall(runners, externalURL)),
 	)
 	if err != nil {
 		return err
 	}
 	a.services.enrollment = svc
 	return nil
+}
+
+// enrollmentInstall is what the onboarding guide shows to connect a cluster:
+// where the control plane is, which agent chart to install, and how the agent
+// may authenticate.
+func (a *app) enrollmentInstall(runners config.Runners, externalURL string) enrollment.InstallDetails {
+	version := runners.AgentChartVersion
+	if version == "" {
+		version = chartVersion(a.version)
+	}
+	kinds := []string{"bearer"}
+	if len(runners.KubernetesIssuers) > 0 {
+		kinds = append(kinds, "kubernetes")
+	}
+	return enrollment.InstallDetails{
+		ServerURL: externalURL, Chart: runners.AgentChart, ChartVersion: version, CredentialKinds: kinds,
+	}
+}
+
+// releaseVersion is SemVer 2.0 with an optional leading "v", as git describe
+// prints a tag.
+var releaseVersion = regexp.MustCompile(`^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$`)
+
+// chartVersion is the agent chart version that matches a binary version, or
+// "" when the binary is not a release build: "dev", a bare commit hash, or a
+// build with uncommitted changes names no published chart, and the guide then
+// leaves the version out instead of printing one Helm cannot find.
+func chartVersion(binary string) string {
+	if !releaseVersion.MatchString(binary) || strings.HasSuffix(binary, "-dirty") {
+		return ""
+	}
+	return strings.TrimPrefix(binary, "v")
 }
 
 // wireSignIn builds sign-in, the authorization server, and its HTTP side.

@@ -152,12 +152,20 @@
           </div>
           <div hlmField>
             <label hlmFieldLabel for="target-cluster">Cluster</label>
-            <input
-              hlmInput
+            <select
               id="target-cluster"
-              placeholder="eu-west-1"
+              class="border-input bg-background text-foreground h-10 border px-2"
               [formField]="targetForm.cluster"
-            />
+            >
+              @if (clusters().length === 0) {
+                <option value="">No clusters yet — connect one first</option>
+              }
+              @for (cluster of clusters(); track cluster.id) {
+                <option [value]="cluster.slug">
+                  {{ cluster.display_name }} ({{ cluster.slug }})
+                </option>
+              }
+            </select>
             @if (targetForm.cluster().touched() && targetForm.cluster().invalid()) {
               <hlm-field-error forceShow>{{
                 targetForm.cluster().errors()[0].message
@@ -222,12 +230,16 @@
                   </div>
                   <div hlmField>
                     <label hlmFieldLabel for="edit-target-cluster">Cluster</label>
-                    <input hlmInput id="edit-target-cluster" [formField]="editForm.cluster" />
-                    @if (editForm.cluster().touched() && editForm.cluster().invalid()) {
-                      <hlm-field-error forceShow>{{
-                        editForm.cluster().errors()[0].message
-                      }}</hlm-field-error>
-                    }
+                    <input
+                      hlmInput
+                      id="edit-target-cluster"
+                      readonly
+                      aria-describedby="edit-target-cluster-hint"
+                      [value]="editForm.cluster().value()"
+                    />
+                    <p id="edit-target-cluster-hint" class="text-muted-foreground text-[13px]">
+                      A Target stays in its cluster. To move it, archive it and add a new one.
+                    </p>
                   </div>
                   <div hlmField>
                     <label hlmFieldLabel for="edit-target-namespace">Namespace</label>
@@ -253,6 +265,13 @@
                     <span class="text-heading font-semibold">{{ target.display_name }}</span>
                     <span class="text-muted-foreground">
                       · {{ target.locator['cluster'] }} / {{ target.locator['namespace'] }}
+                    </span>
+                    <span class="text-muted-foreground block text-[13px]">
+                      {{ target.can_observe ? 'Observing' : 'Not observed' }} ·
+                      {{ target.can_execute ? 'Deploys' : 'No deploy' }}
+                      @if (target.capability_reason) {
+                        · {{ target.capability_reason }}
+                      }
                     </span>
                     @if (target.deleted_at) {
                       <span hlmBadge variant="outline" class="ml-2">Archived</span>

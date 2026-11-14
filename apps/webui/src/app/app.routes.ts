@@ -121,6 +121,17 @@ export const routes: Routes = [
         loadComponent: () => import('./delivery/pages/project-page').then((m) => m.ProjectPage),
       },
       {
+        path: 'clusters',
+        title: 'Clusters · Ivaldi',
+        loadComponent: () =>
+          import('./delivery/pages/clusters-page').then((m) => m.ClustersPage),
+      },
+      {
+        path: 'clusters/:id',
+        title: 'Cluster · Ivaldi',
+        loadComponent: () => import('./delivery/pages/cluster-page').then((m) => m.ClusterPage),
+      },
+      {
         path: 'environments',
         title: 'Environments · Ivaldi',
         loadComponent: () =>

@@ -12,6 +12,7 @@ import {
   lucideLayers,
   lucideLogOut,
   lucideMoon,
+  lucideServer,
   lucideSettings,
   lucideSun,
 } from '@ng-icons/lucide';
@@ -59,6 +60,7 @@ interface NavItem {
       lucideLayers,
       lucideLogOut,
       lucideMoon,
+      lucideServer,
       lucideSettings,
       lucideSun,
     }),
@@ -94,6 +96,7 @@ export class AppShell {
           icon: 'lucideFolder',
           within: ['/applications', '/releases', '/deployments'],
         },
+        { path: '/clusters', label: 'Clusters', icon: 'lucideServer' },
         { path: '/environments', label: 'Environments', icon: 'lucideLayers' },
         { path: '/lifecycles', label: 'Lifecycles', icon: 'lucideGitBranch' },
       ],

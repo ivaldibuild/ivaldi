@@ -33,6 +33,10 @@ runners:
   heartbeat_interval: 30s
   agent_poll_interval: 5s
   agent_watch_interval: 60s
+  # The chart the onboarding guide installs. Leave the version empty to use
+  # this control plane's version; a mirror overrides the chart reference.
+  agent_chart: oci://ghcr.io/ivaldibuild/charts/ivaldi-agent
+  agent_chart_version: ""
 
 # Platform workloads (ADR 0015) are components that serve every
 # Organization, such as the gateway. The control plane creates, updates, and

@@ -118,6 +118,12 @@ type Runners struct {
 	// HeartbeatInterval is how often a connected runner must report in;
 	// one silent for three intervals is treated as offline.
 	HeartbeatInterval time.Duration `yaml:"heartbeat_interval" env:"IVALDI_RUNNER_HEARTBEAT_INTERVAL" envDefault:"30s"`
+	// AgentChart is the OCI reference of the ivaldi-agent Helm chart the
+	// onboarding guide installs; a mirror overrides it. AgentChartVersion is
+	// the chart version matching this control plane, and defaults to its own
+	// version.
+	AgentChart        string `yaml:"agent_chart" env:"IVALDI_RUNNER_AGENT_CHART" envDefault:"oci://ghcr.io/ivaldibuild/charts/ivaldi-agent"`
+	AgentChartVersion string `yaml:"agent_chart_version" env:"IVALDI_RUNNER_AGENT_CHART_VERSION"`
 	// AgentPollInterval and AgentWatchInterval are the pace the control plane
 	// tells a Cluster's agent to poll assignments and refresh its Targets.
 	AgentPollInterval  time.Duration `yaml:"agent_poll_interval" env:"IVALDI_RUNNER_AGENT_POLL_INTERVAL" envDefault:"5s"`

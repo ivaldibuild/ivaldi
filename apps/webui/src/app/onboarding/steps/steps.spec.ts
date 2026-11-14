@@ -81,6 +81,12 @@ describe('setup steps', () => {
     el.querySelector(`#${formId}`)!.dispatchEvent(new Event('submit'));
   }
 
+  function click(el: HTMLElement, text: string): void {
+    const button = [...el.querySelectorAll('button')].find((b) => b.textContent?.trim() === text);
+    expect(button, `a "${text}" button`).toBeDefined();
+    button!.click();
+  }
+
   afterEach(() => http.verify());
 
   async function renderOrganisation(canManage = true) {
@@ -299,45 +305,7 @@ describe('setup steps', () => {
     expect(navigate).toHaveBeenCalledWith(['/setup', 'cluster']);
   });
 
-  it('records a Kubernetes Target for an Environment', async () => {
-    const { fixture, el } = await render(ClusterStep);
-    http.expectOne(`${v1}/workspaces`).flush(ok([workspace]));
-    await settle(fixture);
-    http.expectOne(`${v1}/workspaces/wsp_1/environments`).flush(
-      page([
-        { id: 'env_dev', display_name: 'Development', tier: 'development' },
-        { id: 'env_stg', display_name: 'Staging', tier: 'staging' },
-      ]),
-    );
-    await settle(fixture);
-
-    type(el, '#target-name', 'staging-eu-1');
-    type(el, '#target-cluster', 'eu-west-1-main');
-    type(el, '#target-namespace', 'payments');
-    submit(el, 'target-form');
-    await settle(fixture);
-
-    const req = http.expectOne(`${v1}/environments/env_stg/targets`);
-    expect(req.request.body).toEqual({
-      display_name: 'staging-eu-1',
-      runtime: 'kubernetes',
-      locator: { cluster: 'eu-west-1-main', namespace: 'payments' },
-    });
-    req.flush(
-      ok({
-        id: 'tgt_1',
-        environment_id: 'env_stg',
-        display_name: 'staging-eu-1',
-        locator: { cluster: 'eu-west-1-main', namespace: 'payments' },
-      }),
-    );
-    await settle(fixture);
-
-    expect(el.textContent).toContain('staging-eu-1 is ready for an agent');
-  });
-
-  it('checks the namespace is a Kubernetes name before calling the control plane', async () => {
-    const { fixture, el } = await render(ClusterStep);
+  async function reachTargets(el: HTMLElement, fixture: ComponentFixture<unknown>): Promise<void> {
     http.expectOne(`${v1}/workspaces`).flush(ok([workspace]));
     await settle(fixture);
     http
@@ -345,9 +313,99 @@ describe('setup steps', () => {
       .flush(page([{ id: 'env_stg', display_name: 'Staging', tier: 'staging' }]));
     await settle(fixture);
 
-    type(el, '#target-name', 'staging-eu-1');
-    type(el, '#target-cluster', 'main');
-    type(el, '#target-namespace', 'Payments Team');
+    type(el, '#guide-cluster-name', 'Prod EU');
+    type(el, '#guide-cluster-slug', 'prod-eu');
+    submit(el, 'cluster-form');
+    await settle(fixture);
+    http
+      .expectOne((r) => r.method === 'POST' && r.url === `${v1}/clusters`)
+      .flush(ok({ id: 'cls_1', slug: 'prod-eu', display_name: 'Prod EU' }));
+    await settle(fixture);
+
+    click(el, 'Continue');
+    await settle(fixture);
+    http
+      .expectOne((r) => r.method === 'POST' && r.url === `${v1}/clusters/cls_1/enrolments`)
+      .flush(
+        ok({
+          token: 'iwe_x',
+          method: 'bearer',
+          pool: 'cluster:cls_1',
+          expires_at: '2026-11-14T13:00:00Z',
+          install: {
+            server_url: 'https://cp.test',
+            chart: 'oci://ghcr.io/ivaldibuild/charts/ivaldi-agent',
+            chart_version: '1.4.0',
+            credential_kinds: ['bearer'],
+          },
+        }),
+      );
+    await settle(fixture);
+
+    click(el, "I've installed it");
+    await settle(fixture);
+    http.expectOne(`${v1}/clusters/cls_1/agent`).flush(
+      ok({
+        status: 'active',
+        agent_principal_id: 'prn_agent',
+        redeemed_at: '2026-11-14T12:00:00Z',
+        last_seen_at: '2026-11-14T12:00:30Z',
+        agent_version: '1.4.0',
+        kubernetes_version: 'v1.31.4',
+      }),
+    );
+    await settle(fixture);
+    click(el, 'Continue');
+    await settle(fixture);
+  }
+
+  it('creates a cluster and records a Kubernetes Target', async () => {
+    const { fixture, el } = await render(ClusterStep);
+    await reachTargets(el, fixture);
+
+    type(el, '#guide-target-name', 'staging-eu-1');
+    type(el, '#guide-target-namespace', 'payments');
+    submit(el, 'target-form');
+    await settle(fixture);
+
+    const req = http.expectOne(`${v1}/environments/env_stg/targets`);
+    expect(req.request.body).toEqual({
+      display_name: 'staging-eu-1',
+      runtime: 'kubernetes',
+      locator: { cluster: 'prod-eu', namespace: 'payments' },
+    });
+    req.flush(
+      ok({
+        id: 'tgt_1',
+        environment_id: 'env_stg',
+        display_name: 'staging-eu-1',
+        locator: { cluster: 'prod-eu', namespace: 'payments' },
+      }),
+    );
+    await settle(fixture);
+
+    expect(el.textContent).toContain('staging-eu-1 was added');
+  });
+
+  it('lets setup finish without a cluster', async () => {
+    const { fixture, el } = await render(ClusterStep);
+    http.expectOne(`${v1}/workspaces`).flush(ok([workspace]));
+    await settle(fixture);
+    http.expectOne(`${v1}/workspaces/wsp_1/environments`).flush(page([]));
+    await settle(fixture);
+
+    const skip = [...el.querySelectorAll('a')].find(
+      (a) => a.textContent?.trim() === 'Skip for now',
+    );
+    expect(skip?.getAttribute('href')).toBe('/setup/done');
+  });
+
+  it('checks the namespace is a Kubernetes name before calling the control plane', async () => {
+    const { fixture, el } = await render(ClusterStep);
+    await reachTargets(el, fixture);
+
+    type(el, '#guide-target-name', 'staging-eu-1');
+    type(el, '#guide-target-namespace', 'Payments Team');
     submit(el, 'target-form');
     await settle(fixture);
 

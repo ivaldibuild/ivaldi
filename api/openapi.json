@@ -2759,6 +2759,38 @@
         ],
         "type": "object"
       },
+      "InstallDetails": {
+        "additionalProperties": false,
+        "properties": {
+          "chart": {
+            "type": "string"
+          },
+          "chart_version": {
+            "type": "string"
+          },
+          "credential_kinds": {
+            "items": {
+              "enum": [
+                "bearer",
+                "mtls",
+                "kubernetes"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "server_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "server_url",
+          "chart",
+          "chart_version",
+          "credential_kinds"
+        ],
+        "type": "object"
+      },
       "InstallationStartSnapshot": {
         "additionalProperties": false,
         "properties": {
@@ -2788,6 +2820,9 @@
             "format": "date-time",
             "type": "string"
           },
+          "install": {
+            "$ref": "#/components/schemas/InstallDetails"
+          },
           "method": {
             "type": "string"
           },
@@ -2803,7 +2838,8 @@
           "method",
           "token",
           "pool",
-          "expires_at"
+          "expires_at",
+          "install"
         ],
         "type": "object"
       },

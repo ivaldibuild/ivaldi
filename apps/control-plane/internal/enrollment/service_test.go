@@ -224,19 +224,34 @@ type world struct {
 	svc Service
 }
 
-func newWorld(t *testing.T) *world {
+func newWorld(t *testing.T, opts ...ServiceOption) *world {
 	t.Helper()
 	clock.Fix(t, t0)
 	s := newStore(t)
-	svc, err := NewService(
+	base := []ServiceOption{
 		WithWorkloadRepo(fakeWorkloads{s}), WithEnrollmentTokenRepo(fakeTokens{s}),
 		WithCredentialRepo(fakeCredentials{s}), WithPrincipalRepo(fakePrincipals{s}),
 		WithClusters(fakeClusters{s}),
 		WithKubernetesVerifier(fakeKubernetes{s}), WithAuthorizer(allow{}),
 		WithTransactor(s), WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
-	)
+		WithInstall(InstallDetails{
+			ServerURL: "https://ivaldi.example.com", Chart: "oci://ghcr.io/ivaldibuild/charts/ivaldi-agent",
+			ChartVersion: "1.4.0", CredentialKinds: []string{"bearer", "kubernetes"},
+		}),
+	}
+	svc, err := NewService(append(base, opts...)...)
 	require.NoError(t, err)
 	return &world{store: s, svc: svc}
+}
+
+func TestCreateRefusesAProjectedTokenNoIssuerTrusts(t *testing.T) {
+	w := newWorld(t, WithInstall(InstallDetails{
+		ServerURL: "https://ivaldi.example.com", Chart: "oci://ghcr.io/ivaldibuild/charts/ivaldi-agent",
+		ChartVersion: "1.4.0", CredentialKinds: []string{"bearer"},
+	}))
+	_, err := w.svc.Create(ctx, ada, CreateInput{OrganizationID: org, ClusterID: clusterID, Method: MethodKubernetes})
+	require.ErrorIs(t, err, delivery.ErrInvalid)
+	assert.Empty(t, w.tokens, "a token that could never be redeemed is not minted")
 }
 
 func TestCreateEnrolment(t *testing.T) {
@@ -247,6 +262,9 @@ func TestCreateEnrolment(t *testing.T) {
 	assert.Equal(t, clusterID, issued.ClusterID)
 	assert.Equal(t, MethodBearer, issued.Method)
 	assert.Equal(t, "cluster:"+clusterID, issued.Pool)
+	assert.Equal(t, "https://ivaldi.example.com", issued.Install.ServerURL)
+	assert.Equal(t, "1.4.0", issued.Install.ChartVersion)
+	assert.Equal(t, []string{"bearer", "kubernetes"}, issued.Install.CredentialKinds)
 	assert.NotEmpty(t, w.tokens)
 	assert.Equal(t, iam.EventWorkloadEnrollmentCreated, w.audit[0].Type)
 }

@@ -112,6 +112,23 @@
         ],
         "type": "object"
       },
+      "AgentFailure": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "at"
+        ],
+        "type": "object"
+      },
       "AgentInTeam": {
         "additionalProperties": false,
         "properties": {
@@ -893,6 +910,70 @@
         ],
         "type": "object"
       },
+      "ClusterSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_capabilities": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "agent_last_failure": {
+            "$ref": "#/components/schemas/AgentFailure"
+          },
+          "agent_principal_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "deleted_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "last_reported_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "organization_id": {
+            "type": "string"
+          },
+          "runtime": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "slug",
+          "display_name",
+          "runtime",
+          "agent_principal_id",
+          "agent_capabilities",
+          "agent_last_failure",
+          "last_reported_at",
+          "created_at",
+          "updated_at",
+          "deleted_at"
+        ],
+        "type": "object"
+      },
       "CompleteInstallationRequestBody": {
         "additionalProperties": false,
         "properties": {
@@ -1255,6 +1336,40 @@
         "required": [
           "display_name",
           "lifecycle_id"
+        ],
+        "type": "object"
+      },
+      "CreateClusterRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/CreateClusterRequestBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "display_name": {
+            "description": "The display name for the cluster",
+            "maxLength": 255,
+            "minLength": 3,
+            "type": "string"
+          },
+          "runtime": {
+            "description": "The runtime the cluster runs",
+            "enum": [
+              "kubernetes"
+            ],
+            "type": "string"
+          },
+          "slug": {
+            "description": "Url slug for the cluster; derived from the display name when omitted, and never changes",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_name",
+          "runtime"
         ],
         "type": "object"
       },
@@ -4178,6 +4293,35 @@
         ],
         "type": "object"
       },
+      "ResponseClusterSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseClusterSnapshot.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ClusterSnapshot",
+            "description": "Response payload, always present: an empty list is [], not omitted"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
       "ResponseConnectionSnapshot": {
         "additionalProperties": false,
         "properties": {
@@ -5293,6 +5437,35 @@
         ],
         "type": "object"
       },
+      "ResponseResultClusterSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseResultClusterSnapshot.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ResultClusterSnapshot",
+            "description": "Response payload, always present: an empty list is [], not omitted"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
       "ResponseResultDeploymentSnapshot": {
         "additionalProperties": false,
         "properties": {
@@ -5932,6 +6105,44 @@
           "items": {
             "items": {
               "$ref": "#/components/schemas/ChangeSnapshot"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "nullable": true,
+            "type": "string"
+          },
+          "previous_cursor": {
+            "nullable": true,
+            "type": "string"
+          },
+          "total_count": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total_count",
+          "has_next",
+          "has_previous",
+          "next_cursor",
+          "previous_cursor"
+        ],
+        "type": "object"
+      },
+      "ResultClusterSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "has_next": {
+            "type": "boolean"
+          },
+          "has_previous": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ClusterSnapshot"
             },
             "type": "array"
           },
@@ -7234,6 +7445,25 @@
           },
           "slug": {
             "description": "New slug",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateClusterRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/UpdateClusterRequestBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "display_name": {
+            "description": "New display name. The slug and runtime do not change",
+            "maxLength": 255,
+            "minLength": 3,
             "type": "string"
           }
         },
@@ -10240,6 +10470,355 @@
         "summary": "Replace a Channel rule",
         "tags": [
           "applications"
+        ]
+      }
+    },
+    "/v1/clusters": {
+      "get": {
+        "operationId": "list-clusters",
+        "parameters": [
+          {
+            "description": "Include archived Clusters",
+            "explode": false,
+            "in": "query",
+            "name": "include_archived",
+            "schema": {
+              "description": "Include archived Clusters",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Most items to return",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "Most items to return",
+              "format": "int64",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Field to sort by",
+            "explode": false,
+            "in": "query",
+            "name": "sort_by",
+            "schema": {
+              "description": "Field to sort by",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Sort direction",
+            "explode": false,
+            "in": "query",
+            "name": "sort_order",
+            "schema": {
+              "description": "Sort direction",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Cursor from a previous page's next_cursor",
+            "explode": false,
+            "in": "query",
+            "name": "next_cursor",
+            "schema": {
+              "description": "Cursor from a previous page's next_cursor",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Cursor from a previous page's previous_cursor",
+            "explode": false,
+            "in": "query",
+            "name": "previous_cursor",
+            "schema": {
+              "description": "Cursor from a previous page's previous_cursor",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseResultClusterSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the Organization's Clusters",
+        "tags": [
+          "clusters"
+        ]
+      },
+      "post": {
+        "operationId": "create-cluster",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateClusterRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseClusterSnapshot"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a Cluster",
+        "tags": [
+          "clusters"
+        ]
+      }
+    },
+    "/v1/clusters/{cluster_id}": {
+      "get": {
+        "operationId": "get-cluster",
+        "parameters": [
+          {
+            "description": "The Cluster's ID",
+            "in": "path",
+            "name": "cluster_id",
+            "required": true,
+            "schema": {
+              "description": "The Cluster's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseClusterSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get a Cluster",
+        "tags": [
+          "clusters"
+        ]
+      },
+      "patch": {
+        "operationId": "update-cluster",
+        "parameters": [
+          {
+            "description": "The Cluster's ID",
+            "in": "path",
+            "name": "cluster_id",
+            "required": true,
+            "schema": {
+              "description": "The Cluster's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateClusterRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseClusterSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Change a Cluster's display name",
+        "tags": [
+          "clusters"
+        ]
+      }
+    },
+    "/v1/clusters/{cluster_id}/archive": {
+      "post": {
+        "operationId": "archive-cluster",
+        "parameters": [
+          {
+            "description": "The Cluster's ID",
+            "in": "path",
+            "name": "cluster_id",
+            "required": true,
+            "schema": {
+              "description": "The Cluster's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseClusterSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Archive a Cluster that has no active Targets",
+        "tags": [
+          "clusters"
+        ]
+      }
+    },
+    "/v1/clusters/{cluster_id}/restore": {
+      "post": {
+        "operationId": "restore-cluster",
+        "parameters": [
+          {
+            "description": "The Cluster's ID",
+            "in": "path",
+            "name": "cluster_id",
+            "required": true,
+            "schema": {
+              "description": "The Cluster's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseClusterSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Restore an archived Cluster",
+        "tags": [
+          "clusters"
         ]
       }
     },

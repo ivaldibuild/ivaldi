@@ -289,6 +289,37 @@ type CreateTargetInput struct {
 	AgentPrincipalID string
 }
 
+// AgentRevoker suspends a Cluster's former agent and revokes its live
+// credentials. It must write through ctx so it commits with the archive.
+type AgentRevoker interface {
+	RevokeAgent(ctx context.Context, organizationID, principalID string) error
+}
+
+// CreateClusterInput describes a new Cluster.
+type CreateClusterInput struct {
+	OrganizationID string
+	// Slug is derived from DisplayName when empty, and never changes.
+	Slug        string
+	DisplayName string
+	Runtime     Runtime
+}
+
+// ClusterService manages Clusters, the Organization-level objects that record
+// the runtime agent serving a Kubernetes cluster. Permissions are checked on
+// the Organization, since a Cluster belongs to no Workspace.
+type ClusterService interface {
+	CreateCluster(ctx context.Context, actor identity.Actor, in CreateClusterInput) (*Cluster, error)
+	GetCluster(ctx context.Context, actor identity.Actor, organizationID, clusterID string) (*Cluster, error)
+	ListClusters(ctx context.Context, actor identity.Actor, query ListClustersQuery) (*pagination.Result[*Cluster], error)
+	UpdateCluster(ctx context.Context, actor identity.Actor, organizationID, clusterID string, props UpdateClusterProps) (*Cluster, error)
+	// ArchiveCluster archives a Cluster, suspends its agent, and revokes its
+	// credentials. It is refused while the Cluster has active Targets.
+	ArchiveCluster(ctx context.Context, actor identity.Actor, organizationID, clusterID string) (*Cluster, error)
+	// RestoreCluster restores an archived Cluster, which has no agent until a
+	// new enrolment token is redeemed.
+	RestoreCluster(ctx context.Context, actor identity.Actor, organizationID, clusterID string) (*Cluster, error)
+}
+
 // LifecycleService manages Lifecycles and their phases.
 type LifecycleService interface {
 	CreateLifecycle(ctx context.Context, actor identity.Actor, in CreateLifecycleInput) (*Lifecycle, error)

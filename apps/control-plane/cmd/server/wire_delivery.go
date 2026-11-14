@@ -2,14 +2,17 @@ package server
 
 import (
 	auditpg "github.com/ivaldibuild/ivaldi-control-plane/internal/audit/postgres"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/change"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/applications"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/clusters"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/deployments"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/environments"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/lifecycles"
 	deliverypg "github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/registries"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/releases"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/enrollment"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/authorizer"
 	iampg "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/team"
@@ -76,7 +79,30 @@ func (a *app) wireDelivery() error {
 	applicationRepo := deliverypg.NewApplicationRepository(a.db)
 	registryRepo := deliverypg.NewRegistryRepository(a.db)
 	targetRepo := deliverypg.NewTargetRepository(a.db)
+	clusterRepo := deliverypg.NewClusterRepository(a.db)
 	workspaces := workspace.NewLookups(workspacepg.NewRepository(a.db))
+
+	revoker, err := enrollment.NewAgentRevoker(
+		iampg.NewPrincipalRepository(a.db),
+		iampg.NewWorkloadRepository(a.db),
+		iampg.NewWorkloadCredentialRepository(a.db),
+		change.Writer{Tx: a.tx, Outbox: a.outbox},
+	)
+	if err != nil {
+		return err
+	}
+
+	clusterSvc, err := clusters.NewClusterService(
+		clusters.WithClusterRepo(clusterRepo),
+		clusters.WithAgentRevoker(revoker),
+		clusters.WithAuthorizer(a.authz),
+		clusters.WithTransactor(a.tx),
+		clusters.WithOutboxRecorder(a.outbox),
+		clusters.WithAuditRecorder(a.audit),
+	)
+	if err != nil {
+		return err
+	}
 
 	envs, err := environments.NewEnvironmentService(
 		environments.WithEnvironmentRepo(envRepo),
@@ -174,6 +200,7 @@ func (a *app) wireDelivery() error {
 	}
 
 	a.services.environments, a.services.registries, a.services.lifecycles = envs, regs, lifecycleSvc
+	a.services.clusters = clusterSvc
 	a.services.applications, a.services.releases = apps, rels
 	a.services.deployments = deps
 	return nil

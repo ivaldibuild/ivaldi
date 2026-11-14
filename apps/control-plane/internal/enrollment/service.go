@@ -513,51 +513,7 @@ func (s *service) revokeOldAgent(ctx context.Context, organizationID string, tar
 	if target.AgentPrincipalID() == nil {
 		return nil
 	}
-	principal, err := s.principals.Get(ctx, organizationID, *target.AgentPrincipalID())
-	if errors.Is(err, iam.ErrNotFound) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if principal.Kind != iam.PrincipalWorkload {
-		return nil
-	}
-	old, err := s.workloads.Get(ctx, organizationID, principal.ID)
-	if errors.Is(err, iam.ErrNotFound) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if old.Active() {
-		if err := old.Suspend(); err != nil {
-			return err
-		}
-		if err := s.workloads.Write(ctx, old); err != nil {
-			return err
-		}
-		if err := s.writer.Events(ctx, iam.AggregateWorkload, old.ID(), old); err != nil {
-			return err
-		}
-	}
-	credentials, err := s.credentials.ListByPrincipal(ctx, organizationID, old.ID())
-	if err != nil {
-		return err
-	}
-	for _, credential := range credentials {
-		if credential.Revoked() {
-			continue
-		}
-		credential.Revoke()
-		if err := s.credentials.Write(ctx, credential); err != nil {
-			return err
-		}
-		if err := s.writer.Events(ctx, iam.AggregateWorkloadCredential, credential.ID(), credential); err != nil {
-			return err
-		}
-	}
-	return nil
+	return revokePrincipal(ctx, s.principals, s.workloads, s.credentials, s.writer, organizationID, *target.AgentPrincipalID())
 }
 
 func (s *service) events(ctx context.Context, workload *iam.Workload, credential *iam.WorkloadCredential, token *iam.WorkloadEnrollmentToken, target *delivery.Target) error {

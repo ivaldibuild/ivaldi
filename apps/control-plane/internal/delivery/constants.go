@@ -46,6 +46,7 @@ const AssignmentPageSize = 100
 const (
 	AggregateEnvironment = "delivery.Environment"
 	AggregateTarget      = "delivery.Target"
+	AggregateCluster     = "delivery.Cluster"
 	AggregateLifecycle   = "delivery.Lifecycle"
 	AggregateRegistry    = "delivery.Registry"
 	AggregateApplication = "delivery.Application"
@@ -81,6 +82,11 @@ const (
 	// Deployments. Both follow the Application or the Target's Environment.
 	PermissionDeploymentRead   = "deployment.read"
 	PermissionDeploymentCreate = "deployment.create"
+	// PermissionClusterRead reads Clusters and their agent status on the
+	// Organization; PermissionClusterManage creates, changes, archives, and
+	// restores them, and creates their enrolment tokens.
+	PermissionClusterRead   = "cluster.read"
+	PermissionClusterManage = "cluster.manage"
 )
 
 // Actions name what an actor asks the authorizer to allow. Policy rules
@@ -162,6 +168,14 @@ const (
 	ActionTargetRead            = "target.read"
 	ActionTargetRestore         = "target.restore"
 	ActionTargetUpdate          = "target.update"
+
+	ActionClusterCreate          = "cluster.create"
+	ActionClusterList            = "cluster.list"
+	ActionClusterRead            = "cluster.read"
+	ActionClusterUpdate          = "cluster.update"
+	ActionClusterArchive         = "cluster.archive"
+	ActionClusterRestore         = "cluster.restore"
+	ActionClusterCreateEnrolment = "cluster.create_enrolment"
 )
 
 // Audit event types this capability emits.
@@ -176,6 +190,12 @@ const (
 	EventTargetAgentAssigned = "target.agent_assigned"
 	EventTargetArchived      = "target.archived"
 	EventTargetRestored      = "target.restored"
+
+	EventClusterCreated       = "cluster.created"
+	EventClusterUpdated       = "cluster.updated"
+	EventClusterAgentAssigned = "cluster.agent_assigned"
+	EventClusterArchived      = "cluster.archived"
+	EventClusterRestored      = "cluster.restored"
 
 	EventLifecycleCreated  = "lifecycle.created"
 	EventLifecycleUpdated  = "lifecycle.updated"

@@ -646,6 +646,76 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/clusters': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List the Organization's Clusters */
+    get: operations['list-clusters'];
+    put?: never;
+    /** Create a Cluster */
+    post: operations['create-cluster'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/clusters/{cluster_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get a Cluster */
+    get: operations['get-cluster'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Change a Cluster's display name */
+    patch: operations['update-cluster'];
+    trace?: never;
+  };
+  '/v1/clusters/{cluster_id}/archive': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Archive a Cluster that has no active Targets */
+    post: operations['archive-cluster'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/clusters/{cluster_id}/restore': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Restore an archived Cluster */
+    post: operations['restore-cluster'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/connections': {
     parameters: {
       query?: never;
@@ -2209,6 +2279,11 @@ export interface components {
       /** Format: date-time */
       updated_at: string;
     };
+    AgentFailure: {
+      /** Format: date-time */
+      at: string;
+      reason: string;
+    };
     AgentInTeam: {
       agent: components['schemas']['AgentSnapshot'];
       team: components['schemas']['TeamSnapshot'];
@@ -2446,6 +2521,26 @@ export interface components {
       /** Format: date-time */
       updated_at: string;
     };
+    ClusterSnapshot: {
+      agent_capabilities: {
+        [key: string]: unknown;
+      };
+      agent_last_failure: components['schemas']['AgentFailure'];
+      agent_principal_id: string | null;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      deleted_at: string | null;
+      display_name: string;
+      id: string;
+      /** Format: date-time */
+      last_reported_at: string | null;
+      organization_id: string;
+      runtime: string;
+      slug: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
     CompleteInstallationRequestBody: {
       /**
        * Format: uri
@@ -2597,6 +2692,23 @@ export interface components {
       /** @description The rules a Release must meet */
       rules?: components['schemas']['RuleBody'][];
       /** @description Url slug for the channel; derived from the display name when omitted */
+      slug?: string;
+    };
+    CreateClusterRequestBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/CreateClusterRequestBody.json
+       */
+      readonly $schema?: string;
+      /** @description The display name for the cluster */
+      display_name: string;
+      /**
+       * @description The runtime the cluster runs
+       * @enum {string}
+       */
+      runtime: 'kubernetes';
+      /** @description Url slug for the cluster; derived from the display name when omitted, and never changes */
       slug?: string;
     };
     CreateConnectionRequestBody: {
@@ -3694,6 +3806,20 @@ export interface components {
       /** @description Request status */
       status: string;
     };
+    ResponseClusterSnapshot: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseClusterSnapshot.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['ClusterSnapshot'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
     ResponseConnectionSnapshot: {
       /**
        * Format: uri
@@ -4212,6 +4338,20 @@ export interface components {
       /** @description Request status */
       status: string;
     };
+    ResponseResultClusterSnapshot: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseResultClusterSnapshot.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['ResultClusterSnapshot'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
     ResponseResultDeploymentSnapshot: {
       /**
        * Format: uri
@@ -4500,6 +4640,15 @@ export interface components {
       has_next: boolean;
       has_previous: boolean;
       items: components['schemas']['ChangeSnapshot'][];
+      next_cursor: string | null;
+      previous_cursor: string | null;
+      /** Format: int64 */
+      total_count: number;
+    };
+    ResultClusterSnapshot: {
+      has_next: boolean;
+      has_previous: boolean;
+      items: components['schemas']['ClusterSnapshot'][];
       next_cursor: string | null;
       previous_cursor: string | null;
       /** Format: int64 */
@@ -4930,6 +5079,16 @@ export interface components {
       display_name?: string;
       /** @description New slug */
       slug?: string;
+    };
+    UpdateClusterRequestBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/UpdateClusterRequestBody.json
+       */
+      readonly $schema?: string;
+      /** @description New display name. The slug and runtime do not change */
+      display_name?: string;
     };
     UpdateEnvironmentRequestBody: {
       /**
@@ -6711,6 +6870,213 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ResponseChannelSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'list-clusters': {
+    parameters: {
+      query?: {
+        /** @description Include archived Clusters */
+        include_archived?: boolean;
+        /** @description Most items to return */
+        limit?: number;
+        /** @description Field to sort by */
+        sort_by?: string;
+        /** @description Sort direction */
+        sort_order?: 'asc' | 'desc';
+        /** @description Cursor from a previous page's next_cursor */
+        next_cursor?: string;
+        /** @description Cursor from a previous page's previous_cursor */
+        previous_cursor?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseResultClusterSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'create-cluster': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateClusterRequestBody'];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseClusterSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'get-cluster': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Cluster's ID */
+        cluster_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseClusterSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'update-cluster': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Cluster's ID */
+        cluster_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateClusterRequestBody'];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseClusterSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'archive-cluster': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Cluster's ID */
+        cluster_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseClusterSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'restore-cluster': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Cluster's ID */
+        cluster_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseClusterSnapshot'];
         };
       };
       /** @description Error */

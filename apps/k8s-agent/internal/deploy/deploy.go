@@ -49,7 +49,21 @@ type Assignment struct {
 	System map[string]string
 	// HelmReleaseName is set when the deployer is helm.
 	HelmReleaseName string
+	// Reason is rollout, redeploy, or rollback. A rollback is applied like
+	// any other assignment: the control plane builds it from the restored
+	// Deployment's chart, images, and configuration, and the deployer
+	// never uses its own rollback.
+	Reason string
+	// Restores is the Deployment a rollback replays.
+	Restores string
 }
+
+// IsRollback reports whether the assignment replays an earlier Deployment.
+func (a Assignment) IsRollback() bool { return a.Reason == ReasonRollback }
+
+// ReasonRollback is the reason of an assignment that replays an earlier
+// Deployment.
+const ReasonRollback = "rollback"
 
 // Step names a stage of an apply in progress reports.
 type Step string
@@ -163,6 +177,10 @@ func FromAPI(a apiclient.DeploymentAssignment, clusterSlug string) Assignment {
 	}
 	if a.Apply.Helm != nil {
 		out.HelmReleaseName = a.Apply.Helm.ReleaseName
+	}
+	out.Reason = string(a.Apply.Reason)
+	if a.Apply.Restores != nil {
+		out.Restores = *a.Apply.Restores
 	}
 	return out
 }

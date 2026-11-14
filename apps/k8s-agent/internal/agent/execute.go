@@ -136,8 +136,12 @@ func (e *executor) apply(ctx context.Context, a deploy.Assignment) {
 		return
 	}
 	log.Info("applied", "skipped", applied.Skipped, "ref", applied.Ref)
+	detail := map[string]any{"external_ref": applied.Ref, "already_applied": applied.Skipped}
+	if a.IsRollback() {
+		detail["restores"] = a.Restores
+	}
 	_ = e.reporter.Send(final, a.DeploymentID, report.Report{
 		Step: "applied", Kind: report.KindStatusChanged, Status: apiclient.ReportDeploymentRequestBodyStatusProgressing,
-		Detail: map[string]any{"external_ref": applied.Ref, "already_applied": applied.Skipped},
+		Detail: detail,
 	})
 }

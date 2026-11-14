@@ -392,3 +392,29 @@ func TestStuckRevision_TheRecoveryCommandClearsIt(t *testing.T) {
 	assert.Equal(t, 1, rel.Version)
 	assert.Equal(t, releasecommon.StatusDeployed, rel.Info.Status, "the pending revision is gone, so the next apply upgrades")
 }
+
+func TestApply_ARollbackIsANewRevisionOfTheEarlierConfiguration(t *testing.T) {
+	f := newFixture(t)
+	first := assignment("dep_1")
+	_, err := f.deployer.Apply(t.Context(), first, f.progress)
+	require.NoError(t, err)
+
+	second := assignment("dep_2")
+	second.Images = map[string]values.Image{"api": {Repository: "ghcr.io/acme/api", Digest: "sha256:def"}}
+	_, err = f.deployer.Apply(t.Context(), second, f.progress)
+	require.NoError(t, err)
+
+	// The control plane builds a rollback from the restored Deployment:
+	// its chart, images, and overlays, under a new Deployment ID.
+	rollback := first
+	rollback.DeploymentID, rollback.Reason, rollback.Restores = "dep_3", deploy.ReasonRollback, "dep_1"
+	applied, err := f.deployer.Apply(t.Context(), rollback, f.progress)
+	require.NoError(t, err)
+	assert.Equal(t, "3", applied.Ref["revision"])
+
+	rel, err := latest(f.store, "payments")
+	require.NoError(t, err)
+	assert.Contains(t, rel.Manifest, "image: ghcr.io/acme/api@sha256:abc", "the first Deployment's digest runs again")
+	assert.Equal(t, 0, rel.Info.RollbackRevision, "applied as an upgrade, not a helm rollback")
+	assert.Equal(t, "dep_3", rel.Labels[releaseLabel])
+}

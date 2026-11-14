@@ -40,7 +40,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: agent
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          {{- /* An image tag cannot hold SemVer build metadata's "+"; CI tags
+               the image with "_" in its place, as Helm does in labels. */}}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default (.Chart.AppVersion | replace "+" "_") }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             allowPrivilegeEscalation: false

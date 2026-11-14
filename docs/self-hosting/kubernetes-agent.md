@@ -11,7 +11,7 @@ CI publishes both on every push to `main` and on every `v*` tag, with one versio
 | Agent image | `ghcr.io/ivaldibuild/ivaldi-k8s-agent:<version>` |
 | Agent chart | `oci://ghcr.io/ivaldibuild/charts/ivaldi-agent --version <version>` |
 
-`<version>` is what `scripts/version.sh` prints for the commit: `0.4.0` on a tag, `0.4.0-3-gabc1234` after one, and `0.0.0-gabc1234` while the repository has no tags. The control plane carries the same version, and the guide installs the chart version that matches it, unless `runners.agent_chart_version` says otherwise. A chart version is never overwritten, and the chart is published only after its image.
+The image tag is the version with any `+` (SemVer build metadata) written as `_`, since an image tag cannot contain `+`; the chart renders the tag the same way. `<version>` is what `scripts/version.sh` prints for the commit: `0.4.0` on a tag, `0.4.0-3-gabc1234` after one, and `0.0.0-gabc1234` while the repository has no tags. The control plane carries the same version, and the guide installs the chart version that matches it, unless `runners.agent_chart_version` says otherwise. A chart version is never overwritten, and the chart is published only after its image.
 
 ## Mirrors and air gaps
 

@@ -375,11 +375,15 @@ jobs:
           # build` does, which needs tags.
           fetch-depth: 0
       # One version for the control plane, the agent, its image, and its
-      # chart.
+      # chart. An image tag cannot hold SemVer build metadata's "+", so the
+      # tag has "_" in its place, which the agent chart renders the same way.
       - name: Describe version
         id: version
         if: matrix.changed != 'false'
-        run: echo "version=$(scripts/version.sh)" >> "$GITHUB_OUTPUT"
+        run: |
+          version=$(scripts/version.sh)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=${version//+/_}" >> "$GITHUB_OUTPUT"
       # Tags each image with the full commit SHA, and with `main` on main. The
       # labels include org.opencontainers.image.source, which links the ghcr.io
       # package to this repository so it inherits the repository's access.
@@ -392,7 +396,7 @@ jobs:
           tags: |
             type=sha,format=long
             type=ref,event=branch
-            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=${{ steps.version.outputs.tag }}
           labels: |
             org.opencontainers.image.version=${{ steps.version.outputs.version }}
       - name: Log in to ghcr.io

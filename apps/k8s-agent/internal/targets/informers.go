@@ -10,6 +10,7 @@ import (
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -39,6 +40,9 @@ type Informers interface {
 	// namespace whose labels match selector, from the informer caches. It
 	// returns ErrNotWatched when namespace is not watched or not synced.
 	Workloads(namespace string, selector map[string]string) ([]*unstructured.Unstructured, error)
+	// Lister reads namespace from the caches, or returns ErrNotWatched
+	// when it is not watched or not synced.
+	Lister(namespace string) (Lister, error)
 	// Stop stops every informer.
 	Stop()
 }
@@ -74,6 +78,7 @@ func (n *namespaceInformers) Watch(ctx context.Context, namespaces []string, tim
 		factory.Apps().V1().Deployments().Informer()
 		factory.Apps().V1().StatefulSets().Informer()
 		factory.Apps().V1().DaemonSets().Informer()
+		factory.Apps().V1().ControllerRevisions().Informer()
 		r := &running{factory: factory, stop: make(chan struct{})}
 		factory.Start(r.stop)
 		n.running[ns] = r
@@ -170,6 +175,64 @@ func (n *namespaceInformers) Workloads(namespace string, selector map[string]str
 		out = append(out, &unstructured.Unstructured{Object: content})
 	}
 	return out, nil
+}
+
+// Lister reads one watched namespace's objects from the informer caches.
+type Lister interface {
+	Deployments(selector labels.Selector) ([]*appsv1.Deployment, error)
+	StatefulSets(selector labels.Selector) ([]*appsv1.StatefulSet, error)
+	DaemonSets(selector labels.Selector) ([]*appsv1.DaemonSet, error)
+	ReplicaSets() ([]*appsv1.ReplicaSet, error)
+	ControllerRevisions() ([]*appsv1.ControllerRevision, error)
+	Pods() ([]*corev1.Pod, error)
+}
+
+func (n *namespaceInformers) Lister(namespace string) (Lister, error) {
+	n.mu.Lock()
+	r, ok := n.running[namespace]
+	n.mu.Unlock()
+	if !ok {
+		return nil, ErrNotWatched
+	}
+	core, apps := r.factory.Core().V1(), r.factory.Apps().V1()
+	for _, informer := range []cache.SharedIndexInformer{
+		core.Pods().Informer(), apps.ReplicaSets().Informer(), apps.Deployments().Informer(),
+		apps.StatefulSets().Informer(), apps.DaemonSets().Informer(), apps.ControllerRevisions().Informer(),
+	} {
+		if !informer.HasSynced() {
+			return nil, ErrNotWatched
+		}
+	}
+	return namespaceLister{factory: r.factory, namespace: namespace}, nil
+}
+
+type namespaceLister struct {
+	factory   informers.SharedInformerFactory
+	namespace string
+}
+
+func (l namespaceLister) Deployments(selector labels.Selector) ([]*appsv1.Deployment, error) {
+	return l.factory.Apps().V1().Deployments().Lister().Deployments(l.namespace).List(selector)
+}
+
+func (l namespaceLister) StatefulSets(selector labels.Selector) ([]*appsv1.StatefulSet, error) {
+	return l.factory.Apps().V1().StatefulSets().Lister().StatefulSets(l.namespace).List(selector)
+}
+
+func (l namespaceLister) DaemonSets(selector labels.Selector) ([]*appsv1.DaemonSet, error) {
+	return l.factory.Apps().V1().DaemonSets().Lister().DaemonSets(l.namespace).List(selector)
+}
+
+func (l namespaceLister) ReplicaSets() ([]*appsv1.ReplicaSet, error) {
+	return l.factory.Apps().V1().ReplicaSets().Lister().ReplicaSets(l.namespace).List(labels.Everything())
+}
+
+func (l namespaceLister) ControllerRevisions() ([]*appsv1.ControllerRevision, error) {
+	return l.factory.Apps().V1().ControllerRevisions().Lister().ControllerRevisions(l.namespace).List(labels.Everything())
+}
+
+func (l namespaceLister) Pods() ([]*corev1.Pod, error) {
+	return l.factory.Core().V1().Pods().Lister().Pods(l.namespace).List(labels.Everything())
 }
 
 // withKind sets the type information informers leave empty, which status

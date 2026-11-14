@@ -51,6 +51,7 @@ var observed = []struct{ group, resource string }{
 	{"apps", "deployments"},
 	{"apps", "statefulsets"},
 	{"apps", "daemonsets"},
+	{"apps", "controllerrevisions"},
 }
 
 // observePermissions is what observing a namespace needs.

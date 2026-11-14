@@ -106,12 +106,14 @@ func (a *agent) heartbeatLoop(ctx context.Context, tracker targets.Tracker, refr
 }
 
 // assignmentLoop polls for assignments at the control plane's interval,
-// applies them, and reports the health of what is rolling out or running. When ctx ends it waits for the applies in flight, which
+// applies them, reports the health of what is rolling out or running, and
+// reports what each Application runs when it changes. When ctx ends it waits for the applies in flight, which
 // report nothing once stopped, so it returns promptly.
 func (a *agent) assignmentLoop(ctx context.Context, tracker targets.Tracker) {
 	exec := newExecutor(a.cp, a.deployers, a.reporter, a.log, a.cfg.MaxConcurrentApplies)
 	defer exec.wait()
 	health := newRollouts(tracker, a.reporter, a.log)
+	seen := newObservations(a.cp, tracker.Lister, a.log)
 	for {
 		set := tracker.Current()
 		assignments, err := exec.poll(ctx, set.Cluster.Slug)
@@ -120,6 +122,9 @@ func (a *agent) assignmentLoop(ctx context.Context, tracker targets.Tracker) {
 			health.check(ctx, toWatch(assignments, set))
 		case ctx.Err() == nil:
 			a.handle(err, "could not poll for assignments")
+		}
+		if err := seen.check(ctx, set, assignments); err != nil && ctx.Err() == nil {
+			a.handle(err, "could not observe")
 		}
 		select {
 		case <-ctx.Done():

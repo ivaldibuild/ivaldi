@@ -95,7 +95,7 @@ func Build(_ context.Context, in Input) (Result, error) {
 		}
 	}
 
-	if err := set(merged, "global.ivaldi", in.Generated.values()); err != nil {
+	if err := setGenerated(merged, in.Generated.values()); err != nil {
 		return Result{}, err
 	}
 	return Result{Values: merged}, nil
@@ -182,12 +182,36 @@ func set(m map[string]any, path string, value any) error {
 	return nil
 }
 
+// generatedPath is where Ivaldi's generated values go. It is Ivaldi's
+// alone: overlays cannot add to it and variables cannot write into it.
+const generatedPath = "global.ivaldi"
+
+// setGenerated puts the generated values at global.ivaldi, replacing
+// anything an overlay put there, so a chart never reads an artifact or a
+// value that is not this Deployment's. Other keys under global are kept.
+func setGenerated(m map[string]any, generated map[string]any) error {
+	global, ok := m["global"].(map[string]any)
+	switch {
+	case ok:
+	case m["global"] == nil:
+		global = map[string]any{}
+		m["global"] = global
+	default:
+		return fmt.Errorf("an overlay sets global to something that is not a map")
+	}
+	global["ivaldi"] = generated
+	return nil
+}
+
 // checkPaths refuses two variables writing the same values path, or one
 // path inside another, which would have one silently overwrite the other.
 func checkPaths(vars []Variable) error {
 	for i, a := range vars {
 		if a.ValuesPath == "" {
 			continue
+		}
+		if overlaps(a.ValuesPath, generatedPath) {
+			return fmt.Errorf("variable %s writes %q, which is reserved for Ivaldi's generated values", a.Name, a.ValuesPath)
 		}
 		for _, b := range vars[i+1:] {
 			if b.ValuesPath == "" {

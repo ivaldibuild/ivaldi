@@ -136,3 +136,29 @@ func TestBuild_AddsIvaldisGeneratedValues(t *testing.T) {
 		},
 	}, got.Values["global"])
 }
+
+func TestBuild_GeneratedValuesReplaceWhatOverlaysPutThere(t *testing.T) {
+	got, err := Build(t.Context(), Input{
+		Overlays:  []Document{doc("a.yaml", "global:\n  imageRegistry: mirror.example.com\n  ivaldi:\n    artifacts: {old: {image: stale@sha256:old}}\n    extra: chart-controlled\n")},
+		Generated: Generated{Application: "app_1", Artifacts: map[string]Image{"api": {Repository: "ghcr.io/acme/api", Digest: "sha256:abc"}}},
+	})
+	require.NoError(t, err)
+	global := got.Values["global"].(map[string]any)
+	assert.Equal(t, "mirror.example.com", global["imageRegistry"], "other global keys are kept")
+	ivaldi := global["ivaldi"].(map[string]any)
+	assert.NotContains(t, ivaldi, "extra")
+	assert.Equal(t, []string{"api"}, keys(ivaldi["artifacts"].(map[string]any)), "only this Release's artifacts")
+
+	_, err = Build(t.Context(), Input{Variables: []Variable{{Name: "Hack", ValuesPath: "global.ivaldi.release", Value: "x"}}})
+	require.ErrorContains(t, err, "reserved for Ivaldi's generated values")
+	_, err = Build(t.Context(), Input{Variables: []Variable{{Name: "Ok", ValuesPath: "global.ivaldiExtra", Value: "x"}}})
+	require.NoError(t, err, "a sibling key that only shares the prefix is not reserved")
+}
+
+func keys(m map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}

@@ -44,6 +44,9 @@ type Config struct {
 	// in-cluster configuration.
 	Kubeconfig string
 	LogLevel   string
+	// AllowInsecureHTTP permits an http:// server URL, which sends
+	// credentials in plaintext; for local development only.
+	AllowInsecureHTTP bool
 }
 
 func (c *Config) bind(flags *pflag.FlagSet) {
@@ -65,6 +68,8 @@ func (c *Config) bind(flags *pflag.FlagSet) {
 	flags.StringVar(&c.PodName, "pod-name", "", "This replica's name in the Lease; defaults to the host name")
 	flags.StringVar(&c.Kubeconfig, "kubeconfig", "", "Kubeconfig for running outside a cluster; defaults to the in-cluster configuration")
 	flags.StringVar(&c.LogLevel, "log-level", "info", "Log level: debug, info, warn, or error")
+	flags.BoolVar(&c.AllowInsecureHTTP, "allow-insecure-http", false,
+		"Allow an http:// server URL, which sends credentials in plaintext; for local development only")
 }
 
 // bindEnv sets every flag not given on the command line from its
@@ -91,7 +96,9 @@ func (c *Config) complete(readFile func(string) ([]byte, error), hostname func()
 	if c.ServerURL == "" {
 		errs = append(errs, errors.New("--server-url is required"))
 	} else if u, err := url.Parse(c.ServerURL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
-		errs = append(errs, fmt.Errorf("--server-url %q must be an http or https URL", c.ServerURL))
+		errs = append(errs, fmt.Errorf("--server-url %q must be an https URL", c.ServerURL))
+	} else if u.Scheme == "http" && !c.AllowInsecureHTTP {
+		errs = append(errs, fmt.Errorf("--server-url %q must use https: the agent sends its credentials to it; pass --allow-insecure-http for local development", c.ServerURL))
 	}
 	switch method := auth.Method(c.AuthenticationMethod); {
 	case !method.Valid():

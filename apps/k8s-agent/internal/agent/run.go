@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -39,13 +40,16 @@ type agent struct {
 	enrolRetry time.Duration
 }
 
-// run enrols, takes the Lease, and works until ctx ends. Without a
-// credential it waits, not ready, for a new enrolment token rather than
-// exiting, so a Pod that needs one does not crash-loop.
+// run takes the Lease, enrols, and works until ctx ends. Credentials are
+// loaded and changed only while the Lease is held, and reloaded at each
+// acquisition, so two replicas never redeem or rewrite them at once and a
+// replica taking over never uses a stale copy. Without a credential it
+// releases the Lease and waits, not ready, for a new enrolment token
+// rather than exiting, so a Pod that needs one does not crash-loop.
 func (a *agent) run(ctx context.Context) error {
 	waiting := false
 	for {
-		st, err := a.creds.Enrol(ctx)
+		err := a.lead(ctx)
 		switch {
 		case ctx.Err() != nil:
 			return nil
@@ -54,32 +58,30 @@ func (a *agent) run(ctx context.Context) error {
 				a.log.Warn("waiting for an enrolment token", "secret", a.cfg.EnrolmentSecret, "namespace", a.cfg.Namespace)
 				waiting = true
 			}
-			if !a.sleep(ctx) {
-				return nil
-			}
-			continue
-		case err != nil:
+		case errors.Is(err, errEnrol):
 			a.log.Error("could not enrol; retrying", "error", err, "in", a.enrolRetry)
-			if !a.sleep(ctx) {
-				return nil
-			}
+		case errors.Is(err, auth.ErrCredentialLost):
+			// The next acquisition finds no credential and waits.
+			waiting = false
 			continue
+		default:
+			return err
 		}
-		waiting = false
-		a.ready.set(conditionEnrolled, true)
-		err = a.lead(ctx, st)
-		a.ready.set(conditionEnrolled, false)
-		if errors.Is(err, auth.ErrCredentialLost) {
-			continue
+		if !a.sleep(ctx) {
+			return nil
 		}
-		return err
 	}
 }
 
-// lead holds the Lease and works while it does. It returns nil when ctx
-// ends, errLeaseLost when the Lease is lost, and otherwise what the work
-// returned, such as auth.ErrCredentialLost.
-func (a *agent) lead(ctx context.Context, st state.State) error {
+// errEnrol is an enrolment failure worth retrying, such as the state Secret
+// being unreadable for a moment.
+var errEnrol = errors.New("enrolment failed")
+
+// lead holds the Lease, enrols, and works while it holds it. It returns
+// nil when ctx ends, errLeaseLost when the Lease is lost, and otherwise
+// why the work stopped, such as auth.ErrNotEnrolled or
+// auth.ErrCredentialLost; the Lease is released either way.
+func (a *agent) lead(ctx context.Context) error {
 	leadCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -101,7 +103,7 @@ func (a *agent) lead(ctx context.Context, st state.State) error {
 				close(started)
 				defer close(workDone)
 				a.ready.set(conditionLease, true)
-				workErr = a.work(workCtx, st)
+				workErr = a.enrolAndWork(workCtx)
 				// Release the Lease when the work stops on its own.
 				cancel()
 			},
@@ -137,6 +139,23 @@ func (a *agent) lead(ctx context.Context, st state.State) error {
 func (a *agent) work(ctx context.Context, st state.State) error {
 	a.log.Info("working", "cluster_id", st.ClusterID, "organization_id", st.OrganizationID)
 	return a.creds.Maintain(ctx)
+}
+
+// enrolAndWork enrols, reloading the state Secret, and works while ctx
+// lasts.
+func (a *agent) enrolAndWork(ctx context.Context) error {
+	st, err := a.creds.Enrol(ctx)
+	switch {
+	case ctx.Err() != nil:
+		return nil
+	case errors.Is(err, auth.ErrNotEnrolled):
+		return err
+	case err != nil:
+		return fmt.Errorf("%w: %w", errEnrol, err)
+	}
+	a.ready.set(conditionEnrolled, true)
+	defer a.ready.set(conditionEnrolled, false)
+	return a.work(ctx, st)
 }
 
 // sleep waits enrolRetry and reports whether ctx is still live.

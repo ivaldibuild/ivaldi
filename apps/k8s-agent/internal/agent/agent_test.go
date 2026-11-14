@@ -57,7 +57,14 @@ func TestConfig(t *testing.T) {
 			},
 		},
 		{name: "server URL is required", readFile: podNamespace, wantErr: "--server-url is required"},
-		{name: "server URL must be http or https", args: []string{"--server-url", "ftp://x"}, readFile: podNamespace, wantErr: "must be an http or https URL"},
+		{name: "server URL must be a URL", args: []string{"--server-url", "ftp://x"}, readFile: podNamespace, wantErr: "must be an https URL"},
+		{name: "server URL must use https", args: []string{"--server-url", "http://ivaldi.example.com"}, readFile: podNamespace, wantErr: "must use https"},
+		{
+			name:     "http is allowed when asked for",
+			args:     []string{"--server-url", "http://localhost:8660", "--allow-insecure-http"},
+			readFile: podNamespace,
+			check:    func(t *testing.T, c Config) { assert.True(t, c.AllowInsecureHTTP) },
+		},
 		{name: "unknown method", args: []string{"--server-url", "https://x", "--authentication-method", "magic"}, readFile: podNamespace, wantErr: "must be kubernetes, bearer, or mtls"},
 		{name: "mtls needs a certificate", args: []string{"--server-url", "https://x", "--authentication-method", "mtls"}, readFile: podNamespace, wantErr: "--client-cert-file and --client-key-file are required"},
 		{name: "namespace is required outside a Pod", args: []string{"--server-url", "https://x"}, readFile: noFile, wantErr: "--namespace is required"},
@@ -111,6 +118,8 @@ type fakeCredentials struct {
 	enrolErr error
 	enrols   int
 	lose     chan struct{}
+	// onEnrol, when set, runs at each Enrol.
+	onEnrol func()
 }
 
 func newFakeCredentials() *fakeCredentials { return &fakeCredentials{lose: make(chan struct{})} }
@@ -118,6 +127,9 @@ func newFakeCredentials() *fakeCredentials { return &fakeCredentials{lose: make(
 func (f *fakeCredentials) Enrol(context.Context) (state.State, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.onEnrol != nil {
+		f.onEnrol()
+	}
 	f.enrols++
 	if f.enrolErr != nil {
 		return state.State{}, f.enrolErr
@@ -221,4 +233,29 @@ func TestRun_WaitsNotReadyForANewTokenWhenTheCredentialIsLost(t *testing.T) {
 
 	cancel()
 	require.NoError(t, <-done)
+}
+
+func TestRun_EnrolsOnlyWhileHoldingTheLease(t *testing.T) {
+	creds := newFakeCredentials()
+	a, kube := newTestAgent(creds)
+	var heldAtEnrol []bool
+	creds.onEnrol = func() {
+		lease, err := kube.CoordinationV1().Leases("ivaldi-system").Get(context.Background(), "ivaldi-agent", metav1.GetOptions{})
+		heldAtEnrol = append(heldAtEnrol, err == nil && lease.Spec.HolderIdentity != nil && *lease.Spec.HolderIdentity == "pod-1")
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error)
+	go func() { done <- a.run(ctx) }()
+	require.Eventually(t, func() bool { return len(a.ready.unmet()) == 0 }, 5*time.Second, 10*time.Millisecond)
+
+	// Losing the credential re-enrols, which reloads the state, on the
+	// next acquisition.
+	creds.loseCredential(auth.ErrNotEnrolled)
+	require.Eventually(t, func() bool { return creds.enrolCount() >= 3 }, 5*time.Second, 10*time.Millisecond)
+	cancel()
+	require.NoError(t, <-done)
+
+	creds.mu.Lock()
+	defer creds.mu.Unlock()
+	assert.NotContains(t, heldAtEnrol, false, "every Enrol ran while this replica held the Lease")
 }

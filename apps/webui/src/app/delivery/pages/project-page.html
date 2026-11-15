@@ -80,6 +80,13 @@
       }
     </section>
 
+    <app-variable-list
+      [projectId]="project()!.id"
+      [workspaceId]="project()!.workspace_id"
+      [applications]="applicationNames()"
+      [archived]="archived()"
+    />
+
     <app-project-sources [projectId]="project()!.id" [archived]="archived()" />
   </div>
 }

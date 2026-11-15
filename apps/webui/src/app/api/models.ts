@@ -53,6 +53,12 @@ export type ChannelRule = Schemas['ChannelRuleSnapshot'];
 export type Channel = Schemas['ChannelSnapshot'];
 export type Placement = Schemas['PlacementSnapshot'];
 
+/** A named piece of configuration a Project's Applications, or one Application, deploy with. */
+export type Variable = Schemas['VariableSnapshot'];
+export type VariableValue = Schemas['VariableValueSnapshot'];
+/** The Deployments a value applies to; an empty list matches any. */
+export type VariableScope = Schemas['VariableScope'];
+
 /** A Release with each of its Builds in full, from `GET /v1/releases/{id}`. */
 export type Release = Schemas['Release'];
 export type ReleaseStatus = Release['status'];

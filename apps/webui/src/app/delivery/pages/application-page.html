@@ -89,6 +89,13 @@
       />
     </section>
 
+    <app-variable-list
+      [projectId]="application()!.project_id"
+      [applicationId]="id()"
+      [workspaceId]="application()!.workspace_id"
+      [channels]="details.value()!.channels"
+    />
+
     <section aria-labelledby="artifacts-heading" class="flex flex-col gap-4">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <h2 id="artifacts-heading" class="text-heading text-lg font-semibold">Artifacts</h2>

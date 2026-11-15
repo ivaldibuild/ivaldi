@@ -14,6 +14,7 @@ import { DeliveryApi } from '../delivery-api';
 import { PageHeader } from '../page-header';
 import { ProjectSources } from '../project-sources';
 import { ProjectsApi } from '../projects-api';
+import { VariableList } from '../variables/variable-list';
 
 /** One Project: its Applications and where each is placed. Editing it is a page of its own. */
 @Component({
@@ -24,6 +25,7 @@ import { ProjectsApi } from '../projects-api';
     ApplicationGrid,
     PageHeader,
     ProjectSources,
+    VariableList,
     HlmAlertImports,
     HlmBadgeImports,
     HlmButtonImports,
@@ -70,6 +72,10 @@ export class ProjectPage {
   protected readonly groups = computed<GridGroup[]>(() => this.loaded()?.groups ?? []);
   protected readonly hasApplications = computed(
     () => (this.loaded()?.groups.flatMap((group) => group.rows).length ?? 0) > 0,
+  );
+
+  protected readonly applicationNames = computed(() =>
+    this.groups().flatMap((group) => group.rows.map((row) => row.application.display_name)),
   );
 
   protected readonly failure = computed(() => {

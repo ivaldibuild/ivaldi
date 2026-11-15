@@ -105,3 +105,55 @@ func TestDeploymentRepository(t *testing.T) {
 	assert.Equal(t, new(d.ID()), current.CurrentDeploymentID())
 	assert.Equal(t, new(rel.ID()), current.CurrentReleaseID())
 }
+
+// A rollback replays the Release's latest Deployment to the Target that
+// became healthy, and what it recorded survives the round trip.
+func TestDeploymentRepositoryFindsTheDeploymentARollbackReplays(t *testing.T) {
+	f := newFixture(t)
+	builds, releases, deployments := NewBuildRepository(f.db), NewReleaseRepository(f.db), NewDeploymentRepository(f.db)
+	env := f.createEnv(t, orgA, wsA, "prod")
+	lc := f.createLifecycle(t, orgA, wsA, "standard", phase("Prod", env.ID()))
+	app := f.createApp(t, orgA, wsA, projA, "api")
+	api := f.createArtifact(t, orgA, app.ID(), "api")
+	main := f.createChannel(t, orgA, app.ID(), lc.ID(), "main", true)
+	target := f.createTarget(t, orgA, env.ID(), "prod")
+	build := newBuild(orgA, "ghcr.io/acme/api", digest("a"), delivery.BuildDetails{}, delivery.BuildCIReported)
+	_, err := builds.CreateBuild(f.ctx, build)
+	require.NoError(t, err)
+	rel := must(delivery.NewRelease(delivery.NewReleaseProps{
+		OrganizationID: orgA, ApplicationID: app.ID(), ChannelID: main.ID(), Version: "1.0.0",
+		Builds: []delivery.NewReleaseBuildProps{{ArtifactID: api.ID(), BuildID: build.ID()}},
+	}, nil))
+	require.NoError(t, releases.CreateRelease(f.ctx, rel))
+	require.NoError(t, f.apps.CreatePlacement(f.ctx, must(delivery.NewPlacement(delivery.NewPlacementProps{
+		OrganizationID: orgA, ApplicationID: app.ID(), TargetID: target.ID(),
+	}))))
+
+	_, err = deployments.GetLastSucceededDeployment(f.ctx, orgA, rel.ID(), target.ID())
+	require.ErrorIs(t, err, delivery.ErrNotFound, "the release has not been healthy there")
+
+	healthy := func(after time.Duration, props delivery.NewDeploymentProps) *delivery.Deployment {
+		at(t, after)
+		props.OrganizationID, props.ApplicationID, props.ReleaseID = orgA, app.ID(), rel.ID()
+		props.EnvironmentID, props.TargetID, props.Status = env.ID(), target.ID(), release.DeploymentApplying
+		d := must(delivery.NewDeployment(props, nil))
+		require.NoError(t, deployments.CreateDeployment(f.ctx, d))
+		require.NoError(t, d.MoveTo(release.DeploymentProgressing))
+		require.NoError(t, d.RecordSecretVersions([]delivery.SecretVersion{{
+			Name: "Database.Password", StoreID: "sst_01BX5ZZKBKACTAV9WEVGEMMVRZ", Path: "db", Field: "password",
+			Version: "41", Fingerprint: "hmac-sha256:v1:ab", DeliveredAs: delivery.VariableDeliverAsSecret,
+		}}))
+		require.NoError(t, d.MoveTo(release.DeploymentHealthy))
+		require.NoError(t, deployments.UpdateDeployment(f.ctx, d))
+		return d
+	}
+	first := healthy(time.Minute, delivery.NewDeploymentProps{})
+	second := healthy(2*time.Minute, delivery.NewDeploymentProps{
+		Reason: delivery.DeploymentRollback, RestoresDeploymentID: new(first.ID()), SecretsLatest: true,
+	})
+
+	last, err := deployments.GetLastSucceededDeployment(f.ctx, orgA, rel.ID(), target.ID())
+	require.NoError(t, err)
+	assert.Equal(t, second.Snapshot(), last.Snapshot(), "the latest one, with its secret versions and what it restored")
+	assert.Equal(t, "41", last.SecretVersions()[0].Version)
+}

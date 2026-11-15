@@ -104,6 +104,14 @@ func (a *authorized) GetReleaseVariables(ctx context.Context, actor identity.Act
 	return a.next.GetReleaseVariables(ctx, actor, organizationID, releaseID, targetID)
 }
 
+func (a *authorized) RefreshReleaseVariables(ctx context.Context, actor identity.Actor, organizationID, releaseID string, preview bool) (*delivery.ReleaseVariablesRefresh, error) {
+	ctx, err := a.onRelease(ctx, actor, delivery.PermissionReleaseManage, delivery.ActionReleaseRefreshVariables, organizationID, releaseID)
+	if err != nil {
+		return nil, err
+	}
+	return a.next.RefreshReleaseVariables(ctx, actor, organizationID, releaseID, preview)
+}
+
 func (a *authorized) ListReleases(ctx context.Context, actor identity.Actor, q delivery.ListReleasesQuery) (*pagination.Result[*delivery.ReleaseDetail], error) {
 	_, id, err := a.decide(ctx, actor, delivery.PermissionApplicationRead, delivery.ActionReleaseList, q.OrganizationID, q.ApplicationID, nil)
 	if err != nil {

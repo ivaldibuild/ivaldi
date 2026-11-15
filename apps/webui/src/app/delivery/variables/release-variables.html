@@ -68,6 +68,55 @@
     Revision {{ revision()!.revision }}, taken {{ taken() }}. Deployments of this Release use these
     values, whatever the Application's variables are changed to later.
   </p>
+  @if (refreshable()) {
+    @if (!preview()) {
+      <div>
+        <button
+          hlmBtn
+          variant="outline"
+          type="button"
+          [disabled]="refreshing()"
+          (click)="previewRefresh()"
+        >
+          Update variables
+        </button>
+      </div>
+    } @else {
+      <div hlmAlert role="status">
+        @if (preview()!.changed.length === 0) {
+          <p hlmAlertDescription>
+            The Application's variables are the same as this Release's, so there is nothing to
+            update.
+          </p>
+        } @else {
+          <h3 hlmAlertTitle>Updating would change {{ preview()!.changed.join(', ') }}</h3>
+          @if (productionTargets() > 0) {
+            <p hlmAlertDescription>
+              That changes {{ productionVariables() }} on {{ productionTargets() }} production
+              {{ productionTargets() === 1 ? 'Target' : 'Targets' }}, which needs an approval Ivaldi
+              can't ask for yet. To change production's configuration, create a new Release.
+            </p>
+          } @else {
+            <p hlmAlertDescription>
+              Deployments requested from now on use the new values. Ones already made, and rollbacks
+              to them, keep the values they ran with.
+            </p>
+          }
+        }
+        <div class="mt-3 flex flex-wrap gap-2">
+          @if (preview()!.changed.length > 0 && productionTargets() === 0) {
+            <button hlmBtn type="button" [disabled]="refreshing()" (click)="applyRefresh()">
+              Take new revision
+            </button>
+          }
+          <button hlmBtn variant="outline" type="button" (click)="preview.set(null)">Close</button>
+        </div>
+      </div>
+    }
+    @if (refreshError(); as message) {
+      <p class="text-destructive-text text-sm" role="alert">{{ message }}</p>
+    }
+  }
   @if (snapshot().length > 0) {
     <div class="border-border relative overflow-x-auto border">
       <table class="w-full min-w-150 border-collapse text-sm">

@@ -661,7 +661,9 @@ type DeploymentSnapshot struct {
 	Reason                 DeploymentSnapshotReason `json:"reason"`
 	ReleaseId              string                   `json:"release_id"`
 	RequestedAt            time.Time                `json:"requested_at"`
+	RestoresDeploymentId   *string                  `json:"restores_deployment_id"`
 	SecretVersions         []SecretVersion          `json:"secret_versions"`
+	SecretsLatest          bool                     `json:"secrets_latest"`
 	SessionId              *string                  `json:"session_id"`
 	Source                 DeploymentSnapshotSource `json:"source"`
 	StartedAt              *time.Time               `json:"started_at"`

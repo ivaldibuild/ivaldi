@@ -269,9 +269,9 @@ Implemented, and what the agent is built against:
 
 Still to build, and designed elsewhere:
 
-- Rollbacks that replay a Deployment's secret versions and fingerprints, and refreshing a Release's variables ([deployment variables](deployment-variables.md)).
+- Approval of a refresh of a Release's variables that changes production ([deployment variables](deployment-variables.md#refreshes-that-change-production-need-approval)).
 
-Secret Stores (`credentials.secret_stores`, `/v1/workspaces/{id}/secret-stores` and `/v1/secret-stores/{id}`, with `secret_store.read`/`secret_store.manage` on the Workspace) and deployment variables are implemented; setting stores up is in [the self-hosting guide](../self-hosting/secret-stores.md).
+Secret Stores (`credentials.secret_stores`, `/v1/workspaces/{id}/secret-stores` and `/v1/secret-stores/{id}`, with `secret_store.read`/`secret_store.manage` on the Workspace) and deployment variables, with rollbacks that replay a Deployment's revision, secret versions, and fingerprints, are implemented; setting stores up is in [the self-hosting guide](../self-hosting/secret-stores.md).
 
 The separate runner listener (`runners.port`, 8661) is configured but not served; the agent uses the API listener until it is.
 

@@ -1,5 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ReleaseVariables as ReleaseVariablesView } from '../../api/models';
+import {
+  ReleaseVariables as ReleaseVariablesView,
+  ReleaseVariablesRefresh,
+} from '../../api/models';
 import { ReleaseVariables } from './release-variables';
 import { VariablesApi } from './variables-api';
 
@@ -39,12 +42,17 @@ const revision = {
 
 describe('ReleaseVariables', () => {
   let asked: (string | undefined)[];
+  let refreshed: boolean[];
+  let refresh: ReleaseVariablesRefresh;
+  let fixture: ComponentFixture<ReleaseVariables>;
 
   async function render(
     view: ReleaseVariablesView,
     targetId: string | null = null,
+    refreshable = false,
   ): Promise<HTMLElement> {
     asked = [];
+    refreshed = [];
     TestBed.configureTestingModule({
       imports: [ReleaseVariables],
       providers: [
@@ -55,19 +63,34 @@ describe('ReleaseVariables', () => {
               asked.push(target);
               return Promise.resolve(view);
             },
+            refreshReleaseVariables: (_releaseId: string, preview: boolean) => {
+              refreshed.push(preview);
+              return Promise.resolve(refresh);
+            },
           },
         },
       ],
     });
-    const fixture: ComponentFixture<ReleaseVariables> = TestBed.createComponent(ReleaseVariables);
+    fixture = TestBed.createComponent(ReleaseVariables);
     fixture.componentRef.setInput('releaseId', 'rel_1');
     fixture.componentRef.setInput('targetId', targetId);
+    fixture.componentRef.setInput('refreshable', refreshable);
     fixture.detectChanges();
-    for (let i = 0; i < 3; i++) {
+    await settle();
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  async function settle(): Promise<void> {
+    for (let i = 0; i < 4; i++) {
       await new Promise((resolve) => setTimeout(resolve));
       fixture.detectChanges();
     }
-    return fixture.nativeElement as HTMLElement;
+  }
+
+  function button(el: HTMLElement, label: string): HTMLButtonElement {
+    const found = [...el.querySelectorAll('button')].find((b) => b.textContent?.trim() === label);
+    expect(found, `a button labelled "${label}"`).toBeTruthy();
+    return found!;
   }
 
   const rows = (el: HTMLElement) =>
@@ -117,6 +140,34 @@ describe('ReleaseVariables', () => {
       ['Log.Level Written to log.level', 'warn', 'Application Beat 1 less specific value'],
       ['Region', "No value applies here, so this Target doesn't get it"],
     ]);
+  });
+
+  it('previews an update, and takes the revision when production is not changed', async () => {
+    const el = await render({ revision, resolved: [] }, null, true);
+    refresh = { revision, applied: false, changed: ['Log.Level'], production: [] };
+
+    button(el, 'Update variables').click();
+    await settle();
+    expect(el.textContent).toContain('Updating would change Log.Level');
+    button(el, 'Take new revision').click();
+    await settle();
+    expect(refreshed).toEqual([true, false]);
+    expect(asked.length, 'the snapshot is read again').toBe(2);
+  });
+
+  it('does not offer an update that changes production', async () => {
+    const el = await render({ revision, resolved: [] }, null, true);
+    refresh = {
+      revision,
+      applied: false,
+      changed: ['Log.Level'],
+      production: [{ target_id: 'tgt_1', environment_id: 'env_1', variables: ['Log.Level'] }],
+    };
+
+    button(el, 'Update variables').click();
+    await settle();
+    expect(el.textContent).toContain('on 1 production Target');
+    expect([...el.querySelectorAll('button')].map((b) => b.textContent?.trim())).toEqual(['Close']);
   });
 
   it('says when a Release has no snapshot', async () => {

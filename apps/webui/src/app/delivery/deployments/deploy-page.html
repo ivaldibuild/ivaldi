@@ -136,6 +136,28 @@
                 }
                 @case ('ready') {
                   @if (item.preview.state === 'ready') {
+                    @switch (item.preview.changes.reason) {
+                      @case ('rollback') {
+                        <p class="text-foreground text-sm" role="note">
+                          @if (item.preview.changes.restores_deployment_id) {
+                            This is a rollback: {{ release()!.version }} ran here before. It brings
+                            back the variables and the secret versions it last ran with here, and
+                            fails before changing anything if one of those secrets is no longer the
+                            same.
+                          } @else {
+                            This is a rollback: {{ release()!.version }} ran here before, but
+                            another tool deployed it, so there is nothing recorded to bring back. It
+                            uses the Release's current variables and the latest secrets.
+                          }
+                        </p>
+                      }
+                      @case ('redeploy') {
+                        <p class="text-foreground text-sm" role="note">
+                          {{ release()!.version }} already runs here. Deploying it again applies its
+                          current variables and reads the latest secrets.
+                        </p>
+                      }
+                    }
                     <table class="w-full border-collapse text-sm">
                       <thead>
                         <tr class="text-muted-foreground text-left">
@@ -244,6 +266,24 @@
           <h2 hlmAlertTitle>Nothing was deployed</h2>
           <p hlmAlertDescription>{{ message }}</p>
         </div>
+      }
+
+      @if (rollsBack()) {
+        <label class="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            class="accent-primary mt-0.5 size-4"
+            [checked]="latestSecrets()"
+            (change)="latestSecrets.set($any($event.target).checked)"
+          />
+          <span>
+            Roll back with the latest secrets
+            <span class="text-muted-foreground block text-[13px]">
+              Keeps the variables being restored but reads each secret as it is now. Use it when a
+              rollback fails because a secret was rotated.
+            </span>
+          </span>
+        </label>
       }
 
       <div class="border-border flex flex-wrap items-center gap-4 border-t pt-6">

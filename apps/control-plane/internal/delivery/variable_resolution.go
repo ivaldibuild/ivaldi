@@ -279,3 +279,81 @@ func AssignmentSecrets(resolved []ResolvedVariable, stores map[string]SecretStor
 	}
 	return out
 }
+
+// ChangedVariables returns the names of the variables two revisions hold
+// differently: added, removed, or with other values, by name.
+func ChangedVariables(before, after []SnapshotVariable) []string {
+	index := func(variables []SnapshotVariable) map[string]SnapshotVariable {
+		out := map[string]SnapshotVariable{}
+		for _, v := range variables {
+			out[string(v.Source)+"/"+v.Name] = v
+		}
+		return out
+	}
+	old, next := index(before), index(after)
+	var changed []string
+	add := func(name string) {
+		if !slices.Contains(changed, name) {
+			changed = append(changed, name)
+		}
+	}
+	for key, v := range old {
+		if other, ok := next[key]; !ok || !sameSnapshotVariable(v, other) {
+			add(v.Name)
+		}
+	}
+	for key, v := range next {
+		if _, ok := old[key]; !ok {
+			add(v.Name)
+		}
+	}
+	slices.Sort(changed)
+	return changed
+}
+
+func sameSnapshotVariable(a, b SnapshotVariable) bool {
+	if a.Kind != b.Kind || !equalPtr(a.ValuesPath, b.ValuesPath) || !equalPtr(a.DeliverAs, b.DeliverAs) || len(a.Values) != len(b.Values) {
+		return false
+	}
+	for i := range a.Values {
+		if a.Values[i].Value != b.Values[i].Value || !equalPtr(a.Values[i].Secret, b.Values[i].Secret) || !a.Values[i].Scope.equal(b.Values[i].Scope) {
+			return false
+		}
+	}
+	return true
+}
+
+// ChangedWinners returns the names of the variables a Deployment would get
+// differently from two revisions: another value or secret reference, or
+// one where it got none. It is what a refresh changes for a Target.
+func ChangedWinners(before, after []SnapshotVariable, scope DeploymentScope) []string {
+	index := func(variables []SnapshotVariable) map[string]ResolvedVariable {
+		out := map[string]ResolvedVariable{}
+		for _, r := range ResolveVariables(variables, scope) {
+			if r.Winner != nil {
+				out[strings.ToLower(r.Name)] = r
+			}
+		}
+		return out
+	}
+	old, next := index(before), index(after)
+	var changed []string
+	for key, r := range old {
+		other, ok := next[key]
+		if !ok || !sameWinner(r, other) {
+			changed = append(changed, r.Name)
+		}
+	}
+	for key, r := range next {
+		if _, ok := old[key]; !ok {
+			changed = append(changed, r.Name)
+		}
+	}
+	slices.Sort(changed)
+	return changed
+}
+
+func sameWinner(a, b ResolvedVariable) bool {
+	return a.Kind == b.Kind && equalPtr(a.ValuesPath, b.ValuesPath) && equalPtr(a.DeliverAs, b.DeliverAs) &&
+		a.Winner.Value == b.Winner.Value && equalPtr(a.Winner.Secret, b.Winner.Secret)
+}

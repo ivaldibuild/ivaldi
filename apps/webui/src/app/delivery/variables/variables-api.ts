@@ -3,6 +3,7 @@ import { ApiClient } from '../../api/api-client';
 import {
   Environment,
   ReleaseVariables,
+  ReleaseVariablesRefresh,
   SecretStore,
   Target,
   Variable,
@@ -88,6 +89,17 @@ export class VariablesApi {
   releaseVariables(releaseId: string, targetId?: string): Promise<ReleaseVariables> {
     const query = targetId ? `?${new URLSearchParams({ target_id: targetId })}` : '';
     return this.api.get(`/releases/${releaseId}/variables${query}`);
+  }
+
+  /**
+   * Takes a new revision of a Release's variables from its Application's as they are now, or with
+   * `preview` only says what that would change. Refused when it would change production.
+   */
+  refreshReleaseVariables(releaseId: string, preview: boolean): Promise<ReleaseVariablesRefresh> {
+    return this.api.send(
+      'POST',
+      `/releases/${releaseId}/variables/refresh${preview ? '?preview=true' : ''}`,
+    );
   }
 
   /**

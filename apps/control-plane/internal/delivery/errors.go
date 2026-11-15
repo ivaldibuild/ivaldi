@@ -52,6 +52,10 @@ var (
 	// ErrBuildConflict means a report gives a Build a commit other than the
 	// one it was built from.
 	ErrBuildConflict = errors.New("conflicts with the recorded build")
+	// ErrProductionChange means refreshing a Release's variables would
+	// change what production gets, which needs an approval that cannot be
+	// requested yet.
+	ErrProductionChange = errors.New("would change production's configuration")
 	// ErrTagsUnsupported means a Build was named by tag, and tags cannot be
 	// resolved to digests yet.
 	ErrTagsUnsupported = errors.New("tags cannot be resolved to digests yet; give the digest")

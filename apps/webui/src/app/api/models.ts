@@ -92,6 +92,14 @@ export interface ReleaseVariables {
   resolved: ResolvedVariable[];
 }
 
+/**
+ * What refreshing a Release's variables changes, or would change. `revision` is the Release's
+ * current revision after the call, null when it has none.
+ */
+export type ReleaseVariablesRefresh = Omit<Schemas['ReleaseVariablesRefresh'], 'revision'> & {
+  revision: Schemas['ReleaseVariablesSnapshot'] | null;
+};
+
 /** A Release with each of its Builds in full, from `GET /v1/releases/{id}`. */
 export type Release = Schemas['Release'];
 export type ReleaseStatus = Release['status'];

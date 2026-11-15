@@ -2476,11 +2476,18 @@
             "format": "date-time",
             "type": "string"
           },
+          "restores_deployment_id": {
+            "nullable": true,
+            "type": "string"
+          },
           "secret_versions": {
             "items": {
               "$ref": "#/components/schemas/SecretVersion"
             },
             "type": "array"
+          },
+          "secrets_latest": {
+            "type": "boolean"
           },
           "session_id": {
             "nullable": true,
@@ -2556,6 +2563,8 @@
           "policy_decision_id",
           "variable_snapshot_id",
           "secret_versions",
+          "restores_deployment_id",
+          "secrets_latest",
           "findings",
           "requested_at",
           "started_at",
@@ -3860,6 +3869,29 @@
         ],
         "type": "object"
       },
+      "ProductionChange": {
+        "additionalProperties": false,
+        "properties": {
+          "environment_id": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": "string"
+          },
+          "variables": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "target_id",
+          "environment_id",
+          "variables"
+        ],
+        "type": "object"
+      },
       "ProjectSnapshot": {
         "additionalProperties": false,
         "properties": {
@@ -4334,7 +4366,19 @@
             "nullable": true,
             "type": "string"
           },
+          "reason": {
+            "enum": [
+              "rollout",
+              "rollback",
+              "redeploy"
+            ],
+            "type": "string"
+          },
           "release_id": {
+            "type": "string"
+          },
+          "restores_deployment_id": {
+            "nullable": true,
             "type": "string"
           },
           "target_id": {
@@ -4345,6 +4389,8 @@
           "release_id",
           "target_id",
           "current_release_id",
+          "reason",
+          "restores_deployment_id",
           "artifacts",
           "checks",
           "changes"
@@ -4442,6 +4488,36 @@
           "builds",
           "created_at",
           "updated_at"
+        ],
+        "type": "object"
+      },
+      "ReleaseVariablesRefresh": {
+        "additionalProperties": false,
+        "properties": {
+          "applied": {
+            "type": "boolean"
+          },
+          "changed": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "production": {
+            "items": {
+              "$ref": "#/components/schemas/ProductionChange"
+            },
+            "type": "array"
+          },
+          "revision": {
+            "$ref": "#/components/schemas/ReleaseVariablesSnapshot"
+          }
+        },
+        "required": [
+          "revision",
+          "applied",
+          "changed",
+          "production"
         ],
         "type": "object"
       },
@@ -4661,6 +4737,14 @@
             "example": "https://example.com/schemas/RequestDeploymentsRequestBody.json",
             "format": "uri",
             "readOnly": true,
+            "type": "string"
+          },
+          "secrets": {
+            "description": "For a rollback: pinned (the default) reads the secret versions the Release last ran with on the Target, and latest reads the current ones. Other Deployments always read the latest",
+            "enum": [
+              "pinned",
+              "latest"
+            ],
             "type": "string"
           },
           "target_ids": {
@@ -6123,6 +6207,35 @@
           },
           "data": {
             "$ref": "#/components/schemas/ReleaseChanges",
+            "description": "Response payload, always present: an empty list is [], not omitted"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ResponseReleaseVariablesRefresh": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseReleaseVariablesRefresh.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ReleaseVariablesRefresh",
             "description": "Response payload, always present: an empty list is [], not omitted"
           },
           "message": {
@@ -16279,6 +16392,64 @@
           }
         ],
         "summary": "Get the variables a Release deploys with, and what a Target would get",
+        "tags": [
+          "releases"
+        ]
+      }
+    },
+    "/v1/releases/{release_id}/variables/refresh": {
+      "post": {
+        "operationId": "refresh-release-variables",
+        "parameters": [
+          {
+            "description": "The Release",
+            "in": "path",
+            "name": "release_id",
+            "required": true,
+            "schema": {
+              "description": "The Release",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only say what would change, without taking a revision",
+            "explode": false,
+            "in": "query",
+            "name": "preview",
+            "schema": {
+              "description": "Only say what would change, without taking a revision",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseReleaseVariablesRefresh"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Take a new revision of a Release's variables from its Application's, or preview what would change",
         "tags": [
           "releases"
         ]

@@ -36,11 +36,9 @@ func NewReleaseVariablesTaker(variables VariableRepository, revisions ReleaseVar
 	return &ReleaseVariablesTaker{variables: variables, revisions: revisions, locker: locker}, nil
 }
 
-// Take stores the Application's variables and its Project's, as they are
-// now, as the Release's next revision and makes it the current one. It
-// returns the revisions it changed, the new one last, so the caller records
-// their events in the same transaction.
-func (t *ReleaseVariablesTaker) Take(ctx context.Context, rel *Release, projectID string, takenBy *string) ([]*ReleaseVariables, error) {
+// Preview returns what a revision taken now would hold, without storing it:
+// the Application's variables and its Project's, as they are.
+func (t *ReleaseVariablesTaker) Preview(ctx context.Context, rel *Release, projectID string) ([]SnapshotVariable, error) {
 	organizationID := rel.OrganizationID()
 	// The Project's and the Application's variables are two reads; held,
 	// no change lands between them.
@@ -55,7 +53,16 @@ func (t *ReleaseVariablesTaker) Take(ctx context.Context, rel *Release, projectI
 	if err != nil {
 		return nil, fmt.Errorf("list the application's variables: %w", err)
 	}
-	variables, err := SnapshotVariables(project, application)
+	return SnapshotVariables(project, application)
+}
+
+// Take stores the Application's variables and its Project's, as they are
+// now, as the Release's next revision and makes it the current one. It
+// returns the revisions it changed, the new one last, so the caller records
+// their events in the same transaction.
+func (t *ReleaseVariablesTaker) Take(ctx context.Context, rel *Release, projectID string, takenBy *string) ([]*ReleaseVariables, error) {
+	organizationID := rel.OrganizationID()
+	variables, err := t.Preview(ctx, rel, projectID)
 	if err != nil {
 		return nil, err
 	}

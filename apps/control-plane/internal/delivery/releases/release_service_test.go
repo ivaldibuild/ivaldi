@@ -382,3 +382,108 @@ func TestTheServiceCannotChangeAnythingWithoutADecision(t *testing.T) {
 	assert.ErrorIs(t, err, change.ErrUnauthorized)
 	assert.Empty(t, w.releases)
 }
+
+// Refreshing takes a new revision from the Application's variables as they
+// are, unless a production Target the Application is placed on would get
+// another value: that needs an approval that cannot be requested yet.
+func TestRefreshReleaseVariables(t *testing.T) {
+	const staging, production = "env_01BX5ZZKBKACTAV9WEVGEMMVR1", "env_01BX5ZZKBKACTAV9WEVGEMMVR2"
+	level := func(everywhere, inProduction string) []delivery.SnapshotVariable {
+		return []delivery.SnapshotVariable{{
+			Name: "Log.Level", Source: delivery.VariableSourceApplication, Kind: delivery.VariableKindText,
+			Values: []delivery.SnapshotValue{
+				{Value: everywhere},
+				{Value: inProduction, Scope: delivery.VariableScope{EnvironmentIDs: []string{production}}},
+			},
+		}}
+	}
+	setup := func(t *testing.T) (*world, *delivery.Release, *delivery.Target) {
+		w := newWorld(t)
+		rel := w.create(t, "1.4.0", apiBuild("a")).Release
+		env := func(id string, tier delivery.Tier) *delivery.Environment {
+			return must(delivery.NewEnvironment(delivery.NewEnvironmentProps{
+				OrganizationID: org, WorkspaceID: ws, Slug: string(tier), DisplayName: string(tier), Tier: tier,
+			}, &id))
+		}
+		target := func(environmentID, slug string) *delivery.Target {
+			return must(delivery.NewTarget(delivery.NewTargetProps{
+				OrganizationID: org, EnvironmentID: environmentID, ClusterID: "cls_01BX5ZZKBKACTAV9WEVGEMMVRZ", Slug: slug, DisplayName: slug,
+				Runtime: delivery.RuntimeKubernetes, Locator: map[string]string{delivery.LocatorCluster: "c", delivery.LocatorNamespace: slug},
+			}, nil))
+		}
+		prod, stage := target(production, "prod"), target(staging, "stage")
+		w.targets = map[string]*delivery.Target{prod.ID(): prod, stage.ID(): stage}
+		w.environments = []*delivery.Environment{env(staging, delivery.TierStaging), env(production, delivery.TierProduction)}
+		w.lifecycle = must(delivery.NewLifecycle(delivery.NewLifecycleProps{
+			OrganizationID: org, WorkspaceID: ws, DisplayName: "Standard",
+			Phases: []delivery.NewLifecyclePhaseProps{{Name: "Staging", EnvironmentIDs: []string{staging}}, {Name: "Production", EnvironmentIDs: []string{production}}},
+		}, nil))
+		for _, tg := range []*delivery.Target{prod, stage} {
+			w.placements = append(w.placements, must(delivery.NewPlacement(delivery.NewPlacementProps{
+				OrganizationID: org, ApplicationID: w.app.ID(), TargetID: tg.ID(),
+			})))
+		}
+		w.current = map[string]*delivery.ReleaseVariables{rel.ID(): must(delivery.NewReleaseVariables(delivery.NewReleaseVariablesProps{
+			OrganizationID: org, ApplicationID: w.app.ID(), ReleaseID: rel.ID(), Revision: 1, Variables: level("info", "warn"),
+		}, nil))}
+		// A stored revision has no events left to record.
+		w.current[rel.ID()].PullEvents()
+		w.audit, w.events = nil, nil
+		return w, rel, prod
+	}
+
+	t.Run("a change production does not get becomes the next revision", func(t *testing.T) {
+		w, rel, _ := setup(t)
+		w.preview = level("debug", "warn")
+
+		preview, err := w.svc.RefreshReleaseVariables(ctx, ada, org, rel.ID(), true)
+		require.NoError(t, err)
+		assert.False(t, preview.Applied)
+		assert.Equal(t, []string{"Log.Level"}, preview.Changed)
+		assert.Empty(t, preview.Production, "production's value wins there, and it is the same")
+		assert.Equal(t, 1, preview.Revision.Revision, "a preview takes no revision")
+
+		refreshed, err := w.svc.RefreshReleaseVariables(ctx, ada, org, rel.ID(), false)
+		require.NoError(t, err)
+		assert.True(t, refreshed.Applied)
+		assert.Equal(t, 2, refreshed.Revision.Revision)
+		assert.Equal(t, []string{delivery.EventReleaseVariablesRefreshed}, w.auditTypes())
+		assert.Equal(t, []string{"delivery.v1.release_variables.superseded", "delivery.v1.release_variables.taken"}, w.eventTypes())
+	})
+
+	t.Run("a change to what production gets is refused", func(t *testing.T) {
+		w, rel, prod := setup(t)
+		w.preview = level("info", "error")
+
+		preview, err := w.svc.RefreshReleaseVariables(ctx, ada, org, rel.ID(), true)
+		require.NoError(t, err)
+		assert.Equal(t, []delivery.ProductionChange{{TargetID: prod.ID(), EnvironmentID: production, Variables: []string{"Log.Level"}}}, preview.Production)
+
+		_, err = w.svc.RefreshReleaseVariables(ctx, ada, org, rel.ID(), false)
+		require.ErrorIs(t, err, delivery.ErrProductionChange)
+		assert.Contains(t, err.Error(), "Log.Level")
+		assert.Equal(t, 1, w.current[rel.ID()].Revision())
+		assert.Empty(t, w.audit)
+	})
+
+	t.Run("nothing changed takes no revision", func(t *testing.T) {
+		w, rel, _ := setup(t)
+		w.preview = level("info", "warn")
+		refreshed, err := w.svc.RefreshReleaseVariables(ctx, ada, org, rel.ID(), false)
+		require.NoError(t, err)
+		assert.False(t, refreshed.Applied)
+		assert.Empty(t, refreshed.Changed)
+		assert.Empty(t, w.audit)
+	})
+
+	t.Run("a withdrawn release keeps what it had", func(t *testing.T) {
+		w, rel, _ := setup(t)
+		w.preview = level("debug", "warn")
+		_, err := w.svc.PublishRelease(ctx, ada, org, rel.ID())
+		require.NoError(t, err)
+		_, err = w.svc.WithdrawRelease(ctx, ada, org, rel.ID())
+		require.NoError(t, err)
+		_, err = w.svc.RefreshReleaseVariables(ctx, ada, org, rel.ID(), false)
+		assert.ErrorIs(t, err, delivery.ErrReleaseStatus)
+	})
+}

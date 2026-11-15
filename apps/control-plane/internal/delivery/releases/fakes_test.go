@@ -75,6 +75,13 @@ type store struct {
 	// current is the revision GetCurrentReleaseVariables returns, by Release.
 	current map[string]*delivery.ReleaseVariables
 	targets map[string]*delivery.Target
+	// preview is what a revision taken now would hold.
+	preview []delivery.SnapshotVariable
+	// lifecycle, environments, and placements are what a refresh resolves
+	// production Targets from.
+	lifecycle    *delivery.Lifecycle
+	environments []*delivery.Environment
+	placements   []*delivery.Placement
 }
 
 func (s *store) WithinTx(ctx context.Context, fn func(context.Context) error) error {
@@ -367,7 +374,7 @@ func newWorld(t *testing.T) *world {
 func (s *store) options(authz authorization.Authorizer) []ReleaseServiceOption {
 	return []ReleaseServiceOption{
 		WithBuildRepo(s), WithReleaseRepo(s), WithApplications(s), WithTagResolver(tagResolver{s}),
-		WithVariableSnapshots(s), WithCurrentVariables(s), WithTargetLookup(s),
+		WithVariableSnapshots(s), WithCurrentVariables(s), WithTargetLookup(s), WithLifecycles(s), WithEnvironments(s),
 		WithAuthorizer(authz), WithTransactor(s), WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
 	}
 }
@@ -400,7 +407,48 @@ func (s *store) Take(_ context.Context, rel *delivery.Release, projectID string,
 		by = *takenBy
 	}
 	s.snapshotted = append(s.snapshotted, rel.ID()+" by "+by+" in "+projectID)
-	return nil, nil
+	if s.preview == nil {
+		return nil, nil
+	}
+	// A refresh stores what was previewed as the next revision.
+	revision := 1
+	var changed []*delivery.ReleaseVariables
+	if current, ok := s.current[rel.ID()]; ok {
+		revision = current.Revision() + 1
+		current.Supersede()
+		changed = append(changed, current)
+	}
+	taken, err := delivery.NewReleaseVariables(delivery.NewReleaseVariablesProps{
+		OrganizationID: rel.OrganizationID(), ApplicationID: rel.ApplicationID(), ReleaseID: rel.ID(),
+		Revision: revision, Variables: s.preview, TakenByPrincipalID: takenBy,
+	}, nil)
+	if err != nil {
+		return nil, err
+	}
+	if s.current == nil {
+		s.current = map[string]*delivery.ReleaseVariables{}
+	}
+	s.current[rel.ID()] = taken
+	return append(changed, taken), nil
+}
+
+func (s *store) Preview(context.Context, *delivery.Release, string) ([]delivery.SnapshotVariable, error) {
+	return s.preview, nil
+}
+
+func (s *store) GetLifecycle(context.Context, string, string) (*delivery.Lifecycle, error) {
+	if s.lifecycle == nil {
+		return nil, delivery.ErrNotFound
+	}
+	return s.lifecycle, nil
+}
+
+func (s *store) GetEnvironments(context.Context, string, []string) ([]*delivery.Environment, error) {
+	return s.environments, nil
+}
+
+func (s *store) ListPlacements(context.Context, string, string) ([]*delivery.Placement, error) {
+	return s.placements, nil
 }
 
 func (s *store) GetCurrentReleaseVariables(_ context.Context, _, releaseID string) (*delivery.ReleaseVariables, error) {

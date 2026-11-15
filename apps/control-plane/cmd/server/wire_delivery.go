@@ -230,6 +230,8 @@ func (a *app) wireDelivery(runners config.Runners) error {
 		releases.WithVariableSnapshots(snapshots),
 		releases.WithCurrentVariables(revisionRepo),
 		releases.WithTargetLookup(targetRepo),
+		releases.WithLifecycles(lifecycleRepo),
+		releases.WithEnvironments(envRepo),
 		releases.WithAuthorizer(a.authz),
 		releases.WithTransactor(a.tx),
 		releases.WithOutboxRecorder(a.outbox),

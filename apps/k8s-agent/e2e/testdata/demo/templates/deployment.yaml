@@ -4,6 +4,7 @@ metadata:
   name: demo
   annotations:
     e2e.ivaldi.build/environment: {{ .Values.environment | quote }}
+    e2e.ivaldi.build/greeting: {{ .Values.greeting | quote }}
 spec:
   replicas: 1
   selector:
@@ -17,3 +18,12 @@ spec:
       containers:
         - name: app
           image: {{ required "global.ivaldi.artifacts.app is required" .Values.global.ivaldi.artifacts.app.image | quote }}
+          {{- /* The Secret the agent writes for this Deployment's secret variables. */}}
+          {{- with dig "secrets" "name" "" .Values.global.ivaldi }}
+          env:
+            - name: API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . | quote }}
+                  key: Api.Token
+          {{- end }}

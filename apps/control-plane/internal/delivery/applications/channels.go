@@ -211,13 +211,21 @@ func (s *service) SetDefaultChannel(ctx context.Context, actor identity.Actor, o
 	return c, nil
 }
 
-// ArchiveChannel archives a Channel that is not its Application's default.
+// ArchiveChannel archives a Channel that is not its Application's default
+// and that no variable's value is scoped to.
 // Its Releases keep referring to it. Archiving an archived one does nothing.
 func (s *service) ArchiveChannel(ctx context.Context, actor identity.Actor, organizationID, channelID string) (*delivery.Channel, error) {
 	return s.changeChannel(ctx, actor, organizationID, channelID, delivery.EventChannelArchived,
-		func(_ context.Context, c *delivery.Channel) error {
+		func(ctx context.Context, c *delivery.Channel) error {
 			if c.Archived() {
 				return change.ErrUnchanged
+			}
+			n, err := s.variables.CountActiveVariablesWithChannel(ctx, organizationID, c.ID())
+			if err != nil {
+				return fmt.Errorf("count variables: %w", err)
+			}
+			if n > 0 {
+				return fmt.Errorf("%w: %d variables have a value scoped to channel %s", delivery.ErrInUse, n, c.ID())
 			}
 			return c.Archive()
 		})

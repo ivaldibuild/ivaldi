@@ -42,6 +42,9 @@ type options struct {
 	targets      Targets
 	clusters     Clusters
 	lifecycles   Lifecycles
+	variables    Variables
+	snapshots    VariableSnapshots
+	stores       delivery.SecretStores
 	history      vcs.History
 	changes      provenance.Lookup
 	authz        authorization.Authorizer
@@ -71,6 +74,21 @@ func WithTargets(r Targets) ServiceOption {
 }
 func WithLifecycles(r Lifecycles) ServiceOption {
 	return func(o *options) { o.lifecycles = r }
+}
+
+// WithVariables reads the revisions of Releases' variables Deployments use.
+func WithVariables(r Variables) ServiceOption {
+	return func(o *options) { o.variables = r }
+}
+
+// WithSecretStores looks up the Secret Stores a Deployment's secrets are in.
+func WithSecretStores(s delivery.SecretStores) ServiceOption {
+	return func(o *options) { o.stores = s }
+}
+
+// WithVariableSnapshots snapshots the variables of a Release Ivaldi observed.
+func WithVariableSnapshots(v VariableSnapshots) ServiceOption {
+	return func(o *options) { o.snapshots = v }
 }
 func WithClusters(r Clusters) ServiceOption {
 	return func(o *options) { o.clusters = r }
@@ -127,6 +145,9 @@ func NewService(opts ...ServiceOption) (delivery.DeploymentService, error) {
 		{"Targets", o.targets != nil},
 		{"Clusters", o.clusters != nil},
 		{"Lifecycles", o.lifecycles != nil},
+		{"Variables", o.variables != nil},
+		{"VariableSnapshots", o.snapshots != nil},
+		{"SecretStores", o.stores != nil},
 		{"HeartbeatInterval", o.heartbeat > 0},
 		{"CommitHistory", o.history != nil},
 		{"Authorizer", o.authz != nil},
@@ -191,11 +212,18 @@ func (s *service) RequestDeployments(ctx context.Context, actor identity.Actor, 
 			props := delivery.NewDeploymentProps{
 				OrganizationID: in.OrganizationID, ApplicationID: rel.ApplicationID(),
 				ReleaseID: rel.ID(), EnvironmentID: plan.target.EnvironmentID(), TargetID: targetID,
-				Source: delivery.DeploymentExecuted, Reason: delivery.DeploymentRollout, Status: status,
+				Source: delivery.DeploymentExecuted, Reason: plan.reason, Status: status,
 				PreviousDeploymentID:   plan.placement.CurrentDeploymentID(),
 				InitiatedByPrincipalID: optional.Of(actor.PrincipalID), SessionID: in.SessionID,
 				WorkItemID: in.WorkItemID, PolicyDecisionID: optional.Of(decision.ID),
 				RequestedAt: &now,
+			}
+			if plan.variables != nil {
+				props.VariableSnapshotID = new(plan.variables.ID())
+			}
+			if plan.restores != nil {
+				props.RestoresDeploymentID = new(plan.restores.ID())
+				props.SecretsLatest = in.SecretsLatest
 			}
 			if status == release.DeploymentApplying {
 				props.StartedAt = &now
@@ -417,6 +445,9 @@ func (s *service) ReportDeployment(ctx context.Context, actor identity.Actor, in
 		if err := d.MoveTo(*in.Status); err != nil {
 			return err
 		}
+		if err := s.recordSecrets(ctx, d, in.Detail); err != nil {
+			return err
+		}
 		if err := s.deployments.UpdateDeployment(ctx, d); err != nil {
 			return err
 		}
@@ -436,6 +467,73 @@ func (s *service) ReportDeployment(ctx context.Context, actor identity.Actor, in
 }
 
 // checkTargetAgent refuses anyone but the agent of the Target's Cluster.
+// recordSecrets stores which version of each secret the agent says it
+// resolved, with its fingerprint, beside where the Deployment's revision
+// says the secret is kept. A report without secrets changes nothing.
+func (s *service) recordSecrets(ctx context.Context, d *delivery.Deployment, detail json.RawMessage) error {
+	var reported struct {
+		Secrets []struct {
+			Name        string `json:"name"`
+			Version     string `json:"version"`
+			Fingerprint string `json:"fingerprint"`
+			DeliveredAs string `json:"delivered_as"`
+		} `json:"secrets"`
+		// The secrets an overlay bound, whose values went into the chart's
+		// values however the variable asks to be delivered.
+		SecretsInValues []string `json:"secrets_in_values"`
+	}
+	// The detail is the agent's to shape; one that is not an object simply
+	// names no secrets.
+	if len(detail) == 0 || json.Unmarshal(detail, &reported) != nil || len(reported.Secrets) == 0 {
+		return nil
+	}
+	references := map[string]delivery.SecretReference{}
+	if snapshotID := d.VariableSnapshotID(); snapshotID != nil {
+		revision, err := s.variables.GetReleaseVariables(ctx, d.OrganizationID(), *snapshotID)
+		if err != nil {
+			return err
+		}
+		rel, err := s.releases.GetRelease(ctx, d.OrganizationID(), d.ReleaseID())
+		if err != nil {
+			return err
+		}
+		resolved := delivery.ResolveVariables(revision.Variables(), delivery.DeploymentScope{
+			TargetID: d.TargetID(), EnvironmentID: d.EnvironmentID(), ChannelID: rel.ChannelID(),
+		})
+		for _, r := range resolved {
+			if r.Winner != nil && r.Winner.Secret != nil {
+				references[r.Name] = *r.Winner.Secret
+			}
+		}
+	}
+	versions := make([]delivery.SecretVersion, 0, len(reported.Secrets))
+	for _, secret := range reported.Secrets {
+		ref, sent := references[secret.Name]
+		if !sent {
+			return delivery.NewErrInvalidInput(fmt.Sprintf("the report names secret %q, which the deployment was not sent", secret.Name))
+		}
+		deliveredAs := delivery.VariableDeliverAsSecret
+		if secret.DeliveredAs == string(delivery.VariableDeliverAsValue) || slices.Contains(reported.SecretsInValues, secret.Name) {
+			deliveredAs = delivery.VariableDeliverAsValue
+		}
+		versions = append(versions, delivery.SecretVersion{
+			Name: secret.Name, StoreID: ref.StoreID, Path: ref.Path, Field: ref.Field,
+			Version: secret.Version, Fingerprint: secret.Fingerprint, DeliveredAs: deliveredAs,
+		})
+	}
+	return d.RecordSecretVersions(versions)
+}
+
+// storeKinds returns the kinds of the stores, for a check that does not
+// concern what the agent can read.
+func storeKinds(stores map[string]delivery.SecretStoreRef) []string {
+	var out []string
+	for _, store := range stores {
+		out = append(out, string(store.Settings.Kind))
+	}
+	return out
+}
+
 func (s *service) checkTargetAgent(ctx context.Context, organizationID string, target *delivery.Target, principalID string) error {
 	cluster, err := s.clusters.GetCluster(ctx, organizationID, target.ClusterID())
 	if err != nil {
@@ -487,8 +585,11 @@ func (s *service) ReleaseChanges(ctx context.Context, _ identity.Actor, organiza
 	}
 	var previous map[string]*delivery.Build
 	changes := &delivery.ReleaseChanges{
-		ReleaseID: rel.ID(), TargetID: targetID,
+		ReleaseID: rel.ID(), TargetID: targetID, Reason: plan.reason,
 		Artifacts: []delivery.ArtifactChange{}, Changes: []delivery.ReleaseChange{},
+	}
+	if plan.restores != nil {
+		changes.RestoresDeploymentID = new(plan.restores.ID())
 	}
 	if plan.placement != nil && plan.placement.CurrentReleaseID() != nil {
 		changes.CurrentReleaseID = plan.placement.CurrentReleaseID()
@@ -661,7 +762,14 @@ type plan struct {
 	target      *delivery.Target
 	environment *delivery.Environment
 	placement   *delivery.Placement
-	checks      []delivery.DeploymentCheck
+	// variables is the revision of the Release's variables a Deployment
+	// would use; nil for a Release that has none.
+	variables *delivery.ReleaseVariables
+	// reason is what a Deployment requested now would be, and restores the
+	// executed Deployment a rollback replays, if one was recorded.
+	reason   delivery.DeploymentReason
+	restores *delivery.Deployment
+	checks   []delivery.DeploymentCheck
 }
 
 func (s *service) plan(ctx context.Context, organizationID string, rel *delivery.Release, targetID string) (*plan, error) {
@@ -749,7 +857,121 @@ func (s *service) plan(ctx context.Context, organizationID string, rel *delivery
 		open, reason = phaseOpen(lifecycle, phaseIndex, succeeded)
 	}
 	p.checks = append(p.checks, check("phase_open", open, reason))
+
+	p.reason, p.restores, err = s.reasonFor(ctx, rel, p.placement, targetID)
+	if err != nil {
+		return nil, err
+	}
+	p.variables, err = s.variablesFor(ctx, rel, p.restores)
+	if err != nil {
+		return nil, err
+	}
+	resolved := s.resolve(p.variables, rel, target)
+	if err := refusal(&p.checks, "variables_defined", delivery.CheckBindings(resolved)); err != nil {
+		return nil, err
+	}
+	stores, err := s.stores.LookupSecretStores(ctx, organizationID, delivery.SecretStoreIDs(resolved))
+	if err != nil {
+		return nil, fmt.Errorf("look up secret stores: %w", err)
+	}
+	allowed := delivery.CheckSecretStores(resolved, stores, target.EnvironmentID(), agentStoreKinds(cluster))
+	if err := refusal(&p.checks, "secret_stores_allowed", allowed); err != nil {
+		return nil, err
+	}
 	return p, nil
+}
+
+// refusal adds a check that passes unless err says the input is invalid,
+// whose message is the reason. Any other error is returned.
+func refusal(checks *[]delivery.DeploymentCheck, name string, err error) error {
+	var invalid *delivery.ErrInvalidInput
+	switch {
+	case err == nil:
+		*checks = append(*checks, check(name, true, ""))
+	case errors.As(err, &invalid):
+		*checks = append(*checks, check(name, false, invalid.Message))
+	default:
+		return err
+	}
+	return nil
+}
+
+// agentStoreKinds returns the secret-store kinds the Cluster's agent last
+// said it can read.
+func agentStoreKinds(cluster *delivery.Cluster) []string {
+	var out []string
+	switch kinds := cluster.AgentCapabilities()["secret_store_kinds"].(type) {
+	case []string:
+		out = kinds
+	case []any:
+		for _, k := range kinds {
+			if s, ok := k.(string); ok {
+				out = append(out, s)
+			}
+		}
+	}
+	return out
+}
+
+// reasonFor says what a Deployment of the Release to the Target would be: a
+// redeploy when the Release is current there, a rollback when it was
+// healthy there before, and a rollout otherwise. For a rollback it returns
+// the Deployment to replay: the Release's last healthy Deployment there, if
+// Ivaldi executed it. One it only observed recorded nothing to replay.
+func (s *service) reasonFor(ctx context.Context, rel *delivery.Release, placement *delivery.Placement, targetID string) (delivery.DeploymentReason, *delivery.Deployment, error) {
+	if placement == nil {
+		return delivery.DeploymentRollout, nil, nil
+	}
+	if current := placement.CurrentReleaseID(); current != nil && *current == rel.ID() {
+		return delivery.DeploymentRedeploy, nil, nil
+	}
+	last, err := s.deployments.GetLastSucceededDeployment(ctx, rel.OrganizationID(), rel.ID(), targetID)
+	if errors.Is(err, delivery.ErrNotFound) {
+		return delivery.DeploymentRollout, nil, nil
+	}
+	if err != nil {
+		return "", nil, err
+	}
+	if last.Source() != delivery.DeploymentExecuted {
+		return delivery.DeploymentRollback, nil, nil
+	}
+	return delivery.DeploymentRollback, last, nil
+}
+
+// variablesFor returns the revision of variables a Deployment would use:
+// the one the Deployment it restores used, so a rollback brings back the
+// configuration the Release last ran with there, or else the Release's
+// current one. Either may be nil: there were no variables to record.
+func (s *service) variablesFor(ctx context.Context, rel *delivery.Release, restores *delivery.Deployment) (*delivery.ReleaseVariables, error) {
+	if restores == nil {
+		return s.currentVariables(ctx, rel)
+	}
+	snapshotID := restores.VariableSnapshotID()
+	if snapshotID == nil {
+		return nil, nil
+	}
+	return s.variables.GetReleaseVariables(ctx, rel.OrganizationID(), *snapshotID)
+}
+
+// currentVariables returns the revision of its variables a Release deploys
+// with now, or nil for a Release created before they were snapshotted.
+func (s *service) currentVariables(ctx context.Context, rel *delivery.Release) (*delivery.ReleaseVariables, error) {
+	current, err := s.variables.GetCurrentReleaseVariables(ctx, rel.OrganizationID(), rel.ID())
+	if errors.Is(err, delivery.ErrNotFound) {
+		return nil, nil
+	}
+	return current, err
+}
+
+// resolve picks the value of each variable in a revision for a Deployment
+// of the Release to the Target.
+func (s *service) resolve(revision *delivery.ReleaseVariables, rel *delivery.Release, target *delivery.Target) []delivery.ResolvedVariable {
+	if revision == nil {
+		return nil
+	}
+	return delivery.ResolveVariables(revision.Variables(), delivery.DeploymentScope{
+		TargetID: target.ID(), EnvironmentID: target.EnvironmentID(), ChannelID: rel.ChannelID(),
+	})
 }
 
 func phaseOf(l *delivery.Lifecycle, environmentID string) (bool, int) {
@@ -853,15 +1075,66 @@ func (s *service) assignment(ctx context.Context, d *delivery.Deployment) (*deli
 	if config == nil {
 		return nil, delivery.NewErrInvalidInput("the target has no apply config; deployments there are tracked only")
 	}
+	variables, secrets := []delivery.AssignmentVariable{}, []delivery.AssignmentSecret{}
+	if snapshotID := d.VariableSnapshotID(); snapshotID != nil {
+		revision, err := s.variables.GetReleaseVariables(ctx, d.OrganizationID(), *snapshotID)
+		if err != nil {
+			return nil, err
+		}
+		resolved := s.resolve(revision, rel, target)
+		variables = delivery.AssignmentVariables(resolved)
+		stores, err := s.stores.LookupSecretStores(ctx, d.OrganizationID(), delivery.SecretStoreIDs(resolved))
+		if err != nil {
+			return nil, fmt.Errorf("look up secret stores: %w", err)
+		}
+		// A store archived or narrowed since the request would leave the
+		// agent without a way to read the secret. Once applied, the agent
+		// only watches the Deployment's health and reads no secret.
+		if d.Status() == release.DeploymentApplying {
+			if err := delivery.CheckSecretStores(resolved, stores, d.EnvironmentID(), storeKinds(stores)); err != nil {
+				return nil, err
+			}
+		}
+		secrets = delivery.AssignmentSecrets(resolved, stores)
+	}
+	// A rollback reads the versions the Deployment it restores read, and
+	// the agent refuses a secret whose value is no longer that one.
+	if restoresID := d.RestoresDeploymentID(); restoresID != nil && !d.SecretsLatest() {
+		restored, err := s.deployments.GetDeployment(ctx, d.OrganizationID(), *restoresID)
+		if err != nil {
+			return nil, err
+		}
+		pins := map[string]delivery.SecretVersion{}
+		for _, pin := range restored.SecretVersions() {
+			pins[pin.Name] = pin
+		}
+		for i := range secrets {
+			if pin, ok := pins[secrets[i].Name]; ok {
+				if pin.Version != "" {
+					secrets[i].Ref.Version = pin.Version
+				}
+				secrets[i].Fingerprint = pin.Fingerprint
+			}
+		}
+	}
+	// A rollback asked to use the latest secrets reads the latest of each,
+	// including one whose value names a version: that version is what the
+	// rollback could not read, or read as something else.
+	if d.RestoresDeploymentID() != nil && d.SecretsLatest() {
+		for i := range secrets {
+			secrets[i].Ref.Version = ""
+		}
+	}
 	apply := delivery.ApplyAssignment{
 		Deployer:  delivery.DeployerHelm,
 		Namespace: target.Locator()[delivery.LocatorNamespace],
 		Overlays:  config.Values,
 		Images:    map[string]delivery.AssignmentImage{},
-		Variables: []delivery.AssignmentVariable{},
-		Secrets:   []delivery.AssignmentSecret{},
+		Variables: variables,
+		Secrets:   secrets,
 		Helm:      &delivery.HelmApply{ReleaseName: helmReleaseName(d.ApplicationID())},
 		Reason:    d.Reason(),
+		Restores:  d.RestoresDeploymentID(),
 	}
 	if apply.Overlays == nil {
 		apply.Overlays = []string{}
@@ -1097,8 +1370,21 @@ func (s *service) Observe(ctx context.Context, actor identity.Actor, in delivery
 				if err != nil {
 					return err
 				}
-			} else if err := s.writer.Events(ctx, delivery.AggregateRelease, rel.ID(), rel); err != nil {
-				return err
+			} else {
+				if err := s.writer.Events(ctx, delivery.AggregateRelease, rel.ID(), rel); err != nil {
+					return err
+				}
+				// An observed Release deploys, if Ivaldi later executes it,
+				// with the variables its Application had when it was first seen.
+				revisions, err := s.snapshots.Take(ctx, rel, app.ProjectID(), nil)
+				if err != nil {
+					return err
+				}
+				for _, rv := range revisions {
+					if err := s.writer.Events(ctx, delivery.AggregateReleaseVariables, rv.ID(), rv); err != nil {
+						return err
+					}
+				}
 			}
 		} else if err != nil {
 			return err

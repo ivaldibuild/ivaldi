@@ -101,6 +101,25 @@ func (e *executor) poll(ctx context.Context, clusterSlug string) ([]apiclient.De
 	return assignments, nil
 }
 
+// boundPaths returns the assignment's secrets with the bindings in their
+// paths filled in, so one reference can serve every Environment:
+// payments/#{Ivaldi.Environment.Slug}/database.
+func boundPaths(a deploy.Assignment) ([]apiclient.AssignmentSecret, error) {
+	paths := make([]string, len(a.SecretRefs))
+	for i, s := range a.SecretRefs {
+		paths[i] = s.Ref.Path
+	}
+	bound, err := values.Bind(a.System, a.Variables, paths)
+	if err != nil {
+		return nil, &deploy.Failure{Reason: "could not fill in a secret's path", Err: err}
+	}
+	out := slices.Clone(a.SecretRefs)
+	for i := range out {
+		out[i].Ref.Path = bound[i]
+	}
+	return out, nil
+}
+
 // resolveSecrets resolves the assignment's secrets and writes those
 // delivered as a Secret, filling a's Secrets and SecretName.
 func (e *executor) resolveSecrets(ctx context.Context, a *deploy.Assignment, progress deploy.Progress) ([]secrets.Resolved, error) {
@@ -111,7 +130,11 @@ func (e *executor) resolveSecrets(ctx context.Context, a *deploy.Assignment, pro
 		return nil, deploy.Failf("this agent cannot resolve secrets")
 	}
 	progress(deploy.StepResolving, fmt.Sprintf("resolving %d secrets", len(a.SecretRefs)))
-	resolved, err := e.secrets.Resolve(ctx, a.Namespace, a.SecretRefs)
+	refs, err := boundPaths(*a)
+	if err != nil {
+		return nil, err
+	}
+	resolved, err := e.secrets.Resolve(ctx, a.Namespace, refs)
 	if err != nil {
 		return nil, err
 	}

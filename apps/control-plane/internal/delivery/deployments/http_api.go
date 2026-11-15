@@ -57,6 +57,7 @@ type RequestDeploymentsRequest struct {
 	ReleaseID string `path:"release_id" doc:"The Release to deploy"`
 	Body      struct {
 		TargetIDs []string `json:"target_ids" required:"true" minItems:"1" maxItems:"20" doc:"The Targets to deploy the Release to"`
+		Secrets   string   `json:"secrets,omitempty" required:"false" enum:"pinned,latest" doc:"For a rollback: pinned (the default) reads the secret versions the Release last ran with on the Target, and latest reads the current ones. Other Deployments always read the latest"`
 	}
 }
 
@@ -137,7 +138,7 @@ func (c *Controller) RequestDeployments(ctx context.Context, req *RequestDeploym
 	}
 	items, err := c.service.RequestDeployments(ctx, who.Actor, delivery.RequestDeploymentsInput{
 		OrganizationID: who.OrganizationID, ReleaseID: req.ReleaseID, TargetIDs: req.Body.TargetIDs,
-		SessionID: optional.Of(who.Actor.SessionID),
+		SessionID: optional.Of(who.Actor.SessionID), SecretsLatest: req.Body.Secrets == "latest",
 	})
 	if err != nil {
 		return nil, translateToHttpError(ctx, err)

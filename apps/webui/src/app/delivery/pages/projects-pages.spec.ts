@@ -10,6 +10,7 @@ import { provideRouter, Router } from '@angular/router';
 import { API_BASE_URL } from '../../api-base-url';
 import { PermissionsApi } from '../../api/permissions-api';
 import { SourcesApi } from '../../api/sources-api';
+import { VariablesApi } from '../variables/variables-api';
 import { WorkspaceContext } from '../workspace-context';
 import { NewProjectPage } from './new-project-page';
 import { ProjectEditPage } from './project-edit-page';
@@ -79,6 +80,14 @@ describe('project pages', () => {
         { provide: API_BASE_URL, useValue: 'https://cp.test' },
         // The Project page's Sources have their own spec (project-sources.spec.ts).
         { provide: SourcesApi, useValue: { list: () => Promise.resolve([]) } },
+        // The pages' variables have their own spec (variables/variable-list.spec.ts).
+        {
+          provide: VariablesApi,
+          useValue: {
+            list: () => Promise.resolve([]),
+            scopeOptions: () => Promise.resolve({ environments: [], targets: [], stores: [] }),
+          },
+        },
         { provide: PermissionsApi, useValue: { granted: () => Promise.resolve(new Set()) } },
         {
           provide: WorkspaceContext,

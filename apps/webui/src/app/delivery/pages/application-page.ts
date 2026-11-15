@@ -16,6 +16,7 @@ import { DeliveryApi } from '../delivery-api';
 import { PageHeader } from '../page-header';
 import { DeploymentList } from '../deployments/deployment-list';
 import { ReleaseList } from '../releases/release-list';
+import { VariableList } from '../variables/variable-list';
 
 const kinds: { value: ArtifactKind; label: string }[] = [
   { value: 'container_image', label: 'Container image' },
@@ -36,6 +37,7 @@ const kinds: { value: ArtifactKind; label: string }[] = [
     PageHeader,
     ReleaseList,
     DeploymentList,
+    VariableList,
     HlmAlertImports,
     HlmBadgeImports,
     HlmButtonImports,

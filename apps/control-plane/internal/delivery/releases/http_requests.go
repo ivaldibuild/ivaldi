@@ -40,6 +40,18 @@ type ReleaseRequest struct {
 	ReleaseID string `path:"release_id" doc:"The Release"`
 }
 
+type ReleaseVariablesRequest struct {
+	ReleaseID string `path:"release_id" doc:"The Release"`
+	TargetID  string `query:"target_id" doc:"A Target, to also get the value of each variable a Deployment there would get"`
+	// DeploymentID asks for what a rollback deploys rather than a rollout.
+	DeploymentID string `query:"deployment_id" doc:"One of the Release's Deployments, to get the revision it used rather than the current one: what a rollback that restores it deploys"`
+}
+
+type RefreshReleaseVariablesRequest struct {
+	ReleaseID string `path:"release_id" doc:"The Release"`
+	Preview   bool   `query:"preview" doc:"Only say what would change, without taking a revision"`
+}
+
 // BuildBody names one artifact's Build and carries what CI knows about it.
 type BuildBody struct {
 	Artifact string `json:"artifact" required:"true" minLength:"1" doc:"The name of the Application's artifact, such as api"`

@@ -9,6 +9,7 @@ import {
   lucideChevronsUpDown,
   lucideFolder,
   lucideGitBranch,
+  lucideKeyRound,
   lucideLayers,
   lucideLogOut,
   lucideMoon,
@@ -57,6 +58,7 @@ interface NavItem {
       lucideChevronsUpDown,
       lucideFolder,
       lucideGitBranch,
+      lucideKeyRound,
       lucideLayers,
       lucideLogOut,
       lucideMoon,
@@ -99,6 +101,7 @@ export class AppShell {
         { path: '/clusters', label: 'Clusters', icon: 'lucideServer' },
         { path: '/environments', label: 'Environments', icon: 'lucideLayers' },
         { path: '/lifecycles', label: 'Lifecycles', icon: 'lucideGitBranch' },
+        { path: '/secret-stores', label: 'Secret Stores', icon: 'lucideKeyRound' },
       ],
     },
   ];

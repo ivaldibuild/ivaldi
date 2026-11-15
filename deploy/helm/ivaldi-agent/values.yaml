@@ -61,6 +61,15 @@ secrets:
   # -- Secrets in the release namespace holding Doppler service tokens,
   # one per Doppler Secret Store, which the agent may read.
   dopplerTokenSecrets: []
+  vault:
+    # -- Vault servers, such as https://vault.example.com, the agent may log
+    # in to for a vault Secret Store. A store names its own address in
+    # Ivaldi, and the agent sends a service-account token there, so it uses
+    # only the addresses listed here. Empty means it reads no vault store.
+    addresses: []
+    # -- The audience of the service-account token the agent logs in to
+    # Vault with. Set the same audience on the Kubernetes auth role.
+    audience: vault
 
 registry:
   # -- A docker-config Secret in the release namespace with credentials for

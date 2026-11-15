@@ -4,6 +4,9 @@ import (
 	auditpg "github.com/ivaldibuild/ivaldi-control-plane/internal/audit/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/change"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/config"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/credentials"
+	credentialspg "github.com/ivaldibuild/ivaldi-control-plane/internal/credentials/postgres"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/credentials/secretstores"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/agentapi"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/applications"
@@ -14,6 +17,7 @@ import (
 	deliverypg "github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/registries"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/releases"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/variables"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/enrollment"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/authorizer"
 	iampg "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/postgres"
@@ -22,6 +26,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/team/teams"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
 	workspacepg "github.com/ivaldibuild/ivaldi-control-plane/internal/workspace/postgres"
+	"github.com/ivaldibuild/ivaldi/pkg/database"
 	"github.com/ivaldibuild/ivaldi/pkg/logging"
 )
 
@@ -82,7 +87,30 @@ func (a *app) wireDelivery(runners config.Runners) error {
 	registryRepo := deliverypg.NewRegistryRepository(a.db)
 	targetRepo := deliverypg.NewTargetRepository(a.db)
 	clusterRepo := deliverypg.NewClusterRepository(a.db)
+	variableRepo := deliverypg.NewVariableRepository(a.db)
 	workspaces := workspace.NewLookups(workspacepg.NewRepository(a.db))
+
+	// Secret Stores belong to the credentials capability; delivery reads
+	// them through a lookup, and credentials asks delivery whether a store
+	// is still referred to.
+	storeRepo := credentialspg.NewSecretStoreRepository(a.db)
+	storeLookup, err := credentials.NewStoreLookup(storeRepo)
+	if err != nil {
+		return err
+	}
+	stores, err := secretstores.NewSecretStoreService(
+		secretstores.WithSecretStoreRepo(storeRepo),
+		secretstores.WithWorkspaces(workspaces),
+		secretstores.WithEnvironmentLookup(envRepo),
+		secretstores.WithVariableUsage(variableRepo),
+		secretstores.WithAuthorizer(a.authz),
+		secretstores.WithTransactor(a.tx),
+		secretstores.WithOutboxRecorder(a.outbox),
+		secretstores.WithAuditRecorder(a.audit),
+	)
+	if err != nil {
+		return err
+	}
 
 	revoker, err := enrollment.NewAgentRevoker(
 		iampg.NewPrincipalRepository(a.db),
@@ -111,6 +139,7 @@ func (a *app) wireDelivery(runners config.Runners) error {
 		environments.WithTargetRepo(targetRepo),
 		environments.WithClusterRepo(clusterRepo),
 		environments.WithLifecycleUsage(lifecycleRepo),
+		environments.WithVariableUsage(variableRepo),
 		environments.WithWorkspaces(workspaces),
 		environments.WithResourceRegistrar(a.iam.resources),
 		environments.WithAuthorizer(a.authz),
@@ -155,6 +184,7 @@ func (a *app) wireDelivery(runners config.Runners) error {
 		applications.WithTargetLookup(targetRepo),
 		applications.WithEnvironmentLookup(envRepo),
 		applications.WithProjectLookup(workspaces),
+		applications.WithVariableUsage(variableRepo),
 		applications.WithWorkspaces(workspaces),
 		applications.WithTeamDirectory(a.teams),
 		applications.WithSettingResolver(a.settingResolver),
@@ -167,6 +197,29 @@ func (a *app) wireDelivery(runners config.Runners) error {
 		return err
 	}
 
+	vars, err := variables.NewVariableService(
+		variables.WithVariableRepo(variableRepo),
+		variables.WithApplicationLookup(applicationRepo),
+		variables.WithEnvironmentLookup(envRepo),
+		variables.WithTargetLookup(targetRepo),
+		variables.WithWorkspaces(workspaces),
+		variables.WithSecretStores(storeLookup),
+		variables.WithLocker(database.NewLocker(a.db)),
+		variables.WithAuthorizer(a.authz),
+		variables.WithTransactor(a.tx),
+		variables.WithOutboxRecorder(a.outbox),
+		variables.WithAuditRecorder(a.audit),
+	)
+	if err != nil {
+		return err
+	}
+
+	revisionRepo := deliverypg.NewReleaseVariablesRepository(a.db)
+	snapshots, err := delivery.NewReleaseVariablesTaker(variableRepo, revisionRepo, database.NewLocker(a.db))
+	if err != nil {
+		return err
+	}
+
 	// Tags cannot be resolved to digests until a registry client exists, so
 	// Builds are named by digest.
 	rels, err := releases.NewReleaseService(
@@ -174,6 +227,12 @@ func (a *app) wireDelivery(runners config.Runners) error {
 		releases.WithReleaseRepo(deliverypg.NewReleaseRepository(a.db)),
 		releases.WithApplications(applicationRepo),
 		releases.WithTagResolver(delivery.NoTagResolver()),
+		releases.WithVariableSnapshots(snapshots),
+		releases.WithCurrentVariables(revisionRepo),
+		releases.WithTargetLookup(targetRepo),
+		releases.WithDeploymentLookup(deliverypg.NewDeploymentRepository(a.db)),
+		releases.WithLifecycles(lifecycleRepo),
+		releases.WithEnvironments(envRepo),
 		releases.WithAuthorizer(a.authz),
 		releases.WithTransactor(a.tx),
 		releases.WithOutboxRecorder(a.outbox),
@@ -193,6 +252,9 @@ func (a *app) wireDelivery(runners config.Runners) error {
 		deployments.WithClusters(clusterRepo),
 		deployments.WithHeartbeatInterval(runners.HeartbeatInterval),
 		deployments.WithLifecycles(lifecycleRepo),
+		deployments.WithVariables(revisionRepo),
+		deployments.WithVariableSnapshots(snapshots),
+		deployments.WithSecretStores(storeLookup),
 		deployments.WithCommitHistory(a.commitHistory),
 		deployments.WithChanges(a.changes),
 		deployments.WithAuthorizer(a.authz),
@@ -227,5 +289,7 @@ func (a *app) wireDelivery(runners config.Runners) error {
 	a.services.agent = agentSvc
 	a.services.applications, a.services.releases = apps, rels
 	a.services.deployments = deps
+	a.services.variables = vars
+	a.services.secretStores = stores
 	return nil
 }

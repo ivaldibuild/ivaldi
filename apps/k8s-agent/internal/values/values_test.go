@@ -191,3 +191,18 @@ func TestBuild_Secrets(t *testing.T) {
 	})
 	require.ErrorContains(t, err, "overlapping values paths")
 }
+
+// A secret's path binds system variables and text variables, so one
+// reference serves every Environment.
+func TestBind(t *testing.T) {
+	system := map[string]string{"Ivaldi.Environment.Slug": "production"}
+	vars := []Variable{{Name: "Team", Value: "payments"}, {Name: "Prefix", Value: "#{Team}/#{Ivaldi.Environment.Slug}"}}
+
+	got, err := Bind(system, vars, []string{"#{Prefix}/database", "plain", "##{literal}"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"payments/production/database", "plain", "#{literal}"}, got)
+
+	_, err = Bind(system, vars, []string{"#{Missing}/database"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "#{Missing} is not defined")
+}

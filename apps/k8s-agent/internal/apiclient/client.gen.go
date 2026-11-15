@@ -455,6 +455,24 @@ func (e ReportDeploymentRequestBodyStatus) Valid() bool {
 	}
 }
 
+// Defines values for SecretVersionDeliveredAs.
+const (
+	SecretVersionDeliveredAsSecret SecretVersionDeliveredAs = "secret"
+	SecretVersionDeliveredAsValue  SecretVersionDeliveredAs = "value"
+)
+
+// Valid indicates whether the value is a known member of the SecretVersionDeliveredAs enum.
+func (e SecretVersionDeliveredAs) Valid() bool {
+	switch e {
+	case SecretVersionDeliveredAsSecret:
+		return true
+	case SecretVersionDeliveredAsValue:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for StoreSettingsKind.
 const (
 	StoreSettingsKindAwsSecretsManager StoreSettingsKind = "aws_secrets_manager"
@@ -643,6 +661,9 @@ type DeploymentSnapshot struct {
 	Reason                 DeploymentSnapshotReason `json:"reason"`
 	ReleaseId              string                   `json:"release_id"`
 	RequestedAt            time.Time                `json:"requested_at"`
+	RestoresDeploymentId   *string                  `json:"restores_deployment_id"`
+	SecretVersions         []SecretVersion          `json:"secret_versions"`
+	SecretsLatest          bool                     `json:"secrets_latest"`
 	SessionId              *string                  `json:"session_id"`
 	Source                 DeploymentSnapshotSource `json:"source"`
 	StartedAt              *time.Time               `json:"started_at"`
@@ -651,6 +672,7 @@ type DeploymentSnapshot struct {
 	SucceededAt            *time.Time               `json:"succeeded_at"`
 	TargetId               string                   `json:"target_id"`
 	UpdatedAt              time.Time                `json:"updated_at"`
+	VariableSnapshotId     *string                  `json:"variable_snapshot_id"`
 	WorkItemId             *string                  `json:"work_item_id"`
 }
 
@@ -1025,6 +1047,20 @@ type SecretRef struct {
 	Path    string  `json:"path"`
 	Version *string `json:"version,omitempty"`
 }
+
+// SecretVersion defines model for SecretVersion.
+type SecretVersion struct {
+	DeliveredAs SecretVersionDeliveredAs `json:"delivered_as"`
+	Field       string                   `json:"field"`
+	Fingerprint string                   `json:"fingerprint"`
+	Name        string                   `json:"name"`
+	Path        string                   `json:"path"`
+	StoreId     string                   `json:"store_id"`
+	Version     string                   `json:"version"`
+}
+
+// SecretVersionDeliveredAs defines model for SecretVersion.DeliveredAs.
+type SecretVersionDeliveredAs string
 
 // StoreSettings defines model for StoreSettings.
 type StoreSettings struct {

@@ -22,6 +22,8 @@ var slugIndexes = map[string]bool{
 	"idx_applications_project_slug":   true,
 	"idx_application_artifacts_name":  true,
 	"idx_channels_application_slug":   true,
+	"idx_variables_project_name":      true,
+	"idx_variables_application_name":  true,
 }
 
 // translate maps PostgreSQL errors to delivery errors by constraint name.

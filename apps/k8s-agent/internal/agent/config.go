@@ -56,6 +56,12 @@ type Config struct {
 	MaxConcurrentApplies int
 	// FingerprintSecret holds the key secret fingerprints are made with.
 	FingerprintSecret string
+	// VaultAddresses are the Vault servers the agent may log in to for a
+	// vault Secret Store. None means it reads no vault store.
+	VaultAddresses []string
+	// VaultTokenFile is the service-account token, projected for Vault's
+	// audience, that the agent logs in to Vault with.
+	VaultTokenFile string
 }
 
 func (c *Config) bind(flags *pflag.FlagSet) {
@@ -85,6 +91,10 @@ func (c *Config) bind(flags *pflag.FlagSet) {
 		"Registry hosts, such as registry:5000, to pull charts from over plain HTTP; for local development only")
 	flags.StringVar(&c.FingerprintSecret, "fingerprint-secret", "ivaldi-fingerprint-key",
 		"Secret in the agent's namespace holding the key secret fingerprints are made with")
+	flags.StringSliceVar(&c.VaultAddresses, "vault-addresses", nil,
+		"Vault servers, such as https://vault.example.com, the agent may log in to for a vault Secret Store; none means it reads no vault store")
+	flags.StringVar(&c.VaultTokenFile, "vault-token-file", "/var/run/secrets/ivaldi-vault/token",
+		"Service-account token projected for Vault's audience, which the agent logs in to Vault with")
 	flags.IntVar(&c.MaxConcurrentApplies, "max-concurrent-applies", 4, "How many Deployments the agent applies at once")
 }
 

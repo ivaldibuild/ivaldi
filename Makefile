@@ -30,7 +30,7 @@ CLI_LDFLAGS := -ldflags "-X github.com/ivaldibuild/ivaldi-cli/internal/cli.VERSI
 
 # Control-plane capabilities with their own migrations, in the order they are applied.
 # There are no foreign keys between capabilities, so the order is for readability only.
-CAPABILITIES := outbox audit iam workspace versioncontrol delivery provenance team policy orchestration
+CAPABILITIES := outbox audit iam workspace versioncontrol delivery provenance team policy orchestration credentials
 
 MIGRATIONS_ROOT := apps/control-plane/internal
 

@@ -52,6 +52,21 @@
         ],
         "type": "object"
       },
+      "AWSSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "region": {
+            "type": "string"
+          },
+          "role_arn": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "region"
+        ],
+        "type": "object"
+      },
       "AWSStore": {
         "additionalProperties": false,
         "properties": {
@@ -2064,6 +2079,53 @@
         ],
         "type": "object"
       },
+      "CreateSecretStoreRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/CreateSecretStoreRequestBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "display_name": {
+            "description": "The display name for the store",
+            "minLength": 1,
+            "type": "string"
+          },
+          "environment_ids": {
+            "description": "The Environments whose Deployments may read the store; every Environment in the Workspace when omitted. Required for doppler",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "kind": {
+            "description": "The secret manager",
+            "enum": [
+              "kubernetes",
+              "aws_secrets_manager",
+              "vault",
+              "doppler"
+            ],
+            "type": "string"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/SettingsBody",
+            "description": "The kind's settings; none for kubernetes"
+          },
+          "slug": {
+            "description": "Url slug for the store; derived from the display name when omitted",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_name",
+          "kind"
+        ],
+        "type": "object"
+      },
       "CreateSourceRequestBody": {
         "additionalProperties": false,
         "properties": {
@@ -2414,6 +2476,19 @@
             "format": "date-time",
             "type": "string"
           },
+          "restores_deployment_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "secret_versions": {
+            "items": {
+              "$ref": "#/components/schemas/SecretVersion"
+            },
+            "type": "array"
+          },
+          "secrets_latest": {
+            "type": "boolean"
+          },
           "session_id": {
             "nullable": true,
             "type": "string"
@@ -2461,6 +2536,10 @@
             "format": "date-time",
             "type": "string"
           },
+          "variable_snapshot_id": {
+            "nullable": true,
+            "type": "string"
+          },
           "work_item_id": {
             "nullable": true,
             "type": "string"
@@ -2482,6 +2561,10 @@
           "work_item_id",
           "external_ref",
           "policy_decision_id",
+          "variable_snapshot_id",
+          "secret_versions",
+          "restores_deployment_id",
+          "secrets_latest",
           "findings",
           "requested_at",
           "started_at",
@@ -2490,6 +2573,22 @@
           "status_changed_at",
           "created_at",
           "updated_at"
+        ],
+        "type": "object"
+      },
+      "DopplerSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "token_secret_key": {
+            "type": "string"
+          },
+          "token_secret_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "token_secret_name",
+          "token_secret_key"
         ],
         "type": "object"
       },
@@ -3770,6 +3869,29 @@
         ],
         "type": "object"
       },
+      "ProductionChange": {
+        "additionalProperties": false,
+        "properties": {
+          "environment_id": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": "string"
+          },
+          "variables": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "target_id",
+          "environment_id",
+          "variables"
+        ],
+        "type": "object"
+      },
       "ProjectSnapshot": {
         "additionalProperties": false,
         "properties": {
@@ -4244,7 +4366,19 @@
             "nullable": true,
             "type": "string"
           },
+          "reason": {
+            "enum": [
+              "rollout",
+              "rollback",
+              "redeploy"
+            ],
+            "type": "string"
+          },
           "release_id": {
+            "type": "string"
+          },
+          "restores_deployment_id": {
+            "nullable": true,
             "type": "string"
           },
           "target_id": {
@@ -4255,6 +4389,8 @@
           "release_id",
           "target_id",
           "current_release_id",
+          "reason",
+          "restores_deployment_id",
           "artifacts",
           "checks",
           "changes"
@@ -4352,6 +4488,114 @@
           "builds",
           "created_at",
           "updated_at"
+        ],
+        "type": "object"
+      },
+      "ReleaseVariablesRefresh": {
+        "additionalProperties": false,
+        "properties": {
+          "applied": {
+            "type": "boolean"
+          },
+          "changed": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "production": {
+            "items": {
+              "$ref": "#/components/schemas/ProductionChange"
+            },
+            "type": "array"
+          },
+          "revision": {
+            "$ref": "#/components/schemas/ReleaseVariablesSnapshot"
+          }
+        },
+        "required": [
+          "revision",
+          "applied",
+          "changed",
+          "production"
+        ],
+        "type": "object"
+      },
+      "ReleaseVariablesSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "application_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "organization_id": {
+            "type": "string"
+          },
+          "release_id": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "current",
+              "superseded"
+            ],
+            "type": "string"
+          },
+          "taken_by_principal_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "variables": {
+            "items": {
+              "$ref": "#/components/schemas/SnapshotVariable"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "application_id",
+          "release_id",
+          "revision",
+          "status",
+          "variables",
+          "taken_by_principal_id",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "ReleaseVariablesView": {
+        "additionalProperties": false,
+        "properties": {
+          "resolved": {
+            "items": {
+              "$ref": "#/components/schemas/ResolvedVariable"
+            },
+            "type": "array"
+          },
+          "revision": {
+            "$ref": "#/components/schemas/ReleaseVariablesSnapshot"
+          }
+        },
+        "required": [
+          "revision",
+          "resolved"
         ],
         "type": "object"
       },
@@ -4495,6 +4739,14 @@
             "readOnly": true,
             "type": "string"
           },
+          "secrets": {
+            "description": "For a rollback: pinned (the default) reads the secret versions the Release last ran with on the Target, and latest reads the current ones. Other Deployments always read the latest",
+            "enum": [
+              "pinned",
+              "latest"
+            ],
+            "type": "string"
+          },
           "target_ids": {
             "description": "The Targets to deploy the Release to",
             "items": {
@@ -4543,6 +4795,79 @@
           "value",
           "from_default",
           "locked"
+        ],
+        "type": "object"
+      },
+      "ResolvedValue": {
+        "additionalProperties": false,
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/VariableScope"
+          },
+          "secret": {
+            "$ref": "#/components/schemas/SecretReference"
+          },
+          "source": {
+            "enum": [
+              "project",
+              "application"
+            ],
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "secret",
+          "scope",
+          "source"
+        ],
+        "type": "object"
+      },
+      "ResolvedVariable": {
+        "additionalProperties": false,
+        "properties": {
+          "beaten": {
+            "items": {
+              "$ref": "#/components/schemas/ResolvedValue"
+            },
+            "type": "array"
+          },
+          "deliver_as": {
+            "enum": [
+              "secret",
+              "value"
+            ],
+            "nullable": true,
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "text",
+              "secret"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "values_path": {
+            "nullable": true,
+            "type": "string"
+          },
+          "winner": {
+            "$ref": "#/components/schemas/ResolvedValue"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "values_path",
+          "deliver_as",
+          "winner",
+          "beaten"
         ],
         "type": "object"
       },
@@ -5414,6 +5739,38 @@
         ],
         "type": "object"
       },
+      "ResponseListSecretStoreSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseListSecretStoreSnapshot.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "description": "Response payload, always present: an empty list is [], not omitted",
+            "items": {
+              "$ref": "#/components/schemas/SecretStoreSnapshot"
+            },
+            "type": "array"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
       "ResponseListServiceAccount": {
         "additionalProperties": false,
         "properties": {
@@ -5524,6 +5881,38 @@
             "description": "Response payload, always present: an empty list is [], not omitted",
             "items": {
               "$ref": "#/components/schemas/TeamMemberSnapshot"
+            },
+            "type": "array"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ResponseListVariableSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseListVariableSnapshot.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "description": "Response payload, always present: an empty list is [], not omitted",
+            "items": {
+              "$ref": "#/components/schemas/VariableSnapshot"
             },
             "type": "array"
           },
@@ -5818,6 +6207,64 @@
           },
           "data": {
             "$ref": "#/components/schemas/ReleaseChanges",
+            "description": "Response payload, always present: an empty list is [], not omitted"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ResponseReleaseVariablesRefresh": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseReleaseVariablesRefresh.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ReleaseVariablesRefresh",
+            "description": "Response payload, always present: an empty list is [], not omitted"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ResponseReleaseVariablesView": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseReleaseVariablesView.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ReleaseVariablesView",
             "description": "Response payload, always present: an empty list is [], not omitted"
           },
           "message": {
@@ -6328,6 +6775,35 @@
         ],
         "type": "object"
       },
+      "ResponseSecretStoreSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseSecretStoreSnapshot.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SecretStoreSnapshot",
+            "description": "Response payload, always present: an empty list is [], not omitted"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
       "ResponseServiceAccount": {
         "additionalProperties": false,
         "properties": {
@@ -6514,6 +6990,35 @@
           },
           "data": {
             "$ref": "#/components/schemas/TeamSnapshot",
+            "description": "Response payload, always present: an empty list is [], not omitted"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ResponseVariableSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseVariableSnapshot.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/VariableSnapshot",
             "description": "Response payload, always present: an empty list is [], not omitted"
           },
           "message": {
@@ -7344,6 +7849,60 @@
         ],
         "type": "object"
       },
+      "ScopeBody": {
+        "additionalProperties": false,
+        "properties": {
+          "channel_ids": {
+            "description": "The Application's Channels the value applies to; any when omitted. Not allowed on a Project's variable",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "environment_ids": {
+            "description": "Environments the value applies to; any when omitted",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "target_ids": {
+            "description": "Targets the value applies to; any when omitted",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "SecretBody": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "description": "One key of a map or JSON secret; the whole value when omitted",
+            "type": "string"
+          },
+          "path": {
+            "description": "Where the secret is in the store, such as a Secret's name or a Vault path; may bind text variables with #{Name}",
+            "minLength": 1,
+            "type": "string"
+          },
+          "store_id": {
+            "description": "The Secret Store, in the variable's Workspace",
+            "type": "string"
+          },
+          "version": {
+            "description": "The store's version to deploy; the latest when omitted",
+            "type": "string"
+          }
+        },
+        "required": [
+          "store_id",
+          "path"
+        ],
+        "type": "object"
+      },
       "SecretRef": {
         "additionalProperties": false,
         "properties": {
@@ -7359,6 +7918,135 @@
         },
         "required": [
           "path"
+        ],
+        "type": "object"
+      },
+      "SecretReference": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "store_id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "store_id",
+          "path",
+          "field",
+          "version"
+        ],
+        "type": "object"
+      },
+      "SecretStoreSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "archived_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "environment_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "kubernetes",
+              "aws_secrets_manager",
+              "vault",
+              "doppler"
+            ],
+            "type": "string"
+          },
+          "organization_id": {
+            "type": "string"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/Settings"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "workspace_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "workspace_id",
+          "slug",
+          "display_name",
+          "kind",
+          "settings",
+          "environment_ids",
+          "created_at",
+          "updated_at",
+          "archived_at"
+        ],
+        "type": "object"
+      },
+      "SecretVersion": {
+        "additionalProperties": false,
+        "properties": {
+          "delivered_as": {
+            "enum": [
+              "secret",
+              "value"
+            ],
+            "type": "string"
+          },
+          "field": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "store_id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "store_id",
+          "path",
+          "field",
+          "version",
+          "fingerprint",
+          "delivered_as"
         ],
         "type": "object"
       },
@@ -7590,6 +8278,39 @@
         ],
         "type": "object"
       },
+      "Settings": {
+        "additionalProperties": false,
+        "properties": {
+          "aws": {
+            "$ref": "#/components/schemas/AWSSettings"
+          },
+          "doppler": {
+            "$ref": "#/components/schemas/DopplerSettings"
+          },
+          "vault": {
+            "$ref": "#/components/schemas/VaultSettings"
+          }
+        },
+        "type": "object"
+      },
+      "SettingsBody": {
+        "additionalProperties": false,
+        "properties": {
+          "aws": {
+            "$ref": "#/components/schemas/AWSSettings",
+            "description": "For aws_secrets_manager: the region, and a role to assume on top of the agent's identity"
+          },
+          "doppler": {
+            "$ref": "#/components/schemas/DopplerSettings",
+            "description": "For doppler: the Secret in the agent's namespace that holds the service token"
+          },
+          "vault": {
+            "$ref": "#/components/schemas/VaultSettings",
+            "description": "For vault: the address, KV v2 mount, and Kubernetes auth role"
+          }
+        },
+        "type": "object"
+      },
       "SignUpInputBody": {
         "additionalProperties": false,
         "properties": {
@@ -7620,6 +8341,75 @@
           "login_challenge",
           "signup_token",
           "organization_name"
+        ],
+        "type": "object"
+      },
+      "SnapshotValue": {
+        "additionalProperties": false,
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/VariableScope"
+          },
+          "secret": {
+            "$ref": "#/components/schemas/SecretReference"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "secret",
+          "scope"
+        ],
+        "type": "object"
+      },
+      "SnapshotVariable": {
+        "additionalProperties": false,
+        "properties": {
+          "deliver_as": {
+            "enum": [
+              "secret",
+              "value"
+            ],
+            "nullable": true,
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "text",
+              "secret"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "project",
+              "application"
+            ],
+            "type": "string"
+          },
+          "values": {
+            "items": {
+              "$ref": "#/components/schemas/SnapshotValue"
+            },
+            "type": "array"
+          },
+          "values_path": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "source",
+          "kind",
+          "values_path",
+          "deliver_as",
+          "values"
         ],
         "type": "object"
       },
@@ -8336,6 +9126,39 @@
         },
         "type": "object"
       },
+      "UpdateSecretStoreRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/UpdateSecretStoreRequestBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "display_name": {
+            "description": "New display name",
+            "minLength": 1,
+            "type": "string"
+          },
+          "environment_ids": {
+            "description": "The Environments that may read the store, replacing the list; empty allows every Environment",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/SettingsBody",
+            "description": "New settings for the store's kind"
+          },
+          "slug": {
+            "description": "New slug",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "UpdateTargetRequestBody": {
         "additionalProperties": false,
         "properties": {
@@ -8392,6 +9215,35 @@
         },
         "type": "object"
       },
+      "UpdateVariableRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/UpdateVariableRequestBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "deliver_as": {
+            "description": "How a secret variable reaches the chart",
+            "enum": [
+              "secret",
+              "value"
+            ],
+            "type": "string"
+          },
+          "description": {
+            "description": "New description; empty clears it",
+            "type": "string"
+          },
+          "values_path": {
+            "description": "New values path; empty clears it",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "UpdateWorkspaceRequestBody": {
         "additionalProperties": false,
         "properties": {
@@ -8416,6 +9268,253 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "ValueBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ValueBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ScopeBody",
+            "description": "The Deployments the value applies to; every Deployment when omitted"
+          },
+          "secret": {
+            "$ref": "#/components/schemas/SecretBody",
+            "description": "A secret variable's value: where the secret is kept, never the secret itself"
+          },
+          "value": {
+            "description": "A text variable's value, which may bind other variables with #{Name}",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "VariableBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/VariableBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "deliver_as": {
+            "description": "How a secret variable reaches the chart: in a Kubernetes Secret (the default), or written into the chart's values at values_path, where Helm's release history keeps it",
+            "enum": [
+              "secret",
+              "value"
+            ],
+            "type": "string"
+          },
+          "description": {
+            "description": "What the variable is for",
+            "type": "string"
+          },
+          "kind": {
+            "description": "What its values hold: text, or references to secrets in a Secret Store; text when omitted",
+            "enum": [
+              "text",
+              "secret"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "description": "The variable's name, unique within its owner whatever the case, such as Database.Host",
+            "maxLength": 253,
+            "minLength": 1,
+            "type": "string"
+          },
+          "values": {
+            "description": "The variable's values",
+            "items": {
+              "$ref": "#/components/schemas/ValueBody"
+            },
+            "type": "array"
+          },
+          "values_path": {
+            "description": "Dotted path in the chart's values the variable is written to, such as database.host; omit for a variable only used through bindings",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "VariableScope": {
+        "additionalProperties": false,
+        "properties": {
+          "channel_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "environment_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "target_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "environment_ids",
+          "target_ids",
+          "channel_ids"
+        ],
+        "type": "object"
+      },
+      "VariableSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "application_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "archived_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "deliver_as": {
+            "enum": [
+              "secret",
+              "value"
+            ],
+            "nullable": true,
+            "type": "string"
+          },
+          "description": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "text",
+              "secret"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "organization_id": {
+            "type": "string"
+          },
+          "project_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "values": {
+            "items": {
+              "$ref": "#/components/schemas/VariableValueSnapshot"
+            },
+            "type": "array"
+          },
+          "values_path": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "project_id",
+          "application_id",
+          "name",
+          "description",
+          "kind",
+          "values_path",
+          "deliver_as",
+          "values",
+          "created_at",
+          "updated_at",
+          "archived_at"
+        ],
+        "type": "object"
+      },
+      "VariableValueSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/VariableScope"
+          },
+          "secret": {
+            "$ref": "#/components/schemas/SecretReference"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "value",
+          "secret",
+          "scope",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "VaultSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "auth_mount": {
+            "type": "string"
+          },
+          "auth_role": {
+            "type": "string"
+          },
+          "mount": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "address",
+          "mount",
+          "auth_role"
+        ],
         "type": "object"
       },
       "VaultStore": {
@@ -10374,6 +11473,120 @@
         "summary": "Hand an Application to another Team",
         "tags": [
           "applications"
+        ]
+      }
+    },
+    "/v1/applications/{application}/variables": {
+      "get": {
+        "operationId": "list-application-variables",
+        "parameters": [
+          {
+            "description": "The Application's ID, or the slug of an active Application",
+            "in": "path",
+            "name": "application",
+            "required": true,
+            "schema": {
+              "description": "The Application's ID, or the slug of an active Application",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Also return the variables of the Application's Project, after its own",
+            "explode": false,
+            "in": "query",
+            "name": "include_inherited",
+            "schema": {
+              "description": "Also return the variables of the Application's Project, after its own",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseListVariableSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List an Application's variables",
+        "tags": [
+          "variables"
+        ]
+      },
+      "post": {
+        "operationId": "create-application-variable",
+        "parameters": [
+          {
+            "description": "The Application's ID, or the slug of an active Application",
+            "in": "path",
+            "name": "application",
+            "required": true,
+            "schema": {
+              "description": "The Application's ID, or the slug of an active Application",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VariableBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseVariableSnapshot"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a variable an Application deploys with",
+        "tags": [
+          "variables"
         ]
       }
     },
@@ -14493,6 +15706,110 @@
         ]
       }
     },
+    "/v1/projects/{project_id}/variables": {
+      "get": {
+        "operationId": "list-project-variables",
+        "parameters": [
+          {
+            "description": "The Project to list variables of",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "description": "The Project to list variables of",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseListVariableSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List a Project's variables",
+        "tags": [
+          "variables"
+        ]
+      },
+      "post": {
+        "operationId": "create-project-variable",
+        "parameters": [
+          {
+            "description": "The Project the variable belongs to",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "description": "The Project the variable belongs to",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VariableBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseVariableSnapshot"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a variable every Application in a Project deploys with",
+        "tags": [
+          "variables"
+        ]
+      }
+    },
     "/v1/registries/{registry_id}": {
       "get": {
         "operationId": "get-registry",
@@ -15022,6 +16339,132 @@
         ]
       }
     },
+    "/v1/releases/{release_id}/variables": {
+      "get": {
+        "operationId": "get-release-variables",
+        "parameters": [
+          {
+            "description": "The Release",
+            "in": "path",
+            "name": "release_id",
+            "required": true,
+            "schema": {
+              "description": "The Release",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A Target, to also get the value of each variable a Deployment there would get",
+            "explode": false,
+            "in": "query",
+            "name": "target_id",
+            "schema": {
+              "description": "A Target, to also get the value of each variable a Deployment there would get",
+              "type": "string"
+            }
+          },
+          {
+            "description": "One of the Release's Deployments, to get the revision it used rather than the current one: what a rollback that restores it deploys",
+            "explode": false,
+            "in": "query",
+            "name": "deployment_id",
+            "schema": {
+              "description": "One of the Release's Deployments, to get the revision it used rather than the current one: what a rollback that restores it deploys",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseReleaseVariablesView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get the variables a Release deploys with, and what a Target would get",
+        "tags": [
+          "releases"
+        ]
+      }
+    },
+    "/v1/releases/{release_id}/variables/refresh": {
+      "post": {
+        "operationId": "refresh-release-variables",
+        "parameters": [
+          {
+            "description": "The Release",
+            "in": "path",
+            "name": "release_id",
+            "required": true,
+            "schema": {
+              "description": "The Release",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only say what would change, without taking a revision",
+            "explode": false,
+            "in": "query",
+            "name": "preview",
+            "schema": {
+              "description": "Only say what would change, without taking a revision",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseReleaseVariablesRefresh"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Take a new revision of a Release's variables from its Application's, or preview what would change",
+        "tags": [
+          "releases"
+        ]
+      }
+    },
     "/v1/releases/{release_id}/withdraw": {
       "post": {
         "operationId": "withdraw-release",
@@ -15067,6 +16510,158 @@
         "summary": "Withdraw a published Release so it is not deployed again",
         "tags": [
           "releases"
+        ]
+      }
+    },
+    "/v1/secret-stores/{secret_store_id}": {
+      "get": {
+        "operationId": "get-secret-store",
+        "parameters": [
+          {
+            "description": "The Secret Store's ID",
+            "in": "path",
+            "name": "secret_store_id",
+            "required": true,
+            "schema": {
+              "description": "The Secret Store's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseSecretStoreSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get a Secret Store",
+        "tags": [
+          "secret-stores"
+        ]
+      },
+      "patch": {
+        "operationId": "update-secret-store",
+        "parameters": [
+          {
+            "description": "The Secret Store's ID",
+            "in": "path",
+            "name": "secret_store_id",
+            "required": true,
+            "schema": {
+              "description": "The Secret Store's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSecretStoreRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseSecretStoreSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Change a Secret Store",
+        "tags": [
+          "secret-stores"
+        ]
+      }
+    },
+    "/v1/secret-stores/{secret_store_id}/archive": {
+      "post": {
+        "operationId": "archive-secret-store",
+        "parameters": [
+          {
+            "description": "The Secret Store's ID",
+            "in": "path",
+            "name": "secret_store_id",
+            "required": true,
+            "schema": {
+              "description": "The Secret Store's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseSecretStoreSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Archive a Secret Store no variable refers to",
+        "tags": [
+          "secret-stores"
         ]
       }
     },
@@ -16987,6 +18582,340 @@
         ]
       }
     },
+    "/v1/variables/{variable_id}": {
+      "get": {
+        "operationId": "get-variable",
+        "parameters": [
+          {
+            "description": "The variable's ID",
+            "in": "path",
+            "name": "variable_id",
+            "required": true,
+            "schema": {
+              "description": "The variable's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseVariableSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get a variable",
+        "tags": [
+          "variables"
+        ]
+      },
+      "patch": {
+        "operationId": "update-variable",
+        "parameters": [
+          {
+            "description": "The variable's ID",
+            "in": "path",
+            "name": "variable_id",
+            "required": true,
+            "schema": {
+              "description": "The variable's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateVariableRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseVariableSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Change a variable",
+        "tags": [
+          "variables"
+        ]
+      }
+    },
+    "/v1/variables/{variable_id}/archive": {
+      "post": {
+        "operationId": "archive-variable",
+        "parameters": [
+          {
+            "description": "The variable's ID",
+            "in": "path",
+            "name": "variable_id",
+            "required": true,
+            "schema": {
+              "description": "The variable's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseVariableSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Archive a variable, freeing its name",
+        "tags": [
+          "variables"
+        ]
+      }
+    },
+    "/v1/variables/{variable_id}/values": {
+      "post": {
+        "operationId": "add-variable-value",
+        "parameters": [
+          {
+            "description": "The variable's ID",
+            "in": "path",
+            "name": "variable_id",
+            "required": true,
+            "schema": {
+              "description": "The variable's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValueBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseVariableSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Add a value to a variable",
+        "tags": [
+          "variables"
+        ]
+      }
+    },
+    "/v1/variables/{variable_id}/values/{value_id}": {
+      "delete": {
+        "operationId": "remove-variable-value",
+        "parameters": [
+          {
+            "description": "The variable's ID",
+            "in": "path",
+            "name": "variable_id",
+            "required": true,
+            "schema": {
+              "description": "The variable's ID",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The value's ID",
+            "in": "path",
+            "name": "value_id",
+            "required": true,
+            "schema": {
+              "description": "The value's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseVariableSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove a variable's value",
+        "tags": [
+          "variables"
+        ]
+      },
+      "put": {
+        "operationId": "update-variable-value",
+        "parameters": [
+          {
+            "description": "The variable's ID",
+            "in": "path",
+            "name": "variable_id",
+            "required": true,
+            "schema": {
+              "description": "The variable's ID",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The value's ID",
+            "in": "path",
+            "name": "value_id",
+            "required": true,
+            "schema": {
+              "description": "The value's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValueBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseVariableSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Replace a variable's value",
+        "tags": [
+          "variables"
+        ]
+      }
+    },
     "/v1/workspaces": {
       "get": {
         "operationId": "list-workspaces",
@@ -18294,6 +20223,120 @@
         "summary": "Read where each of a Workspace's Applications runs",
         "tags": [
           "applications"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/secret-stores": {
+      "get": {
+        "operationId": "list-secret-stores",
+        "parameters": [
+          {
+            "description": "The Workspace to list Secret Stores in",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "description": "The Workspace to list Secret Stores in",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Include archived Secret Stores",
+            "explode": false,
+            "in": "query",
+            "name": "include_archived",
+            "schema": {
+              "description": "Include archived Secret Stores",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseListSecretStoreSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List a Workspace's Secret Stores",
+        "tags": [
+          "secret-stores"
+        ]
+      },
+      "post": {
+        "operationId": "create-secret-store",
+        "parameters": [
+          {
+            "description": "The Workspace the Secret Store belongs to",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "description": "The Workspace the Secret Store belongs to",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSecretStoreRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseSecretStoreSnapshot"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a Secret Store in a Workspace",
+        "tags": [
+          "secret-stores"
         ]
       }
     },

@@ -4,6 +4,8 @@ import { signal, Type } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { API_BASE_URL } from '../../api-base-url';
+import { PermissionsApi } from '../../api/permissions-api';
+import { VariablesApi } from '../variables/variables-api';
 import { WorkspaceContext } from '../workspace-context';
 import { ApplicationPage } from './application-page';
 import { ApplicationsPage } from './applications-page';
@@ -97,6 +99,15 @@ describe('delivery pages', () => {
         provideHttpClientTesting(),
         provideRouter([]),
         { provide: API_BASE_URL, useValue: 'https://cp.test' },
+        // The pages' variables have their own spec (variables/variable-list.spec.ts).
+        {
+          provide: VariablesApi,
+          useValue: {
+            list: () => Promise.resolve([]),
+            scopeOptions: () => Promise.resolve({ environments: [], targets: [], stores: [] }),
+          },
+        },
+        { provide: PermissionsApi, useValue: { granted: () => Promise.resolve(new Set()) } },
         {
           provide: WorkspaceContext,
           useValue: { current: signal(workspace), workspaces: signal([workspace]) },

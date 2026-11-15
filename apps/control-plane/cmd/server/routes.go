@@ -2,6 +2,8 @@ package server
 
 import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/api"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/credentials"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/credentials/secretstores"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/agentapi"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/applications"
@@ -11,6 +13,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/lifecycles"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/registries"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/releases"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/variables"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/enrollment"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/authhttp"
@@ -70,6 +73,8 @@ type services struct {
 	applications    delivery.ApplicationService
 	releases        delivery.ReleaseService
 	deployments     delivery.DeploymentService
+	variables       delivery.VariableService
+	secretStores    credentials.SecretStoreService
 	enrollment      enrollment.Service
 	connections     versioncontrol.ConnectionService
 	sources         versioncontrol.SourceService
@@ -100,6 +105,8 @@ func (s services) routes(describe bool) []api.Routes {
 		applications.NewApplicationController(s.applications),
 		releases.NewReleaseController(s.releases),
 		deployments.NewController(s.deployments),
+		variables.NewVariableController(s.variables),
+		secretstores.NewSecretStoreController(s.secretStores),
 		enrollment.NewController(s.enrollment),
 		connections.NewController(s.connections),
 		sources.NewController(s.sources),

@@ -374,8 +374,16 @@ func TestSnapshotJSONKeys(t *testing.T) {
 		{ArtifactSnapshot{}, append([]string{"id", "organization_id", "application_id", "name", "artifact_kind", "artifact_name", "registry_id", "required", "source", "archived_at"}, timestamps...)},
 		{ChannelSnapshot{}, append([]string{"id", "organization_id", "application_id", "lifecycle_id", "slug", "display_name", "description", "is_default", "rules", "archived_at"}, timestamps...)},
 		{ChannelRuleSnapshot{}, append([]string{"id", "kind", "artifact_id", "config"}, timestamps...)},
+		{VariableSnapshot{}, append([]string{"id", "organization_id", "project_id", "application_id", "name", "description", "kind", "values_path", "deliver_as", "values", "archived_at"}, timestamps...)},
+		{VariableValueSnapshot{}, append([]string{"id", "value", "secret", "scope"}, timestamps...)},
+		{SecretReference{}, []string{"store_id", "path", "field", "version"}},
+		{SecretVersion{}, []string{"name", "store_id", "path", "field", "version", "fingerprint", "delivered_as"}},
+		{VariableScope{}, []string{"environment_ids", "target_ids", "channel_ids"}},
+		{ReleaseVariablesSnapshot{}, append([]string{"id", "organization_id", "application_id", "release_id", "revision", "status", "variables", "taken_by_principal_id"}, timestamps...)},
+		{SnapshotVariable{}, []string{"name", "source", "kind", "values_path", "deliver_as", "values"}},
+		{SnapshotValue{}, []string{"value", "secret", "scope"}},
 		{PlacementSnapshot{}, append([]string{"organization_id", "application_id", "target_id", "source", "apply_config", "current_deployment_id", "current_release_id"}, timestamps...)},
-		{DeploymentSnapshot{}, []string{"id", "organization_id", "application_id", "release_id", "environment_id", "target_id", "source", "reason", "status", "previous_deployment_id", "initiated_by_principal_id", "session_id", "work_item_id", "external_ref", "policy_decision_id", "findings", "requested_at", "started_at", "finished_at", "succeeded_at", "status_changed_at", "created_at", "updated_at"}},
+		{DeploymentSnapshot{}, []string{"id", "organization_id", "application_id", "release_id", "environment_id", "target_id", "source", "reason", "status", "previous_deployment_id", "initiated_by_principal_id", "session_id", "work_item_id", "external_ref", "policy_decision_id", "variable_snapshot_id", "secret_versions", "restores_deployment_id", "secrets_latest", "findings", "requested_at", "started_at", "finished_at", "succeeded_at", "status_changed_at", "created_at", "updated_at"}},
 		{DeploymentEventSnapshot{}, []string{"id", "organization_id", "deployment_id", "kind", "status", "detail", "report_id", "reported_by_principal_id", "occurred_at", "recorded_at"}},
 	}
 	for _, tt := range tests {

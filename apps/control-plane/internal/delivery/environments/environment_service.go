@@ -32,6 +32,14 @@ type LifecycleUsage interface {
 	CountActiveLifecyclesWithEnvironment(ctx context.Context, organizationID, environmentID string) (int, error)
 }
 
+// VariableUsage counts the variables with a value scoped to an Environment
+// or a Target, which keep it from being archived.
+// delivery.VariableRepository provides it.
+type VariableUsage interface {
+	CountActiveVariablesWithEnvironment(ctx context.Context, organizationID, environmentID string) (int, error)
+	CountActiveVariablesWithTarget(ctx context.Context, organizationID, targetID string) (int, error)
+}
+
 // Clusters is what Target creation and restore need: the Cluster a locator
 // names, and that Cluster locked so it cannot be archived meanwhile.
 type Clusters interface {
@@ -46,6 +54,7 @@ type options struct {
 	targets      delivery.TargetRepository
 	clusters     Clusters
 	lifecycles   LifecycleUsage
+	variables    VariableUsage
 	workspaces   delivery.Workspaces
 	resources    iam.ResourceRegistrar
 	authz        authorization.Authorizer
@@ -60,6 +69,9 @@ func WithTargetRepo(r delivery.TargetRepository) EnvironmentServiceOption {
 }
 func WithClusterRepo(r Clusters) EnvironmentServiceOption {
 	return func(o *options) { o.clusters = r }
+}
+func WithVariableUsage(v VariableUsage) EnvironmentServiceOption {
+	return func(o *options) { o.variables = v }
 }
 func WithLifecycleUsage(l LifecycleUsage) EnvironmentServiceOption {
 	return func(o *options) { o.lifecycles = l }
@@ -105,6 +117,7 @@ func NewEnvironmentService(opts ...EnvironmentServiceOption) (delivery.Environme
 		{"TargetRepo", o.targets != nil},
 		{"ClusterRepo", o.clusters != nil},
 		{"LifecycleUsage", o.lifecycles != nil},
+		{"VariableUsage", o.variables != nil},
 		{"Workspaces", o.workspaces != nil},
 		{"ResourceRegistrar", o.resources != nil},
 		{"Authorizer", o.authz != nil},
@@ -122,6 +135,7 @@ func NewEnvironmentService(opts ...EnvironmentServiceOption) (delivery.Environme
 		targets:      o.targets,
 		clusters:     o.clusters,
 		lifecycles:   o.lifecycles,
+		variables:    o.variables,
 		workspaces:   o.workspaces,
 		resources:    o.resources,
 		w:            o.writer,
@@ -138,6 +152,7 @@ type service struct {
 	targets      delivery.TargetRepository
 	clusters     Clusters
 	lifecycles   LifecycleUsage
+	variables    VariableUsage
 	workspaces   delivery.Workspaces
 	resources    iam.ResourceRegistrar
 	w            change.Writer
@@ -267,6 +282,13 @@ func (s *service) checkUnused(ctx context.Context, e *delivery.Environment) erro
 	}
 	if n > 0 {
 		return fmt.Errorf("%w: environment %s is in %d active lifecycles", delivery.ErrInUse, e.ID(), n)
+	}
+	n, err = s.variables.CountActiveVariablesWithEnvironment(ctx, e.OrganizationID(), e.ID())
+	if err != nil {
+		return fmt.Errorf("count variables: %w", err)
+	}
+	if n > 0 {
+		return fmt.Errorf("%w: %d variables have a value scoped to environment %s", delivery.ErrInUse, n, e.ID())
 	}
 	return nil
 }
@@ -422,12 +444,20 @@ func (s *service) UpdateTarget(ctx context.Context, actor identity.Actor, organi
 		func(_ context.Context, t *delivery.Target) error { return t.Update(props) })
 }
 
-// ArchiveTarget archives a Target. Archiving an archived one does nothing.
+// ArchiveTarget archives a Target no variable's value is scoped to.
+// Archiving an archived one does nothing.
 func (s *service) ArchiveTarget(ctx context.Context, actor identity.Actor, organizationID, targetID string) (*delivery.Target, error) {
 	return s.changeTarget(ctx, actor, organizationID, targetID, delivery.EventTargetArchived,
-		func(_ context.Context, t *delivery.Target) error {
+		func(ctx context.Context, t *delivery.Target) error {
 			if t.Archived() {
 				return change.ErrUnchanged
+			}
+			n, err := s.variables.CountActiveVariablesWithTarget(ctx, organizationID, t.ID())
+			if err != nil {
+				return fmt.Errorf("count variables: %w", err)
+			}
+			if n > 0 {
+				return fmt.Errorf("%w: %d variables have a value scoped to target %s", delivery.ErrInUse, n, t.ID())
 			}
 			t.Archive()
 			return nil

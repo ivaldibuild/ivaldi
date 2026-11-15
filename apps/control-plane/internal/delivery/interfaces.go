@@ -627,4 +627,156 @@ type ReleaseService interface {
 	PublishRelease(ctx context.Context, actor identity.Actor, organizationID, releaseID string) (*ReleaseDetail, error)
 	// WithdrawRelease stops a published Release from being deployed again.
 	WithdrawRelease(ctx context.Context, actor identity.Actor, organizationID, releaseID string) (*ReleaseDetail, error)
+	// GetReleaseVariables returns the Release's current revision of
+	// variables and, when a Target is named, the value of each a Deployment
+	// there would get. Naming one of the Release's Deployments returns the
+	// revision it used instead, which is what a rollback that restores it
+	// deploys. It needs variable.read on the Application's Project.
+	GetReleaseVariables(ctx context.Context, actor identity.Actor, organizationID, releaseID, targetID, deploymentID string) (*ReleaseVariablesView, error)
+	// RefreshReleaseVariables snapshots the Application's variables as they
+	// are now as the Release's next revision, which later Deployments use.
+	// With preview it only says what would change. It needs release.manage,
+	// is not allowed on a withdrawn Release, and is refused with
+	// ErrProductionChange when it would change what a production Target
+	// gets, since that needs an approval that cannot be requested yet.
+	RefreshReleaseVariables(ctx context.Context, actor identity.Actor, organizationID, releaseID string, preview bool) (*ReleaseVariablesRefresh, error)
+}
+
+// VariableOwner names the Project or the Application that owns variables:
+// exactly one of its fields is set.
+type VariableOwner struct {
+	ProjectID     string
+	ApplicationID string
+}
+
+// VariableRepository stores Variables with their values. Every read is
+// limited to one Organization.
+type VariableRepository interface {
+	// CreateVariable stores a Variable and its values. It returns
+	// ErrSlugTaken when its owner has an active variable with the same
+	// name, whatever the case.
+	CreateVariable(ctx context.Context, v *Variable) error
+	GetVariable(ctx context.Context, organizationID, variableID string) (*Variable, error)
+	// ListVariables returns an owner's active variables by name. An
+	// Application's list does not include its Project's.
+	ListVariables(ctx context.Context, organizationID string, owner VariableOwner) ([]*Variable, error)
+	// ListVariablesInProject returns the active variables of a Project and
+	// of each of its active Applications, by Application ID.
+	ListVariablesInProject(ctx context.Context, organizationID, projectID string) (project []*Variable, applications map[string][]*Variable, err error)
+	// UpdateVariable writes the Variable's row and replaces its values.
+	UpdateVariable(ctx context.Context, v *Variable) error
+	// CountActiveVariablesWith… count the active variables, of a Project or
+	// of an active Application, with a value scoped to the record, which
+	// keep it from being archived.
+	CountActiveVariablesWithEnvironment(ctx context.Context, organizationID, environmentID string) (int, error)
+	CountActiveVariablesWithTarget(ctx context.Context, organizationID, targetID string) (int, error)
+	CountActiveVariablesWithChannel(ctx context.Context, organizationID, channelID string) (int, error)
+	// CountActiveVariablesWithSecretStore counts the active variables with
+	// a value kept in the Secret Store.
+	CountActiveVariablesWithSecretStore(ctx context.Context, organizationID, storeID string) (int, error)
+}
+
+// SecretStores looks up Secret Stores in the credentials capability,
+// without authorizing. credentials.NewStoreLookup implements it.
+type SecretStores interface {
+	// LookupSecretStores returns the stores that exist among the IDs, by
+	// ID, archived ones included.
+	LookupSecretStores(ctx context.Context, organizationID string, storeIDs []string) (map[string]SecretStoreRef, error)
+}
+
+// CreateVariableInput describes a Variable to create. Owner.ApplicationID
+// may be an active Application's slug.
+type CreateVariableInput struct {
+	OrganizationID string
+	Owner          VariableOwner
+	Name           string
+	Description    string
+	Kind           VariableKind
+	ValuesPath     string
+	// DeliverAs is how a secret variable reaches the chart; a Kubernetes
+	// Secret when empty.
+	DeliverAs VariableDeliverAs
+	Values    []VariableValueProps
+}
+
+// ListVariablesQuery lists an owner's variables. IncludeInherited adds the
+// Project's variables to an Application's.
+type ListVariablesQuery struct {
+	OrganizationID   string
+	Owner            VariableOwner
+	IncludeInherited bool
+}
+
+// VariableService manages the variables Applications deploy with
+// (docs/design/deployment-variables.md). Reading needs variable.read and
+// changing needs variable.manage, on the owning Project or the owning
+// Application's Project. A change to a value scoped to Environments, or to
+// Targets in them, also needs variable.manage on each of those
+// Environments, so a Project's members cannot change production's
+// configuration without being allowed to on production.
+//
+// It refuses what would leave a Deployment's configuration undefined: two
+// values of a variable that could tie, an Application's variable that
+// shadows its Project's with a different kind or values path, and two
+// variables an Application deploys with that write overlapping values paths.
+type VariableService interface {
+	CreateVariable(ctx context.Context, actor identity.Actor, in CreateVariableInput) (*Variable, error)
+	GetVariable(ctx context.Context, actor identity.Actor, organizationID, variableID string) (*Variable, error)
+	ListVariables(ctx context.Context, actor identity.Actor, query ListVariablesQuery) ([]*Variable, error)
+	UpdateVariable(ctx context.Context, actor identity.Actor, organizationID, variableID string, props UpdateVariableProps) (*Variable, error)
+	AddVariableValue(ctx context.Context, actor identity.Actor, organizationID, variableID string, props VariableValueProps) (*Variable, error)
+	UpdateVariableValue(ctx context.Context, actor identity.Actor, organizationID, variableID, valueID string, props VariableValueProps) (*Variable, error)
+	RemoveVariableValue(ctx context.Context, actor identity.Actor, organizationID, variableID, valueID string) (*Variable, error)
+	// ArchiveVariable frees the Variable's name. Releases that snapshotted
+	// it keep their copy.
+	ArchiveVariable(ctx context.Context, actor identity.Actor, organizationID, variableID string) (*Variable, error)
+}
+
+// ReleaseVariablesRepository stores the revisions of Releases' variables.
+// Every read is limited to one Organization.
+type ReleaseVariablesRepository interface {
+	// CreateReleaseVariables stores a revision. A Release has one current
+	// revision, so the one it replaces is superseded first.
+	CreateReleaseVariables(ctx context.Context, rv *ReleaseVariables) error
+	GetReleaseVariables(ctx context.Context, organizationID, revisionID string) (*ReleaseVariables, error)
+	// GetCurrentReleaseVariables returns the revision new Deployments of the
+	// Release use, or ErrNotFound for a Release that has none.
+	GetCurrentReleaseVariables(ctx context.Context, organizationID, releaseID string) (*ReleaseVariables, error)
+	// LatestReleaseVariablesRevision returns the Release's highest revision
+	// number, or 0 when it has none.
+	LatestReleaseVariablesRevision(ctx context.Context, organizationID, releaseID string) (int, error)
+	// UpdateReleaseVariables writes a revision's status. Its content never changes.
+	UpdateReleaseVariables(ctx context.Context, rv *ReleaseVariables) error
+}
+
+// ReleaseVariablesView is a Release's current variables. Revision is nil
+// for a Release created before variables were snapshotted, which deploys
+// with none. Resolved is set when a Target was named: what a Deployment
+// there would get, by variable name.
+type ReleaseVariablesView struct {
+	Revision *ReleaseVariablesSnapshot `json:"revision"`
+	Resolved []ResolvedVariable        `json:"resolved"`
+}
+
+// ReleaseVariablesRefresh is what refreshing a Release's variables changes,
+// or would change.
+type ReleaseVariablesRefresh struct {
+	// Revision is the Release's current revision after the call: the new
+	// one when Applied, and otherwise the one it already had, if any.
+	Revision *ReleaseVariablesSnapshot `json:"revision"`
+	// Applied says whether a new revision was taken. A preview, and a
+	// refresh that would change nothing, take none.
+	Applied bool `json:"applied"`
+	// Changed names the variables the new revision holds differently.
+	Changed []string `json:"changed"`
+	// Production lists the production Targets the Application is placed on
+	// that would get another value of some variable.
+	Production []ProductionChange `json:"production"`
+}
+
+// ProductionChange is what a refresh would change for one production Target.
+type ProductionChange struct {
+	TargetID      string   `json:"target_id"`
+	EnvironmentID string   `json:"environment_id"`
+	Variables     []string `json:"variables"`
 }

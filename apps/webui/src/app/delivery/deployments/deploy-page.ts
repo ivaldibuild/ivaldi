@@ -12,6 +12,7 @@ import { DeliveryApi } from '../delivery-api';
 import { PageHeader } from '../page-header';
 import { ProjectsApi } from '../projects-api';
 import { shortDigest } from '../releases/release-labels';
+import { ReleaseVariables } from '../variables/release-variables';
 import { checkLabel, DeploymentStatusBadge } from './deployment-status';
 
 /** What a Target's checks and changes look like while they load and after. */
@@ -32,6 +33,7 @@ type Preview =
     RouterLink,
     PageHeader,
     DeploymentStatusBadge,
+    ReleaseVariables,
     HlmAlertImports,
     HlmButtonImports,
     HlmSpinnerImports,
@@ -179,6 +181,15 @@ export class DeployPage {
     this.chosen().some((c) => c.preview.state !== 'ready' || !c.preview.ready),
   );
 
+  /** Whether any chosen Target would be rolled back to this Release. */
+  protected readonly rollsBack = computed(() =>
+    this.chosen().some(
+      (c) => c.preview.state === 'ready' && c.preview.changes.reason === 'rollback',
+    ),
+  );
+  /** For a rollback: read the current secrets instead of the versions the Release last ran with. */
+  protected readonly latestSecrets = signal(false);
+
   protected readonly checkLabel = checkLabel;
 
   protected buildLabel(build: Build | null | undefined): string {
@@ -211,7 +222,7 @@ export class DeployPage {
     }
     let created: Deployment[] = [];
     const done = await this.status.run(async () => {
-      created = await this.api.requestDeployments(this.id(), this.selected());
+      created = await this.api.requestDeployments(this.id(), this.selected(), this.latestSecrets());
     });
     if (!done) {
       return;

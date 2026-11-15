@@ -46,7 +46,10 @@ type agent struct {
 	deployers  map[string]deploy.Deployer
 	reporter   report.Reporter
 	// secrets is nil in tests that use no secrets.
-	secrets      secrets.Resolver
+	secrets secrets.Resolver
+	// storeKinds are the secret store kinds this agent's configuration
+	// lets it read, which the heartbeat reports.
+	storeKinds   []string
 	secretWriter secrets.Writer
 	masker       *secrets.Masker
 	ready        *readiness

@@ -48,6 +48,20 @@ Settings: Vault's `address`, the KV v2 `mount`, and the Kubernetes `auth_role` t
 
 Bind the role to the agent's ServiceAccount and namespace in Vault's Kubernetes auth method, with a policy that can read the paths it should.
 
+The agent logs in by sending Vault a service-account token, and a store's address is set in Ivaldi by whoever manages the Workspace's stores. So the agent's operator decides which Vault servers it may use, in the agent chart's values:
+
+```yaml
+secrets:
+  vault:
+    addresses:
+      - https://vault.example.com
+    audience: vault
+```
+
+- A `vault` store at any other address fails the Deployment before anything is sent, and an agent with no addresses does not offer to read `vault` stores at all, so the deploy plan refuses them.
+- The token is projected for `audience` (default `vault`), never the Pod's Kubernetes API token, so a Vault that receives it cannot use it on the cluster's API. Set the same `audience` on the Kubernetes auth role, or Vault rejects the login.
+- The agent follows no redirect from Vault. Give it the address that answers, such as the active node's or a load balancer's.
+
 ### `doppler`
 
 Settings: the name and key of a Kubernetes Secret, in the agent's namespace, that holds a Doppler service token. The path is the secret's name in Doppler.

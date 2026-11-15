@@ -5,6 +5,10 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -213,4 +217,37 @@ func TestResolver_ReadsTheKeysForEachDeployment(t *testing.T) {
 	assert.Regexp(t, `^hmac-sha256:v2:`, next[0].Fingerprint, "the newest key is used at once")
 	_, err = r.Resolve(t.Context(), "payments", []apiclient.AssignmentSecret{kubernetesSecret("DB_PASSWORD", "password", &first[0].Fingerprint)})
 	assert.ErrorContains(t, err, "fingerprint key v1 is gone", "the removed key is refused at once")
+}
+
+// A store's address comes from the control plane, and logging in sends a
+// service-account token there, so the agent only uses a Vault its operator
+// listed.
+func TestResolver_OnlyLogsInToAVaultItsOperatorListed(t *testing.T) {
+	var logins int
+	vault := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		logins++
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	t.Cleanup(vault.Close)
+	secret := apiclient.AssignmentSecret{
+		Name: "Api.Key", DeliverAs: apiclient.AssignmentSecretDeliverAsSecret,
+		Store: apiclient.StoreSettings{Id: "sst_1", Kind: apiclient.StoreSettingsKindVault,
+			Vault: &apiclient.VaultStore{Address: vault.URL, Mount: "kv", AuthRole: "ivaldi"}},
+		Ref: apiclient.SecretRef{Path: "api"},
+	}
+	token := filepath.Join(t.TempDir(), "token")
+	require.NoError(t, os.WriteFile(token, []byte("vault-audience-token"), 0o600))
+
+	r, _, _ := newTestResolver(t, fake.NewClientset())
+	r.cfg.VaultTokenFile = token
+	_, err := r.Resolve(context.Background(), "payments", []apiclient.AssignmentSecret{secret})
+	require.ErrorContains(t, err, "not set up to log in to")
+	assert.Zero(t, logins, "nothing is sent to an address the operator did not list")
+	assert.NotContains(t, r.cfg.StoreKinds(), "vault", "and the heartbeat does not claim the agent reads Vault")
+
+	r.cfg.VaultAddresses = []string{vault.URL + "/"}
+	_, err = r.Resolve(context.Background(), "payments", []apiclient.AssignmentSecret{secret})
+	require.Error(t, err)
+	assert.Equal(t, 1, logins, "a listed address is logged in to")
+	assert.Contains(t, r.cfg.StoreKinds(), "vault")
 }

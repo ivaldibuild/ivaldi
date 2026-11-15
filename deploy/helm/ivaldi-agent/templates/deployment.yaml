@@ -76,6 +76,10 @@ spec:
             - name: IVALDI_PLAIN_HTTP_REGISTRIES
               value: {{ join "," . | quote }}
             {{- end }}
+            {{- with .Values.secrets.vault.addresses }}
+            - name: IVALDI_VAULT_ADDRESSES
+              value: {{ join "," . | quote }}
+            {{- end }}
             {{- if .Values.controlPlane.caConfigMap }}
             - name: IVALDI_CLIENT_CA_FILE
               value: /etc/ivaldi/ca/ca.crt
@@ -119,6 +123,11 @@ spec:
             - name: ivaldi-token
               mountPath: /var/run/secrets/ivaldi
               readOnly: true
+            {{- if .Values.secrets.vault.addresses }}
+            - name: vault-token
+              mountPath: /var/run/secrets/ivaldi-vault
+              readOnly: true
+            {{- end }}
             {{- if eq .Values.agent.authentication "mtls" }}
             - name: tls
               mountPath: /var/run/secrets/ivaldi/tls
@@ -160,6 +169,18 @@ spec:
                   path: token
                   audience: ivaldi
                   expirationSeconds: 3600
+        {{- if .Values.secrets.vault.addresses }}
+        # The token the agent logs in to Vault with. It is made for Vault's
+        # audience, so a Vault that receives it cannot use it on the
+        # Kubernetes API.
+        - name: vault-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: {{ .Values.secrets.vault.audience | quote }}
+                  expirationSeconds: 3600
+        {{- end }}
         {{- if eq .Values.agent.authentication "mtls" }}
         - name: tls
           secret:

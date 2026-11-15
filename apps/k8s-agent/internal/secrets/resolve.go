@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -68,10 +69,32 @@ type Config struct {
 	// AgentNamespace holds the fingerprint key and Doppler token Secrets.
 	AgentNamespace    string
 	FingerprintSecret string
-	// ServiceAccountTokenFile is the token Vault's Kubernetes auth checks.
-	ServiceAccountTokenFile string
-	Masker                  *Masker
-	Logger                  *slog.Logger
+	// VaultAddresses are the Vault servers the agent's operator lets it log
+	// in to. A store's address comes from the control plane, where whoever
+	// manages a Workspace's stores sets it, and a login sends a
+	// service-account token there: a store at any other address is refused.
+	VaultAddresses []string
+	// VaultTokenFile is the token Vault's Kubernetes auth checks: one
+	// projected for Vault's audience, never the Pod's API token.
+	VaultTokenFile string
+	Masker         *Masker
+	Logger         *slog.Logger
+}
+
+// allowsVault reports whether the operator listed address.
+func (c Config) allowsVault(address string) bool {
+	normalize := func(a string) string { return strings.TrimRight(strings.TrimSpace(a), "/") }
+	return slices.ContainsFunc(c.VaultAddresses, func(allowed string) bool {
+		return normalize(allowed) != "" && normalize(allowed) == normalize(address)
+	})
+}
+
+// StoreKinds lists the kinds of secret store an agent with this
+// configuration can read: every kind, less vault when no address is allowed.
+func (c Config) StoreKinds() []string {
+	return slices.DeleteFunc(slices.Clone(Kinds), func(kind string) bool {
+		return kind == string(secretstore.KindVault) && len(c.VaultAddresses) == 0
+	})
 }
 
 // NewResolver returns a Resolver. The fingerprint keys are read for each
@@ -242,10 +265,14 @@ func (r *resolver) newStore(ctx context.Context, s apiclient.StoreSettings, name
 		if s.Vault == nil {
 			return nil, deploy.Failf("secret store %s has no Vault settings", s.Id)
 		}
+		if !r.cfg.allowsVault(s.Vault.Address) {
+			return nil, deploy.Failf("secret store %s is a Vault at %s, which this agent is not set up to log in to; its operator lists the addresses it may use in the chart's secrets.vault.addresses",
+				s.Id, s.Vault.Address)
+		}
 		cfg := secretstore.VaultConfig{
 			Address: s.Vault.Address, Mount: s.Vault.Mount, AuthRole: s.Vault.AuthRole,
 			JWT: func() (string, error) {
-				raw, err := os.ReadFile(r.cfg.ServiceAccountTokenFile)
+				raw, err := os.ReadFile(r.cfg.VaultTokenFile)
 				return strings.TrimSpace(string(raw)), err
 			},
 		}

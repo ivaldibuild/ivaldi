@@ -84,7 +84,15 @@
       "additionalProperties": false,
       "properties": {
         "kubernetesNamespaces": { "$ref": "#/definitions/namespaces" },
-        "dopplerTokenSecrets": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/definitions/name" } }
+        "dopplerTokenSecrets": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/definitions/name" } },
+        "vault": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "addresses": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^https?://[^\\s,]+$" } },
+            "audience": { "type": "string", "minLength": 1 }
+          }
+        }
       }
     },
     "registry": {

@@ -55,6 +55,10 @@ type store struct {
 	envelopes   []events.Envelope
 	// lockedTargets lists the Targets read for update, in order.
 	lockedTargets []string
+	// revisions are the revisions of Releases' variables, by ID.
+	revisions map[string]*delivery.ReleaseVariables
+	// snapshotted lists the observed Releases whose variables were snapshotted.
+	snapshotted []string
 }
 
 func newStore() *store {
@@ -475,7 +479,7 @@ func newWorld(t *testing.T) *world {
 	svc, err := NewService(
 		WithDeploymentRepo(fakeDeployments{s}), WithReleaseRepo(fakeReleases{s}), WithBuildRepo(fakeBuilds{s}),
 		WithApplications(fakeApplications{s}), WithEnvironments(fakeEnvironments{s}), WithTargets(fakeTargets{s}), WithClusters(fakeClusters{s}),
-		WithLifecycles(fakeLifecycles{s}), WithHeartbeatInterval(30*time.Second), WithCommitHistory(history), WithChanges(recorded), WithAuthorizer(authz), WithTransactor(s),
+		WithLifecycles(fakeLifecycles{s}), WithVariables(s), WithVariableSnapshots(s), WithHeartbeatInterval(30*time.Second), WithCommitHistory(history), WithChanges(recorded), WithAuthorizer(authz), WithTransactor(s),
 		WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
 	)
 	require.NoError(t, err)
@@ -1126,4 +1130,100 @@ func TestObserve(t *testing.T) {
 		require.NotNil(t, detail.Deployment.StartedAt)
 		assert.Equal(t, clock.Now(), *detail.Deployment.StartedAt, "a skewed agent clock cannot date a Deployment in the future")
 	})
+}
+
+func (s *store) GetReleaseVariables(_ context.Context, _, revisionID string) (*delivery.ReleaseVariables, error) {
+	if rv, ok := s.revisions[revisionID]; ok {
+		return rv, nil
+	}
+	return nil, delivery.ErrNotFound
+}
+
+func (s *store) GetCurrentReleaseVariables(_ context.Context, _, releaseID string) (*delivery.ReleaseVariables, error) {
+	for _, rv := range s.revisions {
+		if rv.ReleaseID() == releaseID && rv.Status() == delivery.ReleaseVariablesCurrent {
+			return rv, nil
+		}
+	}
+	return nil, delivery.ErrNotFound
+}
+
+func (s *store) Take(_ context.Context, rel *delivery.Release, _ string, _ *string) ([]*delivery.ReleaseVariables, error) {
+	s.snapshotted = append(s.snapshotted, rel.ID())
+	return nil, nil
+}
+
+// withVariables gives the world's Release a current revision holding the
+// variables, and returns it.
+func (w *world) withVariables(variables ...delivery.SnapshotVariable) *delivery.ReleaseVariables {
+	rv, err := delivery.NewReleaseVariables(delivery.NewReleaseVariablesProps{
+		OrganizationID: org, ApplicationID: w.app.ID(), ReleaseID: w.rel.ID(), Revision: 1, Variables: variables,
+	}, nil)
+	if err != nil {
+		panic(err)
+	}
+	if w.revisions == nil {
+		w.revisions = map[string]*delivery.ReleaseVariables{}
+	}
+	w.revisions[rv.ID()] = rv
+	return rv
+}
+
+func textVariable(name, path string, values ...delivery.SnapshotValue) delivery.SnapshotVariable {
+	v := delivery.SnapshotVariable{Name: name, Source: delivery.VariableSourceApplication, Kind: delivery.VariableKindText, Values: values}
+	if path != "" {
+		v.ValuesPath = &path
+	}
+	return v
+}
+
+func TestADeploymentUsesItsReleasesVariables(t *testing.T) {
+	w := newWorld(t)
+	revision := w.withVariables(
+		textVariable("Log.Level", "log.level",
+			delivery.SnapshotValue{Value: "info"},
+			delivery.SnapshotValue{Value: "warn", Scope: delivery.VariableScope{EnvironmentIDs: []string{envID}}}),
+		textVariable("Banner", "", delivery.SnapshotValue{Value: "#{Log.Level} in #{Ivaldi.Environment.Slug}"}),
+		textVariable("Elsewhere", "elsewhere", delivery.SnapshotValue{Value: "x", Scope: delivery.VariableScope{TargetIDs: []string{"tgt_01BX5ZZKBKACTAV9WEVGEMMVZZ"}}}),
+	)
+	out, err := w.svc.RequestDeployments(ctx, ada, delivery.RequestDeploymentsInput{
+		OrganizationID: org, ReleaseID: w.rel.ID(), TargetIDs: []string{targetID},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, out[0].VariableSnapshotID(), "the deployment records the revision it used")
+	assert.Equal(t, revision.ID(), *out[0].VariableSnapshotID())
+
+	// A later revision does not change what a requested Deployment applies.
+	revision.Supersede()
+	w.withVariables(textVariable("Log.Level", "log.level", delivery.SnapshotValue{Value: "debug"}))
+
+	items, err := w.svc.ListClusterAssignments(ctx, identity.Actor{PrincipalID: agentID}, org, clusterID)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, []delivery.AssignmentVariable{
+		{Name: "Banner", Source: delivery.VariableSourceApplication, Kind: delivery.VariableKindText, Value: "#{Log.Level} in #{Ivaldi.Environment.Slug}"},
+		{Name: "Log.Level", Source: delivery.VariableSourceApplication, Kind: delivery.VariableKindText, ValuesPath: "log.level", Value: "warn"},
+	}, items[0].Apply.Variables, "each variable's winning value for the target; none for a variable with no match")
+}
+
+func TestRequestDeploymentsRefusesABindingWithNoValue(t *testing.T) {
+	w := newWorld(t)
+	w.withVariables(textVariable("Database.Url", "database.url", delivery.SnapshotValue{Value: "postgres://#{Database.Host}/app"}))
+
+	_, err := w.svc.RequestDeployments(ctx, ada, delivery.RequestDeploymentsInput{
+		OrganizationID: org, ReleaseID: w.rel.ID(), TargetIDs: []string{targetID},
+	})
+	require.ErrorIs(t, err, delivery.ErrInvalid)
+	assert.Contains(t, err.Error(), "#{Database.Host}")
+	assert.Empty(t, w.deployments)
+
+	changes, err := w.svc.ReleaseChanges(ctx, ada, org, w.rel.ID(), targetID)
+	require.NoError(t, err)
+	failed := false
+	for _, c := range changes.Checks {
+		if c.Name == "variables_defined" {
+			failed = !c.OK
+		}
+	}
+	assert.True(t, failed, "the deploy sheet says so before it is requested")
 }

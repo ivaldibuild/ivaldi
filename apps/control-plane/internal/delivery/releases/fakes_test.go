@@ -69,6 +69,12 @@ type store struct {
 	artifacts []*delivery.Artifact
 	channels  []*delivery.Channel
 	tags      map[string]string
+	// snapshotted lists the Releases whose variables were snapshotted, as
+	// "release ID by principal ID in project ID".
+	snapshotted []string
+	// current is the revision GetCurrentReleaseVariables returns, by Release.
+	current map[string]*delivery.ReleaseVariables
+	targets map[string]*delivery.Target
 }
 
 func (s *store) WithinTx(ctx context.Context, fn func(context.Context) error) error {
@@ -361,6 +367,7 @@ func newWorld(t *testing.T) *world {
 func (s *store) options(authz authorization.Authorizer) []ReleaseServiceOption {
 	return []ReleaseServiceOption{
 		WithBuildRepo(s), WithReleaseRepo(s), WithApplications(s), WithTagResolver(tagResolver{s}),
+		WithVariableSnapshots(s), WithCurrentVariables(s), WithTargetLookup(s),
 		WithAuthorizer(authz), WithTransactor(s), WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
 	}
 }
@@ -383,4 +390,29 @@ func (w *world) create(t *testing.T, version string, builds ...delivery.BuildInp
 	})
 	require.NoError(t, err)
 	return d
+}
+
+// Take records the snapshot rather than storing one: the taker is tested
+// against PostgreSQL.
+func (s *store) Take(_ context.Context, rel *delivery.Release, projectID string, takenBy *string) ([]*delivery.ReleaseVariables, error) {
+	by := "nobody"
+	if takenBy != nil {
+		by = *takenBy
+	}
+	s.snapshotted = append(s.snapshotted, rel.ID()+" by "+by+" in "+projectID)
+	return nil, nil
+}
+
+func (s *store) GetCurrentReleaseVariables(_ context.Context, _, releaseID string) (*delivery.ReleaseVariables, error) {
+	if rv, ok := s.current[releaseID]; ok {
+		return rv, nil
+	}
+	return nil, delivery.ErrNotFound
+}
+
+func (s *store) GetTarget(_ context.Context, _, targetID string) (*delivery.Target, error) {
+	if t, ok := s.targets[targetID]; ok {
+		return t, nil
+	}
+	return nil, delivery.ErrNotFound
 }

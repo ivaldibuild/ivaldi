@@ -35,6 +35,7 @@ func TestSnapshotEnumTagsMatchTheDomain(t *testing.T) {
 	assert.ElementsMatch(t, []string{string(release.StatusDraft), string(release.StatusPublished), string(release.StatusWithdrawn)}, enumTag(t, ReleaseSnapshot{}, "Status"))
 	assert.ElementsMatch(t, []string{string(ReleaseCreated), string(ReleaseObserved)}, enumTag(t, ReleaseSnapshot{}, "Source"))
 	assert.ElementsMatch(t, []string{string(VariableKindText), string(VariableKindSecret)}, enumTag(t, VariableSnapshot{}, "Kind"))
+	assert.ElementsMatch(t, []string{string(ReleaseVariablesCurrent), string(ReleaseVariablesSuperseded)}, enumTag(t, ReleaseVariablesSnapshot{}, "Status"))
 	assert.ElementsMatch(t, []string{string(VariableDeliverAsSecret), string(VariableDeliverAsValue)}, enumTag(t, VariableSnapshot{}, "DeliverAs"))
 }
 

@@ -51,6 +51,7 @@ type Deployment struct {
 	workItemID           *string
 	externalRef          json.RawMessage
 	policyDecisionID     *string
+	variableSnapshotID   *string
 	findings             []string
 	requestedAt          time.Time
 	startedAt            *time.Time
@@ -80,14 +81,17 @@ type DeploymentSnapshot struct {
 	WorkItemID             *string                  `json:"work_item_id"`
 	ExternalRef            json.RawMessage          `json:"external_ref"`
 	PolicyDecisionID       *string                  `json:"policy_decision_id"`
-	Findings               []string                 `json:"findings"`
-	RequestedAt            time.Time                `json:"requested_at"`
-	StartedAt              *time.Time               `json:"started_at"`
-	FinishedAt             *time.Time               `json:"finished_at"`
-	SucceededAt            *time.Time               `json:"succeeded_at"`
-	StatusChangedAt        time.Time                `json:"status_changed_at"`
-	CreatedAt              time.Time                `json:"created_at"`
-	UpdatedAt              time.Time                `json:"updated_at"`
+	// VariableSnapshotID is the revision of the Release's variables an
+	// executed Deployment was requested with.
+	VariableSnapshotID *string    `json:"variable_snapshot_id"`
+	Findings           []string   `json:"findings"`
+	RequestedAt        time.Time  `json:"requested_at"`
+	StartedAt          *time.Time `json:"started_at"`
+	FinishedAt         *time.Time `json:"finished_at"`
+	SucceededAt        *time.Time `json:"succeeded_at"`
+	StatusChangedAt    time.Time  `json:"status_changed_at"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
 }
 
 // NewDeploymentProps describes a Deployment. A new one leaves the
@@ -109,6 +113,7 @@ type NewDeploymentProps struct {
 	WorkItemID             *string
 	ExternalRef            json.RawMessage
 	PolicyDecisionID       *string
+	VariableSnapshotID     *string
 	Findings               []string
 	RequestedAt            *time.Time
 	StartedAt              *time.Time
@@ -186,6 +191,9 @@ func NewDeployment(props NewDeploymentProps, deploymentID *string) (*Deployment,
 	if props.InitiatedByPrincipalID != nil && !id.Valid("prn", *props.InitiatedByPrincipalID) {
 		return nil, NewErrInvalidInput(fmt.Sprintf("%q is not a principal ID", *props.InitiatedByPrincipalID))
 	}
+	if props.VariableSnapshotID != nil && !id.Valid(ReleaseVariables{}.Prefix(), *props.VariableSnapshotID) {
+		return nil, NewErrInvalidInput(fmt.Sprintf("%q is not a release variables ID", *props.VariableSnapshotID))
+	}
 	if props.PolicyDecisionID != nil && !id.Valid(authorization.DecisionPrefix, *props.PolicyDecisionID) {
 		return nil, NewErrInvalidInput(fmt.Sprintf("%q is not a decision ID", *props.PolicyDecisionID))
 	}
@@ -221,6 +229,7 @@ func NewDeployment(props NewDeploymentProps, deploymentID *string) (*Deployment,
 		workItemID:           optional.OfPtr(props.WorkItemID),
 		externalRef:          append(json.RawMessage(nil), props.ExternalRef...),
 		policyDecisionID:     optional.OfPtr(props.PolicyDecisionID),
+		variableSnapshotID:   optional.OfPtr(props.VariableSnapshotID),
 		findings:             findings,
 		requestedAt:          timeOr(props.RequestedAt, now),
 		startedAt:            clock.CopyTime(props.StartedAt),
@@ -269,6 +278,7 @@ func (d *Deployment) Reason() DeploymentReason         { return d.reason }
 func (d *Deployment) Status() release.DeploymentStatus { return d.status }
 func (d *Deployment) PreviousDeploymentID() *string    { return copyString(d.previousDeploymentID) }
 func (d *Deployment) PolicyDecisionID() *string        { return copyString(d.policyDecisionID) }
+func (d *Deployment) VariableSnapshotID() *string      { return copyString(d.variableSnapshotID) }
 func (d *Deployment) Findings() []string               { return copyStrings(d.findings) }
 func (d *Deployment) RequestedAt() time.Time           { return d.requestedAt }
 func (d *Deployment) StartedAt() *time.Time            { return clock.CopyTime(d.startedAt) }
@@ -285,7 +295,7 @@ func (d *Deployment) Snapshot() DeploymentSnapshot {
 		Status: d.status, PreviousDeploymentID: copyString(d.previousDeploymentID),
 		InitiatedByPrincipalID: copyString(d.initiatedBy), SessionID: copyString(d.sessionID),
 		WorkItemID: copyString(d.workItemID), ExternalRef: append(json.RawMessage(nil), d.externalRef...),
-		PolicyDecisionID: copyString(d.policyDecisionID), Findings: copyStrings(d.findings),
+		PolicyDecisionID: copyString(d.policyDecisionID), VariableSnapshotID: copyString(d.variableSnapshotID), Findings: copyStrings(d.findings),
 		RequestedAt: d.requestedAt, StartedAt: clock.CopyTime(d.startedAt), FinishedAt: clock.CopyTime(d.finishedAt),
 		SucceededAt: clock.CopyTime(d.succeededAt), StatusChangedAt: d.statusChangedAt,
 		CreatedAt: d.createdAt, UpdatedAt: d.updatedAt,

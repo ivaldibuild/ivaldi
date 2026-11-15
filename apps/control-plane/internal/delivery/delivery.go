@@ -26,4 +26,5 @@ func init() {
 	id.MustRegister(DeploymentEvent{}.Prefix(), "delivery.DeploymentEvent")
 	id.MustRegister(Variable{}.Prefix(), "delivery.Variable")
 	id.MustRegister(VariableValue{}.Prefix(), "delivery.VariableValue")
+	id.MustRegister(ReleaseVariables{}.Prefix(), "delivery.ReleaseVariables")
 }

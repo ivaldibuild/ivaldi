@@ -41,3 +41,7 @@ func releaseView(d *delivery.ReleaseDetail) Release {
 	}
 	return out
 }
+
+type ReleaseVariablesResponse struct {
+	Body api.Response[delivery.ReleaseVariablesView]
+}

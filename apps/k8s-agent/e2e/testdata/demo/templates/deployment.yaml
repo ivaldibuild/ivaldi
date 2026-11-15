@@ -4,6 +4,7 @@ metadata:
   name: demo
   annotations:
     e2e.ivaldi.build/environment: {{ .Values.environment | quote }}
+    e2e.ivaldi.build/greeting: {{ .Values.greeting | quote }}
 spec:
   replicas: 1
   selector:

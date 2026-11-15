@@ -46,6 +46,20 @@ type Clusters interface {
 	GetClusterForShare(ctx context.Context, organizationID, clusterID string) (*delivery.Cluster, error)
 }
 
+// Variables reads the revisions of Releases' variables: the one a Release
+// deploys with now, and the one a Deployment was requested with.
+// delivery.ReleaseVariablesRepository provides it.
+type Variables interface {
+	GetReleaseVariables(ctx context.Context, organizationID, revisionID string) (*delivery.ReleaseVariables, error)
+	GetCurrentReleaseVariables(ctx context.Context, organizationID, releaseID string) (*delivery.ReleaseVariables, error)
+}
+
+// VariableSnapshots takes a revision of a Release's variables.
+// delivery.ReleaseVariablesTaker provides it.
+type VariableSnapshots interface {
+	Take(ctx context.Context, rel *delivery.Release, projectID string, takenBy *string) ([]*delivery.ReleaseVariables, error)
+}
+
 type Lifecycles interface {
 	GetLifecycle(ctx context.Context, organizationID, lifecycleID string) (*delivery.Lifecycle, error)
 }

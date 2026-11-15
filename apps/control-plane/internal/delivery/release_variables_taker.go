@@ -61,11 +61,17 @@ func (t *ReleaseVariablesTaker) Preview(ctx context.Context, rel *Release, proje
 // returns the revisions it changed, the new one last, so the caller records
 // their events in the same transaction.
 func (t *ReleaseVariablesTaker) Take(ctx context.Context, rel *Release, projectID string, takenBy *string) ([]*ReleaseVariables, error) {
-	organizationID := rel.OrganizationID()
 	variables, err := t.Preview(ctx, rel, projectID)
 	if err != nil {
 		return nil, err
 	}
+	return t.Store(ctx, rel, variables, takenBy)
+}
+
+// Store makes the variables a caller previewed the Release's next revision,
+// so what it checked is exactly what is stored. It returns what Take does.
+func (t *ReleaseVariablesTaker) Store(ctx context.Context, rel *Release, variables []SnapshotVariable, takenBy *string) ([]*ReleaseVariables, error) {
+	organizationID := rel.OrganizationID()
 
 	var changed []*ReleaseVariables
 	latest, err := t.revisions.LatestReleaseVariablesRevision(ctx, organizationID, rel.ID())

@@ -45,6 +45,8 @@ type VariableSnapshots interface {
 	Take(ctx context.Context, rel *delivery.Release, projectID string, takenBy *string) ([]*delivery.ReleaseVariables, error)
 	// Preview returns what Take would store, without storing it.
 	Preview(ctx context.Context, rel *delivery.Release, projectID string) ([]delivery.SnapshotVariable, error)
+	// Store makes previewed variables the Release's next revision.
+	Store(ctx context.Context, rel *delivery.Release, variables []delivery.SnapshotVariable, takenBy *string) ([]*delivery.ReleaseVariables, error)
 }
 
 // Lifecycles reads the Lifecycle a Release's Channel follows, and
@@ -555,7 +557,9 @@ func (s *service) RefreshReleaseVariables(ctx context.Context, actor identity.Ac
 			return fmt.Errorf("%w: %s on %s; until approvals exist, create a new release to change production",
 				delivery.ErrProductionChange, strings.Join(slices.Sorted(maps.Keys(names)), ", "), targets)
 		}
-		revisions, err := s.snapshots.Take(ctx, rel, app.ProjectID(), optional.Of(actor.PrincipalID))
+		// What was checked against production is what is stored: reading
+		// the variables again could pick up an edit made since.
+		revisions, err := s.snapshots.Store(ctx, rel, after, optional.Of(actor.PrincipalID))
 		if err != nil {
 			return err
 		}

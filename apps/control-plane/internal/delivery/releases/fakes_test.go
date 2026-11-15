@@ -72,6 +72,9 @@ type store struct {
 	// snapshotted lists the Releases whose variables were snapshotted, as
 	// "release ID by principal ID in project ID".
 	snapshotted []string
+	// edited replaces preview once it has been read, as an edit made while a
+	// refresh runs would; stored is what the last revision was given.
+	edited, stored []delivery.SnapshotVariable
 	// current is the revision GetCurrentReleaseVariables returns, by Release.
 	current map[string]*delivery.ReleaseVariables
 	targets map[string]*delivery.Target
@@ -410,7 +413,13 @@ func (s *store) Take(_ context.Context, rel *delivery.Release, projectID string,
 	if s.preview == nil {
 		return nil, nil
 	}
-	// A refresh stores what was previewed as the next revision.
+	return s.Store(context.Background(), rel, s.preview, takenBy)
+}
+
+// Store keeps the variables it is given as the next revision, and what they
+// were, so a test can check a refresh stores what it checked.
+func (s *store) Store(_ context.Context, rel *delivery.Release, variables []delivery.SnapshotVariable, takenBy *string) ([]*delivery.ReleaseVariables, error) {
+	s.stored = variables
 	revision := 1
 	var changed []*delivery.ReleaseVariables
 	if current, ok := s.current[rel.ID()]; ok {
@@ -420,7 +429,7 @@ func (s *store) Take(_ context.Context, rel *delivery.Release, projectID string,
 	}
 	taken, err := delivery.NewReleaseVariables(delivery.NewReleaseVariablesProps{
 		OrganizationID: rel.OrganizationID(), ApplicationID: rel.ApplicationID(), ReleaseID: rel.ID(),
-		Revision: revision, Variables: s.preview, TakenByPrincipalID: takenBy,
+		Revision: revision, Variables: variables, TakenByPrincipalID: takenBy,
 	}, nil)
 	if err != nil {
 		return nil, err
@@ -433,7 +442,11 @@ func (s *store) Take(_ context.Context, rel *delivery.Release, projectID string,
 }
 
 func (s *store) Preview(context.Context, *delivery.Release, string) ([]delivery.SnapshotVariable, error) {
-	return s.preview, nil
+	read := s.preview
+	if s.edited != nil {
+		s.preview = s.edited
+	}
+	return read, nil
 }
 
 func (s *store) GetLifecycle(context.Context, string, string) (*delivery.Lifecycle, error) {

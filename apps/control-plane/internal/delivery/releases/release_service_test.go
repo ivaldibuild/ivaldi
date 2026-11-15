@@ -451,6 +451,16 @@ func TestRefreshReleaseVariables(t *testing.T) {
 		assert.Equal(t, []string{"delivery.v1.release_variables.superseded", "delivery.v1.release_variables.taken"}, w.eventTypes())
 	})
 
+	t.Run("the revision holds what was checked, not an edit made since", func(t *testing.T) {
+		w, rel, _ := setup(t)
+		w.preview, w.edited = level("debug", "warn"), level("debug", "error")
+
+		refreshed, err := w.svc.RefreshReleaseVariables(ctx, ada, org, rel.ID(), false)
+		require.NoError(t, err)
+		assert.True(t, refreshed.Applied)
+		assert.Equal(t, level("debug", "warn"), w.stored, "production's value was not checked as error")
+	})
+
 	t.Run("a change to what production gets is refused", func(t *testing.T) {
 		w, rel, prod := setup(t)
 		w.preview = level("info", "error")

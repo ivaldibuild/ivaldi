@@ -86,6 +86,9 @@ describe('VariableList', () => {
   let added: { id: string; value: ValueFields }[];
   let created: VariableFields[];
   let refuse: ApiError | null;
+  let forbidScopes = false;
+
+  afterEach(() => (forbidScopes = false));
 
   async function render(
     granted = ['variable.manage'],
@@ -98,14 +101,16 @@ describe('VariableList', () => {
     const api: Partial<VariablesApi> = {
       list: () => Promise.resolve(variables),
       scopeOptions: () =>
-        Promise.resolve({
-          environments: [
-            { id: production, display_name: 'Production' },
-            { id: staging, display_name: 'Staging' },
-          ],
-          targets: [],
-          stores: [{ id: vault, display_name: 'Vault' }],
-        } as unknown as Awaited<ReturnType<VariablesApi['scopeOptions']>>),
+        forbidScopes
+          ? Promise.reject(new ApiError(403, "You don't have permission to do this."))
+          : Promise.resolve({
+              environments: [
+                { id: production, display_name: 'Production' },
+                { id: staging, display_name: 'Staging' },
+              ],
+              targets: [],
+              stores: [{ id: vault, display_name: 'Vault' }],
+            } as unknown as Awaited<ReturnType<VariablesApi['scopeOptions']>>),
       addValue: (id, value) => {
         if (refuse) {
           return Promise.reject(refuse);
@@ -259,6 +264,16 @@ describe('VariableList', () => {
         },
       },
     ]);
+  });
+
+  it('still lists variables for someone who may not read the Environments', async () => {
+    forbidScopes = true;
+    const { el } = await render();
+    expect(el.querySelector('[role="alert"]')).toBeNull();
+    const applies = [...el.querySelectorAll('tbody tr td:nth-child(2)')].map((cell) =>
+      cell.textContent?.trim(),
+    );
+    expect(applies).toEqual(['Every Deployment', `Environment ${production}`]);
   });
 
   it('offers no changes without variable.manage on the Project', async () => {

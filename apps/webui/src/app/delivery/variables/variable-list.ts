@@ -117,9 +117,16 @@ export class VariableList {
   private async load(): Promise<void> {
     this.canManage.set(false);
     await this.status.run(async () => {
+      // Someone who may read the Project's variables but not the Workspace's Environments still
+      // gets the list; what a value is scoped to then shows without its name.
       const [variables, options] = await Promise.all([
         this.api.list(this.owner()),
-        this.api.scopeOptions(this.workspaceId()),
+        this.api.scopeOptions(this.workspaceId()).catch((e: unknown) => {
+          if (e instanceof ApiError && e.status === 403) {
+            return { environments: [], targets: [], stores: [] };
+          }
+          throw e;
+        }),
       ]);
       this.variables.set(variables);
       this.environments.set(options.environments);

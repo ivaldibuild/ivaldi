@@ -42,6 +42,10 @@ const (
 	// The annotation the demo chart sets from the value the Application's
 	// Greeting variable writes.
 	greetingAnnotation = "e2e.ivaldi.build/greeting"
+	// The Secret the test keeps a secret in, as a customer would, and the
+	// value only the cluster ever holds.
+	credentialsSecret = "demo-credentials"
+	apiToken          = "s3cret-only-in-the-cluster"
 )
 
 type settings struct {
@@ -71,7 +75,8 @@ func load(t *testing.T) settings {
 // TestDeployAndRollBack connects a cluster as the onboarding guide does,
 // deploys a Release whose chart runs an image, deploys a second Release, and
 // then the first again, checking each time that the cluster runs exactly
-// the Release's image and the overlay the placement selects.
+// the Release's image, the overlay the placement selects, the variable the
+// Release snapshotted, and a secret the agent read from a Secret Store.
 //
 // The first Release is deployed again as a rollout: the control plane does
 // not request rollbacks until Variables and Secret Stores land, and without
@@ -113,6 +118,7 @@ func TestDeployAndRollBack(t *testing.T) {
 		"--set", "controlPlane.allowInsecureHTTP=true",
 		"--set", "agent.authentication=bearer",
 		"--set", "execute.namespaces={"+appNamespace+"}",
+		"--set", "secrets.kubernetesNamespaces={"+appNamespace+"}",
 		"--set", "registry.plainHTTPHosts={"+s.registry+"}",
 		"--set", "image.repository="+repository,
 		"--set", "image.tag="+tag,
@@ -158,6 +164,20 @@ func TestDeployAndRollBack(t *testing.T) {
 	})
 	scopedValue := id(variable["values"].([]any)[1].(obj))
 
+	// A secret variable: the control plane keeps only where the secret is,
+	// a key of a Secret in the Target's namespace, and the agent reads it.
+	_, err = kube.CoreV1().Secrets(appNamespace).Create(ctx, &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: credentialsSecret},
+		StringData: map[string]string{"token": apiToken},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+	store := cp.call(http.MethodPost, "/v1/workspaces/"+id(workspace)+"/secret-stores",
+		obj{"display_name": "In-cluster", "kind": "kubernetes"})
+	cp.call(http.MethodPost, "/v1/applications/"+app+"/variables", obj{
+		"name": "Api.Token", "kind": "secret",
+		"values": []obj{{"secret": obj{"store_id": id(store), "path": credentialsSecret, "field": "token"}}},
+	})
+
 	release := func(version, imageDigest string) string {
 		r := cp.call(http.MethodPost, "/v1/applications/"+app+"/releases", obj{
 			"version": version, "publish": true,
@@ -173,8 +193,9 @@ func TestDeployAndRollBack(t *testing.T) {
 		requested := cp.callList(http.MethodPost, "/v1/releases/"+releaseID+"/deployments", obj{"target_ids": []string{id(target)}})
 		require.Len(t, requested, 1)
 		deployment := id(requested[0])
+		var got obj
 		eventually(t, 4*time.Minute, func() (bool, string) {
-			got := cp.call(http.MethodGet, "/v1/deployments/"+deployment, nil)
+			got = cp.call(http.MethodGet, "/v1/deployments/"+deployment, nil)
 			if d, ok := got["deployment"].(obj); ok {
 				got = d
 			}
@@ -187,6 +208,23 @@ func TestDeployAndRollBack(t *testing.T) {
 		assert.Equal(t, want, running.image, "the workload runs the Release's image")
 		assert.Equal(t, slug, running.annotation, "the placement's overlay is applied, with its binding resolved")
 		assert.Equal(t, greeting, running.greeting, "the variable's most specific value, as the Release snapshotted it, with its binding resolved")
+
+		// The workload reads the secret from the Secret the agent wrote for
+		// this Deployment, and the control plane holds which version that
+		// was and a fingerprint of it: never the value.
+		require.NotEmpty(t, running.secretName, "the chart was given the Deployment's Secret")
+		delivered, err := kube.CoreV1().Secrets(appNamespace).Get(ctx, running.secretName, metav1.GetOptions{})
+		require.NoError(t, err)
+		assert.Equal(t, apiToken, string(delivered.Data["Api.Token"]), "the secret, under its variable's name")
+		versions, _ := got["secret_versions"].([]any)
+		require.Len(t, versions, 1, "deployment %s: %v", deployment, got)
+		recorded := versions[0].(obj)
+		assert.Equal(t, "Api.Token", recorded["name"])
+		assert.Equal(t, credentialsSecret, recorded["path"])
+		assert.NotEmpty(t, recorded["version"], "the Secret's resourceVersion")
+		assert.Contains(t, recorded["fingerprint"], "hmac-sha256:")
+		assert.Equal(t, "secret", recorded["delivered_as"])
+		assert.NotContains(t, fmt.Sprint(got), apiToken, "the control plane never holds the value")
 	}
 
 	first, second := s.imageDigests[0], s.imageDigests[1]
@@ -202,7 +240,7 @@ func TestDeployAndRollBack(t *testing.T) {
 	deploy(v1, first, "hello from "+slug)
 }
 
-type running struct{ image, annotation, greeting string }
+type running struct{ image, annotation, greeting, secretName string }
 
 // runningImage returns the image of the Application's workload once its
 // rollout is complete, and the annotation the overlay sets.
@@ -220,7 +258,13 @@ func runningImage(t *testing.T, kube kubernetes.Interface, applicationID string)
 		if !rolledOut(&d) {
 			return false, "the workload is still rolling out"
 		}
-		out = running{image: d.Spec.Template.Spec.Containers[0].Image, annotation: d.Annotations[environmentAnnotation], greeting: d.Annotations[greetingAnnotation]}
+		container := d.Spec.Template.Spec.Containers[0]
+		out = running{image: container.Image, annotation: d.Annotations[environmentAnnotation], greeting: d.Annotations[greetingAnnotation]}
+		for _, env := range container.Env {
+			if env.ValueFrom != nil && env.ValueFrom.SecretKeyRef != nil {
+				out.secretName = env.ValueFrom.SecretKeyRef.Name
+			}
+		}
 		return true, ""
 	})
 	return out

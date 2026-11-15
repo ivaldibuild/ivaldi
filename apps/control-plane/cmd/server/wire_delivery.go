@@ -189,7 +189,7 @@ func (a *app) wireDelivery(runners config.Runners) error {
 	}
 
 	revisionRepo := deliverypg.NewReleaseVariablesRepository(a.db)
-	snapshots, err := delivery.NewReleaseVariablesTaker(variableRepo, revisionRepo)
+	snapshots, err := delivery.NewReleaseVariablesTaker(variableRepo, revisionRepo, database.NewLocker(a.db))
 	if err != nil {
 		return err
 	}

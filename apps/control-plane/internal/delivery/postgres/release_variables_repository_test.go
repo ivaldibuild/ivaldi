@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -17,7 +18,8 @@ func TestReleaseVariablesTaker(t *testing.T) {
 	f := newFixture(t)
 	ctx := f.ctx
 	variables, revisions := NewVariableRepository(f.db), NewReleaseVariablesRepository(f.db)
-	taker := must(delivery.NewReleaseVariablesTaker(variables, revisions))
+	var locked []string
+	taker := must(delivery.NewReleaseVariablesTaker(variables, revisions, lockerFunc(func(key string) { locked = append(locked, key) })))
 	project := id.New("prj")
 	app := f.createApp(t, orgA, wsA, project, "billing")
 	lifecycle := f.createLifecycle(t, orgA, wsA, "standard")
@@ -49,6 +51,7 @@ func TestReleaseVariablesTaker(t *testing.T) {
 	taken, err := taker.Take(ctx, rel, project, new("prn_ada"))
 	require.NoError(t, err)
 	require.Len(t, taken, 1)
+	assert.Equal(t, []string{delivery.VariablesLock(project)}, locked, "the two reads see the variables as they stood together")
 	first := taken[0]
 	assert.Equal(t, 1, first.Revision())
 	assert.Equal(t, []delivery.SnapshotVariable{
@@ -86,4 +89,13 @@ func TestReleaseVariablesTaker(t *testing.T) {
 	assert.Equal(t, delivery.ReleaseVariablesSuperseded, old.Status(), "kept for the deployments that used it")
 	_, err = revisions.GetReleaseVariables(ctx, orgB, first.ID())
 	assert.ErrorIs(t, err, delivery.ErrNotFound)
+}
+
+// lockerFunc records the locks a test's subject takes; the database's own
+// Locker needs a transaction.
+type lockerFunc func(key string)
+
+func (f lockerFunc) Lock(_ context.Context, key string) error {
+	f(key)
+	return nil
 }

@@ -1276,12 +1276,21 @@ func TestADeploymentRecordsTheSecretsItsAgentResolved(t *testing.T) {
 	}
 	require.ErrorIs(t, report("refused", `{"secrets":[{"name":"Other","fingerprint":"hmac-sha256:v1:aa"}]}`), delivery.ErrInvalid,
 		"a secret the deployment was not sent")
-	require.NoError(t, report("applied", `{"secrets":[{"name":"Database.Password","version":"4812","fingerprint":"hmac-sha256:v1:ab12","delivered_as":"secret"}]}`))
+	// An overlay bound the secret, so its value is in the chart's values too.
+	require.NoError(t, report("applied", `{"secrets":[{"name":"Database.Password","version":"4812","fingerprint":"hmac-sha256:v1:ab12","delivered_as":"secret"}],"secrets_in_values":["Database.Password"]}`))
 
 	assert.Equal(t, []delivery.SecretVersion{{
 		Name: "Database.Password", StoreID: storeID, Path: "db", Field: "password",
-		Version: "4812", Fingerprint: "hmac-sha256:v1:ab12", DeliveredAs: delivery.VariableDeliverAsSecret,
+		Version: "4812", Fingerprint: "hmac-sha256:v1:ab12", DeliveredAs: delivery.VariableDeliverAsValue,
 	}}, w.deployments[out[0].ID()].SecretVersions())
+
+	// The agent reads no secret to watch an applied Deployment, so a store
+	// archived since does not fail it.
+	w.stores = nil
+	items, err = w.svc.ListClusterAssignments(ctx, agent, org, clusterID)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, release.DeploymentProgressing, w.deployments[out[0].ID()].Status())
 }
 
 func TestRequestDeploymentsRefusesASecretItsTargetCannotUse(t *testing.T) {

@@ -474,6 +474,9 @@ func (s *service) recordSecrets(ctx context.Context, d *delivery.Deployment, det
 			Fingerprint string `json:"fingerprint"`
 			DeliveredAs string `json:"delivered_as"`
 		} `json:"secrets"`
+		// The secrets an overlay bound, whose values went into the chart's
+		// values however the variable asks to be delivered.
+		SecretsInValues []string `json:"secrets_in_values"`
 	}
 	// The detail is the agent's to shape; one that is not an object simply
 	// names no secrets.
@@ -506,7 +509,7 @@ func (s *service) recordSecrets(ctx context.Context, d *delivery.Deployment, det
 			return delivery.NewErrInvalidInput(fmt.Sprintf("the report names secret %q, which the deployment was not sent", secret.Name))
 		}
 		deliveredAs := delivery.VariableDeliverAsSecret
-		if secret.DeliveredAs == string(delivery.VariableDeliverAsValue) {
+		if secret.DeliveredAs == string(delivery.VariableDeliverAsValue) || slices.Contains(reported.SecretsInValues, secret.Name) {
 			deliveredAs = delivery.VariableDeliverAsValue
 		}
 		versions = append(versions, delivery.SecretVersion{
@@ -1030,9 +1033,12 @@ func (s *service) assignment(ctx context.Context, d *delivery.Deployment) (*deli
 			return nil, fmt.Errorf("look up secret stores: %w", err)
 		}
 		// A store archived or narrowed since the request would leave the
-		// agent without a way to read the secret.
-		if err := delivery.CheckSecretStores(resolved, stores, d.EnvironmentID(), storeKinds(stores)); err != nil {
-			return nil, err
+		// agent without a way to read the secret. Once applied, the agent
+		// only watches the Deployment's health and reads no secret.
+		if d.Status() == release.DeploymentApplying {
+			if err := delivery.CheckSecretStores(resolved, stores, d.EnvironmentID(), storeKinds(stores)); err != nil {
+				return nil, err
+			}
 		}
 		secrets = delivery.AssignmentSecrets(resolved, stores)
 	}

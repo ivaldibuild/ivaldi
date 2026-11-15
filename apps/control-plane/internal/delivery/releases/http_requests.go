@@ -40,6 +40,11 @@ type ReleaseRequest struct {
 	ReleaseID string `path:"release_id" doc:"The Release"`
 }
 
+type ReleaseVariablesRequest struct {
+	ReleaseID string `path:"release_id" doc:"The Release"`
+	TargetID  string `query:"target_id" doc:"A Target, to also get the value of each variable a Deployment there would get"`
+}
+
 // BuildBody names one artifact's Build and carries what CI knows about it.
 type BuildBody struct {
 	Artifact string `json:"artifact" required:"true" minLength:"1" doc:"The name of the Application's artifact, such as api"`

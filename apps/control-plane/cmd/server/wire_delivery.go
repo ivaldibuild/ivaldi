@@ -188,6 +188,12 @@ func (a *app) wireDelivery(runners config.Runners) error {
 		return err
 	}
 
+	revisionRepo := deliverypg.NewReleaseVariablesRepository(a.db)
+	snapshots, err := delivery.NewReleaseVariablesTaker(variableRepo, revisionRepo, database.NewLocker(a.db))
+	if err != nil {
+		return err
+	}
+
 	// Tags cannot be resolved to digests until a registry client exists, so
 	// Builds are named by digest.
 	rels, err := releases.NewReleaseService(
@@ -195,6 +201,9 @@ func (a *app) wireDelivery(runners config.Runners) error {
 		releases.WithReleaseRepo(deliverypg.NewReleaseRepository(a.db)),
 		releases.WithApplications(applicationRepo),
 		releases.WithTagResolver(delivery.NoTagResolver()),
+		releases.WithVariableSnapshots(snapshots),
+		releases.WithCurrentVariables(revisionRepo),
+		releases.WithTargetLookup(targetRepo),
 		releases.WithAuthorizer(a.authz),
 		releases.WithTransactor(a.tx),
 		releases.WithOutboxRecorder(a.outbox),
@@ -214,6 +223,8 @@ func (a *app) wireDelivery(runners config.Runners) error {
 		deployments.WithClusters(clusterRepo),
 		deployments.WithHeartbeatInterval(runners.HeartbeatInterval),
 		deployments.WithLifecycles(lifecycleRepo),
+		deployments.WithVariables(revisionRepo),
+		deployments.WithVariableSnapshots(snapshots),
 		deployments.WithCommitHistory(a.commitHistory),
 		deployments.WithChanges(a.changes),
 		deployments.WithAuthorizer(a.authz),

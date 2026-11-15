@@ -1,0 +1,104 @@
+@if (error(); as message) {
+  <p class="text-destructive-text text-sm" role="alert">The variables didn't load. {{ message }}</p>
+} @else if (!view()) {
+  <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+    <hlm-spinner aria-hidden="true" /> Loading variables…
+  </p>
+} @else if (!revision()) {
+  <p class="text-foreground text-sm">
+    This Release was created before variables were recorded with Releases, so it deploys with none.
+  </p>
+} @else if (targetId()) {
+  @if (resolved().length > 0) {
+    <div class="border-border relative overflow-x-auto border">
+      <table class="w-full min-w-150 border-collapse text-sm">
+        <caption class="sr-only">
+          Variables this Target gets
+        </caption>
+        <thead>
+          <tr class="text-muted-foreground text-left">
+            <th scope="col" class="border-border border-b px-4 py-3 font-semibold">Variable</th>
+            <th scope="col" class="border-border border-b px-4 py-3 font-semibold">Value here</th>
+            <th scope="col" class="border-border border-b px-4 py-3 font-semibold">From</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (variable of resolved(); track variable.name) {
+            <tr>
+              <td class="border-border border-b px-4 py-3">
+                <code class="text-heading font-semibold">{{ variable.name }}</code>
+                @if (variable.path) {
+                  <span class="text-muted-foreground block text-[13px]">
+                    Written to <code>{{ variable.path }}</code>
+                  </span>
+                }
+              </td>
+              @if (variable.value !== null) {
+                <td class="border-border border-b px-4 py-3">
+                  <code class="break-all whitespace-pre-wrap">{{ variable.value }}</code>
+                </td>
+                <td class="border-border border-b px-4 py-3">
+                  {{ variable.source }}
+                  @if (variable.beaten > 0) {
+                    <span class="text-muted-foreground block text-[13px]">
+                      Beat {{ variable.beaten }} less specific
+                      {{ variable.beaten === 1 ? 'value' : 'values' }}
+                    </span>
+                  }
+                </td>
+              } @else {
+                <td class="border-border text-muted-foreground border-b px-4 py-3" colspan="2">
+                  No value applies here, so this Target doesn't get it
+                </td>
+              }
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  } @else {
+    <p class="text-foreground text-sm">This Release deploys with no variables.</p>
+  }
+} @else {
+  <p class="text-muted-foreground text-sm">
+    Revision {{ revision()!.revision }}, taken {{ taken() }}. Deployments of this Release use these
+    values, whatever the Application's variables are changed to later.
+  </p>
+  @if (snapshot().length > 0) {
+    <div class="border-border relative overflow-x-auto border">
+      <table class="w-full min-w-150 border-collapse text-sm">
+        <caption class="sr-only">
+          Variables in this Release's snapshot
+        </caption>
+        <thead>
+          <tr class="text-muted-foreground text-left">
+            <th scope="col" class="border-border border-b px-4 py-3 font-semibold">Variable</th>
+            <th scope="col" class="border-border border-b px-4 py-3 font-semibold">Written to</th>
+            <th scope="col" class="border-border border-b px-4 py-3 font-semibold">Values</th>
+            <th scope="col" class="border-border border-b px-4 py-3 font-semibold">From</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (variable of snapshot(); track $index) {
+            <tr>
+              <td class="border-border border-b px-4 py-3">
+                <code class="text-heading font-semibold">{{ variable.name }}</code>
+              </td>
+              <td class="border-border border-b px-4 py-3">
+                @if (variable.path) {
+                  <code>{{ variable.path }}</code>
+                } @else {
+                  <span class="text-muted-foreground">Bindings only</span>
+                }
+              </td>
+              <td class="border-border border-b px-4 py-3">{{ variable.values }}</td>
+              <td class="border-border border-b px-4 py-3">{{ variable.source }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  } @else {
+    <p class="text-foreground text-sm">The Application had no variables when it was created.</p>
+  }
+}

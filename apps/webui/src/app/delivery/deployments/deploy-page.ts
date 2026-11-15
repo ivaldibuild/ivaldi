@@ -12,6 +12,7 @@ import { DeliveryApi } from '../delivery-api';
 import { PageHeader } from '../page-header';
 import { ProjectsApi } from '../projects-api';
 import { shortDigest } from '../releases/release-labels';
+import { ReleaseVariables } from '../variables/release-variables';
 import { checkLabel, DeploymentStatusBadge } from './deployment-status';
 
 /** What a Target's checks and changes look like while they load and after. */
@@ -32,6 +33,7 @@ type Preview =
     RouterLink,
     PageHeader,
     DeploymentStatusBadge,
+    ReleaseVariables,
     HlmAlertImports,
     HlmButtonImports,
     HlmSpinnerImports,

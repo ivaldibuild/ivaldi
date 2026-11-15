@@ -175,7 +175,7 @@ func (s *service) activeOwner(ctx context.Context, v *delivery.Variable) (owner,
 	if err != nil {
 		return owner{}, err
 	}
-	if err := s.locker.Lock(ctx, "delivery.variables:"+project.ID()); err != nil {
+	if err := s.locker.Lock(ctx, delivery.VariablesLock(project.ID())); err != nil {
 		return owner{}, err
 	}
 	return owner{projectID: project.ID(), workspaceID: project.WorkspaceID()}, nil
@@ -450,7 +450,7 @@ func (s *service) lockOwner(ctx context.Context, v *delivery.Variable) error {
 		}
 		projectID = new(app.ProjectID())
 	}
-	return s.locker.Lock(ctx, "delivery.variables:"+*projectID)
+	return s.locker.Lock(ctx, delivery.VariablesLock(*projectID))
 }
 
 // ArchiveVariable archives a Variable. Archiving an archived one does

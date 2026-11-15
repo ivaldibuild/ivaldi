@@ -627,6 +627,10 @@ type ReleaseService interface {
 	PublishRelease(ctx context.Context, actor identity.Actor, organizationID, releaseID string) (*ReleaseDetail, error)
 	// WithdrawRelease stops a published Release from being deployed again.
 	WithdrawRelease(ctx context.Context, actor identity.Actor, organizationID, releaseID string) (*ReleaseDetail, error)
+	// GetReleaseVariables returns the Release's current revision of
+	// variables and, when a Target is named, the value of each a Deployment
+	// there would get. It needs variable.read on the Application's Project.
+	GetReleaseVariables(ctx context.Context, actor identity.Actor, organizationID, releaseID, targetID string) (*ReleaseVariablesView, error)
 }
 
 // VariableOwner names the Project or the Application that owns variables:
@@ -703,4 +707,30 @@ type VariableService interface {
 	// ArchiveVariable frees the Variable's name. Releases that snapshotted
 	// it keep their copy.
 	ArchiveVariable(ctx context.Context, actor identity.Actor, organizationID, variableID string) (*Variable, error)
+}
+
+// ReleaseVariablesRepository stores the revisions of Releases' variables.
+// Every read is limited to one Organization.
+type ReleaseVariablesRepository interface {
+	// CreateReleaseVariables stores a revision. A Release has one current
+	// revision, so the one it replaces is superseded first.
+	CreateReleaseVariables(ctx context.Context, rv *ReleaseVariables) error
+	GetReleaseVariables(ctx context.Context, organizationID, revisionID string) (*ReleaseVariables, error)
+	// GetCurrentReleaseVariables returns the revision new Deployments of the
+	// Release use, or ErrNotFound for a Release that has none.
+	GetCurrentReleaseVariables(ctx context.Context, organizationID, releaseID string) (*ReleaseVariables, error)
+	// LatestReleaseVariablesRevision returns the Release's highest revision
+	// number, or 0 when it has none.
+	LatestReleaseVariablesRevision(ctx context.Context, organizationID, releaseID string) (int, error)
+	// UpdateReleaseVariables writes a revision's status. Its content never changes.
+	UpdateReleaseVariables(ctx context.Context, rv *ReleaseVariables) error
+}
+
+// ReleaseVariablesView is a Release's current variables. Revision is nil
+// for a Release created before variables were snapshotted, which deploys
+// with none. Resolved is set when a Target was named: what a Deployment
+// there would get, by variable name.
+type ReleaseVariablesView struct {
+	Revision *ReleaseVariablesSnapshot `json:"revision"`
+	Resolved []ResolvedVariable        `json:"resolved"`
 }

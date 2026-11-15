@@ -7,6 +7,7 @@ import { API_BASE_URL } from '../../api-base-url';
 import { DeployPage } from './deploy-page';
 import { DeploymentList } from './deployment-list';
 import { DeploymentPage, refreshMs } from './deployment-page';
+import { VariablesApi } from '../variables/variables-api';
 
 const v1 = 'https://cp.test/v1';
 const ok = <T>(data: T) => ({ status: 'success', data });
@@ -112,6 +113,11 @@ describe('deployments', () => {
         provideHttpClientTesting(),
         provideRouter([]),
         { provide: API_BASE_URL, useValue: 'https://cp.test' },
+        // A Release's variables have their own spec (variables/release-variables.spec.ts).
+        {
+          provide: VariablesApi,
+          useValue: { releaseVariables: () => Promise.resolve({ revision: null, resolved: [] }) },
+        },
       ],
     });
     http = TestBed.inject(HttpTestingController);

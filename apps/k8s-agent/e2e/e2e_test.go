@@ -39,6 +39,9 @@ const (
 	// Environment's slug.
 	overlay               = "values-e2e.yaml"
 	environmentAnnotation = "e2e.ivaldi.build/environment"
+	// The annotation the demo chart sets from the value the Application's
+	// Greeting variable writes.
+	greetingAnnotation = "e2e.ivaldi.build/greeting"
 )
 
 type settings struct {
@@ -142,6 +145,19 @@ func TestDeployAndRollBack(t *testing.T) {
 		"apply_config": obj{"definition_artifact": "chart", "values": []string{overlay}},
 	})
 
+	// A variable the chart receives at `greeting`: one value for every
+	// Deployment, and a more specific one for this Environment that binds a
+	// system variable. A Release deploys with the values it was created with.
+	slug := str(t, environment, "slug")
+	variable := cp.call(http.MethodPost, "/v1/applications/"+app+"/variables", obj{
+		"name": "Greeting", "values_path": "greeting",
+		"values": []obj{
+			{"value": "hello"},
+			{"value": "hello from #{Ivaldi.Environment.Slug}", "scope": obj{"environment_ids": []string{id(environment)}}},
+		},
+	})
+	scopedValue := id(variable["values"].([]any)[1].(obj))
+
 	release := func(version, imageDigest string) string {
 		r := cp.call(http.MethodPost, "/v1/applications/"+app+"/releases", obj{
 			"version": version, "publish": true,
@@ -152,7 +168,7 @@ func TestDeployAndRollBack(t *testing.T) {
 		})
 		return id(r)
 	}
-	deploy := func(releaseID, imageDigest string) {
+	deploy := func(releaseID, imageDigest, greeting string) {
 		t.Helper()
 		requested := cp.callList(http.MethodPost, "/v1/releases/"+releaseID+"/deployments", obj{"target_ids": []string{id(target)}})
 		require.Len(t, requested, 1)
@@ -169,17 +185,24 @@ func TestDeployAndRollBack(t *testing.T) {
 		want := s.registry + "/demo@" + imageDigest
 		running := runningImage(t, kube, app)
 		assert.Equal(t, want, running.image, "the workload runs the Release's image")
-		assert.Equal(t, str(t, environment, "slug"), running.annotation, "the placement's overlay is applied, with its binding resolved")
+		assert.Equal(t, slug, running.annotation, "the placement's overlay is applied, with its binding resolved")
+		assert.Equal(t, greeting, running.greeting, "the variable's most specific value, as the Release snapshotted it, with its binding resolved")
 	}
 
 	first, second := s.imageDigests[0], s.imageDigests[1]
 	v1 := release("1.0.0", first)
-	deploy(v1, first)
-	deploy(release("2.0.0", second), second)
-	deploy(v1, first)
+	deploy(v1, first, "hello from "+slug)
+
+	// The variable changes after 1.0.0 was created: 2.0.0 gets the new value,
+	// and deploying 1.0.0 again brings its own back.
+	cp.call(http.MethodPut, "/v1/variables/"+id(variable)+"/values/"+scopedValue, obj{
+		"value": "hi from #{Ivaldi.Environment.Slug}", "scope": obj{"environment_ids": []string{id(environment)}},
+	})
+	deploy(release("2.0.0", second), second, "hi from "+slug)
+	deploy(v1, first, "hello from "+slug)
 }
 
-type running struct{ image, annotation string }
+type running struct{ image, annotation, greeting string }
 
 // runningImage returns the image of the Application's workload once its
 // rollout is complete, and the annotation the overlay sets.
@@ -197,7 +220,7 @@ func runningImage(t *testing.T, kube kubernetes.Interface, applicationID string)
 		if !rolledOut(&d) {
 			return false, "the workload is still rolling out"
 		}
-		out = running{image: d.Spec.Template.Spec.Containers[0].Image, annotation: d.Annotations[environmentAnnotation]}
+		out = running{image: d.Spec.Template.Spec.Containers[0].Image, annotation: d.Annotations[environmentAnnotation], greeting: d.Annotations[greetingAnnotation]}
 		return true, ""
 	})
 	return out

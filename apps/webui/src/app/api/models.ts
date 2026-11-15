@@ -59,6 +59,22 @@ export type VariableValue = Schemas['VariableValueSnapshot'];
 /** The Deployments a value applies to; an empty list matches any. */
 export type VariableScope = Schemas['VariableScope'];
 
+/**
+ * A variable as one Deployment gets it: the value that wins and the ones it beat. The generated
+ * type can't say an object is null, so this says it: `winner` is null when no value applies.
+ */
+export type ResolvedVariable = Omit<Schemas['ResolvedVariable'], 'winner'> & {
+  winner: Schemas['ResolvedValue'] | null;
+};
+/**
+ * A Release's current revision of variables, and what a Target would get of them. `revision` is
+ * null for a Release created before variables were snapshotted.
+ */
+export interface ReleaseVariables {
+  revision: Schemas['ReleaseVariablesSnapshot'] | null;
+  resolved: ResolvedVariable[];
+}
+
 /** A Release with each of its Builds in full, from `GET /v1/releases/{id}`. */
 export type Release = Schemas['Release'];
 export type ReleaseStatus = Release['status'];

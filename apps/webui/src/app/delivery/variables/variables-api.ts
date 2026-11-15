@@ -1,6 +1,6 @@
 import { inject, Service } from '@angular/core';
 import { ApiClient } from '../../api/api-client';
-import { Environment, Target, Variable, VariableScope } from '../../api/models';
+import { Environment, ReleaseVariables, Target, Variable, VariableScope } from '../../api/models';
 import { DeliveryApi } from '../delivery-api';
 
 /** The Project or the Application that owns variables. */
@@ -60,6 +60,15 @@ export class VariablesApi {
 
   removeValue(id: string, valueId: string): Promise<Variable> {
     return this.api.send('DELETE', `/variables/${id}/values/${valueId}`);
+  }
+
+  /**
+   * The variables a Release deploys with: its current snapshot and, for a Target, the value of
+   * each a Deployment there would get.
+   */
+  releaseVariables(releaseId: string, targetId?: string): Promise<ReleaseVariables> {
+    const query = targetId ? `?${new URLSearchParams({ target_id: targetId })}` : '';
+    return this.api.get(`/releases/${releaseId}/variables${query}`);
   }
 
   /** The Workspace's Environments and their Targets, which a value can be scoped to. */

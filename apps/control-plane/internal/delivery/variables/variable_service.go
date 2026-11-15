@@ -426,13 +426,37 @@ func (s *service) RemoveVariableValue(ctx context.Context, actor identity.Actor,
 		})
 }
 
+// lockOwner holds the variables of the Project a Variable sits in for the
+// transaction, whether or not its owner is active.
+func (s *service) lockOwner(ctx context.Context, v *delivery.Variable) error {
+	projectID := v.ProjectID()
+	if applicationID := v.ApplicationID(); applicationID != nil {
+		app, err := s.applications.GetApplication(ctx, v.OrganizationID(), *applicationID)
+		if err != nil {
+			return err
+		}
+		projectID = new(app.ProjectID())
+	}
+	return s.locker.Lock(ctx, "delivery.variables:"+*projectID)
+}
+
 // ArchiveVariable archives a Variable. Archiving an archived one does
 // nothing, and needs no active owner.
 func (s *service) ArchiveVariable(ctx context.Context, actor identity.Actor, organizationID, variableID string) (*delivery.Variable, error) {
 	return change.Run(ctx, s.w, actor, change.Spec[*delivery.Variable]{
 		AggregateType: delivery.AggregateVariable,
 		AggregateID:   func(v *delivery.Variable) string { return v.ID() },
+		// A save writes the whole Variable, so an archive takes its turn with
+		// the other changes to it, and reads it again once it has it: one
+		// that ran beside an edit could undo it, or be undone by it.
 		Load: func(ctx context.Context) (*delivery.Variable, error) {
+			v, err := s.variables.GetVariable(ctx, organizationID, variableID)
+			if err != nil {
+				return nil, err
+			}
+			if err := s.lockOwner(ctx, v); err != nil {
+				return nil, err
+			}
 			return s.variables.GetVariable(ctx, organizationID, variableID)
 		},
 		Apply: func(_ context.Context, v *delivery.Variable) error {

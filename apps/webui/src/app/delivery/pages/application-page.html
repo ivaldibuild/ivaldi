@@ -91,7 +91,7 @@
 
     <app-variable-list
       [projectId]="application()!.project_id"
-      [applicationId]="id()"
+      [applicationId]="application()!.id"
       [workspaceId]="application()!.workspace_id"
       [channels]="details.value()!.channels"
     />

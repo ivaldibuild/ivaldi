@@ -184,9 +184,11 @@ func TestVariablesAnApplicationDeploysWithMustAgree(t *testing.T) {
 		w := newWorld(t)
 		old, err := w.create(t, w.inProject(), "Database.Host", "database.host")
 		require.NoError(t, err)
+		w.locked = nil
 		_, err = w.svc.ArchiveVariable(ctx, actor, org, old.ID())
 		require.NoError(t, err)
 		assert.Equal(t, delivery.EventVariableArchived, w.audit[len(w.audit)-1].Type)
+		assert.Equal(t, []string{"delivery.variables:" + w.project}, w.locked, "an archive takes its turn with the other changes")
 
 		_, err = w.create(t, w.inBilling(), "Database", "database")
 		assert.NoError(t, err)

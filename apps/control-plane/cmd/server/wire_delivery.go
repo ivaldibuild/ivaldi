@@ -14,6 +14,7 @@ import (
 	deliverypg "github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/registries"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/releases"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/variables"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/enrollment"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/authorizer"
 	iampg "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/postgres"
@@ -22,6 +23,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/team/teams"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
 	workspacepg "github.com/ivaldibuild/ivaldi-control-plane/internal/workspace/postgres"
+	"github.com/ivaldibuild/ivaldi/pkg/database"
 	"github.com/ivaldibuild/ivaldi/pkg/logging"
 )
 
@@ -82,6 +84,7 @@ func (a *app) wireDelivery(runners config.Runners) error {
 	registryRepo := deliverypg.NewRegistryRepository(a.db)
 	targetRepo := deliverypg.NewTargetRepository(a.db)
 	clusterRepo := deliverypg.NewClusterRepository(a.db)
+	variableRepo := deliverypg.NewVariableRepository(a.db)
 	workspaces := workspace.NewLookups(workspacepg.NewRepository(a.db))
 
 	revoker, err := enrollment.NewAgentRevoker(
@@ -111,6 +114,7 @@ func (a *app) wireDelivery(runners config.Runners) error {
 		environments.WithTargetRepo(targetRepo),
 		environments.WithClusterRepo(clusterRepo),
 		environments.WithLifecycleUsage(lifecycleRepo),
+		environments.WithVariableUsage(variableRepo),
 		environments.WithWorkspaces(workspaces),
 		environments.WithResourceRegistrar(a.iam.resources),
 		environments.WithAuthorizer(a.authz),
@@ -155,6 +159,7 @@ func (a *app) wireDelivery(runners config.Runners) error {
 		applications.WithTargetLookup(targetRepo),
 		applications.WithEnvironmentLookup(envRepo),
 		applications.WithProjectLookup(workspaces),
+		applications.WithVariableUsage(variableRepo),
 		applications.WithWorkspaces(workspaces),
 		applications.WithTeamDirectory(a.teams),
 		applications.WithSettingResolver(a.settingResolver),
@@ -162,6 +167,22 @@ func (a *app) wireDelivery(runners config.Runners) error {
 		applications.WithTransactor(a.tx),
 		applications.WithOutboxRecorder(a.outbox),
 		applications.WithAuditRecorder(a.audit),
+	)
+	if err != nil {
+		return err
+	}
+
+	vars, err := variables.NewVariableService(
+		variables.WithVariableRepo(variableRepo),
+		variables.WithApplicationLookup(applicationRepo),
+		variables.WithEnvironmentLookup(envRepo),
+		variables.WithTargetLookup(targetRepo),
+		variables.WithWorkspaces(workspaces),
+		variables.WithLocker(database.NewLocker(a.db)),
+		variables.WithAuthorizer(a.authz),
+		variables.WithTransactor(a.tx),
+		variables.WithOutboxRecorder(a.outbox),
+		variables.WithAuditRecorder(a.audit),
 	)
 	if err != nil {
 		return err
@@ -227,5 +248,6 @@ func (a *app) wireDelivery(runners config.Runners) error {
 	a.services.agent = agentSvc
 	a.services.applications, a.services.releases = apps, rels
 	a.services.deployments = deps
+	a.services.variables = vars
 	return nil
 }

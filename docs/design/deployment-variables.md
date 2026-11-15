@@ -25,10 +25,10 @@ The main difference is secrets. Octopus stores sensitive values itself, encrypte
 
 | Field | Meaning |
 |---|---|
-| `name` | Unique in its Project or Application, case-insensitive. Letters, digits, `.`, `-`, and `_`, up to 253 characters, which is what a Kubernetes Secret key allows, because secrets become Secret keys. Octopus also allows spaces; Ivaldi does not, for the same reason. Dots namespace names, as Octopus recommends: `Database.Password`. |
+| `name` | Unique in its Project or Application, case-insensitive, and never changed, since bindings and snapshots refer to it. Letters, digits, `.`, `-`, and `_`, up to 253 characters, which is what a Kubernetes Secret key allows, because secrets become Secret keys. Octopus also allows spaces; Ivaldi does not, for the same reason. Dots namespace names, as Octopus recommends: `Database.Password`. |
 | `description` | Optional. |
-| `kind` | `text` or `secret`. All values of a variable have its kind. |
-| `values_path` | Optional: where the chart receives the variable, such as `database.host`. A variable without one is only used through bindings. |
+| `kind` | `text` or `secret`, never changed. All values of a variable have its kind. |
+| `values_path` | Optional: where the chart receives the variable, such as `database.host`: dot-separated keys, never under `global.ivaldi`, which holds Ivaldi's generated values. A variable without one is only used through bindings. |
 | `deliver_as` | For `secret` variables: `secret` (the default) or `value` ([Kubernetes agent](k8s-agent.md#variables-and-secrets)). |
 
 Each **value** has its content and its scope:
@@ -60,6 +60,7 @@ Octopus's other dimensions are left out: there are no tenants, no target tags, a
 - **`values_path` never overlaps.** Among the variables an Application deploys with (its own plus its Project's, after shadowing), no two may have the same `values_path`, or one that is a prefix of the other at a path boundary (`db` and `db.host`, not `db` and `dbx`): one would silently overwrite the other. Saving checks the Application and its Project; saving a Project variable checks every active Application in it. A Release snapshot checks again.
 - Precedence across owners follows the same rule as within one owner: the most specific value wins, and on equal specificity the Application's value beats the Project's. Two values that would tie *within* one owner are refused, as before; a Project value and an Application value never tie, so adding a Project variable never fails because of an Application's values.
 - A Project cannot be archived while it has active Applications, so its variables do not outlive their users. An archived Application's variables go with it.
+- A variable is archived, not deleted, which frees its name. It is not restored: a Release that snapshotted it keeps its copy, and a new variable can take the name.
 
 ### Bindings and system variables
 

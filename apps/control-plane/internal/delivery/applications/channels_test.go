@@ -256,6 +256,15 @@ func TestSetDefaultChannel(t *testing.T) {
 		assert.Equal(t, before, s.state)
 	})
 
+	t.Run("archiving a channel a variable's value is scoped to is refused", func(t *testing.T) {
+		s.scopedVariables[s.defaultCh.ID()] = 1
+		defer delete(s.scopedVariables, s.defaultCh.ID())
+		before := s.state.clone()
+		_, err := s.svc.ArchiveChannel(ctx, ada, org, s.defaultCh.ID())
+		require.ErrorIs(t, err, delivery.ErrInUse)
+		assert.Equal(t, before, s.state)
+	})
+
 	t.Run("the old default can now be archived", func(t *testing.T) {
 		got, err := s.svc.ArchiveChannel(ctx, ada, org, s.defaultCh.ID())
 		require.NoError(t, err)

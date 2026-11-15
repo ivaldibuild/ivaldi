@@ -5542,6 +5542,38 @@
         ],
         "type": "object"
       },
+      "ResponseListVariableSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseListVariableSnapshot.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "description": "Response payload, always present: an empty list is [], not omitted",
+            "items": {
+              "$ref": "#/components/schemas/VariableSnapshot"
+            },
+            "type": "array"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
       "ResponseListWorkspaceSnapshot": {
         "additionalProperties": false,
         "properties": {
@@ -6531,6 +6563,35 @@
         ],
         "type": "object"
       },
+      "ResponseVariableSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseVariableSnapshot.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/VariableSnapshot",
+            "description": "Response payload, always present: an empty list is [], not omitted"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
       "ResponseWorkspaceRunsOn": {
         "additionalProperties": false,
         "properties": {
@@ -7342,6 +7403,33 @@
         "required": [
           "organization_id"
         ],
+        "type": "object"
+      },
+      "ScopeBody": {
+        "additionalProperties": false,
+        "properties": {
+          "channel_ids": {
+            "description": "The Application's Channels the value applies to; any when omitted. Not allowed on a Project's variable",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "environment_ids": {
+            "description": "Environments the value applies to; any when omitted",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "target_ids": {
+            "description": "Targets the value applies to; any when omitted",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
         "type": "object"
       },
       "SecretRef": {
@@ -8392,6 +8480,27 @@
         },
         "type": "object"
       },
+      "UpdateVariableRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/UpdateVariableRequestBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "description": {
+            "description": "New description; empty clears it",
+            "type": "string"
+          },
+          "values_path": {
+            "description": "New values path; empty clears it",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "UpdateWorkspaceRequestBody": {
         "additionalProperties": false,
         "properties": {
@@ -8416,6 +8525,213 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "ValueBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ValueBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ScopeBody",
+            "description": "The Deployments the value applies to; every Deployment when omitted"
+          },
+          "value": {
+            "description": "The text, which may bind other variables with #{Name}",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "type": "object"
+      },
+      "VariableBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/VariableBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "description": {
+            "description": "What the variable is for",
+            "type": "string"
+          },
+          "kind": {
+            "description": "What its values hold; text when omitted",
+            "enum": [
+              "text"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "description": "The variable's name, unique within its owner whatever the case, such as Database.Host",
+            "maxLength": 253,
+            "minLength": 1,
+            "type": "string"
+          },
+          "values": {
+            "description": "The variable's values",
+            "items": {
+              "$ref": "#/components/schemas/ValueBody"
+            },
+            "type": "array"
+          },
+          "values_path": {
+            "description": "Dotted path in the chart's values the variable is written to, such as database.host; omit for a variable only used through bindings",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "VariableScope": {
+        "additionalProperties": false,
+        "properties": {
+          "channel_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "environment_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "target_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "environment_ids",
+          "target_ids",
+          "channel_ids"
+        ],
+        "type": "object"
+      },
+      "VariableSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "application_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "archived_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "deliver_as": {
+            "enum": [
+              "secret",
+              "value"
+            ],
+            "nullable": true,
+            "type": "string"
+          },
+          "description": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "text",
+              "secret"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "organization_id": {
+            "type": "string"
+          },
+          "project_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "values": {
+            "items": {
+              "$ref": "#/components/schemas/VariableValueSnapshot"
+            },
+            "type": "array"
+          },
+          "values_path": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "project_id",
+          "application_id",
+          "name",
+          "description",
+          "kind",
+          "values_path",
+          "deliver_as",
+          "values",
+          "created_at",
+          "updated_at",
+          "archived_at"
+        ],
+        "type": "object"
+      },
+      "VariableValueSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/VariableScope"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "value",
+          "scope",
+          "created_at",
+          "updated_at"
+        ],
         "type": "object"
       },
       "VaultStore": {
@@ -10374,6 +10690,120 @@
         "summary": "Hand an Application to another Team",
         "tags": [
           "applications"
+        ]
+      }
+    },
+    "/v1/applications/{application}/variables": {
+      "get": {
+        "operationId": "list-application-variables",
+        "parameters": [
+          {
+            "description": "The Application's ID, or the slug of an active Application",
+            "in": "path",
+            "name": "application",
+            "required": true,
+            "schema": {
+              "description": "The Application's ID, or the slug of an active Application",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Also return the variables of the Application's Project, after its own",
+            "explode": false,
+            "in": "query",
+            "name": "include_inherited",
+            "schema": {
+              "description": "Also return the variables of the Application's Project, after its own",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseListVariableSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List an Application's variables",
+        "tags": [
+          "variables"
+        ]
+      },
+      "post": {
+        "operationId": "create-application-variable",
+        "parameters": [
+          {
+            "description": "The Application's ID, or the slug of an active Application",
+            "in": "path",
+            "name": "application",
+            "required": true,
+            "schema": {
+              "description": "The Application's ID, or the slug of an active Application",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VariableBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseVariableSnapshot"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a variable an Application deploys with",
+        "tags": [
+          "variables"
         ]
       }
     },
@@ -14493,6 +14923,110 @@
         ]
       }
     },
+    "/v1/projects/{project_id}/variables": {
+      "get": {
+        "operationId": "list-project-variables",
+        "parameters": [
+          {
+            "description": "The Project to list variables of",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "description": "The Project to list variables of",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseListVariableSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List a Project's variables",
+        "tags": [
+          "variables"
+        ]
+      },
+      "post": {
+        "operationId": "create-project-variable",
+        "parameters": [
+          {
+            "description": "The Project the variable belongs to",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "description": "The Project the variable belongs to",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VariableBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseVariableSnapshot"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a variable every Application in a Project deploys with",
+        "tags": [
+          "variables"
+        ]
+      }
+    },
     "/v1/registries/{registry_id}": {
       "get": {
         "operationId": "get-registry",
@@ -16984,6 +17518,340 @@
         "summary": "Restore an archived Team",
         "tags": [
           "teams"
+        ]
+      }
+    },
+    "/v1/variables/{variable_id}": {
+      "get": {
+        "operationId": "get-variable",
+        "parameters": [
+          {
+            "description": "The variable's ID",
+            "in": "path",
+            "name": "variable_id",
+            "required": true,
+            "schema": {
+              "description": "The variable's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseVariableSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get a variable",
+        "tags": [
+          "variables"
+        ]
+      },
+      "patch": {
+        "operationId": "update-variable",
+        "parameters": [
+          {
+            "description": "The variable's ID",
+            "in": "path",
+            "name": "variable_id",
+            "required": true,
+            "schema": {
+              "description": "The variable's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateVariableRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseVariableSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Change a variable",
+        "tags": [
+          "variables"
+        ]
+      }
+    },
+    "/v1/variables/{variable_id}/archive": {
+      "post": {
+        "operationId": "archive-variable",
+        "parameters": [
+          {
+            "description": "The variable's ID",
+            "in": "path",
+            "name": "variable_id",
+            "required": true,
+            "schema": {
+              "description": "The variable's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseVariableSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Archive a variable, freeing its name",
+        "tags": [
+          "variables"
+        ]
+      }
+    },
+    "/v1/variables/{variable_id}/values": {
+      "post": {
+        "operationId": "add-variable-value",
+        "parameters": [
+          {
+            "description": "The variable's ID",
+            "in": "path",
+            "name": "variable_id",
+            "required": true,
+            "schema": {
+              "description": "The variable's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValueBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseVariableSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Add a value to a variable",
+        "tags": [
+          "variables"
+        ]
+      }
+    },
+    "/v1/variables/{variable_id}/values/{value_id}": {
+      "delete": {
+        "operationId": "remove-variable-value",
+        "parameters": [
+          {
+            "description": "The variable's ID",
+            "in": "path",
+            "name": "variable_id",
+            "required": true,
+            "schema": {
+              "description": "The variable's ID",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The value's ID",
+            "in": "path",
+            "name": "value_id",
+            "required": true,
+            "schema": {
+              "description": "The value's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseVariableSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove a variable's value",
+        "tags": [
+          "variables"
+        ]
+      },
+      "put": {
+        "operationId": "update-variable-value",
+        "parameters": [
+          {
+            "description": "The variable's ID",
+            "in": "path",
+            "name": "variable_id",
+            "required": true,
+            "schema": {
+              "description": "The variable's ID",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The value's ID",
+            "in": "path",
+            "name": "value_id",
+            "required": true,
+            "schema": {
+              "description": "The value's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValueBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseVariableSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Replace a variable's value",
+        "tags": [
+          "variables"
         ]
       }
     },

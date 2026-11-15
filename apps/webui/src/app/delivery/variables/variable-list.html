@@ -219,7 +219,12 @@
             @if (variable.values.length > 0) {
               <div class="border-border relative overflow-x-auto border">
                 <table class="w-full min-w-150 border-collapse text-sm">
-                  <caption class="sr-only">Values of {{ variable.name }}</caption>
+                  <caption class="sr-only">
+                    Values of
+                    {{
+                      variable.name
+                    }}
+                  </caption>
                   <thead>
                     <tr class="text-muted-foreground text-left">
                       <th scope="col" class="border-border border-b px-4 py-3 font-semibold">

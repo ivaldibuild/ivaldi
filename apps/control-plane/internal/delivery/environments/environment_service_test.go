@@ -283,6 +283,7 @@ func TestArchiveEnvironments(t *testing.T) {
 	for name, setup := range map[string]func(w *world, e *delivery.Environment){
 		"with an active target":     func(w *world, e *delivery.Environment) { w.target(t, e.ID(), "web", false) },
 		"in an active lifecycle":    func(w *world, e *delivery.Environment) { w.lifecycleUse[e.ID()] = 1 },
+		"in a variable's scope":     func(w *world, e *delivery.Environment) { w.scopedVariables[e.ID()] = 1 },
 		"unknown in the same batch": func(w *world, _ *delivery.Environment) {},
 	} {
 		t.Run("refuses all when one is "+name, func(t *testing.T) {
@@ -414,6 +415,16 @@ func TestTargetChanges(t *testing.T) {
 			assert.True(t, got.Archived())
 		}
 		assert.Equal(t, []string{delivery.EventTargetArchived}, w.auditTypes())
+	})
+
+	t.Run("archive is refused while a variable's value is scoped to it", func(t *testing.T) {
+		w := newWorld(t)
+		env := w.env(t, wsActive, "staging", false)
+		tg := w.target(t, env.ID(), "web", false)
+		w.scopedVariables[tg.ID()] = 2
+		_, err := w.svc.ArchiveTarget(ctx, ada, org, tg.ID())
+		require.ErrorIs(t, err, delivery.ErrInUse)
+		assert.Empty(t, w.audit)
 	})
 
 	t.Run("restore needs an active environment", func(t *testing.T) {

@@ -52,6 +52,12 @@ type EnvironmentLookup interface {
 	ListActiveEnvironments(ctx context.Context, organizationID, workspaceID string) ([]*delivery.Environment, error)
 }
 
+// VariableUsage counts the variables with a value scoped to a Channel, which
+// keep it from being archived. delivery.VariableRepository provides it.
+type VariableUsage interface {
+	CountActiveVariablesWithChannel(ctx context.Context, organizationID, channelID string) (int, error)
+}
+
 // ProjectLookup reads the Projects Applications belong to, for labelling a
 // "what runs where" read with Project names. workspace.NewLookups provides
 // it.
@@ -68,6 +74,7 @@ type options struct {
 	targets      TargetLookup
 	environments EnvironmentLookup
 	projects     ProjectLookup
+	variables    VariableUsage
 	workspaces   delivery.Workspaces
 	settings     workspace.SettingResolver
 	teams        team.Directory
@@ -92,6 +99,9 @@ func WithEnvironmentLookup(e EnvironmentLookup) ApplicationServiceOption {
 }
 
 // WithProjectLookup labels a "what runs where" read with Project names.
+func WithVariableUsage(v VariableUsage) ApplicationServiceOption {
+	return func(o *options) { o.variables = v }
+}
 func WithProjectLookup(p ProjectLookup) ApplicationServiceOption {
 	return func(o *options) { o.projects = p }
 }
@@ -144,6 +154,7 @@ func NewApplicationService(opts ...ApplicationServiceOption) (delivery.Applicati
 		{"TargetLookup", o.targets != nil},
 		{"EnvironmentLookup", o.environments != nil},
 		{"ProjectLookup", o.projects != nil},
+		{"VariableUsage", o.variables != nil},
 		{"Workspaces", o.workspaces != nil},
 		{"SettingResolver", o.settings != nil},
 		{"TeamDirectory", o.teams != nil},
@@ -164,6 +175,7 @@ func NewApplicationService(opts ...ApplicationServiceOption) (delivery.Applicati
 		targets:      o.targets,
 		environments: o.environments,
 		projects:     o.projects,
+		variables:    o.variables,
 		workspaces:   o.workspaces,
 		settings:     o.settings,
 		teams:        o.teams,
@@ -182,6 +194,7 @@ type service struct {
 	targets      TargetLookup
 	environments EnvironmentLookup
 	projects     ProjectLookup
+	variables    VariableUsage
 	workspaces   delivery.Workspaces
 	settings     workspace.SettingResolver
 	teams        team.Directory

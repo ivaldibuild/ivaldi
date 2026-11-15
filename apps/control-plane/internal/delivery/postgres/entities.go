@@ -252,6 +252,37 @@ func (releaseBuildEntity) TableName() string { return "delivery.release_builds" 
 
 // utc returns t in UTC. The driver returns times in the local zone, and the
 // domain records UTC.
+type variableEntity struct {
+	ID             string     `gorm:"column:id;primaryKey"`
+	OrganizationID string     `gorm:"column:organization_id"`
+	ProjectID      *string    `gorm:"column:project_id"`
+	ApplicationID  *string    `gorm:"column:application_id"`
+	Name           string     `gorm:"column:name"`
+	Description    *string    `gorm:"column:description"`
+	Kind           string     `gorm:"column:kind"`
+	ValuesPath     *string    `gorm:"column:values_path"`
+	DeliverAs      *string    `gorm:"column:deliver_as"`
+	CreatedAt      time.Time  `gorm:"column:created_at;autoCreateTime:false"`
+	UpdatedAt      time.Time  `gorm:"column:updated_at;autoUpdateTime:false"`
+	ArchivedAt     *time.Time `gorm:"column:archived_at"`
+}
+
+func (variableEntity) TableName() string { return "delivery.variables" }
+
+type variableValueEntity struct {
+	ID             string             `gorm:"column:id;primaryKey"`
+	OrganizationID string             `gorm:"column:organization_id"`
+	VariableID     string             `gorm:"column:variable_id"`
+	TextValue      *string            `gorm:"column:text_value"`
+	EnvironmentIDs database.TextArray `gorm:"column:environment_ids;type:text[]"`
+	TargetIDs      database.TextArray `gorm:"column:target_ids;type:text[]"`
+	ChannelIDs     database.TextArray `gorm:"column:channel_ids;type:text[]"`
+	CreatedAt      time.Time          `gorm:"column:created_at;autoCreateTime:false"`
+	UpdatedAt      time.Time          `gorm:"column:updated_at;autoUpdateTime:false"`
+}
+
+func (variableValueEntity) TableName() string { return "delivery.variable_values" }
+
 func utc(t time.Time) *time.Time {
 	u := t.UTC()
 	return &u

@@ -403,6 +403,24 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/applications/{application}/variables': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List an Application's variables */
+    get: operations['list-application-variables'];
+    put?: never;
+    /** Create a variable an Application deploys with */
+    post: operations['create-application-variable'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/artifacts/{artifact_id}': {
     parameters: {
       query?: never;
@@ -1461,6 +1479,24 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/projects/{project_id}/variables': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List a Project's variables */
+    get: operations['list-project-variables'];
+    put?: never;
+    /** Create a variable every Application in a Project deploys with */
+    post: operations['create-project-variable'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/registries/{registry_id}': {
     parameters: {
       query?: never;
@@ -2061,6 +2097,76 @@ export interface paths {
     /** Restore an archived Team */
     post: operations['restore-team'];
     delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/variables/{variable_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get a variable */
+    get: operations['get-variable'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Change a variable */
+    patch: operations['update-variable'];
+    trace?: never;
+  };
+  '/v1/variables/{variable_id}/archive': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Archive a variable, freeing its name */
+    post: operations['archive-variable'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/variables/{variable_id}/values': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Add a value to a variable */
+    post: operations['add-variable-value'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/variables/{variable_id}/values/{value_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** Replace a variable's value */
+    put: operations['update-variable-value'];
+    post?: never;
+    /** Remove a variable's value */
+    delete: operations['remove-variable-value'];
     options?: never;
     head?: never;
     patch?: never;
@@ -4328,6 +4434,20 @@ export interface components {
       /** @description Request status */
       status: string;
     };
+    ResponseListVariableSnapshot: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseListVariableSnapshot.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['VariableSnapshot'][];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
     ResponseListWorkspaceSnapshot: {
       /**
        * Format: uri
@@ -4804,6 +4924,20 @@ export interface components {
       /** @description Request status */
       status: string;
     };
+    ResponseVariableSnapshot: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseVariableSnapshot.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['VariableSnapshot'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
     ResponseWorkspaceRunsOn: {
       /**
        * Format: uri
@@ -5029,6 +5163,14 @@ export interface components {
       organization_id: string;
       project_id?: string;
       workspace_id?: string;
+    };
+    ScopeBody: {
+      /** @description The Application's Channels the value applies to; any when omitted. Not allowed on a Project's variable */
+      channel_ids?: string[];
+      /** @description Environments the value applies to; any when omitted */
+      environment_ids?: string[];
+      /** @description Targets the value applies to; any when omitted */
+      target_ids?: string[];
     };
     SecretRef: {
       field?: string;
@@ -5451,6 +5593,18 @@ export interface components {
       /** @description New slug */
       slug?: string;
     };
+    UpdateVariableRequestBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/UpdateVariableRequestBody.json
+       */
+      readonly $schema?: string;
+      /** @description New description; empty clears it */
+      description?: string;
+      /** @description New values path; empty clears it */
+      values_path?: string;
+    };
     UpdateWorkspaceRequestBody: {
       /**
        * Format: uri
@@ -5464,6 +5618,73 @@ export interface components {
       display_name?: string;
       /** @description New slug */
       slug?: string;
+    };
+    ValueBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ValueBody.json
+       */
+      readonly $schema?: string;
+      /** @description The Deployments the value applies to; every Deployment when omitted */
+      scope?: components['schemas']['ScopeBody'];
+      /** @description The text, which may bind other variables with #{Name} */
+      value: string;
+    };
+    VariableBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/VariableBody.json
+       */
+      readonly $schema?: string;
+      /** @description What the variable is for */
+      description?: string;
+      /**
+       * @description What its values hold; text when omitted
+       * @enum {string}
+       */
+      kind?: 'text';
+      /** @description The variable's name, unique within its owner whatever the case, such as Database.Host */
+      name: string;
+      /** @description The variable's values */
+      values?: components['schemas']['ValueBody'][];
+      /** @description Dotted path in the chart's values the variable is written to, such as database.host; omit for a variable only used through bindings */
+      values_path?: string;
+    };
+    VariableScope: {
+      channel_ids: string[];
+      environment_ids: string[];
+      target_ids: string[];
+    };
+    VariableSnapshot: {
+      application_id: string | null;
+      /** Format: date-time */
+      archived_at: string | null;
+      /** Format: date-time */
+      created_at: string;
+      /** @enum {string|null} */
+      deliver_as: 'secret' | 'value' | null;
+      description: string | null;
+      id: string;
+      /** @enum {string} */
+      kind: 'text' | 'secret';
+      name: string;
+      organization_id: string;
+      project_id: string | null;
+      /** Format: date-time */
+      updated_at: string;
+      values: components['schemas']['VariableValueSnapshot'][];
+      values_path: string | null;
+    };
+    VariableValueSnapshot: {
+      /** Format: date-time */
+      created_at: string;
+      id: string;
+      scope: components['schemas']['VariableScope'];
+      /** Format: date-time */
+      updated_at: string;
+      value: string;
     };
     VaultStore: {
       address: string;
@@ -6584,6 +6805,77 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ResponseApplicationSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'list-application-variables': {
+    parameters: {
+      query?: {
+        /** @description Also return the variables of the Application's Project, after its own */
+        include_inherited?: boolean;
+      };
+      header?: never;
+      path: {
+        /** @description The Application's ID, or the slug of an active Application */
+        application: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseListVariableSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'create-application-variable': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Application's ID, or the slug of an active Application */
+        application: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['VariableBody'];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseVariableSnapshot'];
         };
       };
       /** @description Error */
@@ -9129,6 +9421,74 @@ export interface operations {
       };
     };
   };
+  'list-project-variables': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Project to list variables of */
+        project_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseListVariableSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'create-project-variable': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Project the variable belongs to */
+        project_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['VariableBody'];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseVariableSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
   'get-registry': {
     parameters: {
       query?: never;
@@ -10653,6 +11013,214 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ResponseTeamSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'get-variable': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The variable's ID */
+        variable_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseVariableSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'update-variable': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The variable's ID */
+        variable_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateVariableRequestBody'];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseVariableSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'archive-variable': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The variable's ID */
+        variable_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseVariableSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'add-variable-value': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The variable's ID */
+        variable_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ValueBody'];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseVariableSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'update-variable-value': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The variable's ID */
+        variable_id: string;
+        /** @description The value's ID */
+        value_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ValueBody'];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseVariableSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'remove-variable-value': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The variable's ID */
+        variable_id: string;
+        /** @description The value's ID */
+        value_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseVariableSnapshot'];
         };
       };
       /** @description Error */

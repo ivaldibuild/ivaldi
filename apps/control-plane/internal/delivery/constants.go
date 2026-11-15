@@ -29,6 +29,14 @@ const (
 	maxSelectorKeyLength   = 253
 	maxValuesFiles         = 20
 	maxValuesFileLength    = 512
+	// MaxVariablesPerOwner bounds how many active variables a Project or an
+	// Application can have, which also bounds a Release's snapshot.
+	MaxVariablesPerOwner   = 200
+	maxVariableNameLength  = 253
+	maxValuesPathLength    = 512
+	maxVariableValueLength = 16384
+	maxVariableValues      = 50
+	maxScopeNames          = 50
 	// maxClusterCapabilitiesBytes bounds the facts an agent reports about
 	// itself, so a malformed or hostile report cannot fill a row.
 	maxClusterCapabilitiesBytes = 64 * 1024
@@ -59,6 +67,7 @@ const (
 	AggregateBuild       = "delivery.Build"
 	AggregateRelease     = "delivery.Release"
 	AggregateDeployment  = "delivery.Deployment"
+	AggregateVariable    = "delivery.Variable"
 )
 
 // Permissions this capability asks the authorizer about. The full catalog,
@@ -90,10 +99,27 @@ const (
 	// restores them, and creates their enrolment tokens.
 	PermissionClusterRead   = "cluster.read"
 	PermissionClusterManage = "cluster.manage"
+	// PermissionVariableRead reads a Project's variables and its
+	// Applications'; PermissionVariableManage changes them. Both are checked
+	// on the Project, and a change to a value scoped to Environments, or to
+	// Targets in them, also needs PermissionVariableManage on each.
+	PermissionVariableRead   = "variable.read"
+	PermissionVariableManage = "variable.manage"
 )
 
 // Actions name what an actor asks the authorizer to allow. Policy rules
 // and approval requests match on them, and they appear in its decisions.
+const (
+	ActionVariableAddValue    = "variable.add_value"
+	ActionVariableArchive     = "variable.archive"
+	ActionVariableCreate      = "variable.create"
+	ActionVariableList        = "variable.list"
+	ActionVariableRead        = "variable.read"
+	ActionVariableRemoveValue = "variable.remove_value"
+	ActionVariableUpdate      = "variable.update"
+	ActionVariableUpdateValue = "variable.update_value"
+)
+
 const (
 	ActionApplicationArchive    = "application.archive"
 	ActionApplicationCreate     = "application.create"
@@ -198,6 +224,9 @@ const (
 	EventClusterArchived      = "cluster.archived"
 	EventClusterRestored      = "cluster.restored"
 
+	EventVariableCreated   = "variable.created"
+	EventVariableUpdated   = "variable.updated"
+	EventVariableArchived  = "variable.archived"
 	EventLifecycleCreated  = "lifecycle.created"
 	EventLifecycleUpdated  = "lifecycle.updated"
 	EventLifecycleArchived = "lifecycle.archived"

@@ -49,6 +49,8 @@ type store struct {
 	state
 	workspaces   map[string]*workspace.Workspace
 	lifecycleUse map[string]int
+	// scopedVariables counts the variables scoped to an Environment or Target.
+	scopedVariables map[string]int
 	// inTx and aborted fake PostgreSQL's rule that a transaction ignores
 	// every command after a failed write, so a service that looks something
 	// up in the transaction that just failed is caught.
@@ -90,8 +92,9 @@ func newStore() *store {
 			resources:    map[string]iam.Resource{},
 			archivedRes:  map[string]bool{},
 		},
-		workspaces:   map[string]*workspace.Workspace{},
-		lifecycleUse: map[string]int{},
+		workspaces:      map[string]*workspace.Workspace{},
+		lifecycleUse:    map[string]int{},
+		scopedVariables: map[string]int{},
 	}
 }
 
@@ -452,7 +455,7 @@ func newWorld(t *testing.T) *world {
 
 func (s *store) options(authz authorization.Authorizer) []EnvironmentServiceOption {
 	return []EnvironmentServiceOption{
-		WithEnvironmentRepo(s), WithTargetRepo(s), WithClusterRepo(s), WithLifecycleUsage(s), WithWorkspaces(s),
+		WithEnvironmentRepo(s), WithTargetRepo(s), WithClusterRepo(s), WithLifecycleUsage(s), WithVariableUsage(s), WithWorkspaces(s),
 		WithResourceRegistrar(s), WithAuthorizer(authz), WithTransactor(s),
 		WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
 	}
@@ -498,4 +501,12 @@ func locatorIn(namespace string) map[string]string {
 // reset forgets what was recorded so far.
 func (w *world) reset() {
 	w.audit, w.events, w.authz.asked = nil, nil, nil
+}
+
+func (s *store) CountActiveVariablesWithEnvironment(_ context.Context, _, environmentID string) (int, error) {
+	return s.scopedVariables[environmentID], nil
+}
+
+func (s *store) CountActiveVariablesWithTarget(_ context.Context, _, targetID string) (int, error) {
+	return s.scopedVariables[targetID], nil
 }

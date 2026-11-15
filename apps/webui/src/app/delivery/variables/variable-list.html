@@ -1,0 +1,486 @@
+<section aria-labelledby="variables-heading" class="flex flex-col gap-4">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <h2 id="variables-heading" class="text-heading text-lg font-semibold">Variables</h2>
+    @if (editable() && !adding()) {
+      <button hlmBtn variant="outline" type="button" (click)="startAdding()">
+        <ng-icon name="lucidePlus" aria-hidden="true" /> Add variable
+      </button>
+    }
+  </div>
+  <p class="text-muted-foreground max-w-205 text-sm">
+    @if (applicationId()) {
+      Configuration this Application deploys with. A value can apply to every Deployment, or only to
+      some Environments, Targets, or Channels; the most specific one wins.
+    } @else {
+      Configuration every Application in this Project deploys with. An Application can override a
+      variable by declaring one with the same name.
+      @if (applications().length > 0) {
+        Changing one here changes it for {{ applications().join(', ') }}.
+      }
+    }
+  </p>
+
+  @if (status.loading()) {
+    <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+      <hlm-spinner aria-hidden="true" /> Loading variables…
+    </p>
+  } @else if (status.error(); as message) {
+    <div hlmAlert variant="destructive" role="alert">
+      <h3 hlmAlertTitle>The variables didn't load</h3>
+      <p hlmAlertDescription>{{ message }}</p>
+    </div>
+  } @else {
+    @if (adding()) {
+      <form
+        class="border-border grid max-w-205 gap-4 border p-5 md:grid-cols-2"
+        novalidate
+        aria-labelledby="add-variable-heading"
+        (submit)="add($event)"
+      >
+        <h3 id="add-variable-heading" class="text-heading font-semibold md:col-span-2">
+          Add a variable
+        </h3>
+        @if (error(); as message) {
+          <div hlmAlert variant="destructive" role="alert" class="md:col-span-2">
+            <p hlmAlertDescription>{{ message }}</p>
+          </div>
+        }
+        <div hlmField>
+          <label hlmFieldLabel for="variable-name">Name</label>
+          <input
+            hlmInput
+            id="variable-name"
+            placeholder="Database.Host"
+            aria-describedby="variable-name-hint"
+            [formField]="newForm.name"
+          />
+          <p id="variable-name-hint" class="text-muted-foreground text-[13px]">
+            It can't be changed later. Other values bind it as #&#123;Name&#125;.
+          </p>
+          @if (newForm.name().touched() && newForm.name().invalid()) {
+            <hlm-field-error forceShow>{{ newForm.name().errors()[0].message }}</hlm-field-error>
+          }
+        </div>
+        <div hlmField>
+          <label hlmFieldLabel for="variable-path">Values path (optional)</label>
+          <input
+            hlmInput
+            id="variable-path"
+            placeholder="database.host"
+            aria-describedby="variable-path-hint"
+            [formField]="newForm.values_path"
+          />
+          <p id="variable-path-hint" class="text-muted-foreground text-[13px]">
+            Where the chart's values receive it. Leave empty for a variable only used through
+            bindings.
+          </p>
+        </div>
+        <div hlmField class="md:col-span-2">
+          <label hlmFieldLabel for="variable-value">Value for every Deployment (optional)</label>
+          <textarea
+            id="variable-value"
+            rows="2"
+            class="border-input bg-background text-foreground border px-3 py-2 font-mono text-[13px]"
+            [formField]="newForm.value"
+          ></textarea>
+        </div>
+        <div hlmField class="md:col-span-2">
+          <label hlmFieldLabel for="variable-description">Description (optional)</label>
+          <input hlmInput id="variable-description" [formField]="newForm.description" />
+        </div>
+        <div class="flex flex-wrap gap-2 md:col-span-2">
+          <button hlmBtn type="submit" [disabled]="saving()">
+            @if (saving()) {
+              <hlm-spinner aria-hidden="true" /> Adding…
+            } @else {
+              Add variable
+            }
+          </button>
+          <button hlmBtn variant="outline" type="button" (click)="closeForms()">Cancel</button>
+        </div>
+      </form>
+    }
+
+    @if (own().length > 0) {
+      <ul class="flex flex-col gap-3">
+        @for (variable of own(); track variable.id) {
+          <li class="border-border flex flex-col gap-4 border p-5">
+            <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+              <div class="flex flex-col gap-1">
+                <h3 class="text-heading font-semibold">
+                  <code>{{ variable.name }}</code>
+                </h3>
+                <p class="text-muted-foreground text-sm">
+                  @if (variable.values_path) {
+                    Written to <code class="text-foreground">{{ variable.values_path }}</code>
+                  } @else {
+                    Used only through bindings
+                  }
+                  @if (variable.description) {
+                    · {{ variable.description }}
+                  }
+                </p>
+              </div>
+              @if (editable()) {
+                <div class="flex flex-wrap gap-2">
+                  <button
+                    hlmBtn
+                    variant="outline"
+                    size="sm"
+                    type="button"
+                    [attr.aria-label]="'Add value to ' + variable.name"
+                    (click)="startValue(variable)"
+                  >
+                    Add value
+                  </button>
+                  <button
+                    hlmBtn
+                    variant="outline"
+                    size="sm"
+                    type="button"
+                    [attr.aria-label]="'Edit ' + variable.name"
+                    (click)="startEditing(variable)"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    hlmBtn
+                    variant="outline"
+                    size="sm"
+                    type="button"
+                    [attr.aria-label]="'Archive ' + variable.name"
+                    (click)="confirm(variable.id)"
+                  >
+                    Archive
+                  </button>
+                </div>
+              }
+            </div>
+
+            @if (confirming() === variable.id) {
+              <div hlmAlert role="alertdialog" [attr.aria-label]="'Archive ' + variable.name">
+                <p hlmAlertDescription>
+                  Releases created from now on won't deploy with {{ variable.name }}. Releases that
+                  already exist keep it.
+                </p>
+                @if (error(); as message) {
+                  <p class="text-destructive-text mt-2 text-sm" role="alert">{{ message }}</p>
+                }
+                <div class="mt-3 flex flex-wrap gap-2">
+                  <button hlmBtn type="button" [disabled]="saving()" (click)="archive(variable)">
+                    Archive variable
+                  </button>
+                  <button hlmBtn variant="outline" type="button" (click)="closeForms()">
+                    Keep it
+                  </button>
+                </div>
+              </div>
+            }
+
+            @if (editing() === variable.id) {
+              <form
+                class="border-border grid gap-4 border-t pt-4 md:grid-cols-2"
+                novalidate
+                [attr.aria-label]="'Edit ' + variable.name"
+                (submit)="saveVariable($event, variable)"
+              >
+                <div hlmField>
+                  <label hlmFieldLabel for="edit-variable-path">Values path</label>
+                  <input
+                    hlmInput
+                    id="edit-variable-path"
+                    [value]="editPath()"
+                    (input)="editPath.set($any($event.target).value)"
+                  />
+                </div>
+                <div hlmField>
+                  <label hlmFieldLabel for="edit-variable-description">Description</label>
+                  <input
+                    hlmInput
+                    id="edit-variable-description"
+                    [value]="editDescription()"
+                    (input)="editDescription.set($any($event.target).value)"
+                  />
+                </div>
+                @if (error(); as message) {
+                  <p class="text-destructive-text text-sm md:col-span-2" role="alert">
+                    {{ message }}
+                  </p>
+                }
+                <div class="flex flex-wrap gap-2 md:col-span-2">
+                  <button hlmBtn type="submit" [disabled]="saving()">Save</button>
+                  <button hlmBtn variant="outline" type="button" (click)="closeForms()">
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            }
+
+            @if (variable.values.length > 0) {
+              <div class="border-border relative overflow-x-auto border">
+                <table class="w-full min-w-150 border-collapse text-sm">
+                  <caption class="sr-only">
+                    Values of
+                    {{
+                      variable.name
+                    }}
+                  </caption>
+                  <thead>
+                    <tr class="text-muted-foreground text-left">
+                      <th scope="col" class="border-border border-b px-4 py-3 font-semibold">
+                        Value
+                      </th>
+                      <th scope="col" class="border-border border-b px-4 py-3 font-semibold">
+                        Applies to
+                      </th>
+                      @if (editable()) {
+                        <th scope="col" class="border-border border-b px-4 py-3">
+                          <span class="sr-only">Actions</span>
+                        </th>
+                      }
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (value of variable.values; track value.id) {
+                      <tr>
+                        <td class="border-border border-b px-4 py-3">
+                          <code class="break-all whitespace-pre-wrap">{{ value.value }}</code>
+                        </td>
+                        <td class="border-border border-b px-4 py-3">{{ appliesTo(value) }}</td>
+                        @if (editable()) {
+                          <td class="border-border border-b px-4 py-3">
+                            @if (confirming() === value.id) {
+                              <span class="flex flex-wrap items-center justify-end gap-2">
+                                <button
+                                  hlmBtn
+                                  size="sm"
+                                  type="button"
+                                  [disabled]="saving()"
+                                  (click)="removeValue(variable, value)"
+                                >
+                                  Remove value
+                                </button>
+                                <button
+                                  hlmBtn
+                                  variant="outline"
+                                  size="sm"
+                                  type="button"
+                                  (click)="closeForms()"
+                                >
+                                  Keep it
+                                </button>
+                              </span>
+                              @if (error(); as message) {
+                                <p class="text-destructive-text mt-2 text-sm" role="alert">
+                                  {{ message }}
+                                </p>
+                              }
+                            } @else {
+                              <span class="flex flex-wrap justify-end gap-2">
+                                <button
+                                  hlmBtn
+                                  variant="outline"
+                                  size="sm"
+                                  type="button"
+                                  [attr.aria-label]="
+                                    'Change the value of ' +
+                                    variable.name +
+                                    ' for ' +
+                                    appliesTo(value)
+                                  "
+                                  (click)="startValue(variable, value)"
+                                >
+                                  Change
+                                </button>
+                                <button
+                                  hlmBtn
+                                  variant="outline"
+                                  size="sm"
+                                  type="button"
+                                  [attr.aria-label]="
+                                    'Remove the value of ' +
+                                    variable.name +
+                                    ' for ' +
+                                    appliesTo(value)
+                                  "
+                                  (click)="confirm(value.id)"
+                                >
+                                  Remove
+                                </button>
+                              </span>
+                            }
+                          </td>
+                        }
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            } @else {
+              <p class="text-foreground text-sm">
+                No values yet, so no Deployment gets this variable.
+              </p>
+            }
+
+            @if (editingValue(variable); as editor) {
+              <form
+                class="border-border flex flex-col gap-4 border-t pt-4"
+                novalidate
+                [attr.aria-label]="
+                  (editor.valueId ? 'Change a value of ' : 'Add a value to ') + variable.name
+                "
+                (submit)="saveValue($event)"
+              >
+                <div hlmField>
+                  <label hlmFieldLabel for="variable-value-text">Value</label>
+                  <textarea
+                    id="variable-value-text"
+                    rows="2"
+                    class="border-input bg-background text-foreground border px-3 py-2 font-mono text-[13px]"
+                    aria-describedby="variable-value-hint"
+                    [value]="valueText()"
+                    (input)="valueText.set($any($event.target).value)"
+                  ></textarea>
+                  <p id="variable-value-hint" class="text-muted-foreground text-[13px]">
+                    Bind another variable with #&#123;Name&#125;, such as
+                    postgres://#&#123;Database.Host&#125;:5432.
+                  </p>
+                </div>
+                <p class="text-muted-foreground text-sm">
+                  Tick what the value applies to, or nothing for every Deployment. Within a group
+                  any ticked one matches; across groups all must. When several values match, a
+                  Target's wins over an Environment's, and an Environment's over a Channel's.
+                </p>
+                <div class="grid gap-4 md:grid-cols-3">
+                  <fieldset class="flex flex-col gap-2">
+                    <legend class="text-sm font-semibold">Environments</legend>
+                    @for (environment of environments(); track environment.id) {
+                      <label class="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          class="accent-primary size-4"
+                          [checked]="scoped('environment_ids', environment.id)"
+                          (change)="
+                            toggleScope(
+                              'environment_ids',
+                              environment.id,
+                              $any($event.target).checked
+                            )
+                          "
+                        />
+                        {{ environment.display_name }}
+                      </label>
+                    } @empty {
+                      <p class="text-muted-foreground text-sm">The Workspace has none.</p>
+                    }
+                  </fieldset>
+                  <fieldset class="flex flex-col gap-2">
+                    <legend class="text-sm font-semibold">Targets</legend>
+                    @for (target of targets(); track target.id) {
+                      <label class="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          class="accent-primary size-4"
+                          [checked]="scoped('target_ids', target.id)"
+                          (change)="
+                            toggleScope('target_ids', target.id, $any($event.target).checked)
+                          "
+                        />
+                        {{ target.display_name }}
+                      </label>
+                    } @empty {
+                      <p class="text-muted-foreground text-sm">The Workspace has none.</p>
+                    }
+                  </fieldset>
+                  @if (applicationId()) {
+                    <fieldset class="flex flex-col gap-2">
+                      <legend class="text-sm font-semibold">Channels</legend>
+                      @for (channel of channels(); track channel.id) {
+                        <label class="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            class="accent-primary size-4"
+                            [checked]="scoped('channel_ids', channel.id)"
+                            (change)="
+                              toggleScope('channel_ids', channel.id, $any($event.target).checked)
+                            "
+                          />
+                          {{ channel.display_name }}
+                        </label>
+                      }
+                    </fieldset>
+                  }
+                </div>
+                @if (error(); as message) {
+                  <div hlmAlert variant="destructive" role="alert">
+                    <p hlmAlertDescription>{{ message }}</p>
+                  </div>
+                }
+                <div class="flex flex-wrap gap-2">
+                  <button hlmBtn type="submit" [disabled]="saving()">
+                    @if (saving()) {
+                      <hlm-spinner aria-hidden="true" /> Saving…
+                    } @else {
+                      Save value
+                    }
+                  </button>
+                  <button hlmBtn variant="outline" type="button" (click)="closeForms()">
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            }
+          </li>
+        }
+      </ul>
+    } @else if (!adding()) {
+      <p class="text-foreground text-sm">No variables yet.</p>
+    }
+
+    @if (inherited().length > 0) {
+      <div class="flex flex-col gap-3">
+        <h3 class="text-heading font-semibold">From the Project</h3>
+        <p class="text-muted-foreground text-sm">
+          Every Application in the Project deploys with these.
+          <a [routerLink]="['/projects', projectId()]">Change them on the Project</a>, or override
+          one here: on equal scope, this Application's value wins.
+        </p>
+        <ul class="border-border flex flex-col border">
+          @for (item of inherited(); track item.variable.id) {
+            <li
+              class="border-border flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b px-4 py-3 text-sm last:border-b-0"
+            >
+              <span class="flex flex-col gap-1">
+                <span class="flex flex-wrap items-center gap-2">
+                  <code class="text-heading font-semibold">{{ item.variable.name }}</code>
+                  @if (item.overridden) {
+                    <span hlmBadge variant="outline">Overridden here</span>
+                  }
+                </span>
+                <span class="text-muted-foreground">
+                  @if (item.variable.values_path) {
+                    Written to <code>{{ item.variable.values_path }}</code> ·
+                  }
+                  {{ item.variable.values.length }}
+                  {{ item.variable.values.length === 1 ? 'value' : 'values' }}
+                </span>
+              </span>
+              @if (editable() && !item.overridden) {
+                <button
+                  hlmBtn
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  [attr.aria-label]="'Override ' + item.variable.name + ' for this Application'"
+                  (click)="startAdding(item.variable)"
+                >
+                  Override
+                </button>
+              }
+            </li>
+          }
+        </ul>
+      </div>
+    }
+  }
+</section>

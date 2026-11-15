@@ -16,6 +16,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/lifecycles"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/registries"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/releases"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/variables"
 )
 
 // The sub-packages' controllers are served side by side, so their routes
@@ -31,6 +32,7 @@ func TestControllersFitTogether(t *testing.T) {
 		releases.NewReleaseController(nil),
 		deployments.NewController(nil),
 		agentapi.NewController(nil),
+		variables.NewVariableController(nil),
 	} {
 		r.RegisterRoutes(h)
 	}
@@ -51,5 +53,5 @@ func TestControllersFitTogether(t *testing.T) {
 			assert.NotEmpty(t, op.Security, "%s needs a token", where)
 		}
 	}
-	assert.Len(t, ids, 13+6+10+8+32+6+5+4)
+	assert.Len(t, ids, 13+6+10+8+32+6+5+4+10)
 }

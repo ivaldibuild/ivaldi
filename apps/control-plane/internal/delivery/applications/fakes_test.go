@@ -65,6 +65,8 @@ type store struct {
 	projects   map[string]*workspace.Project
 	// teams says which Teams are active.
 	teams map[string]bool
+	// scopedVariables counts the variables scoped to a Channel.
+	scopedVariables map[string]int
 	// teamNames labels the Teams.
 	teamNames map[string]string
 	// releaseVersions and deploymentStatuses are what ListRunsOn reports for
@@ -101,6 +103,7 @@ func newStore() *store {
 		releaseVersions:    map[string]string{},
 		deploymentStatuses: map[string]release.DeploymentStatus{},
 		inUse:              map[string]bool{},
+		scopedVariables:    map[string]int{},
 		fail:               map[string]error{},
 		settings:           map[string]map[string]json.RawMessage{},
 	}
@@ -811,7 +814,7 @@ func newWorld(t *testing.T) *world {
 func (s *store) options(authz authorization.Authorizer) []ApplicationServiceOption {
 	return []ApplicationServiceOption{
 		WithApplicationRepo(s), WithLifecycleLookup(s), WithRegistryLookup(s), WithTargetLookup(s),
-		WithEnvironmentLookup(s), WithProjectLookup(s), WithWorkspaces(s), WithSettingResolver(s), WithTeamDirectory(s), WithAuthorizer(authz),
+		WithEnvironmentLookup(s), WithVariableUsage(s), WithProjectLookup(s), WithWorkspaces(s), WithSettingResolver(s), WithTeamDirectory(s), WithAuthorizer(authz),
 		WithTransactor(s), WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
 	}
 }
@@ -926,3 +929,7 @@ func gitRule(artifactID *string) delivery.ChannelRuleProps {
 func ptr[T any](v T) *T { return &v }
 
 var errBoom = errors.New("boom")
+
+func (s *store) CountActiveVariablesWithChannel(_ context.Context, _, channelID string) (int, error) {
+	return s.scopedVariables[channelID], nil
+}

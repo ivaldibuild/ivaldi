@@ -628,3 +628,79 @@ type ReleaseService interface {
 	// WithdrawRelease stops a published Release from being deployed again.
 	WithdrawRelease(ctx context.Context, actor identity.Actor, organizationID, releaseID string) (*ReleaseDetail, error)
 }
+
+// VariableOwner names the Project or the Application that owns variables:
+// exactly one of its fields is set.
+type VariableOwner struct {
+	ProjectID     string
+	ApplicationID string
+}
+
+// VariableRepository stores Variables with their values. Every read is
+// limited to one Organization.
+type VariableRepository interface {
+	// CreateVariable stores a Variable and its values. It returns
+	// ErrSlugTaken when its owner has an active variable with the same
+	// name, whatever the case.
+	CreateVariable(ctx context.Context, v *Variable) error
+	GetVariable(ctx context.Context, organizationID, variableID string) (*Variable, error)
+	// ListVariables returns an owner's active variables by name. An
+	// Application's list does not include its Project's.
+	ListVariables(ctx context.Context, organizationID string, owner VariableOwner) ([]*Variable, error)
+	// ListVariablesInProject returns the active variables of a Project and
+	// of each of its active Applications, by Application ID.
+	ListVariablesInProject(ctx context.Context, organizationID, projectID string) (project []*Variable, applications map[string][]*Variable, err error)
+	// UpdateVariable writes the Variable's row and replaces its values.
+	UpdateVariable(ctx context.Context, v *Variable) error
+	// CountActiveVariablesWith… count the active variables, of a Project or
+	// of an active Application, with a value scoped to the record, which
+	// keep it from being archived.
+	CountActiveVariablesWithEnvironment(ctx context.Context, organizationID, environmentID string) (int, error)
+	CountActiveVariablesWithTarget(ctx context.Context, organizationID, targetID string) (int, error)
+	CountActiveVariablesWithChannel(ctx context.Context, organizationID, channelID string) (int, error)
+}
+
+// CreateVariableInput describes a Variable to create. Owner.ApplicationID
+// may be an active Application's slug.
+type CreateVariableInput struct {
+	OrganizationID string
+	Owner          VariableOwner
+	Name           string
+	Description    string
+	Kind           VariableKind
+	ValuesPath     string
+	Values         []VariableValueProps
+}
+
+// ListVariablesQuery lists an owner's variables. IncludeInherited adds the
+// Project's variables to an Application's.
+type ListVariablesQuery struct {
+	OrganizationID   string
+	Owner            VariableOwner
+	IncludeInherited bool
+}
+
+// VariableService manages the variables Applications deploy with
+// (docs/design/deployment-variables.md). Reading needs variable.read and
+// changing needs variable.manage, on the owning Project or the owning
+// Application's Project. A change to a value scoped to Environments, or to
+// Targets in them, also needs variable.manage on each of those
+// Environments, so a Project's members cannot change production's
+// configuration without being allowed to on production.
+//
+// It refuses what would leave a Deployment's configuration undefined: two
+// values of a variable that could tie, an Application's variable that
+// shadows its Project's with a different kind or values path, and two
+// variables an Application deploys with that write overlapping values paths.
+type VariableService interface {
+	CreateVariable(ctx context.Context, actor identity.Actor, in CreateVariableInput) (*Variable, error)
+	GetVariable(ctx context.Context, actor identity.Actor, organizationID, variableID string) (*Variable, error)
+	ListVariables(ctx context.Context, actor identity.Actor, query ListVariablesQuery) ([]*Variable, error)
+	UpdateVariable(ctx context.Context, actor identity.Actor, organizationID, variableID string, props UpdateVariableProps) (*Variable, error)
+	AddVariableValue(ctx context.Context, actor identity.Actor, organizationID, variableID string, props VariableValueProps) (*Variable, error)
+	UpdateVariableValue(ctx context.Context, actor identity.Actor, organizationID, variableID, valueID string, props VariableValueProps) (*Variable, error)
+	RemoveVariableValue(ctx context.Context, actor identity.Actor, organizationID, variableID, valueID string) (*Variable, error)
+	// ArchiveVariable frees the Variable's name. Releases that snapshotted
+	// it keep their copy.
+	ArchiveVariable(ctx context.Context, actor identity.Actor, organizationID, variableID string) (*Variable, error)
+}

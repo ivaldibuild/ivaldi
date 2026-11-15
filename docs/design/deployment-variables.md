@@ -1,7 +1,7 @@
 # Deployment variables
 
-- Status: Draft for review; revised 2026-11-14 for Project and Application owners, overlay values files, and fingerprint pinning
-- Date: 2026-11-08; revised 2026-11-14
+- Status: Draft for review; revised 2026-11-14 for Project and Application owners, overlay values files, and fingerprint pinning; revised 2026-11-15 for bindings to secrets and the order of implementation
+- Date: 2026-11-08; revised 2026-11-14 and 2026-11-15
 - Related: [ADR 0003](../adr/0003-identity-access-and-policy.md), [ADR 0004](../adr/0004-credentials-and-keys.md), [ADR 0006](../adr/0006-release-and-delivery-tracking.md), [delivery data model](delivery-data-model.md), [Kubernetes agent](k8s-agent.md)
 
 This document designs the configuration an Application is deployed with: plain values and secrets, which can differ by Environment, Target, and Channel. It follows Octopus Deploy's [project variables](https://octopus.com/docs/projects/variables), [variable sets](https://octopus.com/docs/projects/variables/library-variable-sets), [sensitive variables](https://octopus.com/docs/projects/variables/sensitive-variables), and [release snapshots](https://octopus.com/docs/releases/creating-a-release). Where it differs, the reason is noted.
@@ -25,10 +25,10 @@ The main difference is secrets. Octopus stores sensitive values itself, encrypte
 
 | Field | Meaning |
 |---|---|
-| `name` | Unique in its Project or Application, case-insensitive. Letters, digits, `.`, `-`, and `_`, up to 253 characters, which is what a Kubernetes Secret key allows, because secrets become Secret keys. Octopus also allows spaces; Ivaldi does not, for the same reason. Dots namespace names, as Octopus recommends: `Database.Password`. |
+| `name` | Unique in its Project or Application, case-insensitive, and never changed, since bindings and snapshots refer to it. Letters, digits, `.`, `-`, and `_`, up to 253 characters, which is what a Kubernetes Secret key allows, because secrets become Secret keys. Octopus also allows spaces; Ivaldi does not, for the same reason. Dots namespace names, as Octopus recommends: `Database.Password`. |
 | `description` | Optional. |
-| `kind` | `text` or `secret`. All values of a variable have its kind. |
-| `values_path` | Optional: where the chart receives the variable, such as `database.host`. A variable without one is only used through bindings. |
+| `kind` | `text` or `secret`, never changed. All values of a variable have its kind. |
+| `values_path` | Optional: where the chart receives the variable, such as `database.host`: dot-separated keys, never under `global.ivaldi`, which holds Ivaldi's generated values. A variable without one is only used through bindings. |
 | `deliver_as` | For `secret` variables: `secret` (the default) or `value` ([Kubernetes agent](k8s-agent.md#variables-and-secrets)). |
 
 Each **value** has its content and its scope:
@@ -60,6 +60,7 @@ Octopus's other dimensions are left out: there are no tenants, no target tags, a
 - **`values_path` never overlaps.** Among the variables an Application deploys with (its own plus its Project's, after shadowing), no two may have the same `values_path`, or one that is a prefix of the other at a path boundary (`db` and `db.host`, not `db` and `dbx`): one would silently overwrite the other. Saving checks the Application and its Project; saving a Project variable checks every active Application in it. A Release snapshot checks again.
 - Precedence across owners follows the same rule as within one owner: the most specific value wins, and on equal specificity the Application's value beats the Project's. Two values that would tie *within* one owner are refused, as before; a Project value and an Application value never tie, so adding a Project variable never fails because of an Application's values.
 - A Project cannot be archived while it has active Applications, so its variables do not outlive their users. An archived Application's variables go with it.
+- A variable is archived, not deleted, which frees its name. It is not restored: a Release that snapshotted it keeps its copy, and a new variable can take the name.
 
 ### Bindings and system variables
 
@@ -67,7 +68,7 @@ A `text` value or a secret's `path` can refer to other variables with `#{Name}`,
 
 - A binding to an undefined name fails the Deployment, naming it. Octopus substitutes an empty string, which turns a typo into a misconfigured production service.
 - A cycle fails the Deployment.
-- **A value that binds a secret is a secret.** Octopus says sensitivity is "not transitive"; in Ivaldi it is, so a connection string that binds a password is delivered and masked as a secret, because it contains one.
+- **A text value cannot bind a secret.** A `text` value and a secret's `path` bind `text` variables and system variables only, and saving a value that binds a `secret` variable is refused, so a secret never hides inside a text value. A connection string that needs a password is built in the chart, or in an overlay values file, which may bind a secret ([below](#overlay-values-files)).
 
 System variables are always defined, and can be bound but not overridden:
 
@@ -85,6 +86,8 @@ System variables are always defined, and can be bound but not overridden:
 **Creating a Release takes a snapshot** of every variable it will deploy with: the Application's variables and its Project's, with all their scoped values and each value's source (`project` or `application`). Secret values are snapshotted as references; the secret itself is read when the Release is deployed. A snapshot is revision 1 of the Release's variables.
 
 **Refreshing creates a new revision.** "Update variables" on a Release takes a fresh snapshot from the Application's current variables and makes it the Release's current revision. Earlier revisions are kept. Octopus can also update chosen variables only; Ivaldi refreshes the whole snapshot, and the API's preview shows what would change before it does. Refreshing needs `release.manage`, and a human's approval when it changes what production would get ([below](#refreshes-that-change-production-need-approval)). It is allowed on a draft and on a published Release, because a snapshot is configuration and not one of the Release's Builds. It is not allowed on a withdrawn Release.
+
+A Release created before snapshots existed has none and deploys with no variables; it is not backfilled.
 
 **Deployments use the current revision** of their Release's snapshot when they are requested, except rollbacks (below), and record which revision that was. Redeploying a Release uses its current revision, so a redeploy after a variable change needs a refresh first, as in Octopus. A Deployment's record keeps the revision it used even if the Release is refreshed later.
 
@@ -108,6 +111,7 @@ A **rollback replays the last Deployment of that Release on that Target that rea
 
 When someone refreshes a Release's snapshot, the control plane resolves the old and the new revision for every active Target whose Environment has the `production` tier and is in the Release's Channel's Lifecycle. If any variable's winning value differs for any of them (a text value, a secret reference, or a pinned version), the refresh changes production.
 
+- **Until approvals exist, such a refresh is refused.** The control plane cannot yet request or record an approval, so a refresh that changes production is refused, naming the variables and Targets, and the way to change production configuration is a new Release. The rest of this section is the design the approvals work will implement.
 - **Policy decides, delivery reports.** Delivery asks the single authorizer for `release.refresh_variables`, naming the production Environments the change touches ([ADR 0003](../adr/0003-identity-access-and-policy.md)). Requiring a human's approval for that is a built-in policy rule, like ADR 0007's rule for autonomous agents, not code in delivery. A refresh that changes no production value needs no approval.
 - **The new revision waits.** It is stored as `pending_approval` and does not become current until it is approved, so Deployments meanwhile keep using the current revision. A refused approval marks it `rejected`. A Release has at most one pending revision; refreshing again replaces it, marking the earlier one `superseded`.
 - **Approvers see the change.** The approval request shows which variables change, for which production Targets, from what to what, with secrets shown as references. It goes to the Application's owning Team by default.
@@ -136,7 +140,7 @@ The agent builds the values in this order, later winning:
 3. variables with a `values_path`, at that path;
 4. Ivaldi's generated values (`global.ivaldi.*`).
 
-Overlays and text values may contain `#{…}` bindings, which are resolved before the merge. A binding in an overlay that names a secret makes that Deployment deliver the secret as a value, because the chart receives a literal; the deploy sheet warns that Helm's release history in the namespace will hold it. A secret variable with `deliver_as: secret` stays in the immutable Kubernetes Secret instead.
+Overlays and text values may contain `#{…}` bindings, which are resolved before the merge. Only an overlay may bind a secret. A binding in an overlay that names a secret makes that Deployment deliver the secret as a value, because the chart receives a literal; the deploy sheet warns that Helm's release history in the namespace will hold it. A secret variable with `deliver_as: secret` stays in the immutable Kubernetes Secret instead.
 
 **A rollback is checked, not guessed.** The agent fetches each pinned secret version, computes the keyed fingerprint, and fails the Deployment before applying when the fingerprint differs. Doppler cannot pin a per-secret version, so its rollbacks compare the fingerprint alone.
 

@@ -1,10 +1,13 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/cmd/gateway"
 	"github.com/ivaldibuild/ivaldi-control-plane/cmd/indexer"
+	"github.com/ivaldibuild/ivaldi-control-plane/cmd/migrate"
 	"github.com/ivaldibuild/ivaldi-control-plane/cmd/server"
 	"github.com/ivaldibuild/ivaldi-control-plane/cmd/worker"
 )
@@ -14,7 +17,17 @@ import (
 var rootCmd = &cobra.Command{
 	Use:     "ivaldi",
 	Short:   "Run an Ivaldi component: the control plane, gateway, worker, or indexer",
-	Version: VERSION,
+	Version: displayVersion(),
+}
+
+// displayVersion is what `ivaldi version` prints: the release version, and
+// the commit it was built from when the build stamped one. Programmatic
+// readers of the version, such as the API's description, use VERSION alone.
+func displayVersion() string {
+	if COMMIT == "" || COMMIT == "unknown" {
+		return VERSION
+	}
+	return fmt.Sprintf("%s (%s, %s)", VERSION, COMMIT, BUILDTIME)
 }
 
 func Execute() error {
@@ -25,6 +38,7 @@ func init() {
 	rootCmd.AddCommand(
 		server.NewServeCommand(VERSION),
 		server.NewOpenAPICommand(),
+		migrate.NewMigrateCommand(),
 		gateway.NewGatewayCommand(),
 		indexer.NewIndexerCommand(),
 		worker.NewWorkerCommand(),

@@ -36,3 +36,7 @@ profile.cov
 volumes/
 
 plans/
+
+# The web app's build output, copied into the control plane's embed directory
+# by apps/control-plane/Dockerfile
+apps/control-plane/internal/webui/dist/

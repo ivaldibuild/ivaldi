@@ -9,8 +9,9 @@ follow are sealed by the control plane, short-lived (15 minutes), and tied
 to one sign-in, so the control plane keeps no state between the steps.
 
 Configure the page with `auth.login_url`, such as
-`https://app.example.com/login`, and let the web app's origin call the API
-with `allowed_origins`.
+`https://ivaldi.example.com/login`. The control plane serves the web app on
+its own origin ([ADR 0016](../adr/0016-control-plane-serves-the-web-app.md)),
+so the page calls the API on the same origin and nothing needs CORS.
 
 ## The flow
 

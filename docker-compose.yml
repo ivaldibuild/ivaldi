@@ -1,9 +1,9 @@
 # Local development and testing.
 #
 #   make local_stack   Everything in containers: PostgreSQL, Valkey, the
-#                      migrations, the control plane on http://localhost:8660,
-#                      the gateway on http://localhost:8663, and the web app
-#                      on http://localhost:8670
+#                      migrations, the control plane and the web app it serves
+#                      on http://localhost:8660, and the gateway on
+#                      http://localhost:8663
 #   make local         Only PostgreSQL and Valkey, for `make local_serve`
 #
 # Both create config.local.yml from config.local.example.yml when it is
@@ -50,34 +50,22 @@ services:
       start_interval: 1s
     restart: unless-stopped
 
-  # Applies every capability's migrations, as `make migrate_up` does, then exits.
-  # Each capability keeps its versions in its own table.
+  # Applies every capability's migrations with the image's own `migrate`
+  # command, the same path a release uses, then exits. Each capability keeps
+  # its versions in its own table.
   migrate:
-    image: migrate/migrate:v4.20.1
+    image: ivaldi-local
     container_name: ivaldi_migrate
+    build:
+      context: .
+      dockerfile: apps/control-plane/Dockerfile
+    command: ["migrate", "up"]
+    environment:
+      IVALDI_DATABASE_URL: postgres://ivaldi_db_user:${PG_PASSWORD:-brokandsindri}@postgres:5432/ivaldi?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy
-    volumes:
-      - ./apps/control-plane/internal:/capabilities:ro
-    environment:
-      DATABASE_URL: postgres://ivaldi_db_user:${PG_PASSWORD:-brokandsindri}@postgres:5432/ivaldi?sslmode=disable
-    entrypoint: ["/bin/sh", "-ec"]
-    command:
-      - |
-        for dir in /capabilities/*/migrations; do
-          capability=$$(basename "$$(dirname "$$dir")")
-          table=$$capability
-          if [ "$$capability" = versioncontrol ]; then table=version_control; fi
-          # A capability scaffolded before its first migration has an empty
-          # directory, which migrate refuses ("first .: file does not exist").
-          if ! ls "$$dir"/*.up.sql >/dev/null 2>&1; then
-            echo "skipping $$capability: no migrations yet"
-            continue
-          fi
-          echo "migrating $$capability"
-          migrate -path "$$dir" -database "$$DATABASE_URL&x-migrations-table=$${table}_schema_migrations" up
-        done
+    restart: "no"
 
   control-plane:
     container_name: ivaldi_control_plane
@@ -144,19 +132,4 @@ services:
     depends_on:
       - control-plane
       - redis
-    restart: unless-stopped
-
-  webui:
-    container_name: ivaldi_webui
-    build:
-      context: ./apps/webui
-    # Port 8670 is where config.local.yml expects the web app (login_url,
-    # allowed_origins, and the web client's redirect_uris).
-    ports:
-      - "127.0.0.1:8670:8080"
-    environment:
-      # Where the browser reaches the control plane: external_url.
-      IVALDI_API_URL: http://localhost:8660
-    depends_on:
-      - control-plane
     restart: unless-stopped

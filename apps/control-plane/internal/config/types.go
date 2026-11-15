@@ -21,9 +21,6 @@ type Config struct {
 	// of identity-provider redirect URIs, so it must be what clients see,
 	// not the listen address behind a proxy.
 	ExternalURL string `yaml:"external_url" env:"IVALDI_EXTERNAL_URL" envDefault:"http://localhost:8660"`
-	// AllowedOrigins are the browser origins, such as the web app's, that may
-	// call the API. Empty allows none.
-	AllowedOrigins []string `yaml:"allowed_origins" env:"IVALDI_ALLOWED_ORIGINS"`
 	// ShutdownTimeout bounds how long in-flight requests and runner
 	// connections get to finish when the process is asked to stop.
 	ShutdownTimeout time.Duration `yaml:"shutdown_timeout" env:"IVALDI_SHUTDOWN_TIMEOUT" envDefault:"30s"`

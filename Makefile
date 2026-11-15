@@ -2,9 +2,31 @@ CLI_BINARY_NAME := ivaldictl
 SERVER_BINARY_NAME := ivaldi
 K8S_AGENT_BINARY_NAME := ivaldi-k8s-agent
 
-# Stamped into both binaries' --version.
-VERSION ?= $(shell scripts/version.sh)
-LDFLAGS := -ldflags "-X main.VERSION=$(VERSION)"
+# The components are released on their own schedules, so each binary carries
+# its own version, read from that component's tags by scripts/version.sh. The
+# web app ships inside the control plane's image and has no version of its own.
+VERSION_SERVER ?= $(shell scripts/version.sh ivaldi)
+VERSION_AGENT ?= $(shell scripts/version.sh ivaldi-k8s-agent)
+VERSION_CLI ?= $(shell scripts/version.sh ivaldictl)
+
+# Stamped beside the version so an artifact can name the commit and moment it
+# came from. The commit's time, not the build's, keeps a rebuild of one commit
+# byte-identical.
+COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+BUILDTIME ?= $(shell git log -1 --format=%cI 2>/dev/null || echo unknown)
+
+# The agent chart the control plane offers in its onboarding guide is the one
+# it was tested against, not the one whose version happens to equal its own.
+AGENT_CHART_VERSION ?= $(shell cat deploy/helm/ivaldi-agent/version.txt 2>/dev/null || echo 0.0.0)
+
+# The control plane's version is stamped into main; the CLI's lives in its own
+# cli package.
+SERVER_LDFLAGS := -ldflags "-X main.VERSION=$(VERSION_SERVER) -X main.COMMIT=$(COMMIT) -X main.BUILDTIME=$(BUILDTIME) \
+	-X github.com/ivaldibuild/ivaldi-control-plane/cmd/server.AGENT_CHART_VERSION=$(AGENT_CHART_VERSION)"
+# The agent sends its version to the control plane and in its User-Agent, so
+# it carries the bare SemVer rather than a decorated display string.
+AGENT_LDFLAGS := -ldflags "-X main.VERSION=$(VERSION_AGENT)"
+CLI_LDFLAGS := -ldflags "-X github.com/ivaldibuild/ivaldi-cli/internal/cli.VERSION=$(VERSION_CLI) -X github.com/ivaldibuild/ivaldi-cli/internal/cli.COMMIT=$(COMMIT) -X github.com/ivaldibuild/ivaldi-cli/internal/cli.BUILDTIME=$(BUILDTIME)"
 
 # Control-plane capabilities with their own migrations, in the order they are applied.
 # There are no foreign keys between capabilities, so the order is for readability only.
@@ -32,11 +54,11 @@ LOCAL_DIR := .local
 PG_PASSWORD ?= brokandsindri
 LOCAL_DATABASE_URL ?= postgres://ivaldi_db_user:$(PG_PASSWORD)@127.0.0.1:5433/ivaldi?sslmode=disable
 
-.PHONY: help prepare build build-cli build-server openapi openapi_check k8s_agent_e2e migration_generate migrate_up migrate_down migrate_version check_capability check_database_url \
+.PHONY: help prepare build build-cli build-server openapi openapi_check k8s_agent_e2e migration_generate migrate_up migrate_down migrate_version check_capability check_database_url webui \
 	local local_up local_stack local_secrets local_database local_migrate local_serve local_gateway local_down local_reset
 
 help:
-	@echo "Build (into bin/, version $(VERSION))"
+	@echo "Build (into bin/: $(SERVER_BINARY_NAME) $(VERSION_SERVER), $(CLI_BINARY_NAME) $(VERSION_CLI), $(K8S_AGENT_BINARY_NAME) $(VERSION_AGENT))"
 	@echo "  make build                                         Build $(SERVER_BINARY_NAME), $(CLI_BINARY_NAME), and $(K8S_AGENT_BINARY_NAME)"
 	@echo "  make build-server                                  Build $(SERVER_BINARY_NAME): control plane, gateway, worker, indexer"
 	@echo "  make build-cli                                     Build $(CLI_BINARY_NAME)"
@@ -59,11 +81,12 @@ help:
 	@echo ""
 	@echo "Local development ($(LOCAL_CONFIG))"
 	@echo "  make local                                         Start PostgreSQL and Valkey, generate secrets, migrate"
-	@echo "  make local_serve                                   Run the control plane on http://localhost:8660"
+	@echo "  make local_serve                                   Run the control plane on http://localhost:8660, serving the"
+	@echo "                                                     web app too when $(WEBUI_DIST) exists (make webui)"
 	@echo "  make local_gateway                                 Run the gateway on http://localhost:8663; uncomment the"
 	@echo "                                                     gateway section in $(LOCAL_CONFIG) first"
 	@echo "  make local_stack                                   Run everything in containers (docker-compose.yml): the"
-	@echo "                                                     web app on http://localhost:8670, the control plane on 8660,"
+	@echo "                                                     control plane and the web app it serves on http://localhost:8660,"
 	@echo "                                                     the gateway on 8663"
 	@echo "  make local_down                                    Stop the containers (data stays in volumes/)"
 	@echo "  make local_reset                                   Drop the local database and migrate a fresh one, so"
@@ -77,15 +100,15 @@ build: build-server build-cli build-k8s-agent
 
 build-cli: prepare
 	@echo "Building CLI binary..."
-	@go build $(LDFLAGS) -o bin/$(CLI_BINARY_NAME) ./apps/cli/cmd
+	@go build $(CLI_LDFLAGS) -o bin/$(CLI_BINARY_NAME) ./apps/cli/cmd
 
 build-k8s-agent: prepare
 	@echo "Building Kubernetes agent binary..."
-	@go build $(LDFLAGS) -o bin/$(K8S_AGENT_BINARY_NAME) ./apps/k8s-agent/cmd
+	@go build $(AGENT_LDFLAGS) -o bin/$(K8S_AGENT_BINARY_NAME) ./apps/k8s-agent/cmd
 
 build-server: prepare
 	@echo "Building server binary..."
-	@go build $(LDFLAGS) -o bin/$(SERVER_BINARY_NAME) ./apps/control-plane/cmd
+	@go build $(SERVER_LDFLAGS) -o bin/$(SERVER_BINARY_NAME) ./apps/control-plane/cmd
 
 # make iam_migration_generate name=create_agents_table
 %_migration_generate:
@@ -151,9 +174,11 @@ local_up:
 # in containers. The control plane reads $(LOCAL_CONFIG) as local_serve does,
 # and runs as you so it can read .local/.
 local_stack: $(LOCAL_CONFIG) local_secrets
-	@IVALDI_UID=$$(id -u) IVALDI_GID=$$(id -g) docker compose up -d --build --wait
+	@# --remove-orphans clears a container this file no longer defines, such as
+	@# the web app's, now that the control plane serves it.
+	@IVALDI_UID=$$(id -u) IVALDI_GID=$$(id -g) docker compose up -d --build --wait --remove-orphans
 	@echo ""
-	@echo "Ready. Open http://localhost:8670 and sign in as bootstrap.admin_email from"
+	@echo "Ready. Open http://localhost:8660 and sign in as bootstrap.admin_email from"
 	@echo "$(LOCAL_CONFIG) with the password in $(LOCAL_DIR)/admin-password."
 
 # Secrets are generated once and kept, so tokens and the admin password
@@ -197,11 +222,22 @@ local_database:
 local_migrate:
 	@$(MAKE) --no-print-directory migrate_up DATABASE_URL='$(LOCAL_DATABASE_URL)'
 
+# A local build carries no web app of its own, so serve the web app's build
+# output when it is there. `ng serve` in apps/webui remains the live-reload
+# development server.
+WEBUI_DIST := apps/webui/dist/webui/browser
+
+webui:
+	cd apps/webui && pnpm install --frozen-lockfile && pnpm run build
+
 local_serve: $(LOCAL_CONFIG)
-	@go run $(LDFLAGS) ./apps/control-plane/cmd serve --config $(LOCAL_CONFIG)
+	@web=""; \
+	if [ -d "$(WEBUI_DIST)" ]; then web="--web-dir $(WEBUI_DIST)"; \
+	else echo "No $(WEBUI_DIST) yet: serving the API alone. Run 'make webui' to build the web app, or use 'ng serve' in apps/webui."; fi; \
+	go run $(SERVER_LDFLAGS) ./apps/control-plane/cmd serve --config $(LOCAL_CONFIG) $$web
 
 local_gateway: $(LOCAL_CONFIG) local_secrets
-	@go run $(LDFLAGS) ./apps/control-plane/cmd gateway --config $(LOCAL_CONFIG)
+	@go run $(SERVER_LDFLAGS) ./apps/control-plane/cmd gateway --config $(LOCAL_CONFIG)
 
 local_down:
 	@docker compose down

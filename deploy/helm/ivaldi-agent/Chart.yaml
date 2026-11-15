@@ -2,8 +2,9 @@ apiVersion: v2
 name: ivaldi-agent
 description: The Ivaldi Kubernetes agent, which deploys Applications to the Targets in its cluster and reports what runs there
 type: application
-# CI publishes the chart with --version and --app-version set to the build's
-# version (scripts/version.sh); these are what a local install uses.
+# The Release workflow publishes the chart with --version and --app-version set
+# to the agent's release version (scripts/version.sh ivaldi-k8s-agent), which is
+# its image's tag. These values are what a local `helm install` uses.
 version: 0.0.0
 appVersion: "0.0.0"
 home: https://github.com/ivaldibuild/ivaldi

@@ -97,10 +97,16 @@ for node in $(kind get nodes --name "$name"); do
 done
 
 log "Building the images"
-version=$("$root/scripts/version.sh")
-docker build -q -f "$root/apps/control-plane/Dockerfile" --build-arg VERSION="$version" -t ivaldi:e2e "$root" >/dev/null &
+# Each image carries its own component's version, as CI stamps them.
+commit=$(git -C "$root" rev-parse --short HEAD)
+built=$(git -C "$root" log -1 --format=%cI)
+control_plane_version=$("$root/scripts/version.sh" ivaldi)
+agent_version=$("$root/scripts/version.sh" ivaldi-k8s-agent)
+docker build -q -f "$root/apps/control-plane/Dockerfile" \
+	--build-arg VERSION="$control_plane_version" --build-arg COMMIT="$commit" --build-arg BUILDTIME="$built" \
+	-t ivaldi:e2e "$root" >/dev/null &
 control_plane_build=$!
-docker build -q -f "$root/apps/k8s-agent/Dockerfile" --build-arg VERSION="$version" -t ivaldi-k8s-agent:e2e "$root" >/dev/null
+docker build -q -f "$root/apps/k8s-agent/Dockerfile" --build-arg VERSION="$agent_version" -t ivaldi-k8s-agent:e2e "$root" >/dev/null
 wait "$control_plane_build"
 kind load docker-image ivaldi-k8s-agent:e2e --name "$name"
 

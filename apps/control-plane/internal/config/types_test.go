@@ -27,7 +27,6 @@ func TestDefaults(t *testing.T) {
 
 	assert.Equal(t, "http://localhost:8660", c.ExternalURL)
 	assert.Equal(t, 30*time.Second, c.ShutdownTimeout)
-	assert.Empty(t, c.AllowedOrigins)
 	assert.Equal(t, 8661, c.Runners.Port)
 	assert.Equal(t, time.Hour, c.Runners.EnrollmentTokenTTL)
 	assert.Equal(t, 24*time.Hour, c.Runners.WorkloadCredentialTTL)
@@ -125,7 +124,6 @@ func TestEnvironmentOverridesYAML(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(`
 external_url: https://ivaldi.example.com
-allowed_origins: [https://app.example.com]
 auth:
   signing_key_files: [/keys/current.pem, /keys/previous.pem]
   access_token_ttl: 5m
@@ -142,12 +140,10 @@ events:
 	var c Config
 	require.NoError(t, env.Load(&c, env.Options{YAMLPath: path, Source: lookup(map[string]string{
 		"IVALDI_AUTH_ACCESS_TOKEN_TTL": "10m",
-		"IVALDI_ALLOWED_ORIGINS":       "https://a.example.com,https://b.example.com",
 		"IVALDI_EVENTS_CONCURRENCY":    "32",
 	})}))
 
 	assert.Equal(t, "https://ivaldi.example.com", c.ExternalURL)
-	assert.Equal(t, []string{"https://a.example.com", "https://b.example.com"}, c.AllowedOrigins, "the environment wins")
 	assert.Equal(t, []string{"/keys/current.pem", "/keys/previous.pem"}, c.Auth.SigningKeyFiles)
 	assert.Equal(t, 10*time.Minute, c.Auth.AccessTokenTTL)
 	assert.Equal(t, 720*time.Hour, c.Auth.RefreshTokenTTL, "unset keys keep their defaults")

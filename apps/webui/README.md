@@ -6,10 +6,10 @@ This project was generated using [Angular CLI](https://github.com/angular/angula
 
 `/login` is the page the control plane sends browsers to when someone needs to sign in. It reads the `login_challenge` and calls the control plane's `/v1/auth` operations (see [docs/design/sign-in-flow.md](../../docs/design/sign-in-flow.md)). To connect the two:
 
-- Set the control plane's `auth.login_url` to this page, such as `https://app.example.com/login`.
-- Serve the web app and the control plane on one origin, and the web app needs no configuration. If the web app has its own origin, list it in the control plane's `allowed_origins` and give the web app the control plane's address: the image reads `IVALDI_API_URL` when it starts and writes it into the `<meta name="ivaldi-api-url">` tag in `index.html`.
+- Set the control plane's `auth.login_url` to this page on the control plane's own origin: `external_url` followed by `/login`, such as `https://ivaldi.example.com/login`.
+- Serve the web app from the control plane, which is what the image does: one origin, no configuration. The control plane answers the API's paths and serves this build for everything else (ADR 0016).
 
-See [Serving the web app](../../docs/self-hosting/web-app.md) for the image, the reverse proxy routes, and both layouts.
+See [Serving the web app](../../docs/self-hosting/web-app.md) for how the image serves it and how the paths are split.
 
 ## Signing in to the web app
 
@@ -47,7 +47,7 @@ ng serve
 
 Once the server is running, open your browser and navigate to `http://localhost:8670/`. The application will automatically reload whenever you modify any of the source files.
 
-The dev server forwards the control plane's paths (`/v1`, `/oauth`, `/.well-known`, `/auth/oauth`, `/auth/logout`) to `http://localhost:8660`, as a reverse proxy would on one origin (see `proxy.conf.json`). Start the control plane first, with `make local` and `make local_serve` from the repository root, or with `make local_stack` followed by `docker compose stop webui`, because the stack's web app also uses port 8670. Port 8670 matches `login_url`, `allowed_origins`, and the web client's redirect URIs in `config.local.yml`.
+The dev server forwards the control plane's paths (`/v1`, `/oauth`, `/.well-known`, `/auth/oauth`, `/auth/logout`) to `http://localhost:8660`, as a reverse proxy would on one origin (see `proxy.conf.json`). Start the control plane first, with `make local` and `make local_serve` from the repository root, or with `make local_stack`. Both serve the built web app themselves on `http://localhost:8660`; `ng serve` is for live reload, and both of its origins are listed in the web client's `redirect_uris` in `config.local.yml`.
 
 ## Code scaffolding
 
@@ -91,9 +91,9 @@ pnpm exec playwright install   # once, to download the browsers
 pnpm e2e
 ```
 
-They use `http://localhost:8670` for the web app and `http://localhost:8660` for the control plane; set `IVALDI_E2E_WEB_URL` and `IVALDI_E2E_API_URL` to test elsewhere, such as `ng serve` with `make local_serve`. The password sign-in test signs in as the bootstrap administrator: `bootstrap.admin_email` from `config.local.yml` and the password in `.local/admin-password`, or `IVALDI_E2E_ADMIN_EMAIL` and `IVALDI_E2E_ADMIN_PASSWORD`. Without either, it is skipped.
+They use `http://localhost:8660` for both the web app and the control plane, as the stack serves them from one origin; set `IVALDI_E2E_WEB_URL` and `IVALDI_E2E_API_URL` to test elsewhere, such as `ng serve` on `http://localhost:8670`. The password sign-in test signs in as the bootstrap administrator: `bootstrap.admin_email` from `config.local.yml` and the password in `.local/admin-password`, or `IVALDI_E2E_ADMIN_EMAIL` and `IVALDI_E2E_ADMIN_PASSWORD`. Without either, it is skipped.
 
-`make local_stack` builds the web app's image from the source at that moment, so rebuild it (run it again) to test changes, or test `ng serve` instead.
+`make local_stack` builds the control plane's image from the source at that moment, web app included, so run it again to test changes, or test `ng serve` instead.
 
 ## Additional Resources
 

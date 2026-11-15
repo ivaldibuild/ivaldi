@@ -8,18 +8,20 @@ import (
 
 // The guide prints helm --version with this, so only a version a chart was
 // published under may come out; anything else leaves the version out.
-func TestChartVersion(t *testing.T) {
-	for binary, want := range map[string]string{
-		"v0.4.0":                  "0.4.0",
-		"0.4.0":                   "0.4.0",
-		"v0.4.0-3-gabc1234":       "0.4.0-3-gabc1234",
-		"v1.2.3-rc.1+build.5":     "1.2.3-rc.1+build.5",
-		"dev":                     "",
-		"abc1234":                 "",
-		"v0.4.0-3-gabc1234-dirty": "",
-		"v01.2.3":                 "",
-		"":                        "",
+func TestAgentChartVersion(t *testing.T) {
+	for pin, want := range map[string]string{
+		"0.4.0":           "0.4.0",
+		"v0.4.0":          "0.4.0",
+		"0.4.0-rc.1":      "0.4.0-rc.1",
+		" 0.4.0\n":        "0.4.0",
+		"":                "",
+		"0.0.0":           "",
+		"dev":             "",
+		"abc1234":         "",
+		"0.4.0-dirty":     "",
+		"v01.2.3":         "",
+		"0.4.0-3-gabc123": "",
 	} {
-		assert.Equal(t, want, chartVersion(binary), "binary %q", binary)
+		assert.Equal(t, want, agentChartVersion(pin), "pin %q", pin)
 	}
 }

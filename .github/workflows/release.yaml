@@ -1,0 +1,458 @@
+name: Release
+
+# Releases one component at a time. A component's version comes from its own
+# tags (ivaldi/vX.Y.Z, ivaldi-k8s-agent/vX.Y.Z, ivaldictl/vX.Y.Z), so fixing the
+# CLI never republishes the control plane.
+#
+# Images are promoted, not rebuilt: the tag points at the digest CI built and
+# tested on main, so a release is the artifact that passed, not a second build
+# of the same commit. The binaries inside therefore report the version CI
+# stamped before the tag existed, such as 1.3.2-7-gabc1234; release.json maps
+# the release version to that commit and digest (docs/releases/README.md).
+#
+# Run it from main. Nothing else tags or publishes.
+on:
+  workflow_dispatch:
+    inputs:
+      component:
+        description: Component to release
+        type: choice
+        required: true
+        options: [ivaldi, ivaldi-k8s-agent, ivaldictl]
+      mode:
+        description: tag-and-publish tags the commit and publishes it; publish-existing-tag retries a tag that already exists
+        type: choice
+        required: true
+        default: tag-and-publish
+        options: [tag-and-publish, publish-existing-tag]
+      version:
+        description: Version without the tag prefix, such as 1.4.0 or 1.4.0-rc.1; empty takes the next patch after the component's last tag
+        type: string
+        required: false
+
+concurrency:
+  # One release per component at a time; a second would race the first for the
+  # same tag and the same immutable chart version.
+  group: release-${{ inputs.component }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  GOTOOLCHAIN: local
+  MISE_NO_HOOKS: "1"
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+
+jobs:
+  # Verifies that the release is what it claims to be before anything is
+  # published or tagged: the commit is on main, its CI passed, the version is
+  # a SemVer that this component does not already have.
+  prepare:
+    name: Prepare
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # checks: read lists the CI run on the commit through the API.
+      checks: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    outputs:
+      component: ${{ steps.release.outputs.component }}
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+      sha: ${{ steps.release.outputs.sha }}
+      short: ${{ steps.release.outputs.short }}
+      stable: ${{ steps.release.outputs.stable }}
+      move_minor: ${{ steps.release.outputs.move_minor }}
+      move_latest: ${{ steps.release.outputs.move_latest }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Versions come from the component's tags, which needs history.
+          fetch-depth: 0
+      - name: Resolve the version and check the evidence
+        id: release
+        env:
+          COMPONENT: ${{ inputs.component }}
+          MODE: ${{ inputs.mode }}
+          REQUESTED: ${{ inputs.version }}
+        run: |
+          set -eu
+
+          case "$COMPONENT" in
+            ivaldi | ivaldi-k8s-agent | ivaldictl) ;;
+            *) echo "::error::unknown component '$COMPONENT'"; exit 1 ;;
+          esac
+
+          # Only main is releasable, so every release names a commit that
+          # passed the full CI on the branch it will be built from.
+          if [ "$MODE" = 'tag-and-publish' ] && [ "$GITHUB_REF" != 'refs/heads/main' ]; then
+            echo "::error::run this from main (refs/heads/main), not $GITHUB_REF"
+            exit 1
+          fi
+
+          if [ -n "$REQUESTED" ]; then
+            version=$REQUESTED
+          else
+            last=$(git tag -l "$COMPONENT/v*" \
+              | sed "s|^$COMPONENT/v||" \
+              | { grep -E '^[0-9]+\.[0-9]+\.[0-9]+' || true; } \
+              | sort -V | tail -1)
+            base=${last%%-*}
+            if [ -z "$last" ]; then
+              version=0.1.0
+            elif [ "$base" != "$last" ] && ! git rev-parse -q --verify "refs/tags/$COMPONENT/v$base" >/dev/null; then
+              # The last tag is a pre-release of a version not yet released,
+              # such as 1.4.0-rc.1: the next release is that version, 1.4.0.
+              version=$base
+            else
+              major=$(echo "$base" | cut -d. -f1)
+              minor=$(echo "$base" | cut -d. -f2)
+              patch=$(echo "$base" | cut -d. -f3)
+              version="$major.$minor.$((patch + 1))"
+            fi
+          fi
+
+          if ! echo "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::'$version' is not a SemVer without the tag prefix, such as 1.4.0 or 1.4.0-rc.1"
+            exit 1
+          fi
+
+          tag="$COMPONENT/v$version"
+
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            if [ "$MODE" != 'publish-existing-tag' ]; then
+              echo "::error::$tag already exists; versions are never reused"
+              exit 1
+            fi
+            sha=$(git rev-list -n 1 "refs/tags/$tag")
+          else
+            if [ "$MODE" = 'publish-existing-tag' ]; then
+              echo "::error::$tag does not exist"
+              exit 1
+            fi
+            sha=$GITHUB_SHA
+          fi
+
+          # The tag must name a commit on main, so a release never ships work
+          # that is only on a branch.
+          git fetch --force --quiet origin main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$sha" origin/main; then
+            echo "::error::$(echo "$sha" | cut -c1-7) is not on main"
+            exit 1
+          fi
+
+          # Deterministic evidence: the CI check for exactly this commit. A
+          # release of a commit whose tests failed is not a release.
+          conclusion=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/check-runs?per_page=100" \
+            --jq '[.check_runs[] | select(.name == "CI")] | sort_by(.started_at) | last | .conclusion')
+          if [ "$conclusion" != 'success' ]; then
+            echo "::error::CI on $(echo "$sha" | cut -c1-7) is '${conclusion:-missing}'; only a passing commit can be released"
+            exit 1
+          fi
+
+          stable=true
+          case "$version" in *-*) stable=false ;; esac
+
+          # The moving tags only move forward: X.Y names the newest X.Y.Z, and
+          # latest the newest stable release overall, so a patch to an older
+          # line (1.3.5 after 1.4.0) moves neither backwards.
+          move_minor=false
+          move_latest=false
+          if [ "$stable" = true ]; then
+            stables=$( { git tag -l "$COMPONENT/v*" | sed "s|^$COMPONENT/v||"; echo "$version"; } \
+              | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -uV)
+            line=${version%.*}
+            [ "$(echo "$stables" | tail -1)" = "$version" ] && move_latest=true
+            [ "$(echo "$stables" | grep -E "^${line//./\\.}\.[0-9]+$" | tail -1)" = "$version" ] && move_minor=true
+          fi
+
+          {
+            echo "move_minor=$move_minor"
+            echo "move_latest=$move_latest"
+            echo "component=$COMPONENT"
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "sha=$sha"
+            echo "short=$(echo "$sha" | cut -c1-7)"
+            echo "stable=$stable"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Releasing $tag from $(echo "$sha" | cut -c1-7) ($conclusion CI)"
+
+  # Tags the commit and opens a draft Release whose notes a human reads before
+  # anything is announced.
+  tag:
+    name: Tag and draft
+    needs: prepare
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    # Uncomment to gate every release on a reviewer: add required reviewers to
+    # this environment in the repository settings.
+    # environment: release
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Create and push the tag
+        if: inputs.mode == 'tag-and-publish'
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+          SHA: ${{ needs.prepare.outputs.sha }}
+        run: |
+          set -eu
+          git tag "$TAG" "$SHA"
+          git push origin "refs/tags/$TAG"
+      - name: Open the draft release
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+          COMPONENT: ${{ needs.prepare.outputs.component }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          SHA: ${{ needs.prepare.outputs.sha }}
+          MODE: ${{ inputs.mode }}
+        run: |
+          set -eu
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "$TAG already has a release; keeping its notes"
+            exit 0
+          fi
+          scripts/release-notes.sh "$COMPONENT" "$SHA" > notes.md
+          if [ "$MODE" = 'tag-and-publish' ]; then
+            gh release create "$TAG" --draft --target "$SHA" \
+              --title "$COMPONENT $VERSION" --notes-file notes.md
+          else
+            gh release create "$TAG" --draft \
+              --title "$COMPONENT $VERSION" --notes-file notes.md
+          fi
+
+  # The control plane image carries the web app too, so this is the whole
+  # product for a self-hosted install.
+  publish-ivaldi:
+    name: Publish ivaldi
+    needs: [prepare, tag]
+    if: needs.prepare.outputs.component == 'ivaldi' && needs.tag.result == 'success'
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.promote.outputs.digest }}
+    steps:
+      - name: Log in to ghcr.io
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Copies the digest CI built and tested on main to the release's tags.
+      # Nothing is rebuilt, so a release is the artifact that passed.
+      - name: Promote the image
+        id: promote
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          SHA: ${{ needs.prepare.outputs.sha }}
+          MOVE_MINOR: ${{ needs.prepare.outputs.move_minor }}
+          MOVE_LATEST: ${{ needs.prepare.outputs.move_latest }}
+        run: |
+          set -eu
+          repo="ghcr.io/${{ github.repository_owner }}/ivaldi"
+          source="$repo:sha-$SHA"
+          target="$repo:$VERSION"
+
+          if ! docker buildx imagetools inspect "$source" >/dev/null 2>&1; then
+            echo "::error::$source does not exist: CI did not build this commit, or the package is not public"
+            exit 1
+          fi
+          if docker buildx imagetools inspect "$target" >/dev/null 2>&1; then
+            echo "::error::$target is already published; versions are never overwritten"
+            exit 1
+          fi
+
+          tags=(--tag "$target")
+          if [ "$MOVE_MINOR" = 'true' ]; then
+            tags+=(--tag "$repo:${VERSION%.*}")
+          fi
+          if [ "$MOVE_LATEST" = 'true' ]; then
+            tags+=(--tag "$repo:latest")
+          fi
+          docker buildx imagetools create "${tags[@]}" "$source"
+
+          digest=$(docker buildx imagetools inspect "$target" | sed -n 's/^Digest: *//p' | head -1)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "Published $target at $digest"
+
+  # The agent ships as an image and a chart that must agree: the chart's
+  # version and appVersion are the image's tag.
+  publish-agent:
+    name: Publish ivaldi-k8s-agent
+    needs: [prepare, tag]
+    if: needs.prepare.outputs.component == 'ivaldi-k8s-agent' && needs.tag.result == 'success'
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.promote.outputs.digest }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
+        with:
+          version: v4.3.1
+      - name: Log in to ghcr.io
+        run: |
+          set -eu
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
+      - name: Promote the image
+        id: promote
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          SHA: ${{ needs.prepare.outputs.sha }}
+        run: |
+          set -eu
+          repo="ghcr.io/${{ github.repository_owner }}/ivaldi-k8s-agent"
+          source="$repo:sha-$SHA"
+          target="$repo:$VERSION"
+
+          if ! docker buildx imagetools inspect "$source" >/dev/null 2>&1; then
+            echo "::error::$source does not exist: CI did not build this commit, or the package is not public"
+            exit 1
+          fi
+          if docker buildx imagetools inspect "$target" >/dev/null 2>&1; then
+            echo "::error::$target is already published; versions are never overwritten"
+            exit 1
+          fi
+          docker buildx imagetools create --tag "$target" "$source"
+
+          digest=$(docker buildx imagetools inspect "$target" | sed -n 's/^Digest: *//p' | head -1)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "Published $target at $digest"
+      - name: Package and push the chart
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -eu
+          repository="oci://ghcr.io/${{ github.repository_owner }}/charts"
+          # Chart versions are immutable: refuse to overwrite one.
+          if helm show chart "$repository/ivaldi-agent" --version "$VERSION" >/dev/null 2>&1; then
+            echo "::error::ivaldi-agent $VERSION is already published"
+            exit 1
+          fi
+          helm package deploy/helm/ivaldi-agent --version "$VERSION" --app-version "$VERSION" --destination dist
+          helm push "dist/ivaldi-agent-$VERSION.tgz" "$repository"
+
+  # The CLI is a binary per platform rather than an image, so it is built at the
+  # tagged commit and attached to the Release.
+  publish-cli:
+    name: Publish ivaldictl
+    needs: [prepare, tag]
+    if: needs.prepare.outputs.component == 'ivaldictl' && needs.tag.result == 'success'
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          fetch-depth: 0
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          cache: true
+      - name: Build the archives
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: scripts/build-cli-release.sh "$VERSION" dist
+      # TODO(release): attest the archives' build provenance once
+      # actions/attest-build-provenance is pinned to a commit like every other
+      # action here.
+      - name: Attach the archives to the release
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release upload "$TAG" dist/*.tar.gz dist/*.zip dist/checksums.txt --clobber
+
+  # Writes the manifest that names every artifact of the release, then makes
+  # the draft public. The manifest is what a later Ivaldi Release record reads.
+  finish:
+    name: Finish
+    needs: [prepare, tag, publish-ivaldi, publish-agent, publish-cli]
+    if: >-
+      !cancelled()
+      && needs.tag.result == 'success'
+      && !contains(needs.*.result, 'failure')
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Write and attach the manifest
+        env:
+          COMPONENT: ${{ needs.prepare.outputs.component }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          SHA: ${{ needs.prepare.outputs.sha }}
+          SHORT: ${{ needs.prepare.outputs.short }}
+          OWNER: ${{ github.repository_owner }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          IMAGE_DIGEST: ${{ needs.publish-ivaldi.outputs.digest || needs.publish-agent.outputs.digest }}
+        run: |
+          set -eu
+          case "$COMPONENT" in
+            ivaldi) image="ivaldi" ;;
+            ivaldi-k8s-agent) image="ivaldi-k8s-agent" ;;
+            *) image="" ;;
+          esac
+          if [ -n "$image" ] && [ -z "$IMAGE_DIGEST" ]; then
+            echo "::error::the $image release published no digest to record"
+            exit 1
+          fi
+
+          {
+            echo "{"
+            echo "  \"component\": \"$COMPONENT\","
+            echo "  \"version\": \"$VERSION\","
+            echo "  \"tag\": \"$TAG\","
+            echo "  \"commit\": \"$SHA\","
+            echo "  \"ci_run\": \"$RUN_URL\","
+            if [ -n "$image" ]; then
+              echo "  \"image\": \"ghcr.io/$OWNER/$image@$IMAGE_DIGEST\","
+            fi
+            if [ "$COMPONENT" = 'ivaldi-k8s-agent' ]; then
+              echo "  \"chart\": \"oci://ghcr.io/$OWNER/charts/ivaldi-agent:$VERSION\","
+            fi
+            if [ "$COMPONENT" = 'ivaldictl' ]; then
+              echo "  \"binaries\": \"ivaldictl_${VERSION}_{linux,darwin,windows}_{amd64,arm64}\","
+            fi
+            echo "  \"commit_short\": \"$SHORT\""
+            echo "}"
+          } > release.json
+
+          echo "Attaching release.json:"
+          cat release.json
+          gh release upload "$TAG" release.json --clobber
+      - name: Publish the release
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release edit "$TAG" --draft=false

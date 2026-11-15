@@ -2,7 +2,7 @@
 #
 # Build it from the repository root, because it uses pkg/ through go.work:
 #
-#   docker build -f apps/k8s-agent/Dockerfile --build-arg VERSION=$(scripts/version.sh) -t ivaldi-k8s-agent .
+#   docker build -f apps/k8s-agent/Dockerfile --build-arg VERSION=$(scripts/version.sh ivaldi-k8s-agent) -t ivaldi-k8s-agent .
 
 FROM golang:1.27.1-alpine AS build
 

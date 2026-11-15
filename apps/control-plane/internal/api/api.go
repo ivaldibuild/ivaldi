@@ -67,6 +67,7 @@ type options struct {
 	routes   []Routes
 	handlers []Handlers
 	verifier identity.Verifier
+	webUI    http.Handler
 }
 
 // WithRoutes adds capabilities' operations.
@@ -83,6 +84,12 @@ func WithHandlers(h ...Handlers) Option {
 // Without it, such operations are refused.
 func WithVerifier(v identity.Verifier) Option {
 	return func(o *options) { o.verifier = v }
+}
+
+// WithWebUI serves the web app from the same origin as the API, on every path
+// no API handler claimed. Without it the control plane serves no web app.
+func WithWebUI(h http.Handler) Option {
+	return func(o *options) { o.webUI = h }
 }
 
 // Server is the control plane's HTTP API.
@@ -142,6 +149,19 @@ func New(cfg *config.Config, version string, logger logging.Logger, opts ...Opti
 	}
 	hcfg.Transformers = append(hcfg.Transformers, emptyLists)
 	hapi := humago.New(mux, hcfg)
+
+	// Everything under BasePath that no operation claimed is answered by the
+	// API, in its problem format. Without this, a mistyped endpoint would fall
+	// through to the web app and answer JSON with an HTML page.
+	for _, m := range apiMethods {
+		mux.Handle(m+" "+BasePath+"/", apiFallback(mux, m))
+	}
+
+	// Registered last, so every API path wins: the mux prefers the more
+	// specific pattern, and the web app only gets what is left.
+	if o.webUI != nil {
+		mux.Handle("GET /", o.webUI)
+	}
 	hapi.UseMiddleware(withRequest(logger), authenticate(hapi, o.verifier, logger, resource+protectedResourcePath))
 	v1 := huma.NewGroup(hapi, BasePath)
 	var open []string
@@ -162,7 +182,7 @@ func New(cfg *config.Config, version string, logger logging.Logger, opts ...Opti
 	srv := &Server{
 		http: &http.Server{
 			Addr:              net.JoinHostPort(cfg.Host, strconv.Itoa(*cfg.Port)),
-			Handler:           recoverPanics(logger, cors(cfg.AllowedOrigins, withClientCertificate(mux))),
+			Handler:           recoverPanics(logger, withClientCertificate(mux)),
 			ReadHeaderTimeout: 10 * time.Second,
 		},
 		openapi: hapi.OpenAPI(),
@@ -320,37 +340,43 @@ func protectedResourceMetadata(resource string) http.HandlerFunc {
 	}
 }
 
-// cors lets the listed browser origins, such as the web app's, call the API.
-// Requests carry tokens in headers or bodies, never cookies, so credentials
-// are not allowed.
-func cors(origins []string, next http.Handler) http.Handler {
-	allowed := make(map[string]bool, len(origins))
-	for _, o := range origins {
-		allowed[strings.TrimRight(o, "/")] = true
+// apiMethods are the methods API operations use. Each gets its own fallback
+// pattern: one pattern for every method would overlap the web app's "GET /"
+// with neither more specific, which the mux refuses.
+var apiMethods = []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete}
+
+// apiFallback answers a request under BasePath that no operation matched, in
+// the problem format every other API error uses: 405 with Allow when the path
+// is an operation under another method, as the mux would say without the
+// fallback, and 404 otherwise.
+func apiFallback(mux *http.ServeMux, method string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var allow []string
+		for _, m := range apiMethods {
+			if m == method {
+				continue
+			}
+			probe := &http.Request{Method: m, Host: r.Host, URL: r.URL, Header: r.Header}
+			if _, pattern := mux.Handler(probe); pattern != "" && pattern != m+" "+BasePath+"/" {
+				allow = append(allow, m)
+			}
+		}
+		if len(allow) > 0 {
+			w.Header().Set("Allow", strings.Join(allow, ", "))
+			writeProblem(w, http.StatusMethodNotAllowed, "This operation does not accept "+r.Method+".")
+			return
+		}
+		writeProblem(w, http.StatusNotFound, "No operation is served at this path.")
 	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		origin := r.Header.Get("Origin")
+}
 
-		if origin == "" || !allowed[origin] {
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		h := w.Header()
-		h.Add("Vary", "Origin")
-		h.Set("Access-Control-Allow-Origin", origin)
-
-		if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
-			h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE")
-			h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
-			h.Set("Access-Control-Max-Age", "600")
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-
-		h.Set("Access-Control-Expose-Headers", "WWW-Authenticate")
-
-		next.ServeHTTP(w, r)
+func writeProblem(w http.ResponseWriter, status int, detail string) {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"title":  http.StatusText(status),
+		"status": status,
+		"detail": detail,
 	})
 }
 

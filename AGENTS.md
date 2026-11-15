@@ -33,6 +33,7 @@ Use established terms consistently: Workspace, Project, Source, Work Item, Sessi
 - `go run ./apps/control-plane/cmd serve` starts the control plane locally; `gateway`, `worker`, and `indexer` start the other components.
 - `go run ./apps/cli/cmd` runs the CLI from source.
 - `go vet <package-pattern>` performs static checks before review.
+- `go run ./apps/control-plane/cmd migrate up` applies every capability's migrations with the copies embedded in the binary; `migrate version` prints each capability's current version, and `migrate down --capability <c> --steps <n>` rolls one back. The Makefile's `migrate_*` targets run the golang-migrate CLI against the same tables for authoring.
 
 ## Coding Style & Naming Conventions
 
@@ -47,6 +48,10 @@ Use established terms consistently: Workspace, Project, Source, Work Item, Sessi
 ## Testing Guidelines
 
 Use Go's `testing` package; `testify` is available in `pkg` for assertions and mocks. Name tests `TestThing` in `thing_test.go`, prefer table-driven cases for parsers and configuration behavior, and use `t.Run` for readable scenarios. Add regression coverage with behavioral changes. No coverage threshold is enforced, but new code should exercise success and error paths.
+
+## Releases
+
+Each component is released from its own tag (`ivaldi/vX.Y.Z`, `ivaldi-k8s-agent/vX.Y.Z`, `ivaldictl/vX.Y.Z`) by the **Release** workflow, never from a tag push. Images are promoted by digest from the `sha-<full>` image CI built and tested on `main`, so a release ships the artifact that passed. The control plane image also serves the web app ([ADR 0016](docs/adr/0016-control-plane-serves-the-web-app.md)). Versioning, rollback, migration compatibility, and the upgrade procedure are in [`docs/releases/README.md`](docs/releases/README.md).
 
 ## Commit & Pull Request Guidelines
 

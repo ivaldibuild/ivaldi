@@ -5,9 +5,6 @@ on:
   push:
     branches:
       - main
-    # A release tag publishes a release-numbered agent image and chart.
-    tags:
-      - 'v*'
   merge_group:
   workflow_dispatch:
 
@@ -46,21 +43,22 @@ jobs:
       # Only pushes need the repository: paths-filter compares their commits,
       # which needs history. Pull requests go through the API.
       - name: Checkout repository
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')
+        if: github.event_name == 'push'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      # A tag push has no meaningful diff, so its outputs stay empty and
+      # A merge queue or manual run has no diff, so its outputs stay empty and
       # every job runs.
       - name: Detect changed paths
         id: filter
-        if: github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/'))
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
           # Every filter lists this workflow, so a change to CI runs all of it.
           filters: |
             go:
               - '.github/workflows/ci.yaml'
+              - '.github/workflows/release.yaml'
               - '.dockerignore'
               - 'apps/cli/**'
               - 'apps/control-plane/**'
@@ -73,6 +71,7 @@ jobs:
               - 'scripts/version.sh'
             webui:
               - '.github/workflows/ci.yaml'
+              - '.github/workflows/release.yaml'
               - 'apps/webui/**'
               - 'api/openapi.json'
               # The cluster guide's values are checked against the chart's schema.
@@ -80,6 +79,7 @@ jobs:
               - 'mise.toml'
             charts:
               - '.github/workflows/ci.yaml'
+              - '.github/workflows/release.yaml'
               - 'deploy/helm/**'
               # It sets the version the chart is published with.
               - 'scripts/version.sh'
@@ -165,6 +165,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The agent chart pin is checked against the agent's tags.
+          fetch-depth: 0
       - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
         with:
           cache: true
@@ -187,6 +190,19 @@ jobs:
           fi
       - name: Vet
         run: go vet ./pkg/... ./apps/cli/... ./apps/control-plane/... ./apps/k8s-agent/...
+      # The control plane's onboarding guide offers this chart version, so it
+      # must be one that was published. "0.0.0" means no agent release yet.
+      - name: Check the agent chart pin names a published release
+        run: |
+          pin=$(tr -d '[:space:]' < deploy/helm/ivaldi-agent/version.txt)
+          if [ "$pin" = '0.0.0' ]; then
+            echo "No agent release is pinned yet."
+            exit 0
+          fi
+          if ! git rev-parse -q --verify "refs/tags/ivaldi-k8s-agent/v$pin" >/dev/null; then
+            echo "::error::deploy/helm/ivaldi-agent/version.txt says $pin, but no ivaldi-k8s-agent/v$pin tag exists"
+            exit 1
+          fi
 
   build:
     name: Build binaries
@@ -258,6 +274,33 @@ jobs:
           done
       - name: Apply every migration again
         run: make migrate_up
+      # The path a released image uses: the migrations embedded in the binary,
+      # with no source tree and no migrate CLI. It runs from an empty database,
+      # so a capability the embedded list misses fails here.
+      - name: Apply every migration with the binary
+        run: |
+          dropdb() { PGPASSWORD=ivaldi psql -h localhost -U ivaldi -d postgres -qc "drop database if exists embedded_migrations with (force)"; }
+          PGPASSWORD=ivaldi psql -h localhost -U ivaldi -d postgres -qc "create database embedded_migrations"
+          trap 'dropdb' EXIT
+          IVALDI_DATABASE_URL='postgres://ivaldi:ivaldi@localhost:5432/embedded_migrations?sslmode=disable' \
+            go run ./apps/control-plane/cmd migrate up
+          IVALDI_DATABASE_URL='postgres://ivaldi:ivaldi@localhost:5432/embedded_migrations?sslmode=disable' \
+            go run ./apps/control-plane/cmd migrate version
+      # A capability the Makefile migrates but the binary does not (or the
+      # reverse) would strand a table in production.
+      - name: Check the embedded capability list matches the migrations on disk
+        run: |
+          on_disk=$(for dir in apps/control-plane/internal/*/migrations; do
+            find "$dir" -name '*.up.sql' | grep -q . && basename "$(dirname "$dir")"
+          done | sort)
+          embedded=$(IVALDI_DATABASE_URL='postgres://ivaldi:ivaldi@localhost:5432/embedded_migrations?sslmode=disable' \
+            go run ./apps/control-plane/cmd migrate version | awk '{print $1}' | sort)
+          if [ "$on_disk" != "$embedded" ]; then
+            echo "::error::capabilities with migrations on disk differ from the ones the binary applies"
+            diff <(echo "$on_disk") <(echo "$embedded") || true
+            exit 1
+          fi
+          echo "The binary applies every capability that has migrations."
 
   webui:
     name: Web UI
@@ -332,19 +375,31 @@ jobs:
 
   images:
     name: Image ${{ matrix.image }}
-    needs: changes
-    if: needs.changes.outputs.go != 'false' || needs.changes.outputs.webui != 'false' || needs.changes.outputs.charts != 'false'
+    # Publishing waits for verification: every image is the promotion source
+    # for a release, so none may exist for a commit that failed its tests. A
+    # skipped leg (paths that did not change) is not a failure, hence the
+    # explicit check rather than an implicit success().
+    needs: [changes, go-test, go-check, build, migrations, webui, generated]
+    if: >-
+      !cancelled()
+      && !contains(needs.*.result, 'failure')
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || needs.changes.outputs.go != 'false'
+          || needs.changes.outputs.webui != 'false')
     runs-on: blacksmith-2vcpu-ubuntu-2404
-    timeout-minutes: 20
+    timeout-minutes: 25
     permissions:
       contents: read
       # Pushes to ghcr.io. Pull requests from forks get a read-only token
       # whatever this says, which is fine: pull requests never push.
       packages: write
     env:
-      # Only pushes to main and release tags publish images; pull requests and
-      # the merge queue build them to check the Dockerfiles.
-      PUSH: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
+      # Pushes to main publish the commit-tagged images a release promotes.
+      # Pull requests and the merge queue build them to check the Dockerfiles.
+      PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      # A release promotes the images of the commit it tags, so every commit on
+      # main must have all of them, whatever paths it changed.
+      BUILD_ALL: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     strategy:
       fail-fast: false
       matrix:
@@ -352,44 +407,45 @@ jobs:
           - image: ivaldi
             context: .
             file: apps/control-plane/Dockerfile
-            changed: ${{ needs.changes.outputs.go }}
-          - image: ivaldi-webui
-            context: apps/webui
-            file: apps/webui/Dockerfile
-            changed: ${{ needs.changes.outputs.webui }}
-          # Built when the chart changes too: each chart version names the
-          # image of the same version, so the chart is never published
-          # without it (see publish-chart).
+            version_component: ivaldi
+            changed: ${{ (needs.changes.outputs.go != 'false' || needs.changes.outputs.webui != 'false') && 'true' || 'false' }}
           - image: ivaldi-k8s-agent
             context: .
             file: apps/k8s-agent/Dockerfile
-            changed: ${{ (needs.changes.outputs.go == 'false' && needs.changes.outputs.charts == 'false') && 'false' || 'true' }}
+            version_component: ivaldi-k8s-agent
+            changed: ${{ needs.changes.outputs.go }}
     steps:
       # A job's `if` cannot see the matrix, so a leg whose paths did not change
       # skips its steps instead.
       - name: Checkout repository
-        if: matrix.changed != 'false'
+        if: env.BUILD_ALL == 'true' || matrix.changed != 'false'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # The version stamped into ivaldi comes from `git describe`, as `make
-          # build` does, which needs tags.
+          # The version stamped into the image comes from `git describe`, as
+          # `make build` does, which needs tags.
           fetch-depth: 0
-      # One version for the control plane, the agent, its image, and its
-      # chart. An image tag cannot hold SemVer build metadata's "+", so the
-      # tag has "_" in its place, which the agent chart renders the same way.
+      # Each image carries its own component's version. The commit and the
+      # commit's time travel with it, so an artifact names what it came from
+      # and a rebuild of one commit is identical. A release promotes this
+      # digest after tagging, so a released image keeps reporting this
+      # pre-tag version (docs/releases/README.md, Versions).
       - name: Describe version
         id: version
-        if: matrix.changed != 'false'
+        if: env.BUILD_ALL == 'true' || matrix.changed != 'false'
         run: |
-          version=$(scripts/version.sh)
+          version=$(scripts/version.sh ${{ matrix.version_component }})
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=${version//+/_}" >> "$GITHUB_OUTPUT"
+          echo "commit=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "built=$(git log -1 --format=%cI)" >> "$GITHUB_OUTPUT"
+          # The agent chart this build's onboarding guide offers (phase 3 pin).
+          echo "agent_chart=$(tr -d '[:space:]' < deploy/helm/ivaldi-agent/version.txt)" >> "$GITHUB_OUTPUT"
       # Tags each image with the full commit SHA, and with `main` on main. The
       # labels include org.opencontainers.image.source, which links the ghcr.io
       # package to this repository so it inherits the repository's access.
       - name: Image tags and labels
         id: meta
-        if: matrix.changed != 'false'
+        if: env.BUILD_ALL == 'true' || matrix.changed != 'false'
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
@@ -400,7 +456,7 @@ jobs:
           labels: |
             org.opencontainers.image.version=${{ steps.version.outputs.version }}
       - name: Log in to ghcr.io
-        if: matrix.changed != 'false' && env.PUSH == 'true'
+        if: (env.BUILD_ALL == 'true' || matrix.changed != 'false') && env.PUSH == 'true'
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
@@ -411,12 +467,12 @@ jobs:
       # cache-from or cache-to is needed. One key per Dockerfile keeps the two
       # images from evicting each other's layers.
       - name: Set up Blacksmith Docker builder
-        if: matrix.changed != 'false'
+        if: env.BUILD_ALL == 'true' || matrix.changed != 'false'
         uses: useblacksmith/setup-docker-builder@06dd9c83a5d541274d2e3ac67625560979275267 # v2.3.0
         with:
           cache-key: ${{ matrix.file }}
       - name: Build ${{ matrix.image }}
-        if: matrix.changed != 'false'
+        if: env.BUILD_ALL == 'true' || matrix.changed != 'false'
         uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2.3.0
         with:
           context: ${{ matrix.context }}
@@ -424,8 +480,11 @@ jobs:
           push: ${{ env.PUSH == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # The Go images take a VERSION; the web UI's does not.
-          build-args: ${{ matrix.image != 'ivaldi-webui' && format('VERSION={0}', steps.version.outputs.version) || '' }}
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+            COMMIT=${{ steps.version.outputs.commit }}
+            BUILDTIME=${{ steps.version.outputs.built }}
+            ${{ matrix.image == 'ivaldi' && format('AGENT_CHART_VERSION={0}', steps.version.outputs.agent_chart) || '' }}
 
   charts:
     name: Helm charts
@@ -484,58 +543,13 @@ jobs:
       - name: Run the e2e
         run: make k8s_agent_e2e
 
-  # Publishes the agent chart to ghcr.io as an OCI artifact, with the same
-  # version as the agent image published by the images job in this run.
-  publish-chart:
-    name: Publish agent chart
-    needs: [changes, images, charts]
-    # !cancelled() overrides the implicit success(), which would skip this
-    # job whenever charts is skipped, as on a push that changes only Go.
-    if: >-
-      !cancelled()
-      && github.event_name == 'push'
-      && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
-      && needs.images.result == 'success'
-      && needs.charts.result != 'failure'
-      && (needs.changes.outputs.go != 'false' || needs.changes.outputs.charts != 'false')
-    runs-on: blacksmith-2vcpu-ubuntu-2404
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-      - name: Describe version
-        id: version
-        run: echo "version=$(scripts/version.sh)" >> "$GITHUB_OUTPUT"
-      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
-        with:
-          version: v4.3.1
-      - name: Log in to ghcr.io
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
-      - name: Package and push
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-          REPOSITORY: oci://ghcr.io/${{ github.repository_owner }}/charts
-        run: |
-          # Chart versions are immutable: refuse to overwrite one.
-          if helm show chart "$REPOSITORY/ivaldi-agent" --version "$VERSION" >/dev/null 2>&1; then
-            echo "::error::ivaldi-agent $VERSION is already published"
-            exit 1
-          fi
-          helm package deploy/helm/ivaldi-agent --version "$VERSION" --app-version "$VERSION" --destination dist
-          helm push "dist/ivaldi-agent-$VERSION.tgz" "$REPOSITORY"
-
   # The one check branch protection should require. Which jobs run depends on
   # the paths a change touches, and GitHub counts a skipped required check as
   # passing, including one skipped because a job it needs failed.
   ci-ok:
     name: CI
     if: always()
-    needs: [changes, go-test, go-check, build, migrations, webui, generated, images, charts, k8s-agent-e2e, publish-chart]
+    needs: [changes, go-test, go-check, build, migrations, webui, generated, images, charts, k8s-agent-e2e]
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 2
     steps:

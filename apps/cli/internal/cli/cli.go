@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 
 	"github.com/ivaldibuild/ivaldi-cli/internal/apitoken"
@@ -12,7 +14,27 @@ import (
 	"github.com/ivaldibuild/ivaldi-cli/internal/types"
 )
 
-const CLI_VERSION = "dev"
+// The build stamps these with -ldflags "-X
+// github.com/ivaldibuild/ivaldi-cli/internal/cli.<name>=<value>" (see the
+// Makefile and .github/workflows/release.yaml). They are variables, not
+// constants, because the linker can only set variables.
+var (
+	// VERSION is the release version, a SemVer.
+	VERSION = "dev"
+	// COMMIT is the short commit the binary was built from.
+	COMMIT = "unknown"
+	// BUILDTIME is that commit's time, RFC 3339.
+	BUILDTIME = "unknown"
+)
+
+// Version is what `ivaldictl version` prints: the release version, and the
+// commit it was built from when the build stamped one.
+func Version() string {
+	if COMMIT == "" || COMMIT == "unknown" {
+		return VERSION
+	}
+	return fmt.Sprintf("%s (%s, %s)", VERSION, COMMIT, BUILDTIME)
+}
 
 // NewCLI returns ivaldictl's root command for the real process.
 func NewCLI() *cobra.Command {
@@ -26,7 +48,7 @@ func New(a *app.App) *cobra.Command {
 		Aliases:      []string{"iv", "ivldctl"},
 		Short:        "Ivaldi CLI",
 		Long:         "Ivaldi CLI controls the Ivaldi control plane",
-		Version:      CLI_VERSION,
+		Version:      Version(),
 		SilenceUsage: true,
 	}
 	cmd.SetOut(a.Out)

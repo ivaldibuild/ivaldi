@@ -4,11 +4,11 @@ import { resolve } from 'node:path';
 import { type Page } from '@playwright/test';
 
 /**
- * The local stack the tests run against: the web app and the control plane started by
- * `make local_stack` (or `make local_serve` with `ng serve`). Override the addresses with
- * IVALDI_E2E_WEB_URL and IVALDI_E2E_API_URL.
+ * The local stack the tests run against: the control plane, which serves the web app,
+ * started by `make local_stack` (or `make local_serve` with `ng serve`). Override the
+ * addresses with IVALDI_E2E_WEB_URL and IVALDI_E2E_API_URL.
  */
-export const webURL = process.env['IVALDI_E2E_WEB_URL'] ?? 'http://localhost:8670';
+export const webURL = process.env['IVALDI_E2E_WEB_URL'] ?? 'http://localhost:8660';
 export const apiURL = process.env['IVALDI_E2E_API_URL'] ?? 'http://localhost:8660';
 
 /** The web app's first-party OAuth client and the redirect URI config.local.yml registers. */

@@ -264,34 +264,49 @@ func TestServerRunStopsWhenTheContextIsDone(t *testing.T) {
 	}
 }
 
-func TestServerAllowsConfiguredOrigins(t *testing.T) {
+// The web app answers what the API does not, and never what it does: a
+// regression here would turn an API 404 into an HTML page that a client reads
+// as a success.
+func TestServerServesTheWebAppAfterTheAPI(t *testing.T) {
 	cfg := testConfig()
-	cfg.AllowedOrigins = []string{"https://app.example.com"}
-	s, err := New(cfg, "test", logging.NewMockLogger(), WithRoutes(fakeRoutes{}))
+	web := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<!doctype html>"))
+	})
+	s, err := New(cfg, "test", logging.NewMockLogger(), WithRoutes(fakeRoutes{}), WithWebUI(web))
 	require.NoError(t, err)
-	call := func(method, origin string) *httptest.ResponseRecorder {
-		req := httptest.NewRequest(method, "/v1/ping", nil)
-		req.Header.Set("Origin", origin)
-		if method == http.MethodOptions {
-			req.Header.Set("Access-Control-Request-Method", "POST")
-		}
+
+	send := func(method, path string) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
-		s.Handler().ServeHTTP(rec, req)
+		s.Handler().ServeHTTP(rec, httptest.NewRequest(method, path, nil))
 		return rec
 	}
+	call := func(path string) *httptest.ResponseRecorder { return send(http.MethodGet, path) }
 
-	preflight := call(http.MethodOptions, "https://app.example.com")
-	assert.Equal(t, http.StatusNoContent, preflight.Code)
-	assert.Equal(t, "https://app.example.com", preflight.Header().Get("Access-Control-Allow-Origin"))
-	assert.Contains(t, preflight.Header().Get("Access-Control-Allow-Headers"), "Content-Type")
-	assert.Empty(t, preflight.Header().Get("Access-Control-Allow-Credentials"), "no cookies cross origins")
+	app := call("/clusters/eng")
+	assert.Equal(t, http.StatusOK, app.Code)
+	assert.Contains(t, app.Body.String(), "<!doctype html>", "a route of the single-page app")
 
-	get := call(http.MethodGet, "https://app.example.com")
-	assert.Equal(t, http.StatusOK, get.Code)
-	assert.Equal(t, "https://app.example.com", get.Header().Get("Access-Control-Allow-Origin"))
+	api := call("/v1/ping")
+	assert.Equal(t, http.StatusOK, api.Code)
+	assert.Contains(t, api.Body.String(), "pong", "the API keeps its paths")
 
-	other := call(http.MethodGet, "https://evil.example.com")
-	assert.Empty(t, other.Header().Get("Access-Control-Allow-Origin"))
+	unknown := call("/v1/nope")
+	assert.Equal(t, http.StatusNotFound, unknown.Code)
+	assert.Contains(t, unknown.Header().Get("Content-Type"), "application/problem+json")
+	assert.NotContains(t, unknown.Body.String(), "<!doctype html>", "an unknown API path is not the web app")
+
+	unknownPost := send(http.MethodPost, "/v1/nope")
+	assert.Equal(t, http.StatusNotFound, unknownPost.Code)
+	assert.Contains(t, unknownPost.Header().Get("Content-Type"), "application/problem+json", "every method gets the API's errors")
+
+	wrongMethod := send(http.MethodPost, "/v1/ping")
+	assert.Equal(t, http.StatusMethodNotAllowed, wrongMethod.Code, "an operation under another method is a 405, not a 404")
+	assert.Equal(t, http.MethodGet, wrongMethod.Header().Get("Allow"))
+	assert.Contains(t, wrongMethod.Header().Get("Content-Type"), "application/problem+json")
+
+	health := call("/healthz")
+	assert.Equal(t, http.StatusNoContent, health.Code)
 }
 
 // failingRoutes registers an operation that fails unexpectedly.

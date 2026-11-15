@@ -4,14 +4,16 @@ Each Kubernetes cluster Ivaldi deploys to runs one agent, `ivaldi-k8s-agent`, in
 
 ## Where they are published
 
-CI publishes both on every push to `main` and on every `v*` tag, with one version:
+The **Release** workflow publishes both from one tag, `ivaldi-k8s-agent/vX.Y.Z` (see [Releasing Ivaldi](../releases/README.md)):
 
 | What | Where |
 | --- | --- |
-| Agent image | `ghcr.io/ivaldibuild/ivaldi-k8s-agent:<version>` |
-| Agent chart | `oci://ghcr.io/ivaldibuild/charts/ivaldi-agent --version <version>` |
+| Agent image | `ghcr.io/ivaldibuild/ivaldi-k8s-agent:X.Y.Z` |
+| Agent chart | `oci://ghcr.io/ivaldibuild/charts/ivaldi-agent --version X.Y.Z` |
 
-The image tag is the version with any `+` (SemVer build metadata) written as `_`, since an image tag cannot contain `+`; the chart renders the tag the same way. `<version>` is what `scripts/version.sh` prints for the commit: `0.4.0` on a tag, `0.4.0-3-gabc1234` after one, and `0.0.0-gabc1234` while the repository has no tags. The control plane carries the same version, and the guide installs the chart version that matches it, unless `runners.agent_chart_version` says otherwise. A chart version is never overwritten, and the chart is published only after its image.
+The chart's `version` and `appVersion` are the image's tag, and an image tag is the version with any `+` (SemVer build metadata) written as `_`, since an image tag cannot contain `+`. Commits on `main` also publish `:sha-<full>` images, which are what a release promotes; they are not installation targets.
+
+The agent is released on its own schedule, so its version is not the control plane's. The control plane's onboarding guide offers the chart version pinned in `deploy/helm/ivaldi-agent/version.txt`, the agent release the control plane was tested against, unless `runners.agent_chart_version` says otherwise. A chart version is never overwritten, and the chart is published only after its image.
 
 ## Mirrors and air gaps
 

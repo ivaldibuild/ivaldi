@@ -12,8 +12,9 @@ import { defineConfig, devices } from '@playwright/test';
  * See https://playwright.dev/docs/test-configuration.
  */
 export default defineConfig({
-  // The tests run against the local stack (`make local_stack` from the repository
-  // root); see e2e/support/stack.ts.
+  // The tests run against the local stack (`make local_stack` from the
+  // repository root), where the control plane serves the web app it ships; see
+  // e2e/support/stack.ts.
   testDir: './e2e',
   /* Run tests in files in parallel */
   fullyParallel: true,
@@ -28,7 +29,7 @@ export default defineConfig({
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('')`. */
-    baseURL: process.env['IVALDI_E2E_WEB_URL'] ?? 'http://localhost:8670',
+    baseURL: process.env['IVALDI_E2E_WEB_URL'] ?? 'http://localhost:8660',
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',

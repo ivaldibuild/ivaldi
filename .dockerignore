@@ -1,9 +1,18 @@
-# The build context for apps/control-plane/Dockerfile. apps/webui has its own.
+# The build context for apps/control-plane/Dockerfile: the Go workspace, the
+# control plane, and the web app it embeds. The Kubernetes agent's image has
+# its own context; this file is shared with it, so nothing here may exclude
+# what that build needs.
 .git
 .local
 .env
 *.local.yml
 bin
 volumes
-apps/webui
 **/node_modules
+apps/webui/.angular
+apps/webui/dist
+apps/webui/playwright-report
+apps/webui/test-results
+# A local copy of the web app's build in the embed directory; the image puts
+# its own fresh build there, and a stale copy would be embedded beside it.
+apps/control-plane/internal/webui/dist

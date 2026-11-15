@@ -547,7 +547,7 @@ func (a *app) wireEnrollment(runners config.Runners, externalURL string, logger 
 func (a *app) enrollmentInstall(runners config.Runners, externalURL string) enrollment.InstallDetails {
 	version := runners.AgentChartVersion
 	if version == "" {
-		version = chartVersion(a.version)
+		version = agentChartVersion(AGENT_CHART_VERSION)
 	}
 	kinds := []string{"bearer"}
 	if len(runners.KubernetesIssuers) > 0 {
@@ -562,16 +562,29 @@ func (a *app) enrollmentInstall(runners config.Runners, externalURL string) enro
 // prints a tag.
 var releaseVersion = regexp.MustCompile(`^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$`)
 
-// chartVersion is the agent chart version that matches a binary version, or
-// "" when the binary is not a release build: "dev", a bare commit hash, or a
-// build with uncommitted changes names no published chart, and the guide then
-// leaves the version out instead of printing one Helm cannot find.
-func chartVersion(binary string) string {
-	if !releaseVersion.MatchString(binary) || strings.HasSuffix(binary, "-dirty") {
+// agentChartVersion is the released agent chart this control plane was built
+// against, or "" when none is known: "0.0.0" is the placeholder for a build
+// made before the agent's first release, and a value that is not a released
+// SemVer names no published chart. The guide then prints no version at all
+// rather than one Helm cannot find.
+//
+// It is not the control plane's own version: the components are released on
+// their own schedules, so after the first divergence the two never match.
+func agentChartVersion(pin string) string {
+	pin = strings.TrimSpace(pin)
+	if pin == "" || pin == "0.0.0" || !releaseVersion.MatchString(pin) || strings.HasSuffix(pin, "-dirty") {
 		return ""
 	}
-	return strings.TrimPrefix(binary, "v")
+	// A git describe string names commits after a tag, not a published chart.
+	if describedVersion.MatchString(pin) {
+		return ""
+	}
+	return strings.TrimPrefix(pin, "v")
 }
+
+// describedVersion matches the "-3-gabc1234" part of `git describe` output,
+// which names no published artifact.
+var describedVersion = regexp.MustCompile(`-[0-9]+-g[0-9a-f]+`)
 
 // wireSignIn builds sign-in, the authorization server, and its HTTP side.
 func (a *app) wireSignIn(cfg *config.Config, logger logging.Logger, passwords hasher.PasswordHasher) error {

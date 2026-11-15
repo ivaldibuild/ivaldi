@@ -5,15 +5,13 @@
 # `make local` starts PostgreSQL and Valkey and applies the migrations, and
 # `make local_serve` runs the control plane on your machine with this file.
 # `make local_stack` runs the control plane in a container with the same file,
-# overriding only the database and Valkey addresses, and serves the web app
-# on http://localhost:8670.
+# overriding only the database and Valkey addresses. The control plane serves
+# the web app too, on http://localhost:8660.
 #
 # Paths are relative to the repository root. `make local_secrets` generates the
 # files in .local/.
 deployment_mode: self-hosted
 external_url: http://localhost:8660
-# The web app, which renders sign-in and calls the API from the browser.
-allowed_origins: [http://localhost:8670]
 
 logging:
   level: debug
@@ -78,11 +76,13 @@ runners:
 #   stream: ivaldi:control-plane:events
 
 auth:
-  login_url: http://localhost:8670/login
+  login_url: http://localhost:8660/login
   signing_key_files: [.local/signing.pem]
   builtin_accounts: true
   web_client:
-    redirect_uris: [http://localhost:8670/auth/callback]
+    # 8660 is the control plane, which serves the web app. 8670 is `ng serve`,
+    # the web app's live-reload development server, which proxies to the API.
+    redirect_uris: [http://localhost:8660/auth/callback, http://localhost:8670/auth/callback]
   # Sign-in providers. Register the callback
   # http://localhost:8660/auth/oauth/<provider>/callback with the provider,
   # and put the client secret in .local/. See docs/self-hosting/sign-in.md.

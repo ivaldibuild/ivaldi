@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -13,12 +14,21 @@ import (
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/api"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/config"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/webui"
 	"github.com/ivaldibuild/ivaldi/pkg/env"
+	"github.com/ivaldibuild/ivaldi/pkg/logging"
 )
+
+// AGENT_CHART_VERSION is the released ivaldi-agent chart this build was tested
+// against, stamped from deploy/helm/ivaldi-agent/version.txt with -ldflags
+// "-X github.com/ivaldibuild/ivaldi-control-plane/cmd/server.AGENT_CHART_VERSION".
+// The components are released on their own schedules, so the control plane's
+// own version names no chart; "0.0.0" means no agent release is pinned yet.
+var AGENT_CHART_VERSION = "0.0.0"
 
 // NewServeCommand starts the control plane. version is the binary's.
 func NewServeCommand(version string) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start the Ivaldi Control Plane server",
 		// Errors here come from configuration or startup, not from how the
@@ -28,6 +38,9 @@ func NewServeCommand(version string) *cobra.Command {
 			return runServe(cmd, version)
 		},
 	}
+	// For a local build, which carries no web app; the release image embeds it.
+	cmd.Flags().String("web-dir", "", "serve the web app from this directory instead of the copy embedded in the build")
+	return cmd
 }
 
 func runServe(cmd *cobra.Command, version string) error {
@@ -52,6 +65,15 @@ func runServe(cmd *cobra.Command, version string) error {
 	}
 	defer func() { _ = logger.Sync() }()
 
+	webDir, err := cmd.Flags().GetString("web-dir")
+	if err != nil {
+		return err
+	}
+	web, err := webApp(webDir, logger)
+	if err != nil {
+		return err
+	}
+
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -61,11 +83,16 @@ func runServe(cmd *cobra.Command, version string) error {
 	}
 	defer func() { _ = closeDB() }()
 
-	srv, err := api.New(&cfg, version, logger,
+	opts := []api.Option{
 		api.WithRoutes(a.services.routes(false)...),
 		api.WithHandlers(a.handlers...),
 		api.WithVerifier(a.verifier),
-	)
+	}
+	if web != nil {
+		opts = append(opts, api.WithWebUI(web))
+	}
+
+	srv, err := api.New(&cfg, version, logger, opts...)
 	if err != nil {
 		return err
 	}
@@ -80,4 +107,29 @@ func runServe(cmd *cobra.Command, version string) error {
 		return err
 	}
 	return nil
+}
+
+// webApp is the web app this process serves: the build in dir when one is
+// given, otherwise the copy embedded in the binary. A build with neither, such
+// as `go run`, serves the API alone and says so: in development the web app
+// runs on its own with `ng serve`, proxying to the API.
+func webApp(dir string, logger logging.Logger) (http.Handler, error) {
+	if dir != "" {
+		h, err := webui.Handler(os.DirFS(dir))
+		if err != nil {
+			return nil, fmt.Errorf("serve the web app from %s: %w", dir, err)
+		}
+		logger.Info("serving the web app from a directory", logging.F("dir", dir))
+		return h, nil
+	}
+	if assets := webui.Embedded(); assets != nil {
+		h, err := webui.Handler(assets)
+		if err != nil {
+			return nil, fmt.Errorf("serve the embedded web app: %w", err)
+		}
+		logger.Info("serving the web app embedded in this build")
+		return h, nil
+	}
+	logger.Info("this build carries no web app; the release image does, and `ng serve` serves it in development")
+	return nil, nil
 }

@@ -106,20 +106,13 @@ The file is used once. Ivaldi never replaces a password with it: it does nothing
 
 ## The sign-in page
 
-The control plane serves no sign-in pages; the Ivaldi web app does. Tell the control plane where its sign-in page is. When a reverse proxy serves the web app and the control plane on one origin, as [Serving the web app](web-app.md) recommends, that is the external URL's `/login`:
+The control plane serves the web app, which serves the sign-in page. Tell the control plane where that page is: on one origin, the external URL's `/login`
 
 ```sh
 IVALDI_AUTH_LOGIN_URL=https://ivaldi.example.com/login
 ```
 
-When the web app has its own origin, point at it there and let it call the control plane's API from the browser:
-
-```sh
-IVALDI_AUTH_LOGIN_URL=https://app.example.com/login
-IVALDI_ALLOWED_ORIGINS=https://app.example.com
-```
-
-The web app then also needs the control plane's address; see [Serving the web app](web-app.md#separate-origins). See [the sign-in flow](../design/sign-in-flow.md) for how the page and the control plane work together.
+See [Serving the web app](web-app.md), and [the sign-in flow](../design/sign-in-flow.md) for how the page and the control plane work together.
 
 ## Applications that sign in
 
@@ -129,7 +122,7 @@ Ivaldi registers its own OAuth clients on every start. `ivaldictl` signs in thro
 IVALDI_AUTH_WEB_CLIENT_REDIRECT_URIS=https://ivaldi.example.com/auth/callback
 ```
 
-Use the web app's own origin instead, such as `https://app.example.com/auth/callback`, when it has one.
+List every origin the app is reached at. `http://localhost:8670` is `ng serve`, the live-reload development server.
 
 Clients follow the OAuth 2.1 authorization code flow with PKCE, starting at `<external URL>/oauth/authorize`. The server's metadata is at `<external URL>/.well-known/oauth-authorization-server`.
 
@@ -162,4 +155,4 @@ bootstrap:
   admin_password_file: /run/secrets/admin-password
 ```
 
-With the web app on its own origin, add `allowed_origins: [https://app.example.com]` and use that origin in `login_url` and `redirect_uris`. Environment variables override the file.
+`login_url` and the web client's `redirect_uris` name the origin browsers use, which is the control plane's. Environment variables override the file.

@@ -264,3 +264,23 @@ func dopplerFixture(t *testing.T, m mode) Store {
 		Token: func(context.Context) (string, error) { return "dp.st.token", nil },
 	})
 }
+
+// A login carries the service-account token, so it goes only to the address
+// the store names, wherever that server's reply points.
+func TestVault_DoesNotFollowARedirect(t *testing.T) {
+	var elsewhere int
+	other := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { elsewhere++ }))
+	t.Cleanup(other.Close)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+r.URL.Path, http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(server.Close)
+	store := NewVault(VaultConfig{
+		Address: server.URL, Mount: "kv", AuthRole: "ivaldi",
+		JWT: func() (string, error) { return "sa-token", nil },
+	})
+
+	_, err := store.Get(context.Background(), Ref{Path: "api"})
+	require.Error(t, err)
+	assert.Zero(t, elsewhere)
+}

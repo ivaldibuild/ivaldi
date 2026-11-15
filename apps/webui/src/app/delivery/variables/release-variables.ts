@@ -45,7 +45,12 @@ export class ReleaseVariables {
     (this.view()?.resolved ?? []).map((variable) => ({
       name: variable.name,
       path: variable.values_path,
-      value: variable.winner?.value ?? null,
+      value: variable.winner
+        ? variable.winner.secret
+          ? `Secret at ${variable.winner.secret.path}`
+          : variable.winner.value
+        : null,
+      secret: !!variable.winner?.secret,
       source: variable.winner?.source === 'project' ? 'Project' : 'Application',
       beaten: variable.beaten.length,
     })),

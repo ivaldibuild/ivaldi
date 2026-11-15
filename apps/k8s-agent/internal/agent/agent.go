@@ -28,10 +28,6 @@ import (
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/targets"
 )
 
-// serviceAccountTokenFile is the Pod's API token, which Vault's Kubernetes
-// auth checks.
-const serviceAccountTokenFile = "/var/run/secrets/kubernetes.io/serviceaccount/token"
-
 // New returns the agent's root command. version is the build's version.
 func New(version string) *cobra.Command {
 	var cfg Config
@@ -108,20 +104,22 @@ func start(ctx context.Context, cfg Config, version string) error {
 	if err != nil {
 		return err
 	}
+	secretsCfg := secrets.Config{
+		Kube: kube, AgentNamespace: cfg.Namespace, FingerprintSecret: cfg.FingerprintSecret,
+		VaultAddresses: cfg.VaultAddresses, VaultTokenFile: cfg.VaultTokenFile, Masker: masker, Logger: log,
+	}
 	a := &agent{
-		cfg:        cfg,
-		version:    version,
-		log:        log,
-		kube:       kube,
-		creds:      creds,
-		cp:         cp,
-		newTracker: func() targets.Tracker { return targets.NewTracker(cp, kube, log) },
-		deployers:  map[string]deploy.Deployer{helmDeployer.Name(): helmDeployer},
-		reporter:   report.New(cp, log),
-		secrets: secrets.NewResolver(secrets.Config{
-			Kube: kube, AgentNamespace: cfg.Namespace, FingerprintSecret: cfg.FingerprintSecret,
-			ServiceAccountTokenFile: serviceAccountTokenFile, Masker: masker, Logger: log,
-		}),
+		cfg:          cfg,
+		version:      version,
+		log:          log,
+		kube:         kube,
+		creds:        creds,
+		cp:           cp,
+		newTracker:   func() targets.Tracker { return targets.NewTracker(cp, kube, log) },
+		deployers:    map[string]deploy.Deployer{helmDeployer.Name(): helmDeployer},
+		reporter:     report.New(cp, log),
+		secrets:      secrets.NewResolver(secretsCfg),
+		storeKinds:   secretsCfg.StoreKinds(),
 		secretWriter: secrets.NewWriter(kube),
 		masker:       masker,
 		ready:        newReadiness(conditionEnrolled, conditionLease, conditionTargets),

@@ -37,6 +37,7 @@ type store struct {
 	environments map[string]*delivery.Environment
 	targets      map[string]*delivery.Target
 	projects     map[string]*workspace.Project
+	stores       map[string]delivery.SecretStoreRef
 	audit        []audit.Event
 	events       []events.Envelope
 	locked       []string
@@ -65,7 +66,7 @@ func (s *store) Lock(_ context.Context, key string) error {
 func rebuild(snap delivery.VariableSnapshot) *delivery.Variable {
 	values := make([]delivery.NewVariableValueProps, len(snap.Values))
 	for i, value := range snap.Values {
-		values[i] = delivery.NewVariableValueProps{ID: &value.ID, Value: value.Value, Scope: value.Scope, CreatedAt: &value.CreatedAt, UpdatedAt: &value.UpdatedAt}
+		values[i] = delivery.NewVariableValueProps{ID: &value.ID, Value: value.Value, Secret: value.Secret, Scope: value.Scope, CreatedAt: &value.CreatedAt, UpdatedAt: &value.UpdatedAt}
 	}
 	return must(delivery.NewVariable(delivery.NewVariableProps{
 		OrganizationID: snap.OrganizationID, ProjectID: snap.ProjectID, ApplicationID: snap.ApplicationID,
@@ -134,6 +135,18 @@ func (s *store) CountActiveVariablesWithTarget(context.Context, string, string) 
 }
 func (s *store) CountActiveVariablesWithChannel(context.Context, string, string) (int, error) {
 	return 0, nil
+}
+func (s *store) CountActiveVariablesWithSecretStore(context.Context, string, string) (int, error) {
+	return 0, nil
+}
+func (s *store) LookupSecretStores(_ context.Context, _ string, ids []string) (map[string]delivery.SecretStoreRef, error) {
+	out := map[string]delivery.SecretStoreRef{}
+	for _, id := range ids {
+		if ref, ok := s.stores[id]; ok {
+			out[id] = ref
+		}
+	}
+	return out, nil
 }
 
 func find[T any](m map[string]T, id string) (T, error) {
@@ -291,7 +304,7 @@ func newWorld(t *testing.T) *world {
 
 	svc, err := NewVariableService(
 		WithVariableRepo(s), WithApplicationLookup(s), WithEnvironmentLookup(s), WithTargetLookup(s),
-		WithWorkspaces(s), WithLocker(s), WithAuthorizer(w.authz), WithTransactor(s),
+		WithWorkspaces(s), WithSecretStores(s), WithLocker(s), WithAuthorizer(w.authz), WithTransactor(s),
 		WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
 	)
 	require.NoError(t, err)

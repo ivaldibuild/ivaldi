@@ -52,6 +52,21 @@
         ],
         "type": "object"
       },
+      "AWSSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "region": {
+            "type": "string"
+          },
+          "role_arn": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "region"
+        ],
+        "type": "object"
+      },
       "AWSStore": {
         "additionalProperties": false,
         "properties": {
@@ -2064,6 +2079,53 @@
         ],
         "type": "object"
       },
+      "CreateSecretStoreRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/CreateSecretStoreRequestBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "display_name": {
+            "description": "The display name for the store",
+            "minLength": 1,
+            "type": "string"
+          },
+          "environment_ids": {
+            "description": "The Environments whose Deployments may read the store; every Environment in the Workspace when omitted. Required for doppler",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "kind": {
+            "description": "The secret manager",
+            "enum": [
+              "kubernetes",
+              "aws_secrets_manager",
+              "vault",
+              "doppler"
+            ],
+            "type": "string"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/SettingsBody",
+            "description": "The kind's settings; none for kubernetes"
+          },
+          "slug": {
+            "description": "Url slug for the store; derived from the display name when omitted",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_name",
+          "kind"
+        ],
+        "type": "object"
+      },
       "CreateSourceRequestBody": {
         "additionalProperties": false,
         "properties": {
@@ -2414,6 +2476,12 @@
             "format": "date-time",
             "type": "string"
           },
+          "secret_versions": {
+            "items": {
+              "$ref": "#/components/schemas/SecretVersion"
+            },
+            "type": "array"
+          },
           "session_id": {
             "nullable": true,
             "type": "string"
@@ -2487,6 +2555,7 @@
           "external_ref",
           "policy_decision_id",
           "variable_snapshot_id",
+          "secret_versions",
           "findings",
           "requested_at",
           "started_at",
@@ -2495,6 +2564,22 @@
           "status_changed_at",
           "created_at",
           "updated_at"
+        ],
+        "type": "object"
+      },
+      "DopplerSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "token_secret_key": {
+            "type": "string"
+          },
+          "token_secret_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "token_secret_name",
+          "token_secret_key"
         ],
         "type": "object"
       },
@@ -4635,6 +4720,9 @@
           "scope": {
             "$ref": "#/components/schemas/VariableScope"
           },
+          "secret": {
+            "$ref": "#/components/schemas/SecretReference"
+          },
           "source": {
             "enum": [
               "project",
@@ -4648,6 +4736,7 @@
         },
         "required": [
           "value",
+          "secret",
           "scope",
           "source"
         ],
@@ -5548,6 +5637,38 @@
             "description": "Response payload, always present: an empty list is [], not omitted",
             "items": {
               "$ref": "#/components/schemas/RepositorySnapshot"
+            },
+            "type": "array"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ResponseListSecretStoreSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseListSecretStoreSnapshot.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "description": "Response payload, always present: an empty list is [], not omitted",
+            "items": {
+              "$ref": "#/components/schemas/SecretStoreSnapshot"
             },
             "type": "array"
           },
@@ -6524,6 +6645,35 @@
           },
           "data": {
             "$ref": "#/components/schemas/ResultTeamSnapshot",
+            "description": "Response payload, always present: an empty list is [], not omitted"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ResponseSecretStoreSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseSecretStoreSnapshot.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SecretStoreSnapshot",
             "description": "Response payload, always present: an empty list is [], not omitted"
           },
           "message": {
@@ -7613,6 +7763,33 @@
         },
         "type": "object"
       },
+      "SecretBody": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "description": "One key of a map or JSON secret; the whole value when omitted",
+            "type": "string"
+          },
+          "path": {
+            "description": "Where the secret is in the store, such as a Secret's name or a Vault path; may bind text variables with #{Name}",
+            "minLength": 1,
+            "type": "string"
+          },
+          "store_id": {
+            "description": "The Secret Store, in the variable's Workspace",
+            "type": "string"
+          },
+          "version": {
+            "description": "The store's version to deploy; the latest when omitted",
+            "type": "string"
+          }
+        },
+        "required": [
+          "store_id",
+          "path"
+        ],
+        "type": "object"
+      },
       "SecretRef": {
         "additionalProperties": false,
         "properties": {
@@ -7628,6 +7805,135 @@
         },
         "required": [
           "path"
+        ],
+        "type": "object"
+      },
+      "SecretReference": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "store_id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "store_id",
+          "path",
+          "field",
+          "version"
+        ],
+        "type": "object"
+      },
+      "SecretStoreSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "archived_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "environment_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "kubernetes",
+              "aws_secrets_manager",
+              "vault",
+              "doppler"
+            ],
+            "type": "string"
+          },
+          "organization_id": {
+            "type": "string"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/Settings"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "workspace_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "workspace_id",
+          "slug",
+          "display_name",
+          "kind",
+          "settings",
+          "environment_ids",
+          "created_at",
+          "updated_at",
+          "archived_at"
+        ],
+        "type": "object"
+      },
+      "SecretVersion": {
+        "additionalProperties": false,
+        "properties": {
+          "delivered_as": {
+            "enum": [
+              "secret",
+              "value"
+            ],
+            "type": "string"
+          },
+          "field": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "store_id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "store_id",
+          "path",
+          "field",
+          "version",
+          "fingerprint",
+          "delivered_as"
         ],
         "type": "object"
       },
@@ -7859,6 +8165,39 @@
         ],
         "type": "object"
       },
+      "Settings": {
+        "additionalProperties": false,
+        "properties": {
+          "aws": {
+            "$ref": "#/components/schemas/AWSSettings"
+          },
+          "doppler": {
+            "$ref": "#/components/schemas/DopplerSettings"
+          },
+          "vault": {
+            "$ref": "#/components/schemas/VaultSettings"
+          }
+        },
+        "type": "object"
+      },
+      "SettingsBody": {
+        "additionalProperties": false,
+        "properties": {
+          "aws": {
+            "$ref": "#/components/schemas/AWSSettings",
+            "description": "For aws_secrets_manager: the region, and a role to assume on top of the agent's identity"
+          },
+          "doppler": {
+            "$ref": "#/components/schemas/DopplerSettings",
+            "description": "For doppler: the Secret in the agent's namespace that holds the service token"
+          },
+          "vault": {
+            "$ref": "#/components/schemas/VaultSettings",
+            "description": "For vault: the address, KV v2 mount, and Kubernetes auth role"
+          }
+        },
+        "type": "object"
+      },
       "SignUpInputBody": {
         "additionalProperties": false,
         "properties": {
@@ -7898,12 +8237,16 @@
           "scope": {
             "$ref": "#/components/schemas/VariableScope"
           },
+          "secret": {
+            "$ref": "#/components/schemas/SecretReference"
+          },
           "value": {
             "type": "string"
           }
         },
         "required": [
           "value",
+          "secret",
           "scope"
         ],
         "type": "object"
@@ -8670,6 +9013,39 @@
         },
         "type": "object"
       },
+      "UpdateSecretStoreRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/UpdateSecretStoreRequestBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "display_name": {
+            "description": "New display name",
+            "minLength": 1,
+            "type": "string"
+          },
+          "environment_ids": {
+            "description": "The Environments that may read the store, replacing the list; empty allows every Environment",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/SettingsBody",
+            "description": "New settings for the store's kind"
+          },
+          "slug": {
+            "description": "New slug",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "UpdateTargetRequestBody": {
         "additionalProperties": false,
         "properties": {
@@ -8736,6 +9112,14 @@
             "readOnly": true,
             "type": "string"
           },
+          "deliver_as": {
+            "description": "How a secret variable reaches the chart",
+            "enum": [
+              "secret",
+              "value"
+            ],
+            "type": "string"
+          },
           "description": {
             "description": "New description; empty clears it",
             "type": "string"
@@ -8787,14 +9171,15 @@
             "$ref": "#/components/schemas/ScopeBody",
             "description": "The Deployments the value applies to; every Deployment when omitted"
           },
+          "secret": {
+            "$ref": "#/components/schemas/SecretBody",
+            "description": "A secret variable's value: where the secret is kept, never the secret itself"
+          },
           "value": {
-            "description": "The text, which may bind other variables with #{Name}",
+            "description": "A text variable's value, which may bind other variables with #{Name}",
             "type": "string"
           }
         },
-        "required": [
-          "value"
-        ],
         "type": "object"
       },
       "VariableBody": {
@@ -8807,14 +9192,23 @@
             "readOnly": true,
             "type": "string"
           },
+          "deliver_as": {
+            "description": "How a secret variable reaches the chart: in a Kubernetes Secret (the default), or written into the chart's values at values_path, where Helm's release history keeps it",
+            "enum": [
+              "secret",
+              "value"
+            ],
+            "type": "string"
+          },
           "description": {
             "description": "What the variable is for",
             "type": "string"
           },
           "kind": {
-            "description": "What its values hold; text when omitted",
+            "description": "What its values hold: text, or references to secrets in a Secret Store; text when omitted",
             "enum": [
-              "text"
+              "text",
+              "secret"
             ],
             "type": "string"
           },
@@ -8963,6 +9357,9 @@
           "scope": {
             "$ref": "#/components/schemas/VariableScope"
           },
+          "secret": {
+            "$ref": "#/components/schemas/SecretReference"
+          },
           "updated_at": {
             "format": "date-time",
             "type": "string"
@@ -8974,9 +9371,36 @@
         "required": [
           "id",
           "value",
+          "secret",
           "scope",
           "created_at",
           "updated_at"
+        ],
+        "type": "object"
+      },
+      "VaultSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "auth_mount": {
+            "type": "string"
+          },
+          "auth_role": {
+            "type": "string"
+          },
+          "mount": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "address",
+          "mount",
+          "auth_role"
         ],
         "type": "object"
       },
@@ -15908,6 +16332,158 @@
         ]
       }
     },
+    "/v1/secret-stores/{secret_store_id}": {
+      "get": {
+        "operationId": "get-secret-store",
+        "parameters": [
+          {
+            "description": "The Secret Store's ID",
+            "in": "path",
+            "name": "secret_store_id",
+            "required": true,
+            "schema": {
+              "description": "The Secret Store's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseSecretStoreSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get a Secret Store",
+        "tags": [
+          "secret-stores"
+        ]
+      },
+      "patch": {
+        "operationId": "update-secret-store",
+        "parameters": [
+          {
+            "description": "The Secret Store's ID",
+            "in": "path",
+            "name": "secret_store_id",
+            "required": true,
+            "schema": {
+              "description": "The Secret Store's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSecretStoreRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseSecretStoreSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Change a Secret Store",
+        "tags": [
+          "secret-stores"
+        ]
+      }
+    },
+    "/v1/secret-stores/{secret_store_id}/archive": {
+      "post": {
+        "operationId": "archive-secret-store",
+        "parameters": [
+          {
+            "description": "The Secret Store's ID",
+            "in": "path",
+            "name": "secret_store_id",
+            "required": true,
+            "schema": {
+              "description": "The Secret Store's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseSecretStoreSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Archive a Secret Store no variable refers to",
+        "tags": [
+          "secret-stores"
+        ]
+      }
+    },
     "/v1/service-accounts": {
       "get": {
         "operationId": "list-service-accounts",
@@ -19466,6 +20042,120 @@
         "summary": "Read where each of a Workspace's Applications runs",
         "tags": [
           "applications"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/secret-stores": {
+      "get": {
+        "operationId": "list-secret-stores",
+        "parameters": [
+          {
+            "description": "The Workspace to list Secret Stores in",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "description": "The Workspace to list Secret Stores in",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Include archived Secret Stores",
+            "explode": false,
+            "in": "query",
+            "name": "include_archived",
+            "schema": {
+              "description": "Include archived Secret Stores",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseListSecretStoreSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List a Workspace's Secret Stores",
+        "tags": [
+          "secret-stores"
+        ]
+      },
+      "post": {
+        "operationId": "create-secret-store",
+        "parameters": [
+          {
+            "description": "The Workspace the Secret Store belongs to",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "description": "The Workspace the Secret Store belongs to",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSecretStoreRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseSecretStoreSnapshot"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a Secret Store in a Workspace",
+        "tags": [
+          "secret-stores"
         ]
       }
     },

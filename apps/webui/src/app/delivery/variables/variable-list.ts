@@ -13,6 +13,7 @@ import { ApiError } from '../../api/api-client';
 import {
   Channel,
   Environment,
+  SecretStore,
   Target,
   Variable,
   VariableScope,
@@ -77,6 +78,7 @@ export class VariableList {
   protected readonly variables = signal<Variable[]>([]);
   protected readonly environments = signal<Environment[]>([]);
   protected readonly targets = signal<Target[]>([]);
+  protected readonly stores = signal<SecretStore[]>([]);
   protected readonly status = new RequestStatus();
 
   /**
@@ -121,7 +123,7 @@ export class VariableList {
         this.api.list(this.owner()),
         this.api.scopeOptions(this.workspaceId()).catch((e: unknown) => {
           if (e instanceof ApiError && e.status === 403) {
-            return { environments: [], targets: [] };
+            return { environments: [], targets: [], stores: [] };
           }
           throw e;
         }),
@@ -129,6 +131,7 @@ export class VariableList {
       this.variables.set(variables);
       this.environments.set(options.environments);
       this.targets.set(options.targets);
+      this.stores.set(options.stores);
     }, 'loading');
     try {
       const granted = await this.permissionsApi.granted(this.projectId(), ['variable.manage']);
@@ -164,14 +167,26 @@ export class VariableList {
     return `${kind}${ids.length > 1 ? 's' : ''} ${labels.join(', ')}`;
   }
 
+  /** Where a secret value is kept, in words: the store, then the path with its field and version. */
+  protected reference(value: VariableValue): string {
+    const secret = value.secret;
+    if (!secret) {
+      return '';
+    }
+    const store = this.stores().find((s) => s.id === secret.store_id)?.display_name ?? 'A store';
+    const field = secret.field ? `, field ${secret.field}` : '';
+    const version = secret.version ? `, version ${secret.version}` : ', latest version';
+    return `${store}: ${secret.path}${field}${version}`;
+  }
+
   /** A refusal's message, with the IDs it names replaced by what people call them. */
   private explain(error: unknown): string {
     if (!(error instanceof ApiError)) {
       return 'Something went wrong. Try again.';
     }
-    const known = [...this.environments(), ...this.targets(), ...this.channels()];
+    const known = [...this.environments(), ...this.targets(), ...this.channels(), ...this.stores()];
     return error.message.replace(
-      /\b(?:env|tgt|chn)_[0-9A-Z]{26}\b/g,
+      /\b(?:env|tgt|chn|sst)_[0-9A-Z]{26}\b/g,
       (id) => known.find((k) => k.id === id)?.display_name ?? id,
     );
   }
@@ -198,7 +213,16 @@ export class VariableList {
 
   // Adding a variable.
   protected readonly adding = signal(false);
-  private readonly newModel = signal({ name: '', values_path: '', description: '', value: '' });
+  private readonly newModel = signal({
+    name: '',
+    kind: 'text' as Variable['kind'],
+    deliver_as: 'secret' as 'secret' | 'value',
+    values_path: '',
+    description: '',
+    value: '',
+  });
+  /** Whether the variable being added holds secrets, which changes what the form asks. */
+  protected readonly addingSecret = computed(() => this.newModel().kind === 'secret');
   protected readonly newForm = form(this.newModel, (path) => {
     required(path.name, { message: 'Name the variable, such as Database.Host.' });
     pattern(path.name, /^[A-Za-z0-9._-]*$/, {
@@ -211,6 +235,8 @@ export class VariableList {
     this.closeForms();
     this.newForm().reset({
       name: overrides?.name ?? '',
+      kind: overrides?.kind ?? 'text',
+      deliver_as: overrides?.deliver_as ?? 'secret',
       values_path: overrides?.values_path ?? '',
       description: '',
       value: '',
@@ -225,9 +251,14 @@ export class VariableList {
       const created = await this.change(() =>
         this.api.create(this.owner(), {
           name: fields.name.trim(),
+          kind: fields.kind,
+          deliver_as: fields.kind === 'secret' ? fields.deliver_as : undefined,
           values_path: fields.values_path.trim() || undefined,
           description: fields.description.trim() || undefined,
-          values: fields.value ? [{ value: fields.value, scope: emptyScope() }] : [],
+          values:
+            fields.kind === 'text' && fields.value
+              ? [{ value: fields.value, scope: emptyScope() }]
+              : [],
         }),
       );
       if (created) {
@@ -241,11 +272,13 @@ export class VariableList {
   protected readonly editing = signal<string | null>(null);
   protected readonly editPath = signal('');
   protected readonly editDescription = signal('');
+  protected readonly editDeliverAs = signal<'secret' | 'value'>('secret');
 
   protected startEditing(variable: Variable): void {
     this.closeForms();
     this.editPath.set(variable.values_path ?? '');
     this.editDescription.set(variable.description ?? '');
+    this.editDeliverAs.set(variable.deliver_as ?? 'secret');
     this.editing.set(variable.id);
   }
 
@@ -255,6 +288,7 @@ export class VariableList {
       this.api.update(variable.id, {
         values_path: this.editPath().trim(),
         description: this.editDescription().trim(),
+        deliver_as: variable.kind === 'secret' ? this.editDeliverAs() : undefined,
       }),
     );
     if (saved) {
@@ -265,11 +299,19 @@ export class VariableList {
   // Adding or changing one value.
   protected readonly valueEditor = signal<ValueEditor | null>(null);
   protected readonly valueText = signal('');
+  /** Where a secret variable's value is kept, as the form holds it. */
+  protected readonly valueSecret = signal({ store_id: '', path: '', field: '', version: '' });
   protected readonly valueScope = signal<VariableScope>(emptyScope());
 
   protected startValue(variable: Variable, value?: VariableValue): void {
     this.closeForms();
     this.valueText.set(value?.value ?? '');
+    this.valueSecret.set({
+      store_id: value?.secret?.store_id ?? this.stores()[0]?.id ?? '',
+      path: value?.secret?.path ?? '',
+      field: value?.secret?.field ?? '',
+      version: value?.secret?.version ?? '',
+    });
     this.valueScope.set(
       value
         ? {
@@ -300,13 +342,30 @@ export class VariableList {
     }));
   }
 
-  protected async saveValue(event: Event): Promise<void> {
+  protected setSecret(field: 'store_id' | 'path' | 'field' | 'version', event: Event): void {
+    const value = (event.target as HTMLInputElement | HTMLSelectElement).value;
+    this.valueSecret.update((secret) => ({ ...secret, [field]: value }));
+  }
+
+  protected async saveValue(event: Event, variable: Variable): Promise<void> {
     event.preventDefault();
     const editor = this.valueEditor();
     if (!editor) {
       return;
     }
-    const fields = { value: this.valueText(), scope: this.valueScope() };
+    const secret = this.valueSecret();
+    const fields =
+      variable.kind === 'secret'
+        ? {
+            secret: {
+              store_id: secret.store_id,
+              path: secret.path.trim(),
+              field: secret.field.trim() || undefined,
+              version: secret.version.trim() || undefined,
+            },
+            scope: this.valueScope(),
+          }
+        : { value: this.valueText(), scope: this.valueScope() };
     const saved = await this.change(() =>
       editor.valueId
         ? this.api.updateValue(editor.variableId, editor.valueId, fields)

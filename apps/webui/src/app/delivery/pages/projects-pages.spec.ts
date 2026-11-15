@@ -85,7 +85,7 @@ describe('project pages', () => {
           provide: VariablesApi,
           useValue: {
             list: () => Promise.resolve([]),
-            scopeOptions: () => Promise.resolve({ environments: [], targets: [] }),
+            scopeOptions: () => Promise.resolve({ environments: [], targets: [], stores: [] }),
           },
         },
         { provide: PermissionsApi, useValue: { granted: () => Promise.resolve(new Set()) } },

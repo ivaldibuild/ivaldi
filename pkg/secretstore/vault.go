@@ -28,7 +28,9 @@ type VaultConfig struct {
 	AuthMount string
 	// Namespace is a Vault Enterprise namespace.
 	Namespace string
-	// JWT returns the service-account token to log in with.
+	// JWT returns the service-account token to log in with. Address
+	// receives it, so both must be the operator's choice: a token made for
+	// Vault's audience, and an address they trust with it.
 	JWT    func() (string, error)
 	Client *http.Client
 }
@@ -41,7 +43,11 @@ func NewVault(cfg VaultConfig) Store {
 		cfg.AuthMount = "kubernetes"
 	}
 	if cfg.Client == nil {
-		cfg.Client = http.DefaultClient
+		// A redirect is not followed: a login would carry the service-account
+		// token to wherever the reply pointed.
+		cfg.Client = &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		}}
 	}
 	cfg.Address = strings.TrimRight(cfg.Address, "/")
 	return &vaultStore{cfg: cfg}

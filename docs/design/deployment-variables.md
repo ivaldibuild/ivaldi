@@ -29,7 +29,7 @@ The main difference is secrets. Octopus stores sensitive values itself, encrypte
 | `description` | Optional. |
 | `kind` | `text` or `secret`, never changed. All values of a variable have its kind. |
 | `values_path` | Optional: where the chart receives the variable, such as `database.host`: dot-separated keys, never under `global.ivaldi`, which holds Ivaldi's generated values. A variable without one is only used through bindings. |
-| `deliver_as` | For `secret` variables: `secret` (the default) or `value` ([Kubernetes agent](k8s-agent.md#variables-and-secrets)). |
+| `deliver_as` | For `secret` variables: `secret` (the default) or `value`, which needs a `values_path` to be written at ([Kubernetes agent](k8s-agent.md#variables-and-secrets)). |
 
 Each **value** has its content and its scope:
 
@@ -147,7 +147,9 @@ Overlays and text values may contain `#{…}` bindings, which are resolved befor
 
 **A preview shows the result before deploying.** `GET /v1/releases/{release_id}/variables` returns the Release's current revision, and with `?target_id=…` also, for each variable, the winning value and the matching values it beat, with secrets shown as references. A variable none of whose values match the Target has no winner, and the Target does not get it. The deploy sheet shows it, and it answers "why did production get this value" without reading the precedence rules.
 
-**Checks before a Deployment is accepted.** A Deployment request is refused when a winning `secret` value's Secret Store is not allowed for the Target's Environment, or a binding names a variable that is not defined, or variables bind each other in a cycle, in the snapshot revision it would use. All can be known before the agent runs, so the person deploying hears it straight away: the deploy sheet's `variables_defined` check.
+**A store is checked twice.** Saving a secret value checks its Secret Store is active, in the variable's Workspace, and allowed for every Environment the value names, directly or through a Target. A value that names no Environment is checked when it is deployed.
+
+**Checks before a Deployment is accepted.** A Deployment request is refused when a winning `secret` value's Secret Store is archived, is not allowed for the Target's Environment, or is of a kind the Cluster's agent did not report it can read (the `secret_stores_allowed` check), or a binding names a variable that is not defined, or variables bind each other in a cycle, in the snapshot revision it would use. All can be known before the agent runs, so the person deploying hears it straight away: the deploy sheet's `variables_defined` check.
 
 ## Permissions and audit
 

@@ -8,7 +8,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/apiclient"
-	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/secrets"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/state"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/targets"
 )
@@ -170,10 +169,10 @@ func (a *agent) refresh(ctx context.Context, tracker targets.Tracker) error {
 
 // secretStoreKinds lists the secret stores the agent can read.
 func (a *agent) secretStoreKinds() []string {
-	if a.secrets == nil {
+	if a.secrets == nil || a.storeKinds == nil {
 		return []string{}
 	}
-	return secrets.Kinds
+	return a.storeKinds
 }
 
 // handle logs a failed control-plane call, and gives up the credential when

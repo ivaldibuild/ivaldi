@@ -49,6 +49,7 @@ const checkLabels: Record<string, string> = {
   environment_in_lifecycle: 'The Environment is in the Channel’s Lifecycle',
   phase_open: 'Its Lifecycle phase is open',
   variables_defined: 'Every variable a value binds has a value here',
+  secret_stores_allowed: 'Its secrets are in stores this Environment and its agent can read',
 };
 
 /** A check's name in words, or its machine name for one the web app doesn't know yet. */

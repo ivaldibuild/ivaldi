@@ -62,6 +62,40 @@
           }
         </div>
         <div hlmField>
+          <label hlmFieldLabel for="variable-kind">Holds</label>
+          <select
+            id="variable-kind"
+            class="border-input bg-background text-foreground h-9 border px-2"
+            aria-describedby="variable-kind-hint"
+            [formField]="newForm.kind"
+          >
+            <option value="text">Text</option>
+            <option value="secret">A secret, kept in a Secret Store</option>
+          </select>
+          <p id="variable-kind-hint" class="text-muted-foreground text-[13px]">
+            Ivaldi never stores a secret: its values say where it is kept, and the Cluster's agent
+            reads it when it deploys. It can't be changed later.
+          </p>
+        </div>
+        @if (addingSecret()) {
+          <div hlmField>
+            <label hlmFieldLabel for="variable-deliver">Reaches the chart as</label>
+            <select
+              id="variable-deliver"
+              class="border-input bg-background text-foreground h-9 border px-2"
+              aria-describedby="variable-deliver-hint"
+              [formField]="newForm.deliver_as"
+            >
+              <option value="secret">A key in a Kubernetes Secret</option>
+              <option value="value">A value in the chart's values</option>
+            </select>
+            <p id="variable-deliver-hint" class="text-muted-foreground text-[13px]">
+              As a value, Helm keeps the secret in its release history in the namespace. Choose it
+              only for a chart that can't read a Secret; it needs a values path.
+            </p>
+          </div>
+        }
+        <div hlmField>
           <label hlmFieldLabel for="variable-path">Values path (optional)</label>
           <input
             hlmInput
@@ -75,15 +109,17 @@
             bindings.
           </p>
         </div>
-        <div hlmField class="md:col-span-2">
-          <label hlmFieldLabel for="variable-value">Value for every Deployment (optional)</label>
-          <textarea
-            id="variable-value"
-            rows="2"
-            class="border-input bg-background text-foreground border px-3 py-2 font-mono text-[13px]"
-            [formField]="newForm.value"
-          ></textarea>
-        </div>
+        @if (!addingSecret()) {
+          <div hlmField class="md:col-span-2">
+            <label hlmFieldLabel for="variable-value">Value for every Deployment (optional)</label>
+            <textarea
+              id="variable-value"
+              rows="2"
+              class="border-input bg-background text-foreground border px-3 py-2 font-mono text-[13px]"
+              [formField]="newForm.value"
+            ></textarea>
+          </div>
+        }
         <div hlmField class="md:col-span-2">
           <label hlmFieldLabel for="variable-description">Description (optional)</label>
           <input hlmInput id="variable-description" [formField]="newForm.description" />
@@ -107,8 +143,14 @@
           <li class="border-border flex flex-col gap-4 border p-5">
             <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
               <div class="flex flex-col gap-1">
-                <h3 class="text-heading font-semibold">
+                <h3 class="text-heading flex flex-wrap items-center gap-2 font-semibold">
                   <code>{{ variable.name }}</code>
+                  @if (variable.kind === 'secret') {
+                    <span hlmBadge variant="outline">
+                      Secret, as a
+                      {{ variable.deliver_as === 'value' ? 'value' : 'Kubernetes Secret' }}
+                    </span>
+                  }
                 </h3>
                 <p class="text-muted-foreground text-sm">
                   @if (variable.values_path) {
@@ -202,6 +244,23 @@
                     (input)="editDescription.set($any($event.target).value)"
                   />
                 </div>
+                @if (variable.kind === 'secret') {
+                  <div hlmField class="md:col-span-2">
+                    <label hlmFieldLabel for="edit-variable-deliver">Reaches the chart as</label>
+                    <select
+                      id="edit-variable-deliver"
+                      class="border-input bg-background text-foreground h-9 border px-2"
+                      (change)="editDeliverAs.set($any($event.target).value)"
+                    >
+                      <option value="secret" [selected]="editDeliverAs() === 'secret'">
+                        A key in a Kubernetes Secret
+                      </option>
+                      <option value="value" [selected]="editDeliverAs() === 'value'">
+                        A value in the chart's values, which Helm's release history keeps
+                      </option>
+                    </select>
+                  </div>
+                }
                 @if (error(); as message) {
                   <p class="text-destructive-text text-sm md:col-span-2" role="alert">
                     {{ message }}
@@ -244,7 +303,11 @@
                     @for (value of variable.values; track value.id) {
                       <tr>
                         <td class="border-border border-b px-4 py-3">
-                          <code class="break-all whitespace-pre-wrap">{{ value.value }}</code>
+                          @if (value.secret) {
+                            {{ reference(value) }}
+                          } @else {
+                            <code class="break-all whitespace-pre-wrap">{{ value.value }}</code>
+                          }
                         </td>
                         <td class="border-border border-b px-4 py-3">{{ appliesTo(value) }}</td>
                         @if (editable()) {
@@ -329,23 +392,92 @@
                 [attr.aria-label]="
                   (editor.valueId ? 'Change a value of ' : 'Add a value to ') + variable.name
                 "
-                (submit)="saveValue($event)"
+                (submit)="saveValue($event, variable)"
               >
-                <div hlmField>
-                  <label hlmFieldLabel for="variable-value-text">Value</label>
-                  <textarea
-                    id="variable-value-text"
-                    rows="2"
-                    class="border-input bg-background text-foreground border px-3 py-2 font-mono text-[13px]"
-                    aria-describedby="variable-value-hint"
-                    [value]="valueText()"
-                    (input)="valueText.set($any($event.target).value)"
-                  ></textarea>
-                  <p id="variable-value-hint" class="text-muted-foreground text-[13px]">
-                    Bind another variable with #&#123;Name&#125;, such as
-                    postgres://#&#123;Database.Host&#125;:5432.
-                  </p>
-                </div>
+                @if (variable.kind === 'secret') {
+                  @if (stores().length === 0) {
+                    <p class="text-foreground text-sm" role="note">
+                      The Workspace has no Secret Store to keep it in.
+                      <a routerLink="/secret-stores">Add a Secret Store</a> first.
+                    </p>
+                  }
+                  <div class="grid gap-4 md:grid-cols-2">
+                    <div hlmField>
+                      <label hlmFieldLabel for="variable-secret-store">Secret Store</label>
+                      <select
+                        id="variable-secret-store"
+                        class="border-input bg-background text-foreground h-9 border px-2"
+                        (change)="setSecret('store_id', $event)"
+                      >
+                        @for (store of stores(); track store.id) {
+                          <option
+                            [value]="store.id"
+                            [selected]="valueSecret().store_id === store.id"
+                          >
+                            {{ store.display_name }}
+                          </option>
+                        }
+                      </select>
+                    </div>
+                    <div hlmField>
+                      <label hlmFieldLabel for="variable-secret-path">Path in the store</label>
+                      <input
+                        hlmInput
+                        id="variable-secret-path"
+                        placeholder="payments/#&#123;Ivaldi.Environment.Slug&#125;/database"
+                        aria-describedby="variable-secret-path-hint"
+                        [value]="valueSecret().path"
+                        (input)="setSecret('path', $event)"
+                      />
+                      <p id="variable-secret-path-hint" class="text-muted-foreground text-[13px]">
+                        A Secret's name, an AWS secret's name or ARN, or a Vault path. It can bind
+                        text variables with #&#123;Name&#125;.
+                      </p>
+                    </div>
+                    <div hlmField>
+                      <label hlmFieldLabel for="variable-secret-field">Field (optional)</label>
+                      <input
+                        hlmInput
+                        id="variable-secret-field"
+                        placeholder="password"
+                        [value]="valueSecret().field"
+                        (input)="setSecret('field', $event)"
+                      />
+                    </div>
+                    <div hlmField>
+                      <label hlmFieldLabel for="variable-secret-version">Version (optional)</label>
+                      <input
+                        hlmInput
+                        id="variable-secret-version"
+                        aria-describedby="variable-secret-version-hint"
+                        [value]="valueSecret().version"
+                        (input)="setSecret('version', $event)"
+                      />
+                      <p
+                        id="variable-secret-version-hint"
+                        class="text-muted-foreground text-[13px]"
+                      >
+                        Leave empty to deploy the latest, so a redeploy picks up a rotated secret.
+                      </p>
+                    </div>
+                  </div>
+                } @else {
+                  <div hlmField>
+                    <label hlmFieldLabel for="variable-value-text">Value</label>
+                    <textarea
+                      id="variable-value-text"
+                      rows="2"
+                      class="border-input bg-background text-foreground border px-3 py-2 font-mono text-[13px]"
+                      aria-describedby="variable-value-hint"
+                      [value]="valueText()"
+                      (input)="valueText.set($any($event.target).value)"
+                    ></textarea>
+                    <p id="variable-value-hint" class="text-muted-foreground text-[13px]">
+                      Bind another variable with #&#123;Name&#125;, such as
+                      postgres://#&#123;Database.Host&#125;:5432.
+                    </p>
+                  </div>
+                }
                 <p class="text-muted-foreground text-sm">
                   Tick what the value applies to, or nothing for every Deployment. Within a group
                   any ticked one matches; across groups all must. When several values match, a

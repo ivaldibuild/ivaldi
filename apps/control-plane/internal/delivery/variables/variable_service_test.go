@@ -266,3 +266,47 @@ func TestListVariables(t *testing.T) {
 		"an application's own, then its project's")
 	assert.Equal(t, []string{w.project, w.project, w.project}, w.authz.askedOn(delivery.PermissionVariableRead))
 }
+
+// A secret value may use only an active Secret Store in the variable's
+// Workspace that the Environments it names may read.
+func TestSecretValuesAreCheckedAgainstTheirStore(t *testing.T) {
+	const here, stagingOnly, elsewhere, archived = "sst_01BX5ZZKBKACTAV9WEVGEMMVR1", "sst_01BX5ZZKBKACTAV9WEVGEMMVR2", "sst_01BX5ZZKBKACTAV9WEVGEMMVR3", "sst_01BX5ZZKBKACTAV9WEVGEMMVR4"
+	w := newWorld(t)
+	ws := w.projects[w.project].WorkspaceID()
+	w.stores = map[string]delivery.SecretStoreRef{
+		here:        {ID: here, WorkspaceID: ws, DisplayName: "In-cluster"},
+		stagingOnly: {ID: stagingOnly, WorkspaceID: ws, DisplayName: "Staging vault", EnvironmentIDs: []string{w.staging.ID()}},
+		elsewhere:   {ID: elsewhere, WorkspaceID: w.far.WorkspaceID(), DisplayName: "Elsewhere"},
+		archived:    {ID: archived, WorkspaceID: ws, DisplayName: "Old", Archived: true},
+	}
+	secret := func(store string, scope delivery.VariableScope) error {
+		_, err := w.svc.CreateVariable(ctx, actor, delivery.CreateVariableInput{
+			OrganizationID: org, Owner: w.inBilling(), Name: "Database.Password", Kind: delivery.VariableKindSecret,
+			Values: []delivery.VariableValueProps{{Secret: &delivery.SecretReference{StoreID: store, Path: "db"}, Scope: scope}},
+		})
+		w.variables = map[string]delivery.VariableSnapshot{}
+		return err
+	}
+
+	require.NoError(t, secret(here, envScope(w.prod.ID())))
+	require.NoError(t, secret(stagingOnly, envScope(w.staging.ID())))
+	require.NoError(t, secret(stagingOnly, delivery.VariableScope{}), "a value naming no environment is checked when it is deployed")
+
+	tests := []struct {
+		name  string
+		store string
+		scope delivery.VariableScope
+		is    error
+	}{
+		{"a store the environment may not read", stagingOnly, envScope(w.prod.ID()), delivery.ErrInvalid},
+		{"through a target in that environment", stagingOnly, delivery.VariableScope{TargetIDs: []string{w.prodEU.ID()}}, delivery.ErrInvalid},
+		{"a store in another workspace", elsewhere, delivery.VariableScope{}, delivery.ErrWorkspaceMismatch},
+		{"an archived store", archived, delivery.VariableScope{}, delivery.ErrArchived},
+		{"a store that does not exist", "sst_01BX5ZZKBKACTAV9WEVGEMMVR9", delivery.VariableScope{}, delivery.ErrInvalid},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.ErrorIs(t, secret(tt.store, tt.scope), tt.is)
+		})
+	}
+}

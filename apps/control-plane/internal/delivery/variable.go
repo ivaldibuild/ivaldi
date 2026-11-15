@@ -48,10 +48,29 @@ type Variable struct {
 	archivedAt     *time.Time
 }
 
+// SecretStorePrefix is the ID prefix of the credentials capability's Secret
+// Stores, which a secret value names without a foreign key.
+const SecretStorePrefix = "sst"
+
+// SecretReference is where a secret value is kept: never the value itself,
+// which only the runtime agent reads (ADR 0004).
+type SecretReference struct {
+	StoreID string `json:"store_id"`
+	// Path is a Kubernetes Secret's name, an AWS secret's name or ARN, a path
+	// in a Vault mount, or a Doppler secret's name. It may bind text and
+	// system variables, so one value can serve every Environment.
+	Path string `json:"path"`
+	// Field is one key of a map or JSON secret; empty for the whole value.
+	Field string `json:"field"`
+	// Version pins the store's version; empty means the latest when deployed.
+	Version string `json:"version"`
+}
+
 // VariableValue is one value of a Variable and the Deployments it applies to.
 type VariableValue struct {
 	aggregate.Entity
 	text      string
+	secret    *SecretReference
 	scope     VariableScope
 	createdAt time.Time
 	updatedAt time.Time
@@ -89,10 +108,12 @@ type VariableSnapshot struct {
 type VariableValueSnapshot struct {
 	ID string `json:"id"`
 	// Value is a text variable's value, which may contain bindings.
-	Value     string        `json:"value"`
-	Scope     VariableScope `json:"scope"`
-	CreatedAt time.Time     `json:"created_at"`
-	UpdatedAt time.Time     `json:"updated_at"`
+	Value string `json:"value"`
+	// Secret is a secret variable's value: where the secret is kept.
+	Secret    *SecretReference `json:"secret"`
+	Scope     VariableScope    `json:"scope"`
+	CreatedAt time.Time        `json:"created_at"`
+	UpdatedAt time.Time        `json:"updated_at"`
 }
 
 // NewVariableProps describes a Variable. A new one leaves the timestamps
@@ -118,6 +139,7 @@ type NewVariableProps struct {
 type NewVariableValueProps struct {
 	ID        *string
 	Value     string
+	Secret    *SecretReference
 	Scope     VariableScope
 	CreatedAt *time.Time
 	UpdatedAt *time.Time
@@ -125,8 +147,10 @@ type NewVariableValueProps struct {
 
 // VariableValueProps is the content of a value added to or changed in a Variable.
 type VariableValueProps struct {
-	Value string
-	Scope VariableScope
+	// Value is a text variable's value; Secret a secret variable's.
+	Value  string
+	Secret *SecretReference
+	Scope  VariableScope
 }
 
 // UpdateVariableProps changes the fields that are set. An empty Description
@@ -135,6 +159,8 @@ type VariableValueProps struct {
 type UpdateVariableProps struct {
 	Description *string
 	ValuesPath  *string
+	// DeliverAs changes how a secret variable reaches the chart.
+	DeliverAs *VariableDeliverAs
 }
 
 // NewVariable returns a Variable, with new IDs for it and its values unless
@@ -159,15 +185,15 @@ func NewVariable(props NewVariableProps, variableID *string) (*Variable, error) 
 	if err := validateVariableName(props.Name); err != nil {
 		return nil, err
 	}
-	// Secret values, and how they are delivered, come with Secret Stores.
-	if props.Kind != VariableKindText {
-		return nil, NewErrInvalidInput(fmt.Sprintf("variable kind %q must be text", props.Kind))
-	}
-	if props.DeliverAs != nil {
-		return nil, NewErrInvalidInput("only a secret variable says how it is delivered")
+	if props.Kind != VariableKindText && props.Kind != VariableKindSecret {
+		return nil, NewErrInvalidInput(fmt.Sprintf("variable kind %q must be text or secret", props.Kind))
 	}
 	valuesPath := optional.OfPtr(props.ValuesPath)
 	if err := validateValuesPath(valuesPath); err != nil {
+		return nil, err
+	}
+	deliverAs, err := normalizeDeliverAs(props.Kind, optional.OfPtr(props.DeliverAs), valuesPath)
+	if err != nil {
 		return nil, err
 	}
 	if len(props.Values) > maxVariableValues {
@@ -184,6 +210,7 @@ func NewVariable(props NewVariableProps, variableID *string) (*Variable, error) 
 		description:    optional.OfPtr(props.Description),
 		kind:           props.Kind,
 		valuesPath:     valuesPath,
+		deliverAs:      deliverAs,
 		createdAt:      timeOr(props.CreatedAt, now),
 		updatedAt:      timeOr(props.UpdatedAt, now),
 		archivedAt:     clock.CopyTime(props.ArchivedAt),
@@ -193,13 +220,14 @@ func NewVariable(props NewVariableProps, variableID *string) (*Variable, error) 
 		if err != nil {
 			return nil, err
 		}
-		content, err := v.normalizeValue(VariableValueProps{Value: p.Value, Scope: p.Scope})
+		content, err := v.normalizeValue(VariableValueProps{Value: p.Value, Secret: p.Secret, Scope: p.Scope})
 		if err != nil {
 			return nil, err
 		}
 		value := &VariableValue{
 			Entity:    entity,
 			text:      content.Value,
+			secret:    content.Secret,
 			scope:     content.Scope,
 			createdAt: timeOr(p.CreatedAt, now),
 			updatedAt: timeOr(p.UpdatedAt, now),
@@ -237,6 +265,64 @@ func validateValuesPath(path *string) error {
 	return nil
 }
 
+// normalizeDeliverAs returns how a variable of the kind reaches the chart: a
+// secret as a Kubernetes Secret unless it asks to be written into the
+// chart's values, which needs a path to write it at; a text variable has no
+// choice to make.
+func normalizeDeliverAs(kind VariableKind, deliverAs *VariableDeliverAs, valuesPath *string) (*VariableDeliverAs, error) {
+	if kind == VariableKindText {
+		if deliverAs != nil {
+			return nil, NewErrInvalidInput("only a secret variable says how it is delivered")
+		}
+		return nil, nil
+	}
+	if deliverAs == nil {
+		return new(VariableDeliverAsSecret), nil
+	}
+	switch *deliverAs {
+	case VariableDeliverAsSecret:
+	case VariableDeliverAsValue:
+		if valuesPath == nil {
+			return nil, NewErrInvalidInput("a secret delivered as a value needs a values path to be written to")
+		}
+	default:
+		return nil, NewErrInvalidInput(fmt.Sprintf("deliver_as %q must be secret or value", *deliverAs))
+	}
+	return deliverAs, nil
+}
+
+// normalizeSecret checks a secret variable's value: a reference, with no
+// text beside it.
+func normalizeSecret(p VariableValueProps) (*SecretReference, error) {
+	if p.Value != "" {
+		return nil, NewErrInvalidInput("a secret variable's value is a reference to a secret store, never the secret itself")
+	}
+	if p.Secret == nil {
+		return nil, NewErrInvalidInput("a secret variable's value needs a secret store and a path")
+	}
+	ref := *p.Secret
+	switch {
+	case !id.Valid(SecretStorePrefix, ref.StoreID):
+		return nil, NewErrInvalidInput(fmt.Sprintf("%q is not a secret store ID", ref.StoreID))
+	case ref.Path == "" || utf8.RuneCountInString(ref.Path) > maxSecretPathLength:
+		return nil, NewErrInvalidInput(fmt.Sprintf("a secret's path must be 1-%d characters", maxSecretPathLength))
+	case utf8.RuneCountInString(ref.Field) > maxSecretFieldLength || utf8.RuneCountInString(ref.Version) > maxSecretFieldLength:
+		return nil, NewErrInvalidInput(fmt.Sprintf("a secret's field and version can have at most %d characters", maxSecretFieldLength))
+	}
+	if _, err := BindingNames(ref.Path); err != nil {
+		return nil, err
+	}
+	return &ref, nil
+}
+
+func copySecret(ref *SecretReference) *SecretReference {
+	if ref == nil {
+		return nil
+	}
+	c := *ref
+	return &c
+}
+
 // ValuesPathsOverlap reports whether writing one path would overwrite the
 // other: they are equal, or one is a prefix of the other at a key boundary.
 func ValuesPathsOverlap(a, b string) bool {
@@ -246,11 +332,23 @@ func ValuesPathsOverlap(a, b string) bool {
 // normalizeValue checks a value and returns it with its scope sorted and
 // without duplicates, so equal values store equal rows.
 func (v *Variable) normalizeValue(p VariableValueProps) (VariableValueProps, error) {
-	if utf8.RuneCountInString(p.Value) > maxVariableValueLength {
-		return VariableValueProps{}, NewErrInvalidInput(fmt.Sprintf("a value can have at most %d characters", maxVariableValueLength))
-	}
-	if _, err := BindingNames(p.Value); err != nil {
-		return VariableValueProps{}, err
+	var secret *SecretReference
+	if v.kind == VariableKindSecret {
+		ref, err := normalizeSecret(p)
+		if err != nil {
+			return VariableValueProps{}, err
+		}
+		secret = ref
+	} else {
+		if p.Secret != nil {
+			return VariableValueProps{}, NewErrInvalidInput("only a secret variable's value refers to a secret store")
+		}
+		if utf8.RuneCountInString(p.Value) > maxVariableValueLength {
+			return VariableValueProps{}, NewErrInvalidInput(fmt.Sprintf("a value can have at most %d characters", maxVariableValueLength))
+		}
+		if _, err := BindingNames(p.Value); err != nil {
+			return VariableValueProps{}, err
+		}
 	}
 	if v.projectID != nil && len(p.Scope.ChannelIDs) > 0 {
 		return VariableValueProps{}, NewErrInvalidInput("a project's variable cannot be scoped to channels, which belong to one application")
@@ -278,7 +376,7 @@ func (v *Variable) normalizeValue(p VariableValueProps) (VariableValueProps, err
 			*d.out = []string{}
 		}
 	}
-	return VariableValueProps{Value: p.Value, Scope: scope}, nil
+	return VariableValueProps{Value: p.Value, Secret: secret, Scope: scope}, nil
 }
 
 // checkNoTie refuses a value that could tie with another for some
@@ -366,6 +464,18 @@ func (v *Variable) Name() string           { return v.name }
 func (v *Variable) Description() *string   { return copyString(v.description) }
 func (v *Variable) Kind() VariableKind     { return v.kind }
 func (v *Variable) ValuesPath() *string    { return copyString(v.valuesPath) }
+
+// SecretStoreIDs returns the Secret Stores the Variable's values refer to.
+func (v *Variable) SecretStoreIDs() []string {
+	var out []string
+	for _, value := range v.values {
+		if value.secret != nil && !slices.Contains(out, value.secret.StoreID) {
+			out = append(out, value.secret.StoreID)
+		}
+	}
+	return out
+}
+
 func (v *Variable) CreatedAt() time.Time   { return v.createdAt }
 func (v *Variable) UpdatedAt() time.Time   { return v.updatedAt }
 func (v *Variable) ArchivedAt() *time.Time { return clock.CopyTime(v.archivedAt) }
@@ -431,6 +541,7 @@ func (value *VariableValue) snapshot() VariableValueSnapshot {
 	return VariableValueSnapshot{
 		ID:        value.ID(),
 		Value:     value.text,
+		Secret:    copySecret(value.secret),
 		Scope:     value.scope.clone(),
 		CreatedAt: value.createdAt,
 		UpdatedAt: value.updatedAt,
@@ -469,15 +580,27 @@ func (v *Variable) Update(props UpdateVariableProps) error {
 	if err := v.checkActive(); err != nil {
 		return err
 	}
+	valuesPath := v.valuesPath
 	if props.ValuesPath != nil {
-		if err := validateValuesPath(optional.OfPtr(props.ValuesPath)); err != nil {
+		valuesPath = optional.OfPtr(props.ValuesPath)
+		if err := validateValuesPath(valuesPath); err != nil {
 			return err
 		}
+	}
+	deliverAs := v.deliverAs
+	if props.DeliverAs != nil {
+		deliverAs = props.DeliverAs
+	}
+	deliverAs, err := normalizeDeliverAs(v.kind, deliverAs, valuesPath)
+	if err != nil {
+		return err
 	}
 	changed := anyTrue(
 		setOptional(&v.description, props.Description),
 		setOptional(&v.valuesPath, props.ValuesPath),
+		!equalPtr(v.deliverAs, deliverAs),
 	)
+	v.deliverAs = deliverAs
 	v.updatedAt = clock.Now()
 	if changed {
 		v.RecordEvent(VariableUpdated{v.Snapshot()})
@@ -503,7 +626,7 @@ func (v *Variable) AddValue(props VariableValueProps) (VariableValueSnapshot, er
 		return VariableValueSnapshot{}, err
 	}
 	now := clock.Now()
-	value := &VariableValue{Entity: entity, text: content.Value, scope: content.Scope, createdAt: now, updatedAt: now}
+	value := &VariableValue{Entity: entity, text: content.Value, secret: content.Secret, scope: content.Scope, createdAt: now, updatedAt: now}
 	if err := v.checkNoTie(value); err != nil {
 		return VariableValueSnapshot{}, err
 	}
@@ -529,12 +652,13 @@ func (v *Variable) UpdateValue(valueID string, props VariableValueProps) error {
 	now := clock.Now()
 	updated := *v.values[i]
 	updated.text = content.Value
+	updated.secret = content.Secret
 	updated.scope = content.Scope
 	updated.updatedAt = now
 	if err := v.checkNoTie(&updated); err != nil {
 		return err
 	}
-	changed := v.values[i].text != updated.text || !v.values[i].scope.equal(updated.scope)
+	changed := v.values[i].text != updated.text || !equalPtr(v.values[i].secret, updated.secret) || !v.values[i].scope.equal(updated.scope)
 	values := slices.Clone(v.values)
 	values[i] = &updated
 	v.values = values
@@ -604,6 +728,32 @@ func CheckDeployable(project, application []*Variable) error {
 	for _, p := range project {
 		if _, kept := byName[strings.ToLower(p.name)]; kept {
 			effective = append(effective, p)
+		}
+	}
+	// A secret never hides inside another value: only a chart's overlay
+	// values files may bind one.
+	secrets := map[string]string{}
+	for _, v := range effective {
+		if v.kind == VariableKindSecret {
+			secrets[strings.ToLower(v.name)] = v.name
+		}
+	}
+	for _, v := range effective {
+		for _, value := range v.values {
+			text := value.text
+			if value.secret != nil {
+				text = value.secret.Path
+			}
+			names, err := BindingNames(text)
+			if err != nil {
+				return err
+			}
+			for _, name := range names {
+				if secret, ok := secrets[strings.ToLower(name)]; ok {
+					return NewErrInvalidInput(fmt.Sprintf(
+						"variable %s binds the secret %s; only a chart's values files may bind a secret", v.name, secret))
+				}
+			}
 		}
 	}
 	for i, a := range effective {

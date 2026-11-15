@@ -31,9 +31,11 @@ type DeploymentScope struct {
 
 // ResolvedValue is a value that matches a Deployment, and whose it is.
 type ResolvedValue struct {
-	Value  string         `json:"value"`
-	Scope  VariableScope  `json:"scope"`
-	Source VariableSource `json:"source" enum:"project,application"`
+	Value string `json:"value"`
+	// Secret is a secret variable's reference, shown in place of a value.
+	Secret *SecretReference `json:"secret"`
+	Scope  VariableScope    `json:"scope"`
+	Source VariableSource   `json:"source" enum:"project,application"`
 }
 
 // ResolvedVariable is a variable as one Deployment gets it: the value that
@@ -99,7 +101,7 @@ func ResolveVariables(variables []SnapshotVariable, scope DeploymentScope) []Res
 		}
 		for _, value := range v.Values {
 			if value.Scope.matches(scope) {
-				r.Beaten = append(r.Beaten, ResolvedValue{Value: value.Value, Scope: value.Scope.clone(), Source: v.Source})
+				r.Beaten = append(r.Beaten, ResolvedValue{Value: value.Value, Secret: copySecret(value.Secret), Scope: value.Scope.clone(), Source: v.Source})
 			}
 		}
 	}
@@ -117,9 +119,9 @@ func ResolveVariables(variables []SnapshotVariable, scope DeploymentScope) []Res
 }
 
 // CheckBindings checks that the values a Deployment gets can be filled in:
-// every #{Name} a winning text value binds is a system variable or a text
-// variable the Deployment gets, and no variables bind each other in a
-// cycle. The agent would fail the Deployment on either; this says so before
+// every #{Name} a winning text value, or a winning secret's path, binds is
+// a system variable or a text variable the Deployment gets, and no
+// variables bind each other in a cycle. The agent would fail the Deployment on either; this says so before
 // it is requested.
 func CheckBindings(resolved []ResolvedVariable) error {
 	binds := map[string][]string{}
@@ -165,6 +167,20 @@ func CheckBindings(resolved []ResolvedVariable) error {
 			}
 		}
 	}
+	for _, r := range resolved {
+		if r.Winner == nil || r.Winner.Secret == nil {
+			continue
+		}
+		names, err := BindingNames(r.Winner.Secret.Path)
+		if err != nil {
+			return NewErrInvalidInput(fmt.Sprintf("variable %s: %s", r.Name, err.(*ErrInvalidInput).Message))
+		}
+		for _, bound := range names {
+			if _, defined := binds[bound]; !defined {
+				return NewErrInvalidInput(fmt.Sprintf("the path of secret %s binds #{%s}, which has no value for this deployment", r.Name, bound))
+			}
+		}
+	}
 	return nil
 }
 
@@ -181,6 +197,85 @@ func AssignmentVariables(resolved []ResolvedVariable) []AssignmentVariable {
 			v.ValuesPath = *r.ValuesPath
 		}
 		out = append(out, v)
+	}
+	return out
+}
+
+// SecretStoreRef is a Secret Store as delivery needs it: enough to check a
+// secret value may use it and to tell an agent how to read it. The
+// credentials capability owns Secret Stores.
+type SecretStoreRef struct {
+	ID          string
+	WorkspaceID string
+	DisplayName string
+	// Settings is what an agent is sent; it never carries a credential.
+	Settings StoreSettings
+	// EnvironmentIDs are the Environments whose Deployments may read the
+	// store; empty means every Environment in its Workspace.
+	EnvironmentIDs []string
+	Archived       bool
+}
+
+// Allows reports whether Deployments to an Environment may read the store.
+func (s SecretStoreRef) Allows(environmentID string) bool {
+	return len(s.EnvironmentIDs) == 0 || slices.Contains(s.EnvironmentIDs, environmentID)
+}
+
+// SecretStoreIDs returns the stores the secrets a Deployment gets are in.
+func SecretStoreIDs(resolved []ResolvedVariable) []string {
+	var out []string
+	for _, r := range resolved {
+		if r.Winner != nil && r.Winner.Secret != nil && !slices.Contains(out, r.Winner.Secret.StoreID) {
+			out = append(out, r.Winner.Secret.StoreID)
+		}
+	}
+	return out
+}
+
+// CheckSecretStores checks that the secrets a Deployment to an Environment
+// gets are in active stores that Environment may read, of kinds its
+// Cluster's agent can read.
+func CheckSecretStores(resolved []ResolvedVariable, stores map[string]SecretStoreRef, environmentID string, agentKinds []string) error {
+	for _, r := range resolved {
+		if r.Winner == nil || r.Winner.Secret == nil {
+			continue
+		}
+		store, ok := stores[r.Winner.Secret.StoreID]
+		switch {
+		case !ok:
+			return NewErrInvalidInput(fmt.Sprintf("the secret store of %s no longer exists", r.Name))
+		case store.Archived:
+			return NewErrInvalidInput(fmt.Sprintf("secret store %s, which holds %s, is archived", store.DisplayName, r.Name))
+		case !store.Allows(environmentID):
+			return NewErrInvalidInput(fmt.Sprintf("secret store %s, which holds %s, is not allowed for this environment", store.DisplayName, r.Name))
+		case !slices.Contains(agentKinds, string(store.Settings.Kind)):
+			return NewErrInvalidInput(fmt.Sprintf("the cluster's agent cannot read %s secret stores, which %s needs", store.Settings.Kind, r.Name))
+		}
+	}
+	return nil
+}
+
+// AssignmentSecrets returns the secrets an agent is sent for a Deployment:
+// each secret variable's winning reference, with how to reach its store.
+func AssignmentSecrets(resolved []ResolvedVariable, stores map[string]SecretStoreRef) []AssignmentSecret {
+	out := []AssignmentSecret{}
+	for _, r := range resolved {
+		if r.Winner == nil || r.Winner.Secret == nil {
+			continue
+		}
+		ref := r.Winner.Secret
+		s := AssignmentSecret{
+			Name: r.Name, Source: r.Winner.Source, DeliverAs: VariableDeliverAsSecret,
+			Store: stores[ref.StoreID].Settings,
+			Ref:   SecretRef{Path: ref.Path, Field: ref.Field, Version: ref.Version},
+		}
+		if r.DeliverAs != nil {
+			s.DeliverAs = *r.DeliverAs
+		}
+		if r.ValuesPath != nil {
+			s.ValuesPath = *r.ValuesPath
+		}
+		out = append(out, s)
 	}
 	return out
 }

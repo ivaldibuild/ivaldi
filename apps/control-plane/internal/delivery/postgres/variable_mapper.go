@@ -3,6 +3,7 @@ package postgres
 import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
 	"github.com/ivaldibuild/ivaldi/pkg/database"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 )
 
 type variableMapper struct{}
@@ -36,17 +37,23 @@ func (m *variableMapper) ToPersistence(v *delivery.Variable) variableRows {
 		rows.variable.DeliverAs = new(string(*s.DeliverAs))
 	}
 	for _, value := range s.Values {
-		rows.values = append(rows.values, variableValueEntity{
+		row := variableValueEntity{
 			ID:             value.ID,
 			OrganizationID: s.OrganizationID,
 			VariableID:     s.ID,
-			TextValue:      new(value.Value),
 			EnvironmentIDs: database.TextArray(value.Scope.EnvironmentIDs),
 			TargetIDs:      database.TextArray(value.Scope.TargetIDs),
 			ChannelIDs:     database.TextArray(value.Scope.ChannelIDs),
 			CreatedAt:      value.CreatedAt,
 			UpdatedAt:      value.UpdatedAt,
-		})
+		}
+		if value.Secret != nil {
+			row.StoreID, row.Path = &value.Secret.StoreID, &value.Secret.Path
+			row.Field, row.Version = optional.Of(value.Secret.Field), optional.Of(value.Secret.Version)
+		} else {
+			row.TextValue = new(value.Value)
+		}
+		rows.values = append(rows.values, row)
 	}
 	return rows
 }
@@ -68,6 +75,15 @@ func (m *variableMapper) ToDomain(rows variableRows) (*delivery.Variable, error)
 		}
 		if value.TextValue != nil {
 			values[i].Value = *value.TextValue
+		}
+		if value.StoreID != nil && value.Path != nil {
+			values[i].Secret = &delivery.SecretReference{StoreID: *value.StoreID, Path: *value.Path}
+			if value.Field != nil {
+				values[i].Secret.Field = *value.Field
+			}
+			if value.Version != nil {
+				values[i].Secret.Version = *value.Version
+			}
 		}
 	}
 	e := rows.variable

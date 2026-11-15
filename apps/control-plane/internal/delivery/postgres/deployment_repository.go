@@ -31,6 +31,7 @@ type deploymentEntity struct {
 	ExternalRef          []byte     `gorm:"column:external_ref;type:jsonb"`
 	PolicyDecisionID     *string    `gorm:"column:policy_decision_id"`
 	VariableSnapshotID   *string    `gorm:"column:variable_snapshot_id"`
+	SecretVersions       []byte     `gorm:"column:secret_versions;type:jsonb"`
 	Findings             []byte     `gorm:"column:findings;type:jsonb"`
 	RequestedAt          time.Time  `gorm:"column:requested_at;autoCreateTime:false"`
 	StartedAt            *time.Time `gorm:"column:started_at"`
@@ -89,12 +90,16 @@ func deploymentToPersistence(d *delivery.Deployment) (*deploymentEntity, error) 
 	if err != nil {
 		return nil, err
 	}
+	secretVersions, err := json.Marshal(s.SecretVersions)
+	if err != nil {
+		return nil, err
+	}
 	return &deploymentEntity{
 		ID: s.ID, OrganizationID: s.OrganizationID, ApplicationID: s.ApplicationID, ReleaseID: s.ReleaseID,
 		EnvironmentID: s.EnvironmentID, TargetID: s.TargetID, Source: string(s.Source), Reason: string(s.Reason),
 		Status: string(s.Status), PreviousDeploymentID: s.PreviousDeploymentID,
 		InitiatedBy: s.InitiatedByPrincipalID, SessionID: s.SessionID, WorkItemID: s.WorkItemID,
-		ExternalRef: s.ExternalRef, PolicyDecisionID: s.PolicyDecisionID, VariableSnapshotID: s.VariableSnapshotID, Findings: findings,
+		ExternalRef: s.ExternalRef, PolicyDecisionID: s.PolicyDecisionID, VariableSnapshotID: s.VariableSnapshotID, SecretVersions: secretVersions, Findings: findings,
 		RequestedAt: s.RequestedAt, StartedAt: s.StartedAt, FinishedAt: s.FinishedAt, SucceededAt: s.SucceededAt,
 		StatusChangedAt: s.StatusChangedAt, CreatedAt: s.CreatedAt, UpdatedAt: s.UpdatedAt,
 	}, nil
@@ -107,13 +112,19 @@ func deploymentToDomain(e *deploymentEntity) (*delivery.Deployment, error) {
 			return nil, err
 		}
 	}
+	var secretVersions []delivery.SecretVersion
+	if len(e.SecretVersions) > 0 {
+		if err := json.Unmarshal(e.SecretVersions, &secretVersions); err != nil {
+			return nil, err
+		}
+	}
 	return delivery.NewDeployment(delivery.NewDeploymentProps{
 		OrganizationID: e.OrganizationID, ApplicationID: e.ApplicationID, ReleaseID: e.ReleaseID,
 		EnvironmentID: e.EnvironmentID, TargetID: e.TargetID, Source: delivery.DeploymentSource(e.Source),
 		Reason: delivery.DeploymentReason(e.Reason), Status: release.DeploymentStatus(e.Status),
 		PreviousDeploymentID: e.PreviousDeploymentID, InitiatedByPrincipalID: e.InitiatedBy,
 		SessionID: e.SessionID, WorkItemID: e.WorkItemID, ExternalRef: e.ExternalRef,
-		PolicyDecisionID: e.PolicyDecisionID, VariableSnapshotID: e.VariableSnapshotID, Findings: findings, RequestedAt: utc(e.RequestedAt),
+		PolicyDecisionID: e.PolicyDecisionID, VariableSnapshotID: e.VariableSnapshotID, SecretVersions: secretVersions, Findings: findings, RequestedAt: utc(e.RequestedAt),
 		StartedAt: utcPtr(e.StartedAt), FinishedAt: utcPtr(e.FinishedAt), SucceededAt: utcPtr(e.SucceededAt),
 		StatusChangedAt: utc(e.StatusChangedAt), CreatedAt: utc(e.CreatedAt), UpdatedAt: utc(e.UpdatedAt),
 	}, &e.ID)
@@ -166,6 +177,7 @@ func (r *deploymentRepository) UpdateDeployment(ctx context.Context, d *delivery
 			"previous_deployment_id": e.PreviousDeploymentID,
 			"policy_decision_id":     e.PolicyDecisionID,
 			"findings":               e.Findings,
+			"secret_versions":        e.SecretVersions,
 			"started_at":             e.StartedAt,
 			"finished_at":            e.FinishedAt,
 			"succeeded_at":           e.SucceededAt,

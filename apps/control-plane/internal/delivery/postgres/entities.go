@@ -274,6 +274,10 @@ type variableValueEntity struct {
 	OrganizationID string             `gorm:"column:organization_id"`
 	VariableID     string             `gorm:"column:variable_id"`
 	TextValue      *string            `gorm:"column:text_value"`
+	StoreID        *string            `gorm:"column:store_id"`
+	Path           *string            `gorm:"column:path"`
+	Field          *string            `gorm:"column:field"`
+	Version        *string            `gorm:"column:version"`
 	EnvironmentIDs database.TextArray `gorm:"column:environment_ids;type:text[]"`
 	TargetIDs      database.TextArray `gorm:"column:target_ids;type:text[]"`
 	ChannelIDs     database.TextArray `gorm:"column:channel_ids;type:text[]"`

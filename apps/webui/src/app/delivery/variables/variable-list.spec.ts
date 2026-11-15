@@ -8,6 +8,7 @@ import { ValueFields, VariableFields, VariablesApi } from './variables-api';
 
 const production = 'env_01JZ0000000000000000000001';
 const staging = 'env_01JZ0000000000000000000002';
+const vault = 'sst_01JZ0000000000000000000001';
 const scope = (changes: Partial<VariableScope> = {}): VariableScope => ({
   environment_ids: [],
   target_ids: [],
@@ -19,7 +20,11 @@ function variable(
   id: string,
   name: string,
   owner: { project_id: string } | { application_id: string },
-  values: { value: string; scope: VariableScope }[] = [],
+  values: {
+    value: string;
+    scope: VariableScope;
+    secret?: Variable['values'][number]['secret'];
+  }[] = [],
   values_path: string | null = null,
 ): Variable {
   const at = '2026-11-15T10:00:00Z';
@@ -34,7 +39,13 @@ function variable(
     kind: 'text',
     values_path,
     deliver_as: null,
-    values: values.map((v, i) => ({ id: `${id}-v${i}`, created_at: at, updated_at: at, ...v })),
+    values: values.map((v, i) => ({
+      id: `${id}-v${i}`,
+      created_at: at,
+      updated_at: at,
+      secret: null,
+      ...v,
+    })),
     created_at: at,
     updated_at: at,
     archived_at: null,
@@ -57,6 +68,19 @@ const stored = (): Variable[] => [
   variable('var_region', 'Region', { project_id: 'prj_1' }, [], 'region'),
 ];
 
+/** A secret variable kept in the Vault store, with one value. */
+const password = (): Variable => ({
+  ...variable('var_password', 'Database.Password', { application_id: 'app_1' }, [
+    {
+      value: '',
+      scope: scope(),
+      secret: { store_id: vault, path: 'payments/db', field: 'password', version: '' },
+    },
+  ]),
+  kind: 'secret',
+  deliver_as: 'secret',
+});
+
 describe('VariableList', () => {
   let variables: Variable[];
   let added: { id: string; value: ValueFields }[];
@@ -68,8 +92,9 @@ describe('VariableList', () => {
 
   async function render(
     granted = ['variable.manage'],
+    initial = stored(),
   ): Promise<{ fixture: ComponentFixture<VariableList>; el: HTMLElement }> {
-    variables = stored();
+    variables = initial;
     added = [];
     created = [];
     refuse = null;
@@ -84,6 +109,7 @@ describe('VariableList', () => {
                 { id: staging, display_name: 'Staging' },
               ],
               targets: [],
+              stores: [{ id: vault, display_name: 'Vault' }],
             } as unknown as Awaited<ReturnType<VariablesApi['scopeOptions']>>),
       addValue: (id, value) => {
         if (refuse) {
@@ -195,7 +221,48 @@ describe('VariableList', () => {
     await settle(fixture);
 
     expect(created).toEqual([
-      { name: 'Region', values_path: 'region', description: undefined, values: [] },
+      {
+        name: 'Region',
+        kind: 'text',
+        deliver_as: undefined,
+        values_path: 'region',
+        description: undefined,
+        values: [],
+      },
+    ]);
+  });
+
+  it('shows where a secret is kept, and saves a reference rather than a value', async () => {
+    const { fixture, el } = await render(['variable.manage'], [password()]);
+
+    expect(el.querySelector('h3')?.textContent).toContain('Secret, as a Kubernetes Secret');
+    expect(el.querySelector('tbody td')?.textContent?.trim()).toBe(
+      'Vault: payments/db, field password, latest version',
+    );
+
+    button(el, 'Add value to Database.Password').click();
+    fixture.detectChanges();
+    const form = el.querySelector<HTMLFormElement>('form')!;
+    expect(form.querySelector('textarea'), 'no field to type a secret into').toBeNull();
+    const path = form.querySelector<HTMLInputElement>('#variable-secret-path')!;
+    path.value = 'payments/staging/db';
+    path.dispatchEvent(new Event('input'));
+    form.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+
+    expect(added).toEqual([
+      {
+        id: 'var_password',
+        value: {
+          secret: {
+            store_id: vault,
+            path: 'payments/staging/db',
+            field: undefined,
+            version: undefined,
+          },
+          scope: scope(),
+        },
+      },
     ]);
   });
 

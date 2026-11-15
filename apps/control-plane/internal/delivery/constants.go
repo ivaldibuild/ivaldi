@@ -113,15 +113,16 @@ const (
 // Actions name what an actor asks the authorizer to allow. Policy rules
 // and approval requests match on them, and they appear in its decisions.
 const (
-	ActionVariableAddValue     = "variable.add_value"
-	ActionVariableArchive      = "variable.archive"
-	ActionVariableCreate       = "variable.create"
-	ActionVariableList         = "variable.list"
-	ActionVariableRead         = "variable.read"
-	ActionVariableRemoveValue  = "variable.remove_value"
-	ActionVariableUpdate       = "variable.update"
-	ActionVariableUpdateValue  = "variable.update_value"
-	ActionReleaseVariablesRead = "release.read_variables"
+	ActionVariableAddValue        = "variable.add_value"
+	ActionVariableArchive         = "variable.archive"
+	ActionVariableCreate          = "variable.create"
+	ActionVariableList            = "variable.list"
+	ActionVariableRead            = "variable.read"
+	ActionVariableRemoveValue     = "variable.remove_value"
+	ActionVariableUpdate          = "variable.update"
+	ActionVariableUpdateValue     = "variable.update_value"
+	ActionReleaseVariablesRead    = "release.read_variables"
+	ActionReleaseRefreshVariables = "release.refresh_variables"
 )
 
 const (
@@ -272,6 +273,9 @@ const (
 	EventReleaseCreated   = "release.created"
 	EventReleasePublished = "release.published"
 	EventReleaseWithdrawn = "release.withdrawn"
+	// EventReleaseVariablesRefreshed records a new revision of a Release's
+	// variables, with the revision it replaced.
+	EventReleaseVariablesRefreshed = "release.variables_refreshed"
 
 	EventDeploymentRequested     = "deployment.requested"
 	EventDeploymentObserved      = "deployment.observed"

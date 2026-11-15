@@ -188,10 +188,11 @@ func TestDeployAndRollBack(t *testing.T) {
 		})
 		return id(r)
 	}
-	deploy := func(releaseID, imageDigest, greeting string) {
+	deploy := func(releaseID, imageDigest, greeting, reason string) {
 		t.Helper()
 		requested := cp.callList(http.MethodPost, "/v1/releases/"+releaseID+"/deployments", obj{"target_ids": []string{id(target)}})
 		require.Len(t, requested, 1)
+		assert.Equal(t, reason, requested[0]["reason"], "why the control plane says the Release is deployed")
 		deployment := id(requested[0])
 		var got obj
 		eventually(t, 4*time.Minute, func() (bool, string) {
@@ -229,15 +230,17 @@ func TestDeployAndRollBack(t *testing.T) {
 
 	first, second := s.imageDigests[0], s.imageDigests[1]
 	v1 := release("1.0.0", first)
-	deploy(v1, first, "hello from "+slug)
+	deploy(v1, first, "hello from "+slug, "rollout")
 
 	// The variable changes after 1.0.0 was created: 2.0.0 gets the new value,
-	// and deploying 1.0.0 again brings its own back.
+	// and rolling back to 1.0.0 brings its own back.
 	cp.call(http.MethodPut, "/v1/variables/"+id(variable)+"/values/"+scopedValue, obj{
 		"value": "hi from #{Ivaldi.Environment.Slug}", "scope": obj{"environment_ids": []string{id(environment)}},
 	})
-	deploy(release("2.0.0", second), second, "hi from "+slug)
-	deploy(v1, first, "hello from "+slug)
+	deploy(release("2.0.0", second), second, "hi from "+slug, "rollout")
+	// 1.0.0 was healthy here before, so this is a rollback: it replays the
+	// Deployment that last ran it, with the variables that one used.
+	deploy(v1, first, "hello from "+slug, "rollback")
 }
 
 type running struct{ image, annotation, greeting, secretName string }

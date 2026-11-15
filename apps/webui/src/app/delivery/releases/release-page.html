@@ -168,7 +168,7 @@
 
     <section aria-labelledby="release-variables-heading" class="flex flex-col gap-4">
       <h2 id="release-variables-heading" class="text-heading text-lg font-semibold">Variables</h2>
-      <app-release-variables [releaseId]="id()" />
+      <app-release-variables [releaseId]="id()" [refreshable]="release()!.status !== 'withdrawn'" />
     </section>
 
     <section aria-labelledby="history-heading" class="flex flex-col gap-4">

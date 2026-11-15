@@ -53,6 +53,8 @@ type Deployment struct {
 	policyDecisionID     *string
 	variableSnapshotID   *string
 	secretVersions       []SecretVersion
+	restoresDeploymentID *string
+	secretsLatest        bool
 	findings             []string
 	requestedAt          time.Time
 	startedAt            *time.Time
@@ -87,15 +89,20 @@ type DeploymentSnapshot struct {
 	VariableSnapshotID *string `json:"variable_snapshot_id"`
 	// SecretVersions are the secrets the agent resolved, by version and
 	// fingerprint: what a rollback to this Deployment replays.
-	SecretVersions  []SecretVersion `json:"secret_versions"`
-	Findings        []string        `json:"findings"`
-	RequestedAt     time.Time       `json:"requested_at"`
-	StartedAt       *time.Time      `json:"started_at"`
-	FinishedAt      *time.Time      `json:"finished_at"`
-	SucceededAt     *time.Time      `json:"succeeded_at"`
-	StatusChangedAt time.Time       `json:"status_changed_at"`
-	CreatedAt       time.Time       `json:"created_at"`
-	UpdatedAt       time.Time       `json:"updated_at"`
+	SecretVersions []SecretVersion `json:"secret_versions"`
+	// RestoresDeploymentID is the Deployment a rollback replays: it uses
+	// that Deployment's revision of variables and, unless SecretsLatest,
+	// the secret versions it resolved.
+	RestoresDeploymentID *string    `json:"restores_deployment_id"`
+	SecretsLatest        bool       `json:"secrets_latest"`
+	Findings             []string   `json:"findings"`
+	RequestedAt          time.Time  `json:"requested_at"`
+	StartedAt            *time.Time `json:"started_at"`
+	FinishedAt           *time.Time `json:"finished_at"`
+	SucceededAt          *time.Time `json:"succeeded_at"`
+	StatusChangedAt      time.Time  `json:"status_changed_at"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
 // SecretVersion is one secret an agent resolved for a Deployment: where it
@@ -136,6 +143,8 @@ type NewDeploymentProps struct {
 	PolicyDecisionID       *string
 	VariableSnapshotID     *string
 	SecretVersions         []SecretVersion
+	RestoresDeploymentID   *string
+	SecretsLatest          bool
 	Findings               []string
 	RequestedAt            *time.Time
 	StartedAt              *time.Time
@@ -216,6 +225,12 @@ func NewDeployment(props NewDeploymentProps, deploymentID *string) (*Deployment,
 	if props.VariableSnapshotID != nil && !id.Valid(ReleaseVariables{}.Prefix(), *props.VariableSnapshotID) {
 		return nil, NewErrInvalidInput(fmt.Sprintf("%q is not a release variables ID", *props.VariableSnapshotID))
 	}
+	if props.RestoresDeploymentID != nil && !id.Valid(Deployment{}.Prefix(), *props.RestoresDeploymentID) {
+		return nil, NewErrInvalidInput(fmt.Sprintf("%q is not a deployment ID", *props.RestoresDeploymentID))
+	}
+	if (props.RestoresDeploymentID != nil || props.SecretsLatest) && props.Reason != DeploymentRollback {
+		return nil, NewErrInvalidInput("only a rollback restores a deployment or chooses its secrets")
+	}
 	if props.PolicyDecisionID != nil && !id.Valid(authorization.DecisionPrefix, *props.PolicyDecisionID) {
 		return nil, NewErrInvalidInput(fmt.Sprintf("%q is not a decision ID", *props.PolicyDecisionID))
 	}
@@ -253,6 +268,8 @@ func NewDeployment(props NewDeploymentProps, deploymentID *string) (*Deployment,
 		policyDecisionID:     optional.OfPtr(props.PolicyDecisionID),
 		variableSnapshotID:   optional.OfPtr(props.VariableSnapshotID),
 		secretVersions:       slices.Clone(props.SecretVersions),
+		restoresDeploymentID: optional.OfPtr(props.RestoresDeploymentID),
+		secretsLatest:        props.SecretsLatest,
 		findings:             findings,
 		requestedAt:          timeOr(props.RequestedAt, now),
 		startedAt:            clock.CopyTime(props.StartedAt),
@@ -303,6 +320,9 @@ func (d *Deployment) PreviousDeploymentID() *string    { return copyString(d.pre
 func (d *Deployment) PolicyDecisionID() *string        { return copyString(d.policyDecisionID) }
 func (d *Deployment) VariableSnapshotID() *string      { return copyString(d.variableSnapshotID) }
 
+func (d *Deployment) RestoresDeploymentID() *string { return copyString(d.restoresDeploymentID) }
+func (d *Deployment) SecretsLatest() bool           { return d.secretsLatest }
+
 // SecretVersions returns the secrets the agent resolved for the Deployment.
 func (d *Deployment) SecretVersions() []SecretVersion {
 	if d.secretVersions == nil {
@@ -343,7 +363,9 @@ func (d *Deployment) Snapshot() DeploymentSnapshot {
 		Status: d.status, PreviousDeploymentID: copyString(d.previousDeploymentID),
 		InitiatedByPrincipalID: copyString(d.initiatedBy), SessionID: copyString(d.sessionID),
 		WorkItemID: copyString(d.workItemID), ExternalRef: append(json.RawMessage(nil), d.externalRef...),
-		PolicyDecisionID: copyString(d.policyDecisionID), VariableSnapshotID: copyString(d.variableSnapshotID), SecretVersions: d.SecretVersions(), Findings: copyStrings(d.findings),
+		PolicyDecisionID: copyString(d.policyDecisionID), VariableSnapshotID: copyString(d.variableSnapshotID), SecretVersions: d.SecretVersions(),
+		RestoresDeploymentID: copyString(d.restoresDeploymentID), SecretsLatest: d.secretsLatest,
+		Findings:    copyStrings(d.findings),
 		RequestedAt: d.requestedAt, StartedAt: clock.CopyTime(d.startedAt), FinishedAt: clock.CopyTime(d.finishedAt),
 		SucceededAt: clock.CopyTime(d.succeededAt), StatusChangedAt: d.statusChangedAt,
 		CreatedAt: d.createdAt, UpdatedAt: d.updatedAt,

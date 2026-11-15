@@ -44,6 +44,10 @@ type DeploymentRepository interface {
 	// ListSucceededEnvironmentIDs returns the Environments where the Release
 	// has a Deployment that reached healthy.
 	ListSucceededEnvironmentIDs(ctx context.Context, organizationID, releaseID string) ([]string, error)
+	// GetLastSucceededDeployment returns the Release's latest Deployment to
+	// the Target that reached healthy, executed or observed, or ErrNotFound:
+	// what a rollback to the Release replays.
+	GetLastSucceededDeployment(ctx context.Context, organizationID, releaseID, targetID string) (*Deployment, error)
 	// AppendDeploymentEvent inserts the event unless a report with the same
 	// ID is already stored, and reports whether it inserted it.
 	AppendDeploymentEvent(ctx context.Context, event *DeploymentEvent) (bool, error)
@@ -57,6 +61,11 @@ type RequestDeploymentsInput struct {
 	TargetIDs      []string
 	SessionID      *string
 	WorkItemID     *string
+	// SecretsLatest makes a rollback read the latest secrets instead of
+	// the versions the Deployment it restores used. It keeps that
+	// Deployment's variables. It has no effect on a rollout or a redeploy,
+	// which read the latest anyway.
+	SecretsLatest bool
 }
 
 // DeploymentDetail is a Deployment with its append-only timeline.
@@ -111,12 +120,21 @@ type DeploymentCheck struct {
 // checks the deploy sheet needs. Changes lists the commits between the
 // Target's current Release and this one, once each.
 type ReleaseChanges struct {
-	ReleaseID        string            `json:"release_id"`
-	TargetID         string            `json:"target_id"`
-	CurrentReleaseID *string           `json:"current_release_id"`
-	Artifacts        []ArtifactChange  `json:"artifacts"`
-	Checks           []DeploymentCheck `json:"checks"`
-	Changes          []ReleaseChange   `json:"changes"`
+	ReleaseID        string  `json:"release_id"`
+	TargetID         string  `json:"target_id"`
+	CurrentReleaseID *string `json:"current_release_id"`
+	// Reason is what a Deployment requested now would be: a rollout, a
+	// redeploy of the Release that is current there, or a rollback to a
+	// Release that was healthy there before.
+	Reason DeploymentReason `json:"reason" enum:"rollout,rollback,redeploy"`
+	// RestoresDeploymentID is the Deployment a rollback would replay, with
+	// its variables and secret versions. A rollback without one found
+	// nothing recorded to replay, and uses the Release's current variables
+	// and the latest secrets.
+	RestoresDeploymentID *string           `json:"restores_deployment_id"`
+	Artifacts            []ArtifactChange  `json:"artifacts"`
+	Checks               []DeploymentCheck `json:"checks"`
+	Changes              []ReleaseChange   `json:"changes"`
 }
 
 // ReportDeploymentInput is one agent report about a Deployment.

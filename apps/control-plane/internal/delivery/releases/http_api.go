@@ -39,6 +39,8 @@ func (c *ReleaseController) RegisterRoutes(h huma.API) {
 	register(h, "get-release", http.MethodGet, "/releases/{release_id}", "Get a Release with its Builds", 0, c.GetRelease)
 	register(h, "get-release-variables", http.MethodGet, "/releases/{release_id}/variables",
 		"Get the variables a Release deploys with, and what a Target would get", 0, c.GetReleaseVariables)
+	register(h, "refresh-release-variables", http.MethodPost, "/releases/{release_id}/variables/refresh",
+		"Take a new revision of a Release's variables from its Application's, or preview what would change", 0, c.RefreshReleaseVariables)
 	register(h, "publish-release", http.MethodPost, "/releases/{release_id}/publish",
 		"Publish a draft Release that meets its Channel's rules", 0, c.PublishRelease)
 	register(h, "withdraw-release", http.MethodPost, "/releases/{release_id}/withdraw",
@@ -141,11 +143,23 @@ func (c *ReleaseController) GetReleaseVariables(ctx context.Context, req *Releas
 	if err != nil {
 		return nil, err
 	}
-	view, err := c.service.GetReleaseVariables(ctx, who.Actor, who.OrganizationID, req.ReleaseID, req.TargetID)
+	view, err := c.service.GetReleaseVariables(ctx, who.Actor, who.OrganizationID, req.ReleaseID, req.TargetID, req.DeploymentID)
 	if err != nil {
 		return nil, httpError(ctx, err)
 	}
 	return &ReleaseVariablesResponse{Body: api.SuccessResponse(nil, *view)}, nil
+}
+
+func (c *ReleaseController) RefreshReleaseVariables(ctx context.Context, req *RefreshReleaseVariablesRequest) (*ReleaseVariablesRefreshResponse, error) {
+	who, err := caller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	refresh, err := c.service.RefreshReleaseVariables(ctx, who.Actor, who.OrganizationID, req.ReleaseID, req.Preview)
+	if err != nil {
+		return nil, httpError(ctx, err)
+	}
+	return &ReleaseVariablesRefreshResponse{Body: api.SuccessResponse(nil, *refresh)}, nil
 }
 
 func (c *ReleaseController) PublishRelease(ctx context.Context, req *ReleaseRequest) (*ReleaseResponse, error) {
@@ -196,6 +210,7 @@ func httpError(ctx context.Context, err error) error {
 	case errors.Is(err, delivery.ErrAlreadyExists),
 		errors.Is(err, delivery.ErrArchived),
 		errors.Is(err, delivery.ErrReleaseStatus),
+		errors.Is(err, delivery.ErrProductionChange),
 		errors.Is(err, delivery.ErrBuildConflict):
 		return huma.Error409Conflict(err.Error())
 	case errors.As(err, &approval):

@@ -629,8 +629,17 @@ type ReleaseService interface {
 	WithdrawRelease(ctx context.Context, actor identity.Actor, organizationID, releaseID string) (*ReleaseDetail, error)
 	// GetReleaseVariables returns the Release's current revision of
 	// variables and, when a Target is named, the value of each a Deployment
-	// there would get. It needs variable.read on the Application's Project.
-	GetReleaseVariables(ctx context.Context, actor identity.Actor, organizationID, releaseID, targetID string) (*ReleaseVariablesView, error)
+	// there would get. Naming one of the Release's Deployments returns the
+	// revision it used instead, which is what a rollback that restores it
+	// deploys. It needs variable.read on the Application's Project.
+	GetReleaseVariables(ctx context.Context, actor identity.Actor, organizationID, releaseID, targetID, deploymentID string) (*ReleaseVariablesView, error)
+	// RefreshReleaseVariables snapshots the Application's variables as they
+	// are now as the Release's next revision, which later Deployments use.
+	// With preview it only says what would change. It needs release.manage,
+	// is not allowed on a withdrawn Release, and is refused with
+	// ErrProductionChange when it would change what a production Target
+	// gets, since that needs an approval that cannot be requested yet.
+	RefreshReleaseVariables(ctx context.Context, actor identity.Actor, organizationID, releaseID string, preview bool) (*ReleaseVariablesRefresh, error)
 }
 
 // VariableOwner names the Project or the Application that owns variables:
@@ -747,4 +756,27 @@ type ReleaseVariablesRepository interface {
 type ReleaseVariablesView struct {
 	Revision *ReleaseVariablesSnapshot `json:"revision"`
 	Resolved []ResolvedVariable        `json:"resolved"`
+}
+
+// ReleaseVariablesRefresh is what refreshing a Release's variables changes,
+// or would change.
+type ReleaseVariablesRefresh struct {
+	// Revision is the Release's current revision after the call: the new
+	// one when Applied, and otherwise the one it already had, if any.
+	Revision *ReleaseVariablesSnapshot `json:"revision"`
+	// Applied says whether a new revision was taken. A preview, and a
+	// refresh that would change nothing, take none.
+	Applied bool `json:"applied"`
+	// Changed names the variables the new revision holds differently.
+	Changed []string `json:"changed"`
+	// Production lists the production Targets the Application is placed on
+	// that would get another value of some variable.
+	Production []ProductionChange `json:"production"`
+}
+
+// ProductionChange is what a refresh would change for one production Target.
+type ProductionChange struct {
+	TargetID      string   `json:"target_id"`
+	EnvironmentID string   `json:"environment_id"`
+	Variables     []string `json:"variables"`
 }

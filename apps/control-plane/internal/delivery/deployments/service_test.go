@@ -355,6 +355,21 @@ func (f fakeDeployments) GetInFlightDeployment(_ context.Context, organizationID
 	}
 	return nil, delivery.ErrNotFound
 }
+func (f fakeDeployments) GetLastSucceededDeployment(_ context.Context, organizationID, releaseID, targetID string) (*delivery.Deployment, error) {
+	var last *delivery.Deployment
+	for _, d := range f.deployments {
+		if d.OrganizationID() != organizationID || d.ReleaseID() != releaseID || d.TargetID() != targetID || d.SucceededAt() == nil {
+			continue
+		}
+		if last == nil || d.SucceededAt().After(*last.SucceededAt()) {
+			last = d
+		}
+	}
+	if last == nil {
+		return nil, delivery.ErrNotFound
+	}
+	return last, nil
+}
 func (f fakeDeployments) ListSucceededEnvironmentIDs(_ context.Context, organizationID, releaseID string) ([]string, error) {
 	var out []string
 	for _, d := range f.deployments {
@@ -1309,4 +1324,116 @@ func TestRequestDeploymentsRefusesASecretItsTargetCannotUse(t *testing.T) {
 	})
 	require.ErrorIs(t, err, delivery.ErrInvalid)
 	assert.Contains(t, err.Error(), "not allowed for this environment")
+}
+
+// A rollback replays the Release's last healthy Deployment on the Target:
+// its revision of variables, not the Release's current one, and the secret
+// versions it resolved, unless it is asked for the latest.
+func TestRollbackReplaysTheDeploymentItRestores(t *testing.T) {
+	const storeID = "sst_01BX5ZZKBKACTAV9WEVGEMMVRZ"
+	w := newWorld(t)
+	agent := identity.Actor{PrincipalID: agentID}
+	require.NoError(t, w.clusters[clusterID].RecordHeartbeat(agentID, map[string]any{"secret_store_kinds": []string{"kubernetes"}}))
+	w.stores = map[string]delivery.SecretStoreRef{storeID: {
+		ID: storeID, DisplayName: "In-cluster",
+		Settings: delivery.StoreSettings{ID: storeID, Kind: delivery.StoreKubernetes, Kubernetes: &delivery.KubernetesStore{}},
+	}}
+	password := delivery.SnapshotVariable{
+		Name: "Database.Password", Source: delivery.VariableSourceApplication, Kind: delivery.VariableKindSecret,
+		DeliverAs: new(delivery.VariableDeliverAsSecret),
+		Values:    []delivery.SnapshotValue{{Secret: &delivery.SecretReference{StoreID: storeID, Path: "db", Version: "40"}}},
+	}
+	released := w.withVariables(password, textVariable("Log.Level", "log.level", delivery.SnapshotValue{Value: "info"}))
+
+	// deploy requests a Deployment and has the agent report it healthy.
+	deploy := func(rel *delivery.Release, in delivery.RequestDeploymentsInput, secrets string) *delivery.Deployment {
+		t.Helper()
+		in.OrganizationID, in.ReleaseID, in.TargetIDs = org, rel.ID(), []string{targetID}
+		out, err := w.svc.RequestDeployments(ctx, ada, in)
+		require.NoError(t, err)
+		for _, status := range []release.DeploymentStatus{release.DeploymentProgressing, release.DeploymentHealthy} {
+			detail := json.RawMessage(nil)
+			if status == release.DeploymentProgressing && secrets != "" {
+				detail = json.RawMessage(secrets)
+			}
+			_, err := w.svc.ReportDeployment(ctx, agent, delivery.ReportDeploymentInput{
+				OrganizationID: org, DeploymentID: out[0].ID(), Kind: delivery.DeploymentEventHealth,
+				Status: &status, Detail: detail, ReportID: out[0].ID() + ":" + string(status),
+			})
+			require.NoError(t, err)
+		}
+		clock.Fix(t, clock.Now().Add(time.Second))
+		return w.deployments[out[0].ID()]
+	}
+	reported := `{"secrets":[{"name":"Database.Password","version":"41","fingerprint":"hmac-sha256:v1:first"}]}`
+
+	first := deploy(w.rel, delivery.RequestDeploymentsInput{}, reported)
+	assert.Equal(t, delivery.DeploymentRollout, first.Reason())
+
+	again := deploy(w.rel, delivery.RequestDeploymentsInput{}, `{"secrets":[{"name":"Database.Password","version":"42","fingerprint":"hmac-sha256:v1:rotated"}]}`)
+	assert.Equal(t, delivery.DeploymentRedeploy, again.Reason(), "the release is the one running there")
+	assert.Nil(t, again.RestoresDeploymentID())
+
+	// Another Release takes over the Target, and the first one's variables
+	// are refreshed meanwhile.
+	builds := make([]delivery.NewReleaseBuildProps, 0, len(w.rel.Builds()))
+	for _, b := range w.rel.Builds() {
+		builds = append(builds, delivery.NewReleaseBuildProps{ArtifactID: b.ArtifactID, BuildID: b.BuildID})
+	}
+	now := clock.Now()
+	next := must(delivery.NewRelease(delivery.NewReleaseProps{
+		OrganizationID: org, ApplicationID: w.app.ID(), ChannelID: w.rel.ChannelID(), Version: "2.0.0",
+		Status: release.StatusPublished, PublishedAt: &now, Builds: builds,
+	}, nil))
+	w.releases[next.ID()] = next
+	assert.Equal(t, delivery.DeploymentRollout, deploy(next, delivery.RequestDeploymentsInput{}, "").Reason())
+	released.Supersede()
+	w.withVariables(password, textVariable("Log.Level", "log.level", delivery.SnapshotValue{Value: "debug"}))
+
+	changes, err := w.svc.ReleaseChanges(ctx, ada, org, w.rel.ID(), targetID)
+	require.NoError(t, err)
+	assert.Equal(t, delivery.DeploymentRollback, changes.Reason, "the deploy sheet says so before it is requested")
+	assert.Equal(t, again.ID(), *changes.RestoresDeploymentID)
+
+	assignment := func(d *delivery.Deployment) delivery.ApplyAssignment {
+		t.Helper()
+		items, err := w.svc.ListClusterAssignments(ctx, agent, org, clusterID)
+		require.NoError(t, err)
+		for _, item := range items {
+			if item.Deployment.ID == d.ID() {
+				return item.Apply
+			}
+		}
+		t.Fatalf("deployment %s has no assignment", d.ID())
+		return delivery.ApplyAssignment{}
+	}
+	request := func(in delivery.RequestDeploymentsInput) *delivery.Deployment {
+		t.Helper()
+		in.OrganizationID, in.ReleaseID, in.TargetIDs = org, w.rel.ID(), []string{targetID}
+		out, err := w.svc.RequestDeployments(ctx, ada, in)
+		require.NoError(t, err)
+		return out[0]
+	}
+
+	rollback := request(delivery.RequestDeploymentsInput{})
+	assert.Equal(t, delivery.DeploymentRollback, rollback.Reason())
+	assert.Equal(t, again.ID(), *rollback.RestoresDeploymentID(), "the last healthy deployment of the release there")
+	assert.Equal(t, released.ID(), *rollback.VariableSnapshotID(), "the revision it ran with, not the refreshed one")
+	apply := assignment(rollback)
+	assert.Equal(t, delivery.DeploymentRollback, apply.Reason)
+	assert.Equal(t, again.ID(), *apply.Restores)
+	assert.Equal(t, "info", apply.Variables[0].Value)
+	require.Len(t, apply.Secrets, 1)
+	assert.Equal(t, "42", apply.Secrets[0].Ref.Version, "the version it read then")
+	assert.Equal(t, "hmac-sha256:v1:rotated", apply.Secrets[0].Fingerprint, "which the agent checks the value against")
+
+	// With the latest secrets it keeps the restored variables and pins
+	// nothing, not even the version the variable itself names.
+	delete(w.deployments, rollback.ID())
+	latest := request(delivery.RequestDeploymentsInput{SecretsLatest: true})
+	assert.True(t, latest.SecretsLatest())
+	assert.Equal(t, released.ID(), *latest.VariableSnapshotID())
+	apply = assignment(latest)
+	assert.Empty(t, apply.Secrets[0].Ref.Version)
+	assert.Empty(t, apply.Secrets[0].Fingerprint)
 }

@@ -383,7 +383,7 @@ func TestSnapshotJSONKeys(t *testing.T) {
 		{SnapshotVariable{}, []string{"name", "source", "kind", "values_path", "deliver_as", "values"}},
 		{SnapshotValue{}, []string{"value", "secret", "scope"}},
 		{PlacementSnapshot{}, append([]string{"organization_id", "application_id", "target_id", "source", "apply_config", "current_deployment_id", "current_release_id"}, timestamps...)},
-		{DeploymentSnapshot{}, []string{"id", "organization_id", "application_id", "release_id", "environment_id", "target_id", "source", "reason", "status", "previous_deployment_id", "initiated_by_principal_id", "session_id", "work_item_id", "external_ref", "policy_decision_id", "variable_snapshot_id", "secret_versions", "findings", "requested_at", "started_at", "finished_at", "succeeded_at", "status_changed_at", "created_at", "updated_at"}},
+		{DeploymentSnapshot{}, []string{"id", "organization_id", "application_id", "release_id", "environment_id", "target_id", "source", "reason", "status", "previous_deployment_id", "initiated_by_principal_id", "session_id", "work_item_id", "external_ref", "policy_decision_id", "variable_snapshot_id", "secret_versions", "restores_deployment_id", "secrets_latest", "findings", "requested_at", "started_at", "finished_at", "succeeded_at", "status_changed_at", "created_at", "updated_at"}},
 		{DeploymentEventSnapshot{}, []string{"id", "organization_id", "deployment_id", "kind", "status", "detail", "report_id", "reported_by_principal_id", "occurred_at", "recorded_at"}},
 	}
 	for _, tt := range tests {

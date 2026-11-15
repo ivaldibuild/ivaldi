@@ -193,8 +193,19 @@ export class DeliveryApi {
   }
 
   /** Deploys a published Release to Targets: one Deployment each, applying or awaiting approval. */
-  requestDeployments(releaseId: string, targetIds: string[]): Promise<Deployment[]> {
-    return this.api.send('POST', `/releases/${releaseId}/deployments`, { target_ids: targetIds });
+  /**
+   * `latestSecrets` makes a rollback among them read the current secrets instead of the versions
+   * the Release last ran with on the Target.
+   */
+  requestDeployments(
+    releaseId: string,
+    targetIds: string[],
+    latestSecrets = false,
+  ): Promise<Deployment[]> {
+    return this.api.send('POST', `/releases/${releaseId}/deployments`, {
+      target_ids: targetIds,
+      ...(latestSecrets ? { secrets: 'latest' } : {}),
+    });
   }
 
   createPlacement(applicationId: string, targetId: string): Promise<Placement> {

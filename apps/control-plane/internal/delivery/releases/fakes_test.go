@@ -72,9 +72,22 @@ type store struct {
 	// snapshotted lists the Releases whose variables were snapshotted, as
 	// "release ID by principal ID in project ID".
 	snapshotted []string
+	// edited replaces preview once it has been read, as an edit made while a
+	// refresh runs would; stored is what the last revision was given.
+	edited, stored []delivery.SnapshotVariable
 	// current is the revision GetCurrentReleaseVariables returns, by Release.
 	current map[string]*delivery.ReleaseVariables
 	targets map[string]*delivery.Target
+	// revisions and deployments are what a Deployment's revision is read from.
+	revisions   map[string]*delivery.ReleaseVariables
+	deployments map[string]*delivery.Deployment
+	// preview is what a revision taken now would hold.
+	preview []delivery.SnapshotVariable
+	// lifecycle, environments, and placements are what a refresh resolves
+	// production Targets from.
+	lifecycle    *delivery.Lifecycle
+	environments []*delivery.Environment
+	placements   []*delivery.Placement
 }
 
 func (s *store) WithinTx(ctx context.Context, fn func(context.Context) error) error {
@@ -367,7 +380,7 @@ func newWorld(t *testing.T) *world {
 func (s *store) options(authz authorization.Authorizer) []ReleaseServiceOption {
 	return []ReleaseServiceOption{
 		WithBuildRepo(s), WithReleaseRepo(s), WithApplications(s), WithTagResolver(tagResolver{s}),
-		WithVariableSnapshots(s), WithCurrentVariables(s), WithTargetLookup(s),
+		WithVariableSnapshots(s), WithCurrentVariables(s), WithTargetLookup(s), WithDeploymentLookup(s), WithLifecycles(s), WithEnvironments(s),
 		WithAuthorizer(authz), WithTransactor(s), WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
 	}
 }
@@ -400,12 +413,77 @@ func (s *store) Take(_ context.Context, rel *delivery.Release, projectID string,
 		by = *takenBy
 	}
 	s.snapshotted = append(s.snapshotted, rel.ID()+" by "+by+" in "+projectID)
-	return nil, nil
+	if s.preview == nil {
+		return nil, nil
+	}
+	return s.Store(context.Background(), rel, s.preview, takenBy)
+}
+
+// Store keeps the variables it is given as the next revision, and what they
+// were, so a test can check a refresh stores what it checked.
+func (s *store) Store(_ context.Context, rel *delivery.Release, variables []delivery.SnapshotVariable, takenBy *string) ([]*delivery.ReleaseVariables, error) {
+	s.stored = variables
+	revision := 1
+	var changed []*delivery.ReleaseVariables
+	if current, ok := s.current[rel.ID()]; ok {
+		revision = current.Revision() + 1
+		current.Supersede()
+		changed = append(changed, current)
+	}
+	taken, err := delivery.NewReleaseVariables(delivery.NewReleaseVariablesProps{
+		OrganizationID: rel.OrganizationID(), ApplicationID: rel.ApplicationID(), ReleaseID: rel.ID(),
+		Revision: revision, Variables: variables, TakenByPrincipalID: takenBy,
+	}, nil)
+	if err != nil {
+		return nil, err
+	}
+	if s.current == nil {
+		s.current = map[string]*delivery.ReleaseVariables{}
+	}
+	s.current[rel.ID()] = taken
+	return append(changed, taken), nil
+}
+
+func (s *store) Preview(context.Context, *delivery.Release, string) ([]delivery.SnapshotVariable, error) {
+	read := s.preview
+	if s.edited != nil {
+		s.preview = s.edited
+	}
+	return read, nil
+}
+
+func (s *store) GetLifecycle(context.Context, string, string) (*delivery.Lifecycle, error) {
+	if s.lifecycle == nil {
+		return nil, delivery.ErrNotFound
+	}
+	return s.lifecycle, nil
+}
+
+func (s *store) GetEnvironments(context.Context, string, []string) ([]*delivery.Environment, error) {
+	return s.environments, nil
+}
+
+func (s *store) ListPlacements(context.Context, string, string) ([]*delivery.Placement, error) {
+	return s.placements, nil
 }
 
 func (s *store) GetCurrentReleaseVariables(_ context.Context, _, releaseID string) (*delivery.ReleaseVariables, error) {
 	if rv, ok := s.current[releaseID]; ok {
 		return rv, nil
+	}
+	return nil, delivery.ErrNotFound
+}
+
+func (s *store) GetReleaseVariables(_ context.Context, _, revisionID string) (*delivery.ReleaseVariables, error) {
+	if rv, ok := s.revisions[revisionID]; ok {
+		return rv, nil
+	}
+	return nil, delivery.ErrNotFound
+}
+
+func (s *store) GetDeployment(_ context.Context, _, deploymentID string) (*delivery.Deployment, error) {
+	if d, ok := s.deployments[deploymentID]; ok {
+		return d, nil
 	}
 	return nil, delivery.ErrNotFound
 }

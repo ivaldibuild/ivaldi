@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -34,6 +35,7 @@ type Applications interface {
 	GetApplicationByIdentifier(ctx context.Context, organizationID, identifier string) (*delivery.Application, error)
 	ListArtifacts(ctx context.Context, organizationID, applicationID string, includeArchived bool) ([]*delivery.Artifact, error)
 	ListChannels(ctx context.Context, organizationID, applicationID string, includeArchived bool) ([]*delivery.Channel, error)
+	ListPlacements(ctx context.Context, organizationID, applicationID string) ([]*delivery.Placement, error)
 }
 
 // VariableSnapshots takes the revisions of a Release's variables and reads
@@ -41,12 +43,35 @@ type Applications interface {
 // delivery.ReleaseVariablesRepository provide it.
 type VariableSnapshots interface {
 	Take(ctx context.Context, rel *delivery.Release, projectID string, takenBy *string) ([]*delivery.ReleaseVariables, error)
+	// Preview returns what Take would store, without storing it.
+	Preview(ctx context.Context, rel *delivery.Release, projectID string) ([]delivery.SnapshotVariable, error)
+	// Store makes previewed variables the Release's next revision.
+	Store(ctx context.Context, rel *delivery.Release, variables []delivery.SnapshotVariable, takenBy *string) ([]*delivery.ReleaseVariables, error)
+}
+
+// Lifecycles reads the Lifecycle a Release's Channel follows, and
+// Environments its Environments, to find the production Targets a refresh
+// of the Release's variables must not change. delivery's Lifecycle and
+// Environment repositories provide them.
+type Lifecycles interface {
+	GetLifecycle(ctx context.Context, organizationID, lifecycleID string) (*delivery.Lifecycle, error)
+}
+
+type Environments interface {
+	GetEnvironments(ctx context.Context, organizationID string, environmentIDs []string) ([]*delivery.Environment, error)
 }
 
 // CurrentVariables reads the revision of its variables a Release deploys
 // with. delivery.ReleaseVariablesRepository provides it.
 type CurrentVariables interface {
 	GetCurrentReleaseVariables(ctx context.Context, organizationID, releaseID string) (*delivery.ReleaseVariables, error)
+	GetReleaseVariables(ctx context.Context, organizationID, revisionID string) (*delivery.ReleaseVariables, error)
+}
+
+// DeploymentLookup reads the Deployment whose revision of variables is
+// asked for. delivery.DeploymentRepository provides it.
+type DeploymentLookup interface {
+	GetDeployment(ctx context.Context, organizationID, deploymentID string) (*delivery.Deployment, error)
 }
 
 // TargetLookup reads the Target a Release's variables are resolved for.
@@ -70,6 +95,9 @@ type options struct {
 	snapshots    VariableSnapshots
 	variables    CurrentVariables
 	targets      TargetLookup
+	deployments  DeploymentLookup
+	lifecycles   Lifecycles
+	environments Environments
 	authz        authorization.Authorizer
 	writer       change.Writer
 }
@@ -91,8 +119,18 @@ func WithVariableSnapshots(v VariableSnapshots) ReleaseServiceOption {
 func WithCurrentVariables(v CurrentVariables) ReleaseServiceOption {
 	return func(o *options) { o.variables = v }
 }
+
+func WithLifecycles(l Lifecycles) ReleaseServiceOption {
+	return func(o *options) { o.lifecycles = l }
+}
+func WithEnvironments(e Environments) ReleaseServiceOption {
+	return func(o *options) { o.environments = e }
+}
 func WithTargetLookup(t TargetLookup) ReleaseServiceOption {
 	return func(o *options) { o.targets = t }
+}
+func WithDeploymentLookup(d DeploymentLookup) ReleaseServiceOption {
+	return func(o *options) { o.deployments = d }
 }
 
 // WithTagResolver resolves Builds named by tag. delivery.NoTagResolver
@@ -135,6 +173,9 @@ func NewReleaseService(opts ...ReleaseServiceOption) (delivery.ReleaseService, e
 		{"VariableSnapshots", o.snapshots != nil},
 		{"CurrentVariables", o.variables != nil},
 		{"TargetLookup", o.targets != nil},
+		{"DeploymentLookup", o.deployments != nil},
+		{"Lifecycles", o.lifecycles != nil},
+		{"Environments", o.environments != nil},
 		{"Authorizer", o.authz != nil},
 	}
 	for _, r := range required {
@@ -436,16 +477,17 @@ func (s *service) snapshotVariables(ctx context.Context, rel *delivery.Release, 
 	return nil
 }
 
-// GetReleaseVariables returns the Release's current revision and, for a
-// Target, what a Deployment there would get.
-func (s *service) GetReleaseVariables(ctx context.Context, _ identity.Actor, organizationID, releaseID, targetID string) (*delivery.ReleaseVariablesView, error) {
+// GetReleaseVariables returns the Release's current revision, or the one a
+// Deployment of it used, and, for a Target, what a Deployment there would
+// get from it.
+func (s *service) GetReleaseVariables(ctx context.Context, _ identity.Actor, organizationID, releaseID, targetID, deploymentID string) (*delivery.ReleaseVariablesView, error) {
 	rel, err := s.releases.GetRelease(ctx, organizationID, releaseID)
 	if err != nil {
 		return nil, err
 	}
 	view := &delivery.ReleaseVariablesView{Resolved: []delivery.ResolvedVariable{}}
 	var variables []delivery.SnapshotVariable
-	current, err := s.variables.GetCurrentReleaseVariables(ctx, organizationID, releaseID)
+	current, err := s.revisionFor(ctx, rel, deploymentID)
 	switch {
 	case errors.Is(err, delivery.ErrNotFound):
 	case err != nil:
@@ -468,6 +510,163 @@ func (s *service) GetReleaseVariables(ctx context.Context, _ identity.Actor, org
 		TargetID: target.ID(), EnvironmentID: target.EnvironmentID(), ChannelID: rel.ChannelID(),
 	})
 	return view, nil
+}
+
+// revisionFor returns the Release's current revision, or the one the named
+// Deployment of it used. ErrNotFound means there is none: the Release, or
+// that Deployment, was made before Releases snapshotted their variables.
+func (s *service) revisionFor(ctx context.Context, rel *delivery.Release, deploymentID string) (*delivery.ReleaseVariables, error) {
+	if deploymentID == "" {
+		return s.variables.GetCurrentReleaseVariables(ctx, rel.OrganizationID(), rel.ID())
+	}
+	d, err := s.deployments.GetDeployment(ctx, rel.OrganizationID(), deploymentID)
+	if errors.Is(err, delivery.ErrNotFound) || (err == nil && d.ReleaseID() != rel.ID()) {
+		return nil, delivery.NewErrInvalidInput(fmt.Sprintf("deployment %s is not one of this release's", deploymentID))
+	}
+	if err != nil {
+		return nil, err
+	}
+	if d.VariableSnapshotID() == nil {
+		return nil, delivery.ErrNotFound
+	}
+	return s.variables.GetReleaseVariables(ctx, rel.OrganizationID(), *d.VariableSnapshotID())
+}
+
+// RefreshReleaseVariables takes a new revision of a Release's variables
+// from what its Application deploys with now, unless that would change what
+// a production Target gets.
+func (s *service) RefreshReleaseVariables(ctx context.Context, actor identity.Actor, organizationID, releaseID string, preview bool) (*delivery.ReleaseVariablesRefresh, error) {
+	var out *delivery.ReleaseVariablesRefresh
+	err := s.writer.Tx.WithinTx(ctx, func(ctx context.Context) error {
+		// Locked so two refreshes of one Release take their revisions in turn.
+		rel, err := s.releases.GetReleaseForUpdate(ctx, organizationID, releaseID)
+		if err != nil {
+			return err
+		}
+		if rel.Status() == release.StatusWithdrawn {
+			return fmt.Errorf("%w: release %s is withdrawn", delivery.ErrReleaseStatus, rel.ID())
+		}
+		app, err := s.applications.GetApplication(ctx, organizationID, rel.ApplicationID())
+		if err != nil {
+			return err
+		}
+		var before []delivery.SnapshotVariable
+		out = &delivery.ReleaseVariablesRefresh{Changed: []string{}, Production: []delivery.ProductionChange{}}
+		current, err := s.variables.GetCurrentReleaseVariables(ctx, organizationID, releaseID)
+		switch {
+		case errors.Is(err, delivery.ErrNotFound):
+		case err != nil:
+			return err
+		default:
+			before = current.Variables()
+			out.Revision = new(current.Snapshot())
+		}
+		after, err := s.snapshots.Preview(ctx, rel, app.ProjectID())
+		if err != nil {
+			return err
+		}
+		if changed := delivery.ChangedVariables(before, after); changed != nil {
+			out.Changed = changed
+		}
+		out.Production, err = s.productionChanges(ctx, rel, before, after)
+		if err != nil {
+			return err
+		}
+		// A Release with a revision that would not change keeps it.
+		if preview || (current != nil && len(out.Changed) == 0) {
+			return nil
+		}
+		if len(out.Production) > 0 {
+			names := map[string]bool{}
+			for _, change := range out.Production {
+				for _, name := range change.Variables {
+					names[name] = true
+				}
+			}
+			targets := "1 production target"
+			if n := len(out.Production); n > 1 {
+				targets = fmt.Sprintf("%d production targets", n)
+			}
+			return fmt.Errorf("%w: %s on %s; until approvals exist, create a new release to change production",
+				delivery.ErrProductionChange, strings.Join(slices.Sorted(maps.Keys(names)), ", "), targets)
+		}
+		// What was checked against production is what is stored: reading
+		// the variables again could pick up an edit made since.
+		revisions, err := s.snapshots.Store(ctx, rel, after, optional.Of(actor.PrincipalID))
+		if err != nil {
+			return err
+		}
+		for _, rv := range revisions {
+			if err := s.writer.Events(ctx, delivery.AggregateReleaseVariables, rv.ID(), rv); err != nil {
+				return err
+			}
+		}
+		taken := revisions[len(revisions)-1]
+		previous := out.Revision
+		out.Revision, out.Applied = new(taken.Snapshot()), true
+		return s.writer.AuditRecord(ctx, audit.Event{
+			Type: delivery.EventReleaseVariablesRefreshed, OrganizationID: organizationID, ResourceID: rel.ID(),
+			Actor: actor, Before: previous, After: out.Revision,
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// productionChanges resolves two revisions for every active production
+// Target the Application is placed on, in an Environment of the Lifecycle
+// the Release's Channel follows, and returns those that would get another
+// value of some variable.
+func (s *service) productionChanges(ctx context.Context, rel *delivery.Release, before, after []delivery.SnapshotVariable) ([]delivery.ProductionChange, error) {
+	organizationID := rel.OrganizationID()
+	out := []delivery.ProductionChange{}
+	channels, err := s.applications.ListChannels(ctx, organizationID, rel.ApplicationID(), true)
+	if err != nil {
+		return nil, err
+	}
+	i := slices.IndexFunc(channels, func(c *delivery.Channel) bool { return c.ID() == rel.ChannelID() })
+	if i < 0 {
+		return out, nil
+	}
+	lifecycle, err := s.lifecycles.GetLifecycle(ctx, organizationID, channels[i].LifecycleID())
+	if err != nil {
+		return nil, err
+	}
+	environments, err := s.environments.GetEnvironments(ctx, organizationID, lifecycle.EnvironmentIDs())
+	if err != nil {
+		return nil, err
+	}
+	production := map[string]bool{}
+	for _, e := range environments {
+		if e.Tier() == delivery.TierProduction && !e.Archived() {
+			production[e.ID()] = true
+		}
+	}
+	if len(production) == 0 {
+		return out, nil
+	}
+	placements, err := s.applications.ListPlacements(ctx, organizationID, rel.ApplicationID())
+	if err != nil {
+		return nil, err
+	}
+	for _, placement := range placements {
+		target, err := s.targets.GetTarget(ctx, organizationID, placement.TargetID())
+		if err != nil {
+			return nil, err
+		}
+		if target.Archived() || !production[target.EnvironmentID()] {
+			continue
+		}
+		changed := delivery.ChangedWinners(before, after, delivery.DeploymentScope{
+			TargetID: target.ID(), EnvironmentID: target.EnvironmentID(), ChannelID: rel.ChannelID(),
+		})
+		if len(changed) > 0 {
+			out = append(out, delivery.ProductionChange{TargetID: target.ID(), EnvironmentID: target.EnvironmentID(), Variables: changed})
+		}
+	}
+	return out, nil
 }
 
 // chooseChannel returns the Channel named, if it admits the Release, or

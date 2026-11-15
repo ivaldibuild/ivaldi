@@ -1668,6 +1668,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/releases/{release_id}/variables/refresh': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Take a new revision of a Release's variables from its Application's, or preview what would change */
+    post: operations['refresh-release-variables'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/releases/{release_id}/withdraw': {
     parameters: {
       query?: never;
@@ -3348,7 +3365,9 @@ export interface components {
       release_id: string;
       /** Format: date-time */
       requested_at: string;
+      restores_deployment_id: string | null;
       secret_versions: components['schemas']['SecretVersion'][];
+      secrets_latest: boolean;
       session_id: string | null;
       /** @enum {string} */
       source: 'executed' | 'observed';
@@ -3825,6 +3844,11 @@ export interface components {
       id: string;
       slug: string;
     };
+    ProductionChange: {
+      environment_id: string;
+      target_id: string;
+      variables: string[];
+    };
     ProjectSnapshot: {
       /** Format: date-time */
       archived_at: string | null;
@@ -3965,7 +3989,10 @@ export interface components {
       changes: components['schemas']['ReleaseChange'][];
       checks: components['schemas']['DeploymentCheck'][];
       current_release_id: string | null;
+      /** @enum {string} */
+      reason: 'rollout' | 'rollback' | 'redeploy';
       release_id: string;
+      restores_deployment_id: string | null;
       target_id: string;
     };
     ReleaseSnapshot: {
@@ -3991,6 +4018,12 @@ export interface components {
       version: string;
       /** Format: date-time */
       withdrawn_at: string | null;
+    };
+    ReleaseVariablesRefresh: {
+      applied: boolean;
+      changed: string[];
+      production: components['schemas']['ProductionChange'][];
+      revision: components['schemas']['ReleaseVariablesSnapshot'];
     };
     ReleaseVariablesSnapshot: {
       application_id: string;
@@ -4075,6 +4108,11 @@ export interface components {
        * @example https://example.com/schemas/RequestDeploymentsRequestBody.json
        */
       readonly $schema?: string;
+      /**
+       * @description For a rollback: pinned (the default) reads the secret versions the Release last ran with on the Target, and latest reads the current ones. Other Deployments always read the latest
+       * @enum {string}
+       */
+      secrets?: 'pinned' | 'latest';
       /** @description The Targets to deploy the Release to */
       target_ids: string[];
     };
@@ -4735,6 +4773,20 @@ export interface components {
       readonly $schema?: string;
       /** @description Response payload, always present: an empty list is [], not omitted */
       data: components['schemas']['ReleaseChanges'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
+    ResponseReleaseVariablesRefresh: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseReleaseVariablesRefresh.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['ReleaseVariablesRefresh'];
       /** @description Human-readable message */
       message?: string;
       /** @description Request status */
@@ -10121,6 +10173,8 @@ export interface operations {
       query?: {
         /** @description A Target, to also get the value of each variable a Deployment there would get */
         target_id?: string;
+        /** @description One of the Release's Deployments, to get the revision it used rather than the current one: what a rollback that restores it deploys */
+        deployment_id?: string;
       };
       header?: never;
       path: {
@@ -10138,6 +10192,41 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ResponseReleaseVariablesView'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'refresh-release-variables': {
+    parameters: {
+      query?: {
+        /** @description Only say what would change, without taking a revision */
+        preview?: boolean;
+      };
+      header?: never;
+      path: {
+        /** @description The Release */
+        release_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseReleaseVariablesRefresh'];
         };
       };
       /** @description Error */

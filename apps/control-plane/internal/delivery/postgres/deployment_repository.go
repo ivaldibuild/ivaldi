@@ -32,6 +32,8 @@ type deploymentEntity struct {
 	PolicyDecisionID     *string    `gorm:"column:policy_decision_id"`
 	VariableSnapshotID   *string    `gorm:"column:variable_snapshot_id"`
 	SecretVersions       []byte     `gorm:"column:secret_versions;type:jsonb"`
+	RestoresDeploymentID *string    `gorm:"column:restores_deployment_id"`
+	SecretsLatest        bool       `gorm:"column:secrets_latest"`
 	Findings             []byte     `gorm:"column:findings;type:jsonb"`
 	RequestedAt          time.Time  `gorm:"column:requested_at;autoCreateTime:false"`
 	StartedAt            *time.Time `gorm:"column:started_at"`
@@ -99,7 +101,8 @@ func deploymentToPersistence(d *delivery.Deployment) (*deploymentEntity, error) 
 		EnvironmentID: s.EnvironmentID, TargetID: s.TargetID, Source: string(s.Source), Reason: string(s.Reason),
 		Status: string(s.Status), PreviousDeploymentID: s.PreviousDeploymentID,
 		InitiatedBy: s.InitiatedByPrincipalID, SessionID: s.SessionID, WorkItemID: s.WorkItemID,
-		ExternalRef: s.ExternalRef, PolicyDecisionID: s.PolicyDecisionID, VariableSnapshotID: s.VariableSnapshotID, SecretVersions: secretVersions, Findings: findings,
+		ExternalRef: s.ExternalRef, PolicyDecisionID: s.PolicyDecisionID, VariableSnapshotID: s.VariableSnapshotID, SecretVersions: secretVersions,
+		RestoresDeploymentID: s.RestoresDeploymentID, SecretsLatest: s.SecretsLatest, Findings: findings,
 		RequestedAt: s.RequestedAt, StartedAt: s.StartedAt, FinishedAt: s.FinishedAt, SucceededAt: s.SucceededAt,
 		StatusChangedAt: s.StatusChangedAt, CreatedAt: s.CreatedAt, UpdatedAt: s.UpdatedAt,
 	}, nil
@@ -124,7 +127,8 @@ func deploymentToDomain(e *deploymentEntity) (*delivery.Deployment, error) {
 		Reason: delivery.DeploymentReason(e.Reason), Status: release.DeploymentStatus(e.Status),
 		PreviousDeploymentID: e.PreviousDeploymentID, InitiatedByPrincipalID: e.InitiatedBy,
 		SessionID: e.SessionID, WorkItemID: e.WorkItemID, ExternalRef: e.ExternalRef,
-		PolicyDecisionID: e.PolicyDecisionID, VariableSnapshotID: e.VariableSnapshotID, SecretVersions: secretVersions, Findings: findings, RequestedAt: utc(e.RequestedAt),
+		PolicyDecisionID: e.PolicyDecisionID, VariableSnapshotID: e.VariableSnapshotID, SecretVersions: secretVersions,
+		RestoresDeploymentID: e.RestoresDeploymentID, SecretsLatest: e.SecretsLatest, Findings: findings, RequestedAt: utc(e.RequestedAt),
 		StartedAt: utcPtr(e.StartedAt), FinishedAt: utcPtr(e.FinishedAt), SucceededAt: utcPtr(e.SucceededAt),
 		StatusChangedAt: utc(e.StatusChangedAt), CreatedAt: utc(e.CreatedAt), UpdatedAt: utc(e.UpdatedAt),
 	}, &e.ID)
@@ -252,6 +256,12 @@ func (r *deploymentRepository) ListSucceededEnvironmentIDs(ctx context.Context, 
 		Where("organization_id = ? AND release_id = ? AND succeeded_at IS NOT NULL", organizationID, releaseID).
 		Distinct().Pluck("environment_id", &ids).Error
 	return ids, translate(err)
+}
+
+func (r *deploymentRepository) GetLastSucceededDeployment(ctx context.Context, organizationID, releaseID, targetID string) (*delivery.Deployment, error) {
+	return r.get(r.conn(ctx).
+		Where("organization_id = ? AND release_id = ? AND target_id = ? AND succeeded_at IS NOT NULL", organizationID, releaseID, targetID).
+		Order("succeeded_at DESC, id DESC"))
 }
 
 func (r *deploymentRepository) AppendDeploymentEvent(ctx context.Context, event *delivery.DeploymentEvent) (bool, error) {

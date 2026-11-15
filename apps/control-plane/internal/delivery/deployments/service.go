@@ -212,7 +212,7 @@ func (s *service) RequestDeployments(ctx context.Context, actor identity.Actor, 
 			props := delivery.NewDeploymentProps{
 				OrganizationID: in.OrganizationID, ApplicationID: rel.ApplicationID(),
 				ReleaseID: rel.ID(), EnvironmentID: plan.target.EnvironmentID(), TargetID: targetID,
-				Source: delivery.DeploymentExecuted, Reason: delivery.DeploymentRollout, Status: status,
+				Source: delivery.DeploymentExecuted, Reason: plan.reason, Status: status,
 				PreviousDeploymentID:   plan.placement.CurrentDeploymentID(),
 				InitiatedByPrincipalID: optional.Of(actor.PrincipalID), SessionID: in.SessionID,
 				WorkItemID: in.WorkItemID, PolicyDecisionID: optional.Of(decision.ID),
@@ -220,6 +220,10 @@ func (s *service) RequestDeployments(ctx context.Context, actor identity.Actor, 
 			}
 			if plan.variables != nil {
 				props.VariableSnapshotID = new(plan.variables.ID())
+			}
+			if plan.restores != nil {
+				props.RestoresDeploymentID = new(plan.restores.ID())
+				props.SecretsLatest = in.SecretsLatest
 			}
 			if status == release.DeploymentApplying {
 				props.StartedAt = &now
@@ -581,8 +585,11 @@ func (s *service) ReleaseChanges(ctx context.Context, _ identity.Actor, organiza
 	}
 	var previous map[string]*delivery.Build
 	changes := &delivery.ReleaseChanges{
-		ReleaseID: rel.ID(), TargetID: targetID,
+		ReleaseID: rel.ID(), TargetID: targetID, Reason: plan.reason,
 		Artifacts: []delivery.ArtifactChange{}, Changes: []delivery.ReleaseChange{},
+	}
+	if plan.restores != nil {
+		changes.RestoresDeploymentID = new(plan.restores.ID())
 	}
 	if plan.placement != nil && plan.placement.CurrentReleaseID() != nil {
 		changes.CurrentReleaseID = plan.placement.CurrentReleaseID()
@@ -758,7 +765,11 @@ type plan struct {
 	// variables is the revision of the Release's variables a Deployment
 	// would use; nil for a Release that has none.
 	variables *delivery.ReleaseVariables
-	checks    []delivery.DeploymentCheck
+	// reason is what a Deployment requested now would be, and restores the
+	// executed Deployment a rollback replays, if one was recorded.
+	reason   delivery.DeploymentReason
+	restores *delivery.Deployment
+	checks   []delivery.DeploymentCheck
 }
 
 func (s *service) plan(ctx context.Context, organizationID string, rel *delivery.Release, targetID string) (*plan, error) {
@@ -847,7 +858,11 @@ func (s *service) plan(ctx context.Context, organizationID string, rel *delivery
 	}
 	p.checks = append(p.checks, check("phase_open", open, reason))
 
-	p.variables, err = s.currentVariables(ctx, rel)
+	p.reason, p.restores, err = s.reasonFor(ctx, rel, p.placement, targetID)
+	if err != nil {
+		return nil, err
+	}
+	p.variables, err = s.variablesFor(ctx, rel, p.restores)
 	if err != nil {
 		return nil, err
 	}
@@ -896,6 +911,46 @@ func agentStoreKinds(cluster *delivery.Cluster) []string {
 		}
 	}
 	return out
+}
+
+// reasonFor says what a Deployment of the Release to the Target would be: a
+// redeploy when the Release is current there, a rollback when it was
+// healthy there before, and a rollout otherwise. For a rollback it returns
+// the Deployment to replay: the Release's last healthy Deployment there, if
+// Ivaldi executed it. One it only observed recorded nothing to replay.
+func (s *service) reasonFor(ctx context.Context, rel *delivery.Release, placement *delivery.Placement, targetID string) (delivery.DeploymentReason, *delivery.Deployment, error) {
+	if placement == nil {
+		return delivery.DeploymentRollout, nil, nil
+	}
+	if current := placement.CurrentReleaseID(); current != nil && *current == rel.ID() {
+		return delivery.DeploymentRedeploy, nil, nil
+	}
+	last, err := s.deployments.GetLastSucceededDeployment(ctx, rel.OrganizationID(), rel.ID(), targetID)
+	if errors.Is(err, delivery.ErrNotFound) {
+		return delivery.DeploymentRollout, nil, nil
+	}
+	if err != nil {
+		return "", nil, err
+	}
+	if last.Source() != delivery.DeploymentExecuted {
+		return delivery.DeploymentRollback, nil, nil
+	}
+	return delivery.DeploymentRollback, last, nil
+}
+
+// variablesFor returns the revision of variables a Deployment would use:
+// the one the Deployment it restores used, so a rollback brings back the
+// configuration the Release last ran with there, or else the Release's
+// current one. Either may be nil: there were no variables to record.
+func (s *service) variablesFor(ctx context.Context, rel *delivery.Release, restores *delivery.Deployment) (*delivery.ReleaseVariables, error) {
+	if restores == nil {
+		return s.currentVariables(ctx, rel)
+	}
+	snapshotID := restores.VariableSnapshotID()
+	if snapshotID == nil {
+		return nil, nil
+	}
+	return s.variables.GetReleaseVariables(ctx, rel.OrganizationID(), *snapshotID)
 }
 
 // currentVariables returns the revision of its variables a Release deploys
@@ -1042,6 +1097,34 @@ func (s *service) assignment(ctx context.Context, d *delivery.Deployment) (*deli
 		}
 		secrets = delivery.AssignmentSecrets(resolved, stores)
 	}
+	// A rollback reads the versions the Deployment it restores read, and
+	// the agent refuses a secret whose value is no longer that one.
+	if restoresID := d.RestoresDeploymentID(); restoresID != nil && !d.SecretsLatest() {
+		restored, err := s.deployments.GetDeployment(ctx, d.OrganizationID(), *restoresID)
+		if err != nil {
+			return nil, err
+		}
+		pins := map[string]delivery.SecretVersion{}
+		for _, pin := range restored.SecretVersions() {
+			pins[pin.Name] = pin
+		}
+		for i := range secrets {
+			if pin, ok := pins[secrets[i].Name]; ok {
+				if pin.Version != "" {
+					secrets[i].Ref.Version = pin.Version
+				}
+				secrets[i].Fingerprint = pin.Fingerprint
+			}
+		}
+	}
+	// A rollback asked to use the latest secrets reads the latest of each,
+	// including one whose value names a version: that version is what the
+	// rollback could not read, or read as something else.
+	if d.RestoresDeploymentID() != nil && d.SecretsLatest() {
+		for i := range secrets {
+			secrets[i].Ref.Version = ""
+		}
+	}
 	apply := delivery.ApplyAssignment{
 		Deployer:  delivery.DeployerHelm,
 		Namespace: target.Locator()[delivery.LocatorNamespace],
@@ -1051,6 +1134,7 @@ func (s *service) assignment(ctx context.Context, d *delivery.Deployment) (*deli
 		Secrets:   secrets,
 		Helm:      &delivery.HelmApply{ReleaseName: helmReleaseName(d.ApplicationID())},
 		Reason:    d.Reason(),
+		Restores:  d.RestoresDeploymentID(),
 	}
 	if apply.Overlays == nil {
 		apply.Overlays = []string{}

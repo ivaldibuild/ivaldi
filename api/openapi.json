@@ -16362,6 +16362,16 @@
               "description": "A Target, to also get the value of each variable a Deployment there would get",
               "type": "string"
             }
+          },
+          {
+            "description": "One of the Release's Deployments, to get the revision it used rather than the current one: what a rollback that restores it deploys",
+            "explode": false,
+            "in": "query",
+            "name": "deployment_id",
+            "schema": {
+              "description": "One of the Release's Deployments, to get the revision it used rather than the current one: what a rollback that restores it deploys",
+              "type": "string"
+            }
           }
         ],
         "responses": {

@@ -150,7 +150,7 @@ func TestGetReleaseVariables(t *testing.T) {
 	w := newWorld(t)
 	rel := w.create(t, "1.4.0", apiBuild("a")).Release
 
-	view, err := w.svc.GetReleaseVariables(ctx, ada, org, rel.ID(), "")
+	view, err := w.svc.GetReleaseVariables(ctx, ada, org, rel.ID(), "", "")
 	require.NoError(t, err)
 	assert.Nil(t, view.Revision, "a release with no snapshot deploys with no variables")
 	assert.Empty(t, view.Resolved)
@@ -172,7 +172,7 @@ func TestGetReleaseVariables(t *testing.T) {
 		}},
 	}, nil))}
 
-	view, err = w.svc.GetReleaseVariables(ctx, ada, org, rel.ID(), target.ID())
+	view, err = w.svc.GetReleaseVariables(ctx, ada, org, rel.ID(), target.ID(), "")
 	require.NoError(t, err)
 	require.NotNil(t, view.Revision)
 	assert.Equal(t, 1, view.Revision.Revision)
@@ -180,8 +180,37 @@ func TestGetReleaseVariables(t *testing.T) {
 	assert.Equal(t, "warn", view.Resolved[0].Winner.Value)
 	assert.Equal(t, "info", view.Resolved[0].Beaten[0].Value)
 
-	_, err = w.svc.GetReleaseVariables(ctx, ada, org, rel.ID(), "tgt_01BX5ZZKBKACTAV9WEVGEMMVZZ")
+	_, err = w.svc.GetReleaseVariables(ctx, ada, org, rel.ID(), "tgt_01BX5ZZKBKACTAV9WEVGEMMVZZ", "")
 	assert.ErrorIs(t, err, delivery.ErrInvalid, "an unknown target")
+
+	// A rollback deploys the revision of the Deployment it restores, which a
+	// refresh since has superseded.
+	first := w.current[rel.ID()]
+	restored := must(delivery.NewDeployment(delivery.NewDeploymentProps{
+		OrganizationID: org, ApplicationID: w.app.ID(), ReleaseID: rel.ID(), EnvironmentID: environment, TargetID: target.ID(),
+		Status: release.DeploymentHealthy, VariableSnapshotID: new(first.ID()),
+	}, nil))
+	w.revisions = map[string]*delivery.ReleaseVariables{first.ID(): first}
+	w.deployments = map[string]*delivery.Deployment{restored.ID(): restored}
+	w.current[rel.ID()] = must(delivery.NewReleaseVariables(delivery.NewReleaseVariablesProps{
+		OrganizationID: org, ApplicationID: w.app.ID(), ReleaseID: rel.ID(), Revision: 2,
+		Variables: []delivery.SnapshotVariable{{
+			Name: "Log.Level", Source: delivery.VariableSourceApplication, Kind: delivery.VariableKindText,
+			Values: []delivery.SnapshotValue{{Value: "debug"}},
+		}},
+	}, nil))
+
+	view, err = w.svc.GetReleaseVariables(ctx, ada, org, rel.ID(), target.ID(), restored.ID())
+	require.NoError(t, err)
+	assert.Equal(t, 1, view.Revision.Revision)
+	assert.Equal(t, "warn", view.Resolved[0].Winner.Value)
+	view, err = w.svc.GetReleaseVariables(ctx, ada, org, rel.ID(), target.ID(), "")
+	require.NoError(t, err)
+	assert.Equal(t, "debug", view.Resolved[0].Winner.Value)
+
+	other := w.create(t, "1.5.0", apiBuild("b")).Release
+	_, err = w.svc.GetReleaseVariables(ctx, ada, org, other.ID(), target.ID(), restored.ID())
+	assert.ErrorIs(t, err, delivery.ErrInvalid, "another release's deployment")
 }
 
 func TestCreateReleaseRecordsWhoTriggeredIt(t *testing.T) {

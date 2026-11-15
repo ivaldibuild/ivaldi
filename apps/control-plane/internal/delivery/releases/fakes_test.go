@@ -78,6 +78,9 @@ type store struct {
 	// current is the revision GetCurrentReleaseVariables returns, by Release.
 	current map[string]*delivery.ReleaseVariables
 	targets map[string]*delivery.Target
+	// revisions and deployments are what a Deployment's revision is read from.
+	revisions   map[string]*delivery.ReleaseVariables
+	deployments map[string]*delivery.Deployment
 	// preview is what a revision taken now would hold.
 	preview []delivery.SnapshotVariable
 	// lifecycle, environments, and placements are what a refresh resolves
@@ -377,7 +380,7 @@ func newWorld(t *testing.T) *world {
 func (s *store) options(authz authorization.Authorizer) []ReleaseServiceOption {
 	return []ReleaseServiceOption{
 		WithBuildRepo(s), WithReleaseRepo(s), WithApplications(s), WithTagResolver(tagResolver{s}),
-		WithVariableSnapshots(s), WithCurrentVariables(s), WithTargetLookup(s), WithLifecycles(s), WithEnvironments(s),
+		WithVariableSnapshots(s), WithCurrentVariables(s), WithTargetLookup(s), WithDeploymentLookup(s), WithLifecycles(s), WithEnvironments(s),
 		WithAuthorizer(authz), WithTransactor(s), WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
 	}
 }
@@ -467,6 +470,20 @@ func (s *store) ListPlacements(context.Context, string, string) ([]*delivery.Pla
 func (s *store) GetCurrentReleaseVariables(_ context.Context, _, releaseID string) (*delivery.ReleaseVariables, error) {
 	if rv, ok := s.current[releaseID]; ok {
 		return rv, nil
+	}
+	return nil, delivery.ErrNotFound
+}
+
+func (s *store) GetReleaseVariables(_ context.Context, _, revisionID string) (*delivery.ReleaseVariables, error) {
+	if rv, ok := s.revisions[revisionID]; ok {
+		return rv, nil
+	}
+	return nil, delivery.ErrNotFound
+}
+
+func (s *store) GetDeployment(_ context.Context, _, deploymentID string) (*delivery.Deployment, error) {
+	if d, ok := s.deployments[deploymentID]; ok {
+		return d, nil
 	}
 	return nil, delivery.ErrNotFound
 }

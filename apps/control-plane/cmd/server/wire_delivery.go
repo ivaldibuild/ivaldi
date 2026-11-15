@@ -230,6 +230,7 @@ func (a *app) wireDelivery(runners config.Runners) error {
 		releases.WithVariableSnapshots(snapshots),
 		releases.WithCurrentVariables(revisionRepo),
 		releases.WithTargetLookup(targetRepo),
+		releases.WithDeploymentLookup(deliverypg.NewDeploymentRepository(a.db)),
 		releases.WithLifecycles(lifecycleRepo),
 		releases.WithEnvironments(envRepo),
 		releases.WithAuthorizer(a.authz),

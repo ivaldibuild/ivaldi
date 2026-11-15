@@ -10173,6 +10173,8 @@ export interface operations {
       query?: {
         /** @description A Target, to also get the value of each variable a Deployment there would get */
         target_id?: string;
+        /** @description One of the Release's Deployments, to get the revision it used rather than the current one: what a rollback that restores it deploys */
+        deployment_id?: string;
       };
       header?: never;
       path: {

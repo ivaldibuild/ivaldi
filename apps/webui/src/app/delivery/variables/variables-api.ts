@@ -86,8 +86,15 @@ export class VariablesApi {
    * The variables a Release deploys with: its current snapshot and, for a Target, the value of
    * each a Deployment there would get.
    */
-  releaseVariables(releaseId: string, targetId?: string): Promise<ReleaseVariables> {
-    const query = targetId ? `?${new URLSearchParams({ target_id: targetId })}` : '';
+  releaseVariables(
+    releaseId: string,
+    targetId?: string,
+    deploymentId?: string,
+  ): Promise<ReleaseVariables> {
+    const params = new URLSearchParams();
+    if (targetId) params.set('target_id', targetId);
+    if (deploymentId) params.set('deployment_id', deploymentId);
+    const query = params.size ? `?${params}` : '';
     return this.api.get(`/releases/${releaseId}/variables${query}`);
   }
 

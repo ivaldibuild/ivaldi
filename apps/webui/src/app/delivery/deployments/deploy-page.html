@@ -225,7 +225,12 @@
                     }
                     <div class="flex flex-col gap-2">
                       <h4 class="text-sm font-semibold">Variables</h4>
-                      <app-release-variables [releaseId]="id()" [targetId]="item.target.id" />
+                      <!-- A rollback deploys the variables of the Deployment it restores. -->
+                      <app-release-variables
+                        [releaseId]="id()"
+                        [targetId]="item.target.id"
+                        [deploymentId]="item.preview.changes.restores_deployment_id ?? null"
+                      />
                     </div>
                     <ul class="flex flex-col gap-1.5 text-sm" aria-label="Checks">
                       @for (check of item.preview.changes.checks; track check.name) {

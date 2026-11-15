@@ -25,6 +25,11 @@ export class ReleaseVariables {
   readonly releaseId = input.required<string>();
   /** The Target to resolve the variables for; without one, the snapshot is shown as taken. */
   readonly targetId = input<string | null>(null);
+  /**
+   * One of the Release's Deployments, to show the revision it used rather than the current one:
+   * what a rollback that restores it deploys.
+   */
+  readonly deploymentId = input<string | null>(null);
   /** Whether to offer taking a new revision from the Application's variables. */
   readonly refreshable = input(false);
 
@@ -67,7 +72,8 @@ export class ReleaseVariables {
     effect(() => {
       const releaseId = this.releaseId();
       const targetId = this.targetId();
-      untracked(() => void this.load(releaseId, targetId));
+      const deploymentId = this.deploymentId();
+      untracked(() => void this.load(releaseId, targetId, deploymentId));
     });
   }
 
@@ -91,7 +97,7 @@ export class ReleaseVariables {
   protected async applyRefresh(): Promise<void> {
     if (await this.refresh(false)) {
       this.preview.set(null);
-      await this.load(this.releaseId(), this.targetId());
+      await this.load(this.releaseId(), this.targetId(), this.deploymentId());
     }
   }
 
@@ -112,10 +118,20 @@ export class ReleaseVariables {
     }
   }
 
-  private async load(releaseId: string, targetId: string | null): Promise<void> {
+  private async load(
+    releaseId: string,
+    targetId: string | null,
+    deploymentId: string | null,
+  ): Promise<void> {
     this.error.set(null);
     try {
-      this.view.set(await this.api.releaseVariables(releaseId, targetId ?? undefined));
+      this.view.set(
+        await this.api.releaseVariables(
+          releaseId,
+          targetId ?? undefined,
+          deploymentId ?? undefined,
+        ),
+      );
     } catch (e) {
       this.view.set(null);
       this.error.set(e instanceof ApiError ? e.message : 'Something went wrong.');

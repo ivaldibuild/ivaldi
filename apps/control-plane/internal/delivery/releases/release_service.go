@@ -65,6 +65,13 @@ type Environments interface {
 // with. delivery.ReleaseVariablesRepository provides it.
 type CurrentVariables interface {
 	GetCurrentReleaseVariables(ctx context.Context, organizationID, releaseID string) (*delivery.ReleaseVariables, error)
+	GetReleaseVariables(ctx context.Context, organizationID, revisionID string) (*delivery.ReleaseVariables, error)
+}
+
+// DeploymentLookup reads the Deployment whose revision of variables is
+// asked for. delivery.DeploymentRepository provides it.
+type DeploymentLookup interface {
+	GetDeployment(ctx context.Context, organizationID, deploymentID string) (*delivery.Deployment, error)
 }
 
 // TargetLookup reads the Target a Release's variables are resolved for.
@@ -88,6 +95,7 @@ type options struct {
 	snapshots    VariableSnapshots
 	variables    CurrentVariables
 	targets      TargetLookup
+	deployments  DeploymentLookup
 	lifecycles   Lifecycles
 	environments Environments
 	authz        authorization.Authorizer
@@ -120,6 +128,9 @@ func WithEnvironments(e Environments) ReleaseServiceOption {
 }
 func WithTargetLookup(t TargetLookup) ReleaseServiceOption {
 	return func(o *options) { o.targets = t }
+}
+func WithDeploymentLookup(d DeploymentLookup) ReleaseServiceOption {
+	return func(o *options) { o.deployments = d }
 }
 
 // WithTagResolver resolves Builds named by tag. delivery.NoTagResolver
@@ -162,6 +173,7 @@ func NewReleaseService(opts ...ReleaseServiceOption) (delivery.ReleaseService, e
 		{"VariableSnapshots", o.snapshots != nil},
 		{"CurrentVariables", o.variables != nil},
 		{"TargetLookup", o.targets != nil},
+		{"DeploymentLookup", o.deployments != nil},
 		{"Lifecycles", o.lifecycles != nil},
 		{"Environments", o.environments != nil},
 		{"Authorizer", o.authz != nil},
@@ -465,16 +477,17 @@ func (s *service) snapshotVariables(ctx context.Context, rel *delivery.Release, 
 	return nil
 }
 
-// GetReleaseVariables returns the Release's current revision and, for a
-// Target, what a Deployment there would get.
-func (s *service) GetReleaseVariables(ctx context.Context, _ identity.Actor, organizationID, releaseID, targetID string) (*delivery.ReleaseVariablesView, error) {
+// GetReleaseVariables returns the Release's current revision, or the one a
+// Deployment of it used, and, for a Target, what a Deployment there would
+// get from it.
+func (s *service) GetReleaseVariables(ctx context.Context, _ identity.Actor, organizationID, releaseID, targetID, deploymentID string) (*delivery.ReleaseVariablesView, error) {
 	rel, err := s.releases.GetRelease(ctx, organizationID, releaseID)
 	if err != nil {
 		return nil, err
 	}
 	view := &delivery.ReleaseVariablesView{Resolved: []delivery.ResolvedVariable{}}
 	var variables []delivery.SnapshotVariable
-	current, err := s.variables.GetCurrentReleaseVariables(ctx, organizationID, releaseID)
+	current, err := s.revisionFor(ctx, rel, deploymentID)
 	switch {
 	case errors.Is(err, delivery.ErrNotFound):
 	case err != nil:
@@ -497,6 +510,26 @@ func (s *service) GetReleaseVariables(ctx context.Context, _ identity.Actor, org
 		TargetID: target.ID(), EnvironmentID: target.EnvironmentID(), ChannelID: rel.ChannelID(),
 	})
 	return view, nil
+}
+
+// revisionFor returns the Release's current revision, or the one the named
+// Deployment of it used. ErrNotFound means there is none: the Release, or
+// that Deployment, was made before Releases snapshotted their variables.
+func (s *service) revisionFor(ctx context.Context, rel *delivery.Release, deploymentID string) (*delivery.ReleaseVariables, error) {
+	if deploymentID == "" {
+		return s.variables.GetCurrentReleaseVariables(ctx, rel.OrganizationID(), rel.ID())
+	}
+	d, err := s.deployments.GetDeployment(ctx, rel.OrganizationID(), deploymentID)
+	if errors.Is(err, delivery.ErrNotFound) || (err == nil && d.ReleaseID() != rel.ID()) {
+		return nil, delivery.NewErrInvalidInput(fmt.Sprintf("deployment %s is not one of this release's", deploymentID))
+	}
+	if err != nil {
+		return nil, err
+	}
+	if d.VariableSnapshotID() == nil {
+		return nil, delivery.ErrNotFound
+	}
+	return s.variables.GetReleaseVariables(ctx, rel.OrganizationID(), *d.VariableSnapshotID())
 }
 
 // RefreshReleaseVariables takes a new revision of a Release's variables

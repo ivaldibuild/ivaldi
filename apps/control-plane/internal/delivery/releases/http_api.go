@@ -143,7 +143,7 @@ func (c *ReleaseController) GetReleaseVariables(ctx context.Context, req *Releas
 	if err != nil {
 		return nil, err
 	}
-	view, err := c.service.GetReleaseVariables(ctx, who.Actor, who.OrganizationID, req.ReleaseID, req.TargetID)
+	view, err := c.service.GetReleaseVariables(ctx, who.Actor, who.OrganizationID, req.ReleaseID, req.TargetID, req.DeploymentID)
 	if err != nil {
 		return nil, httpError(ctx, err)
 	}

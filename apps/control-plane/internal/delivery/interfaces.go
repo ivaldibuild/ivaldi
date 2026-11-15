@@ -629,8 +629,10 @@ type ReleaseService interface {
 	WithdrawRelease(ctx context.Context, actor identity.Actor, organizationID, releaseID string) (*ReleaseDetail, error)
 	// GetReleaseVariables returns the Release's current revision of
 	// variables and, when a Target is named, the value of each a Deployment
-	// there would get. It needs variable.read on the Application's Project.
-	GetReleaseVariables(ctx context.Context, actor identity.Actor, organizationID, releaseID, targetID string) (*ReleaseVariablesView, error)
+	// there would get. Naming one of the Release's Deployments returns the
+	// revision it used instead, which is what a rollback that restores it
+	// deploys. It needs variable.read on the Application's Project.
+	GetReleaseVariables(ctx context.Context, actor identity.Actor, organizationID, releaseID, targetID, deploymentID string) (*ReleaseVariablesView, error)
 	// RefreshReleaseVariables snapshots the Application's variables as they
 	// are now as the Release's next revision, which later Deployments use.
 	// With preview it only says what would change. It needs release.manage,

@@ -1117,6 +1117,14 @@ func (s *service) assignment(ctx context.Context, d *delivery.Deployment) (*deli
 			}
 		}
 	}
+	// A rollback asked to use the latest secrets reads the latest of each,
+	// including one whose value names a version: that version is what the
+	// rollback could not read, or read as something else.
+	if d.RestoresDeploymentID() != nil && d.SecretsLatest() {
+		for i := range secrets {
+			secrets[i].Ref.Version = ""
+		}
+	}
 	apply := delivery.ApplyAssignment{
 		Deployer:  delivery.DeployerHelm,
 		Namespace: target.Locator()[delivery.LocatorNamespace],

@@ -1341,7 +1341,7 @@ func TestRollbackReplaysTheDeploymentItRestores(t *testing.T) {
 	password := delivery.SnapshotVariable{
 		Name: "Database.Password", Source: delivery.VariableSourceApplication, Kind: delivery.VariableKindSecret,
 		DeliverAs: new(delivery.VariableDeliverAsSecret),
-		Values:    []delivery.SnapshotValue{{Secret: &delivery.SecretReference{StoreID: storeID, Path: "db"}}},
+		Values:    []delivery.SnapshotValue{{Secret: &delivery.SecretReference{StoreID: storeID, Path: "db", Version: "40"}}},
 	}
 	released := w.withVariables(password, textVariable("Log.Level", "log.level", delivery.SnapshotValue{Value: "info"}))
 
@@ -1427,7 +1427,8 @@ func TestRollbackReplaysTheDeploymentItRestores(t *testing.T) {
 	assert.Equal(t, "42", apply.Secrets[0].Ref.Version, "the version it read then")
 	assert.Equal(t, "hmac-sha256:v1:rotated", apply.Secrets[0].Fingerprint, "which the agent checks the value against")
 
-	// With the latest secrets it keeps the restored variables and pins nothing.
+	// With the latest secrets it keeps the restored variables and pins
+	// nothing, not even the version the variable itself names.
 	delete(w.deployments, rollback.ID())
 	latest := request(delivery.RequestDeploymentsInput{SecretsLatest: true})
 	assert.True(t, latest.SecretsLatest())

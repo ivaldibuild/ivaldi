@@ -42,6 +42,7 @@ const revision = {
 
 describe('ReleaseVariables', () => {
   let asked: (string | undefined)[];
+  let askedDeployments: (string | undefined)[];
   let refreshed: boolean[];
   let refresh: ReleaseVariablesRefresh;
   let fixture: ComponentFixture<ReleaseVariables>;
@@ -52,6 +53,7 @@ describe('ReleaseVariables', () => {
     refreshable = false,
   ): Promise<HTMLElement> {
     asked = [];
+    askedDeployments = [];
     refreshed = [];
     TestBed.configureTestingModule({
       imports: [ReleaseVariables],
@@ -59,8 +61,9 @@ describe('ReleaseVariables', () => {
         {
           provide: VariablesApi,
           useValue: {
-            releaseVariables: (_releaseId: string, target?: string) => {
+            releaseVariables: (_releaseId: string, target?: string, deployment?: string) => {
               asked.push(target);
+              askedDeployments.push(deployment);
               return Promise.resolve(view);
             },
             refreshReleaseVariables: (_releaseId: string, preview: boolean) => {
@@ -97,6 +100,18 @@ describe('ReleaseVariables', () => {
     [...el.querySelectorAll('tbody tr')].map((row) =>
       [...row.querySelectorAll('td')].map((cell) => cell.textContent?.replace(/\s+/g, ' ').trim()),
     );
+
+  it('asks for the revision a rollback restores when given its Deployment', async () => {
+    await render({ revision, resolved: [] }, 'tgt_1');
+    expect(askedDeployments).toEqual([undefined]);
+
+    fixture.componentRef.setInput('deploymentId', 'dep_1');
+    fixture.detectChanges();
+    await settle();
+
+    expect(asked).toEqual(['tgt_1', 'tgt_1']);
+    expect(askedDeployments).toEqual([undefined, 'dep_1']);
+  });
 
   it("shows the snapshot's revision and what it holds", async () => {
     const el = await render({ revision, resolved: [] });

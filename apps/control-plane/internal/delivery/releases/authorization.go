@@ -97,11 +97,11 @@ func (a *authorized) GetRelease(ctx context.Context, actor identity.Actor, organ
 	return a.next.GetRelease(ctx, actor, organizationID, releaseID)
 }
 
-func (a *authorized) GetReleaseVariables(ctx context.Context, actor identity.Actor, organizationID, releaseID, targetID string) (*delivery.ReleaseVariablesView, error) {
+func (a *authorized) GetReleaseVariables(ctx context.Context, actor identity.Actor, organizationID, releaseID, targetID, deploymentID string) (*delivery.ReleaseVariablesView, error) {
 	if _, err := a.onRelease(ctx, actor, delivery.PermissionVariableRead, delivery.ActionReleaseVariablesRead, organizationID, releaseID); err != nil {
 		return nil, err
 	}
-	return a.next.GetReleaseVariables(ctx, actor, organizationID, releaseID, targetID)
+	return a.next.GetReleaseVariables(ctx, actor, organizationID, releaseID, targetID, deploymentID)
 }
 
 func (a *authorized) RefreshReleaseVariables(ctx context.Context, actor identity.Actor, organizationID, releaseID string, preview bool) (*delivery.ReleaseVariablesRefresh, error) {

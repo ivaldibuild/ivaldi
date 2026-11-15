@@ -41,6 +41,9 @@ type store struct {
 	audit        []audit.Event
 	events       []events.Envelope
 	locked       []string
+	// onLock runs when the Project's variables are taken, as another
+	// writer's change committing just before would.
+	onLock func()
 }
 
 func (s *store) WithinTx(ctx context.Context, fn func(context.Context) error) error {
@@ -54,6 +57,9 @@ func (s *store) WithinTx(ctx context.Context, fn func(context.Context) error) er
 
 func (s *store) Lock(_ context.Context, key string) error {
 	s.locked = append(s.locked, key)
+	if s.onLock != nil {
+		s.onLock()
+	}
 	return nil
 }
 

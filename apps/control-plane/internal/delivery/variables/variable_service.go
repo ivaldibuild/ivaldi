@@ -185,7 +185,7 @@ func (s *service) activeOwner(ctx context.Context, v *delivery.Variable) (owner,
 	if err != nil {
 		return owner{}, err
 	}
-	if err := s.locker.Lock(ctx, "delivery.variables:"+project.ID()); err != nil {
+	if err := s.locker.Lock(ctx, delivery.VariablesLock(project.ID())); err != nil {
 		return owner{}, err
 	}
 	return owner{projectID: project.ID(), workspaceID: project.WorkspaceID()}, nil
@@ -428,7 +428,7 @@ func (s *service) changeVariable(ctx context.Context, actor identity.Actor, orga
 			if o, err = s.activeOwner(ctx, v); err != nil {
 				return nil, err
 			}
-			return s.variables.GetVariable(ctx, organizationID, variableID)
+			return s.reload(ctx, organizationID, variableID)
 		},
 		Apply: func(ctx context.Context, v *delivery.Variable) error {
 			scope, err := apply(v)
@@ -488,6 +488,19 @@ func (s *service) RemoveVariableValue(ctx context.Context, actor identity.Actor,
 		})
 }
 
+// reload reads a Variable once its Project's variables are held, and refuses
+// one changed since the caller was authorized to change it.
+func (s *service) reload(ctx context.Context, organizationID, variableID string) (*delivery.Variable, error) {
+	v, err := s.variables.GetVariable(ctx, organizationID, variableID)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkDecidedOn(ctx, v); err != nil {
+		return nil, err
+	}
+	return v, nil
+}
+
 // lockOwner holds the variables of the Project a Variable sits in for the
 // transaction, whether or not its owner is active.
 func (s *service) lockOwner(ctx context.Context, v *delivery.Variable) error {
@@ -499,7 +512,7 @@ func (s *service) lockOwner(ctx context.Context, v *delivery.Variable) error {
 		}
 		projectID = new(app.ProjectID())
 	}
-	return s.locker.Lock(ctx, "delivery.variables:"+*projectID)
+	return s.locker.Lock(ctx, delivery.VariablesLock(*projectID))
 }
 
 // ArchiveVariable archives a Variable. Archiving an archived one does
@@ -519,7 +532,7 @@ func (s *service) ArchiveVariable(ctx context.Context, actor identity.Actor, org
 			if err := s.lockOwner(ctx, v); err != nil {
 				return nil, err
 			}
-			return s.variables.GetVariable(ctx, organizationID, variableID)
+			return s.reload(ctx, organizationID, variableID)
 		},
 		Apply: func(_ context.Context, v *delivery.Variable) error {
 			if v.Archived() {

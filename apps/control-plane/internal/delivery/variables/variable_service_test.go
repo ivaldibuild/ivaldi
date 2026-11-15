@@ -2,7 +2,9 @@ package variables
 
 import (
 	"context"
+	"slices"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -195,6 +197,33 @@ func TestVariablesAnApplicationDeploysWithMustAgree(t *testing.T) {
 		_, err = w.svc.AddVariableValue(ctx, actor, org, old.ID(), delivery.VariableValueProps{Value: "x"})
 		assert.ErrorIs(t, err, delivery.ErrArchived)
 	})
+}
+
+// The Environments a change needs permission on are read before the
+// Project's variables are held. A value moved into another Environment in
+// between must not be removed on a decision that never covered it.
+func TestAVariableChangedSinceItWasAuthorizedIsRefused(t *testing.T) {
+	w := newWorld(t)
+	v, err := w.create(t, w.inProject(), "Database.Host", "database.host",
+		delivery.VariableValueProps{Value: "db.staging", Scope: envScope(w.staging.ID())})
+	require.NoError(t, err)
+	valueID := v.Snapshot().Values[0].ID
+	w.onLock = func() {
+		snap := w.variables[v.ID()]
+		snap.Values = slices.Clone(snap.Values)
+		snap.Values[0].Scope = envScope(w.prod.ID())
+		snap.UpdatedAt = snap.UpdatedAt.Add(time.Second)
+		w.variables[v.ID()] = snap
+	}
+
+	_, err = w.svc.RemoveVariableValue(ctx, actor, org, v.ID(), valueID)
+	require.ErrorIs(t, err, delivery.ErrConflict)
+	_, err = w.svc.ArchiveVariable(ctx, actor, org, v.ID())
+	require.ErrorIs(t, err, delivery.ErrConflict)
+
+	w.onLock = nil
+	_, err = w.svc.RemoveVariableValue(ctx, actor, org, v.ID(), valueID)
+	require.NoError(t, err, "read again, the change is authorized on what is stored")
 }
 
 func TestAnArchivedApplicationsVariablesDoNotChange(t *testing.T) {

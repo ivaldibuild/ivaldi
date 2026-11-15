@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
@@ -124,7 +125,30 @@ func (a *authorized) manageVariable(ctx context.Context, actor identity.Actor, o
 	if err != nil {
 		return nil, err
 	}
-	return a.manage(ctx, actor, organizationID, projectID, action, proposal, touched...)
+	ctx, err = a.manage(ctx, actor, organizationID, projectID, action, proposal, touched...)
+	if err != nil {
+		return nil, err
+	}
+	return withDecidedOn(ctx, v), nil
+}
+
+type decidedOnKey struct{}
+
+// withDecidedOn records which version of a Variable a decision was made on.
+// The Environments a change needs permission on come from the Variable's
+// values, and next reads it again in its transaction: had it changed in
+// between, the decision would cover the wrong Environments.
+func withDecidedOn(ctx context.Context, v *delivery.Variable) context.Context {
+	return context.WithValue(ctx, decidedOnKey{}, v.UpdatedAt())
+}
+
+// checkDecidedOn refuses a Variable changed since the decision in ctx was
+// made on it, so the caller reads it and is authorized again.
+func checkDecidedOn(ctx context.Context, v *delivery.Variable) error {
+	if decidedOn, ok := ctx.Value(decidedOnKey{}).(time.Time); ok && !decidedOn.Equal(v.UpdatedAt()) {
+		return fmt.Errorf("%w: variable %s", delivery.ErrConflict, v.ID())
+	}
+	return nil
 }
 
 // everyValue is the scopes of a change that affects all of a Variable's

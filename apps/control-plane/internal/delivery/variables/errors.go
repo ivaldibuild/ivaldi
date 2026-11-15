@@ -27,6 +27,8 @@ func httpError(ctx context.Context, err error) error {
 		return huma.Error409Conflict("more than one active Application has that slug; use its ID")
 	case errors.Is(err, delivery.ErrSlugTaken):
 		return huma.Error409Conflict("the owner already has a variable with that name")
+	case errors.Is(err, delivery.ErrConflict):
+		return huma.Error409Conflict("the variable changed since it was read; read it and try again")
 	case errors.Is(err, delivery.ErrArchived):
 		return huma.Error409Conflict(err.Error())
 	case errors.Is(err, delivery.ErrWorkspaceMismatch):

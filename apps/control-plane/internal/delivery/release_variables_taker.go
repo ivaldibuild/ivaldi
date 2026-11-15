@@ -4,7 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
+	"github.com/ivaldibuild/ivaldi/pkg/transaction"
 )
+
+// VariablesLock names the lock that holds one Project's variables, and its
+// Applications', for a transaction: changes to them take it, and so does a
+// snapshot, so it reads them as they stood together.
+func VariablesLock(projectID string) string {
+	return "delivery.variables:" + projectID
+}
 
 // ReleaseVariablesTaker snapshots the variables an Application deploys with
 // as a revision of one of its Releases. The services that create Releases
@@ -12,16 +21,19 @@ import (
 type ReleaseVariablesTaker struct {
 	variables VariableRepository
 	revisions ReleaseVariablesRepository
+	locker    transaction.Locker
 }
 
-func NewReleaseVariablesTaker(variables VariableRepository, revisions ReleaseVariablesRepository) (*ReleaseVariablesTaker, error) {
+func NewReleaseVariablesTaker(variables VariableRepository, revisions ReleaseVariablesRepository, locker transaction.Locker) (*ReleaseVariablesTaker, error) {
 	switch {
 	case variables == nil:
 		return nil, errors.New("release variables taker: a VariableRepository is required")
 	case revisions == nil:
 		return nil, errors.New("release variables taker: a ReleaseVariablesRepository is required")
+	case locker == nil:
+		return nil, errors.New("release variables taker: a Locker is required")
 	}
-	return &ReleaseVariablesTaker{variables: variables, revisions: revisions}, nil
+	return &ReleaseVariablesTaker{variables: variables, revisions: revisions, locker: locker}, nil
 }
 
 // Take stores the Application's variables and its Project's, as they are
@@ -30,6 +42,11 @@ func NewReleaseVariablesTaker(variables VariableRepository, revisions ReleaseVar
 // their events in the same transaction.
 func (t *ReleaseVariablesTaker) Take(ctx context.Context, rel *Release, projectID string, takenBy *string) ([]*ReleaseVariables, error) {
 	organizationID := rel.OrganizationID()
+	// The Project's and the Application's variables are two reads; held,
+	// no change lands between them.
+	if err := t.locker.Lock(ctx, VariablesLock(projectID)); err != nil {
+		return nil, fmt.Errorf("hold the project's variables: %w", err)
+	}
 	project, err := t.variables.ListVariables(ctx, organizationID, VariableOwner{ProjectID: projectID})
 	if err != nil {
 		return nil, fmt.Errorf("list the project's variables: %w", err)

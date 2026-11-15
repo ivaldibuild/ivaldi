@@ -4,10 +4,10 @@
 controlPlane:
   # -- The control plane's URL, as the cluster reaches it. Required, and
   # https unless allowInsecureHTTP is set.
-  url: ""
+  url: http://ivaldi-control-plane:8660
   # -- Allow an http:// url, which sends the agent's credentials in
   # plaintext. For local development only.
-  allowInsecureHTTP: false
+  allowInsecureHTTP: true
   # -- A ConfigMap in the release namespace with a "ca.crt" that verifies
   # the control plane, when it uses a private CA.
   caConfigMap: ""

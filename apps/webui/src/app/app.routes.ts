@@ -215,6 +215,12 @@ export const routes: Routes = [
       { path: 'service-accounts', redirectTo: 'settings/service-accounts' },
       { path: 'service-accounts/:id', redirectTo: 'settings/service-accounts/:id' },
       {
+        path: 'secret-stores',
+        title: 'Secret Stores · Ivaldi',
+        loadComponent: () =>
+          import('./delivery/pages/secret-stores-page').then((m) => m.SecretStoresPage),
+      },
+      {
         path: 'lifecycles',
         title: 'Lifecycles · Ivaldi',
         loadComponent: () =>

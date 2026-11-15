@@ -662,6 +662,17 @@ type VariableRepository interface {
 	CountActiveVariablesWithEnvironment(ctx context.Context, organizationID, environmentID string) (int, error)
 	CountActiveVariablesWithTarget(ctx context.Context, organizationID, targetID string) (int, error)
 	CountActiveVariablesWithChannel(ctx context.Context, organizationID, channelID string) (int, error)
+	// CountActiveVariablesWithSecretStore counts the active variables with
+	// a value kept in the Secret Store.
+	CountActiveVariablesWithSecretStore(ctx context.Context, organizationID, storeID string) (int, error)
+}
+
+// SecretStores looks up Secret Stores in the credentials capability,
+// without authorizing. credentials.NewStoreLookup implements it.
+type SecretStores interface {
+	// LookupSecretStores returns the stores that exist among the IDs, by
+	// ID, archived ones included.
+	LookupSecretStores(ctx context.Context, organizationID string, storeIDs []string) (map[string]SecretStoreRef, error)
 }
 
 // CreateVariableInput describes a Variable to create. Owner.ApplicationID
@@ -673,7 +684,10 @@ type CreateVariableInput struct {
 	Description    string
 	Kind           VariableKind
 	ValuesPath     string
-	Values         []VariableValueProps
+	// DeliverAs is how a secret variable reaches the chart; a Kubernetes
+	// Secret when empty.
+	DeliverAs VariableDeliverAs
+	Values    []VariableValueProps
 }
 
 // ListVariablesQuery lists an owner's variables. IncludeInherited adds the

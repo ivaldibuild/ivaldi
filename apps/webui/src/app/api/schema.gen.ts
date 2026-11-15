@@ -1685,6 +1685,41 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/secret-stores/{secret_store_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get a Secret Store */
+    get: operations['get-secret-store'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Change a Secret Store */
+    patch: operations['update-secret-store'];
+    trace?: never;
+  };
+  '/v1/secret-stores/{secret_store_id}/archive': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Archive a Secret Store no variable refers to */
+    post: operations['archive-secret-store'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/service-accounts': {
     parameters: {
       query?: never;
@@ -2382,6 +2417,24 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/workspaces/{workspace_id}/secret-stores': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List a Workspace's Secret Stores */
+    get: operations['list-secret-stores'];
+    put?: never;
+    /** Create a Secret Store in a Workspace */
+    post: operations['create-secret-store'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/workspaces/{workspace_id}/sources': {
     parameters: {
       query?: never;
@@ -2417,6 +2470,10 @@ export interface components {
       /** Format: date-time */
       revoked_at: string | null;
       token_prefix: string;
+    };
+    AWSSettings: {
+      region: string;
+      role_arn?: string;
     };
     AWSStore: {
       region: string;
@@ -3140,6 +3197,27 @@ export interface components {
        */
       method: 'bearer' | 'mtls' | 'kubernetes';
     };
+    CreateSecretStoreRequestBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/CreateSecretStoreRequestBody.json
+       */
+      readonly $schema?: string;
+      /** @description The display name for the store */
+      display_name: string;
+      /** @description The Environments whose Deployments may read the store; every Environment in the Workspace when omitted. Required for doppler */
+      environment_ids?: string[];
+      /**
+       * @description The secret manager
+       * @enum {string}
+       */
+      kind: 'kubernetes' | 'aws_secrets_manager' | 'vault' | 'doppler';
+      /** @description The kind's settings; none for kubernetes */
+      settings?: components['schemas']['SettingsBody'];
+      /** @description Url slug for the store; derived from the display name when omitted */
+      slug?: string;
+    };
     CreateSourceRequestBody: {
       /**
        * Format: uri
@@ -3270,6 +3348,7 @@ export interface components {
       release_id: string;
       /** Format: date-time */
       requested_at: string;
+      secret_versions: components['schemas']['SecretVersion'][];
       session_id: string | null;
       /** @enum {string} */
       source: 'executed' | 'observed';
@@ -3296,6 +3375,10 @@ export interface components {
       updated_at: string;
       variable_snapshot_id: string | null;
       work_item_id: string | null;
+    };
+    DopplerSettings: {
+      token_secret_key: string;
+      token_secret_name: string;
     };
     DopplerStore: {
       token_secret_key: string;
@@ -4012,6 +4095,7 @@ export interface components {
     };
     ResolvedValue: {
       scope: components['schemas']['VariableScope'];
+      secret: components['schemas']['SecretReference'];
       /** @enum {string} */
       source: 'project' | 'application';
       value: string;
@@ -4427,6 +4511,20 @@ export interface components {
       readonly $schema?: string;
       /** @description Response payload, always present: an empty list is [], not omitted */
       data: components['schemas']['RepositorySnapshot'][];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
+    ResponseListSecretStoreSnapshot: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseListSecretStoreSnapshot.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['SecretStoreSnapshot'][];
       /** @description Human-readable message */
       message?: string;
       /** @description Request status */
@@ -4894,6 +4992,20 @@ export interface components {
       /** @description Request status */
       status: string;
     };
+    ResponseSecretStoreSnapshot: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseSecretStoreSnapshot.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['SecretStoreSnapshot'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
     ResponseServiceAccount: {
       /**
        * Format: uri
@@ -5240,10 +5352,53 @@ export interface components {
       /** @description Targets the value applies to; any when omitted */
       target_ids?: string[];
     };
+    SecretBody: {
+      /** @description One key of a map or JSON secret; the whole value when omitted */
+      field?: string;
+      /** @description Where the secret is in the store, such as a Secret's name or a Vault path; may bind text variables with #{Name} */
+      path: string;
+      /** @description The Secret Store, in the variable's Workspace */
+      store_id: string;
+      /** @description The store's version to deploy; the latest when omitted */
+      version?: string;
+    };
     SecretRef: {
       field?: string;
       path: string;
       version?: string;
+    };
+    SecretReference: {
+      field: string;
+      path: string;
+      store_id: string;
+      version: string;
+    };
+    SecretStoreSnapshot: {
+      /** Format: date-time */
+      archived_at: string | null;
+      /** Format: date-time */
+      created_at: string;
+      display_name: string;
+      environment_ids: string[];
+      id: string;
+      /** @enum {string} */
+      kind: 'kubernetes' | 'aws_secrets_manager' | 'vault' | 'doppler';
+      organization_id: string;
+      settings: components['schemas']['Settings'];
+      slug: string;
+      /** Format: date-time */
+      updated_at: string;
+      workspace_id: string;
+    };
+    SecretVersion: {
+      /** @enum {string} */
+      delivered_as: 'secret' | 'value';
+      field: string;
+      fingerprint: string;
+      name: string;
+      path: string;
+      store_id: string;
+      version: string;
     };
     ServiceAccount: {
       /** Format: date-time */
@@ -5337,6 +5492,19 @@ export interface components {
       /** Format: int64 */
       version: number;
     };
+    Settings: {
+      aws?: components['schemas']['AWSSettings'];
+      doppler?: components['schemas']['DopplerSettings'];
+      vault?: components['schemas']['VaultSettings'];
+    };
+    SettingsBody: {
+      /** @description For aws_secrets_manager: the region, and a role to assume on top of the agent's identity */
+      aws?: components['schemas']['AWSSettings'];
+      /** @description For doppler: the Secret in the agent's namespace that holds the service token */
+      doppler?: components['schemas']['DopplerSettings'];
+      /** @description For vault: the address, KV v2 mount, and Kubernetes auth role */
+      vault?: components['schemas']['VaultSettings'];
+    };
     SignUpInputBody: {
       /**
        * Format: uri
@@ -5353,6 +5521,7 @@ export interface components {
     };
     SnapshotValue: {
       scope: components['schemas']['VariableScope'];
+      secret: components['schemas']['SecretReference'];
       value: string;
     };
     SnapshotVariable: {
@@ -5646,6 +5815,22 @@ export interface components {
       /** @description New address */
       url?: string;
     };
+    UpdateSecretStoreRequestBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/UpdateSecretStoreRequestBody.json
+       */
+      readonly $schema?: string;
+      /** @description New display name */
+      display_name?: string;
+      /** @description The Environments that may read the store, replacing the list; empty allows every Environment */
+      environment_ids?: string[];
+      /** @description New settings for the store's kind */
+      settings?: components['schemas']['SettingsBody'];
+      /** @description New slug */
+      slug?: string;
+    };
     UpdateTargetRequestBody: {
       /**
        * Format: uri
@@ -5683,6 +5868,11 @@ export interface components {
        * @example https://example.com/schemas/UpdateVariableRequestBody.json
        */
       readonly $schema?: string;
+      /**
+       * @description How a secret variable reaches the chart
+       * @enum {string}
+       */
+      deliver_as?: 'secret' | 'value';
       /** @description New description; empty clears it */
       description?: string;
       /** @description New values path; empty clears it */
@@ -5711,8 +5901,10 @@ export interface components {
       readonly $schema?: string;
       /** @description The Deployments the value applies to; every Deployment when omitted */
       scope?: components['schemas']['ScopeBody'];
-      /** @description The text, which may bind other variables with #{Name} */
-      value: string;
+      /** @description A secret variable's value: where the secret is kept, never the secret itself */
+      secret?: components['schemas']['SecretBody'];
+      /** @description A text variable's value, which may bind other variables with #{Name} */
+      value?: string;
     };
     VariableBody: {
       /**
@@ -5721,13 +5913,18 @@ export interface components {
        * @example https://example.com/schemas/VariableBody.json
        */
       readonly $schema?: string;
+      /**
+       * @description How a secret variable reaches the chart: in a Kubernetes Secret (the default), or written into the chart's values at values_path, where Helm's release history keeps it
+       * @enum {string}
+       */
+      deliver_as?: 'secret' | 'value';
       /** @description What the variable is for */
       description?: string;
       /**
-       * @description What its values hold; text when omitted
+       * @description What its values hold: text, or references to secrets in a Secret Store; text when omitted
        * @enum {string}
        */
-      kind?: 'text';
+      kind?: 'text' | 'secret';
       /** @description The variable's name, unique within its owner whatever the case, such as Database.Host */
       name: string;
       /** @description The variable's values */
@@ -5765,9 +5962,17 @@ export interface components {
       created_at: string;
       id: string;
       scope: components['schemas']['VariableScope'];
+      secret: components['schemas']['SecretReference'];
       /** Format: date-time */
       updated_at: string;
       value: string;
+    };
+    VaultSettings: {
+      address: string;
+      auth_mount?: string;
+      auth_role: string;
+      mount: string;
+      namespace?: string;
     };
     VaultStore: {
       address: string;
@@ -9978,6 +10183,106 @@ export interface operations {
       };
     };
   };
+  'get-secret-store': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Secret Store's ID */
+        secret_store_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseSecretStoreSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'update-secret-store': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Secret Store's ID */
+        secret_store_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateSecretStoreRequestBody'];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseSecretStoreSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'archive-secret-store': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Secret Store's ID */
+        secret_store_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseSecretStoreSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
   'list-service-accounts': {
     parameters: {
       query?: {
@@ -11992,6 +12297,77 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ResponseWorkspaceRunsOn'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'list-secret-stores': {
+    parameters: {
+      query?: {
+        /** @description Include archived Secret Stores */
+        include_archived?: boolean;
+      };
+      header?: never;
+      path: {
+        /** @description The Workspace to list Secret Stores in */
+        workspace_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseListSecretStoreSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'create-secret-store': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Workspace the Secret Store belongs to */
+        workspace_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateSecretStoreRequestBody'];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseSecretStoreSnapshot'];
         };
       };
       /** @description Error */

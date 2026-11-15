@@ -54,6 +54,31 @@ func resolve(system map[string]string, vars []Variable) (map[string]string, erro
 	return bound, nil
 }
 
+// Bind fills the #{Name} bindings in texts from the system variables and
+// the variables, whose own bindings are resolved first. It is how a secret's
+// path names its Environment before the secret is read. An undefined name
+// or a cycle fails by name.
+func Bind(system map[string]string, vars []Variable, texts []string) ([]string, error) {
+	bound, err := resolve(system, vars)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, len(texts))
+	for i, text := range texts {
+		out[i], err = substitute(text, func(name string) (string, error) {
+			value, ok := bound[name]
+			if !ok {
+				return "", fmt.Errorf("#{%s} is not defined", name)
+			}
+			return value, nil
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
 // substitute replaces each #{Name} in s with lookup(Name). ##{ writes a
 // literal #{.
 func substitute(s string, lookup func(string) (string, error)) (string, error) {

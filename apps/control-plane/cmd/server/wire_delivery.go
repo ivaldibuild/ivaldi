@@ -4,6 +4,9 @@ import (
 	auditpg "github.com/ivaldibuild/ivaldi-control-plane/internal/audit/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/change"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/config"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/credentials"
+	credentialspg "github.com/ivaldibuild/ivaldi-control-plane/internal/credentials/postgres"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/credentials/secretstores"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/agentapi"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/applications"
@@ -86,6 +89,28 @@ func (a *app) wireDelivery(runners config.Runners) error {
 	clusterRepo := deliverypg.NewClusterRepository(a.db)
 	variableRepo := deliverypg.NewVariableRepository(a.db)
 	workspaces := workspace.NewLookups(workspacepg.NewRepository(a.db))
+
+	// Secret Stores belong to the credentials capability; delivery reads
+	// them through a lookup, and credentials asks delivery whether a store
+	// is still referred to.
+	storeRepo := credentialspg.NewSecretStoreRepository(a.db)
+	storeLookup, err := credentials.NewStoreLookup(storeRepo)
+	if err != nil {
+		return err
+	}
+	stores, err := secretstores.NewSecretStoreService(
+		secretstores.WithSecretStoreRepo(storeRepo),
+		secretstores.WithWorkspaces(workspaces),
+		secretstores.WithEnvironmentLookup(envRepo),
+		secretstores.WithVariableUsage(variableRepo),
+		secretstores.WithAuthorizer(a.authz),
+		secretstores.WithTransactor(a.tx),
+		secretstores.WithOutboxRecorder(a.outbox),
+		secretstores.WithAuditRecorder(a.audit),
+	)
+	if err != nil {
+		return err
+	}
 
 	revoker, err := enrollment.NewAgentRevoker(
 		iampg.NewPrincipalRepository(a.db),
@@ -178,6 +203,7 @@ func (a *app) wireDelivery(runners config.Runners) error {
 		variables.WithEnvironmentLookup(envRepo),
 		variables.WithTargetLookup(targetRepo),
 		variables.WithWorkspaces(workspaces),
+		variables.WithSecretStores(storeLookup),
 		variables.WithLocker(database.NewLocker(a.db)),
 		variables.WithAuthorizer(a.authz),
 		variables.WithTransactor(a.tx),
@@ -225,6 +251,7 @@ func (a *app) wireDelivery(runners config.Runners) error {
 		deployments.WithLifecycles(lifecycleRepo),
 		deployments.WithVariables(revisionRepo),
 		deployments.WithVariableSnapshots(snapshots),
+		deployments.WithSecretStores(storeLookup),
 		deployments.WithCommitHistory(a.commitHistory),
 		deployments.WithChanges(a.changes),
 		deployments.WithAuthorizer(a.authz),
@@ -260,5 +287,6 @@ func (a *app) wireDelivery(runners config.Runners) error {
 	a.services.applications, a.services.releases = apps, rels
 	a.services.deployments = deps
 	a.services.variables = vars
+	a.services.secretStores = stores
 	return nil
 }

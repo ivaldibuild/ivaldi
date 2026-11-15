@@ -11,12 +11,24 @@ type ScopeBody struct {
 
 // ValueBody is a variable's value as a request gives it.
 type ValueBody struct {
-	Value string     `json:"value" required:"true" doc:"The text, which may bind other variables with #{Name}"`
-	Scope *ScopeBody `json:"scope,omitempty" required:"false" doc:"The Deployments the value applies to; every Deployment when omitted"`
+	Value  string      `json:"value,omitempty" required:"false" doc:"A text variable's value, which may bind other variables with #{Name}"`
+	Secret *SecretBody `json:"secret,omitempty" required:"false" doc:"A secret variable's value: where the secret is kept, never the secret itself"`
+	Scope  *ScopeBody  `json:"scope,omitempty" required:"false" doc:"The Deployments the value applies to; every Deployment when omitted"`
+}
+
+// SecretBody says where a secret is kept.
+type SecretBody struct {
+	StoreID string `json:"store_id" required:"true" doc:"The Secret Store, in the variable's Workspace"`
+	Path    string `json:"path" required:"true" minLength:"1" doc:"Where the secret is in the store, such as a Secret's name or a Vault path; may bind text variables with #{Name}"`
+	Field   string `json:"field,omitempty" required:"false" doc:"One key of a map or JSON secret; the whole value when omitted"`
+	Version string `json:"version,omitempty" required:"false" doc:"The store's version to deploy; the latest when omitted"`
 }
 
 func (b ValueBody) props() delivery.VariableValueProps {
 	p := delivery.VariableValueProps{Value: b.Value}
+	if b.Secret != nil {
+		p.Secret = &delivery.SecretReference{StoreID: b.Secret.StoreID, Path: b.Secret.Path, Field: b.Secret.Field, Version: b.Secret.Version}
+	}
 	if b.Scope != nil {
 		p.Scope = delivery.VariableScope{EnvironmentIDs: b.Scope.EnvironmentIDs, TargetIDs: b.Scope.TargetIDs, ChannelIDs: b.Scope.ChannelIDs}
 	}
@@ -27,7 +39,8 @@ func (b ValueBody) props() delivery.VariableValueProps {
 type VariableBody struct {
 	Name        string      `json:"name" required:"true" minLength:"1" maxLength:"253" doc:"The variable's name, unique within its owner whatever the case, such as Database.Host"`
 	Description *string     `json:"description,omitempty" required:"false" doc:"What the variable is for"`
-	Kind        string      `json:"kind,omitempty" required:"false" enum:"text" doc:"What its values hold; text when omitted"`
+	Kind        string      `json:"kind,omitempty" required:"false" enum:"text,secret" doc:"What its values hold: text, or references to secrets in a Secret Store; text when omitted"`
+	DeliverAs   string      `json:"deliver_as,omitempty" required:"false" enum:"secret,value" doc:"How a secret variable reaches the chart: in a Kubernetes Secret (the default), or written into the chart's values at values_path, where Helm's release history keeps it"`
 	ValuesPath  *string     `json:"values_path,omitempty" required:"false" doc:"Dotted path in the chart's values the variable is written to, such as database.host; omit for a variable only used through bindings"`
 	Values      []ValueBody `json:"values,omitempty" required:"false" doc:"The variable's values"`
 }
@@ -38,6 +51,7 @@ func (b VariableBody) input(organizationID string, owner delivery.VariableOwner)
 		Owner:          owner,
 		Name:           b.Name,
 		Kind:           delivery.VariableKind(b.Kind),
+		DeliverAs:      delivery.VariableDeliverAs(b.DeliverAs),
 	}
 	if in.Kind == "" {
 		in.Kind = delivery.VariableKindText
@@ -82,11 +96,16 @@ type UpdateVariableRequest struct {
 	Body       struct {
 		Description *string `json:"description,omitempty" required:"false" doc:"New description; empty clears it"`
 		ValuesPath  *string `json:"values_path,omitempty" required:"false" doc:"New values path; empty clears it"`
+		DeliverAs   *string `json:"deliver_as,omitempty" required:"false" enum:"secret,value" doc:"How a secret variable reaches the chart"`
 	}
 }
 
 func (r *UpdateVariableRequest) props() delivery.UpdateVariableProps {
-	return delivery.UpdateVariableProps{Description: r.Body.Description, ValuesPath: r.Body.ValuesPath}
+	props := delivery.UpdateVariableProps{Description: r.Body.Description, ValuesPath: r.Body.ValuesPath}
+	if r.Body.DeliverAs != nil {
+		props.DeliverAs = new(delivery.VariableDeliverAs(*r.Body.DeliverAs))
+	}
+	return props
 }
 
 type AddVariableValueRequest struct {

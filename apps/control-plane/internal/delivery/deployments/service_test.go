@@ -59,6 +59,8 @@ type store struct {
 	revisions map[string]*delivery.ReleaseVariables
 	// snapshotted lists the observed Releases whose variables were snapshotted.
 	snapshotted []string
+	// stores are the Secret Stores, by ID.
+	stores map[string]delivery.SecretStoreRef
 }
 
 func newStore() *store {
@@ -479,7 +481,7 @@ func newWorld(t *testing.T) *world {
 	svc, err := NewService(
 		WithDeploymentRepo(fakeDeployments{s}), WithReleaseRepo(fakeReleases{s}), WithBuildRepo(fakeBuilds{s}),
 		WithApplications(fakeApplications{s}), WithEnvironments(fakeEnvironments{s}), WithTargets(fakeTargets{s}), WithClusters(fakeClusters{s}),
-		WithLifecycles(fakeLifecycles{s}), WithVariables(s), WithVariableSnapshots(s), WithHeartbeatInterval(30*time.Second), WithCommitHistory(history), WithChanges(recorded), WithAuthorizer(authz), WithTransactor(s),
+		WithLifecycles(fakeLifecycles{s}), WithVariables(s), WithVariableSnapshots(s), WithSecretStores(s), WithHeartbeatInterval(30*time.Second), WithCommitHistory(history), WithChanges(recorded), WithAuthorizer(authz), WithTransactor(s),
 		WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
 	)
 	require.NoError(t, err)
@@ -1226,4 +1228,76 @@ func TestRequestDeploymentsRefusesABindingWithNoValue(t *testing.T) {
 		}
 	}
 	assert.True(t, failed, "the deploy sheet says so before it is requested")
+}
+
+func (s *store) LookupSecretStores(_ context.Context, _ string, ids []string) (map[string]delivery.SecretStoreRef, error) {
+	out := map[string]delivery.SecretStoreRef{}
+	for _, id := range ids {
+		if ref, ok := s.stores[id]; ok {
+			out[id] = ref
+		}
+	}
+	return out, nil
+}
+
+// The agent is sent where each secret is kept, reports the version and a
+// fingerprint of what it read, and the Deployment records them: never a value.
+func TestADeploymentRecordsTheSecretsItsAgentResolved(t *testing.T) {
+	const storeID = "sst_01BX5ZZKBKACTAV9WEVGEMMVRZ"
+	w := newWorld(t)
+	require.NoError(t, w.clusters[clusterID].RecordHeartbeat(agentID, map[string]any{"secret_store_kinds": []string{"kubernetes"}}))
+	settings := delivery.StoreSettings{ID: storeID, Kind: delivery.StoreKubernetes, Kubernetes: &delivery.KubernetesStore{}}
+	w.stores = map[string]delivery.SecretStoreRef{storeID: {ID: storeID, DisplayName: "In-cluster", Settings: settings}}
+	w.withVariables(delivery.SnapshotVariable{
+		Name: "Database.Password", Source: delivery.VariableSourceApplication, Kind: delivery.VariableKindSecret,
+		DeliverAs: new(delivery.VariableDeliverAsSecret),
+		Values:    []delivery.SnapshotValue{{Secret: &delivery.SecretReference{StoreID: storeID, Path: "db", Field: "password"}}},
+	})
+
+	out, err := w.svc.RequestDeployments(ctx, ada, delivery.RequestDeploymentsInput{
+		OrganizationID: org, ReleaseID: w.rel.ID(), TargetIDs: []string{targetID},
+	})
+	require.NoError(t, err)
+	agent := identity.Actor{PrincipalID: agentID}
+	items, err := w.svc.ListClusterAssignments(ctx, agent, org, clusterID)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, []delivery.AssignmentSecret{{
+		Name: "Database.Password", Source: delivery.VariableSourceApplication, DeliverAs: delivery.VariableDeliverAsSecret,
+		Store: settings, Ref: delivery.SecretRef{Path: "db", Field: "password"},
+	}}, items[0].Apply.Secrets)
+
+	report := func(reportID, detail string) error {
+		_, err := w.svc.ReportDeployment(ctx, agent, delivery.ReportDeploymentInput{
+			OrganizationID: org, DeploymentID: out[0].ID(), Kind: delivery.DeploymentEventHealth,
+			Status: new(release.DeploymentProgressing), Detail: json.RawMessage(detail), ReportID: reportID,
+		})
+		return err
+	}
+	require.ErrorIs(t, report("refused", `{"secrets":[{"name":"Other","fingerprint":"hmac-sha256:v1:aa"}]}`), delivery.ErrInvalid,
+		"a secret the deployment was not sent")
+	require.NoError(t, report("applied", `{"secrets":[{"name":"Database.Password","version":"4812","fingerprint":"hmac-sha256:v1:ab12","delivered_as":"secret"}]}`))
+
+	assert.Equal(t, []delivery.SecretVersion{{
+		Name: "Database.Password", StoreID: storeID, Path: "db", Field: "password",
+		Version: "4812", Fingerprint: "hmac-sha256:v1:ab12", DeliveredAs: delivery.VariableDeliverAsSecret,
+	}}, w.deployments[out[0].ID()].SecretVersions())
+}
+
+func TestRequestDeploymentsRefusesASecretItsTargetCannotUse(t *testing.T) {
+	const storeID = "sst_01BX5ZZKBKACTAV9WEVGEMMVRZ"
+	w := newWorld(t)
+	w.stores = map[string]delivery.SecretStoreRef{storeID: {
+		ID: storeID, DisplayName: "Vault", EnvironmentIDs: []string{"env_01BX5ZZKBKACTAV9WEVGEMMVZZ"},
+		Settings: delivery.StoreSettings{ID: storeID, Kind: delivery.StoreVault},
+	}}
+	w.withVariables(delivery.SnapshotVariable{
+		Name: "Api.Key", Source: delivery.VariableSourceApplication, Kind: delivery.VariableKindSecret,
+		Values: []delivery.SnapshotValue{{Secret: &delivery.SecretReference{StoreID: storeID, Path: "api"}}},
+	})
+	_, err := w.svc.RequestDeployments(ctx, ada, delivery.RequestDeploymentsInput{
+		OrganizationID: org, ReleaseID: w.rel.ID(), TargetIDs: []string{targetID},
+	})
+	require.ErrorIs(t, err, delivery.ErrInvalid)
+	assert.Contains(t, err.Error(), "not allowed for this environment")
 }

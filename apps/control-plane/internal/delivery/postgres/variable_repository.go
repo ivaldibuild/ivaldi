@@ -159,7 +159,7 @@ func (r *variableRepository) UpdateVariable(ctx context.Context, v *delivery.Var
 			return nil
 		}
 		return upsertOwned(tx, &rows.values, len(rows.values), "variable_values", "variable_id",
-			[]string{"text_value", "environment_ids", "target_ids", "channel_ids", "updated_at"})
+			[]string{"text_value", "store_id", "path", "field", "version", "environment_ids", "target_ids", "channel_ids", "updated_at"})
 	}))
 }
 
@@ -173,6 +173,21 @@ func (r *variableRepository) CountActiveVariablesWithTarget(ctx context.Context,
 
 func (r *variableRepository) CountActiveVariablesWithChannel(ctx context.Context, organizationID, channelID string) (int, error) {
 	return r.countScopedTo(ctx, "channel_ids", organizationID, channelID)
+}
+
+func (r *variableRepository) CountActiveVariablesWithSecretStore(ctx context.Context, organizationID, storeID string) (int, error) {
+	var n int64
+	err := r.conn(ctx).Raw(`
+		SELECT count(DISTINCT v.id)
+		FROM delivery.variable_values vv
+		JOIN delivery.variables v
+		  ON v.organization_id = vv.organization_id AND v.id = vv.variable_id
+		LEFT JOIN delivery.applications a
+		  ON a.organization_id = v.organization_id AND a.id = v.application_id
+		WHERE vv.organization_id = ? AND vv.store_id = ?
+		  AND v.archived_at IS NULL AND (v.application_id IS NULL OR a.archived_at IS NULL)`,
+		organizationID, storeID).Scan(&n).Error
+	return int(n), translate(err)
 }
 
 // countScopedTo counts the active variables with a value naming id in one

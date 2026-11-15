@@ -165,7 +165,7 @@ Behind it sits the Ivaldi-owned secret-store interface ADR 0004 asks for, in `pk
 
 ### How the agent resolves them
 
-- **Bindings, then secrets.** Text values bind other text values and system variables; an undefined name or a cycle fails the Deployment. Text values do not bind secrets, so a secret never hides inside a text value; overlays may (below). Bindings inside a secret's path arrive with the variables capability.
+- **Bindings, then secrets.** Text values bind other text values and system variables; an undefined name or a cycle fails the Deployment. Text values do not bind secrets, so a secret never hides inside a text value; overlays may (below). A secret's path binds the same names, filled in before the secret is read, so one reference serves every Environment.
 - **With its own identity.** The agent authenticates to the store as its Kubernetes ServiceAccount: EKS Pod Identity or IRSA for AWS, Vault's Kubernetes auth with the store's role, and its own RBAC for `kubernetes`. Ivaldi holds no secret-manager credentials anywhere.
 - **At render time, in memory.** Values are fetched for one apply, used, and dropped. They are never logged, never put in a report's `detail`, and never sent to the control plane.
 - **As a Kubernetes Secret by default.** For `deliver_as: secret`, the agent writes one immutable Secret per Deployment, `ivaldi-<application>-<deployment>`, labelled `ivaldi.build/application` and `ivaldi.build/deployment`, in the Target's namespace, with one key per secret variable (the variable's name, which is why names are limited to what a Secret key allows), and passes its name to the chart as `global.ivaldi.secrets.name`. Each Deployment's Secret has a new name, so the Pod template changes and the workloads roll. Once a Deployment is healthy, the agent deletes the Application's Secrets in the namespace except its own and the newest other one, whose Pods may still be draining. A rollback recreates its own Secret from its pinned references, so it never needs an old one.
@@ -269,8 +269,9 @@ Implemented, and what the agent is built against:
 
 Still to build, and designed elsewhere:
 
-- **Secret Stores**: `credentials.secret_stores` and `/v1/secret-stores`, Workspace-scoped, with their own read and manage permissions.
-- **Deployment variables**: variables, scopes, Release snapshots, and the winning value of each for a Target, as designed in [deployment variables](deployment-variables.md).
+- Rollbacks that replay a Deployment's secret versions and fingerprints, and refreshing a Release's variables ([deployment variables](deployment-variables.md)).
+
+Secret Stores (`credentials.secret_stores`, `/v1/workspaces/{id}/secret-stores` and `/v1/secret-stores/{id}`, with `secret_store.read`/`secret_store.manage` on the Workspace) and deployment variables are implemented; setting stores up is in [the self-hosting guide](../self-hosting/secret-stores.md).
 
 The separate runner listener (`runners.port`, 8661) is configured but not served; the agent uses the API listener until it is.
 

@@ -106,6 +106,31 @@ func TestVariableRepository(t *testing.T) {
 		assert.NoError(t, variables.CreateVariable(ctx, newVariable(inProject, "Gone")), "an archived variable frees its name")
 	})
 
+	t.Run("a secret value keeps its reference, never text", func(t *testing.T) {
+		const store = "sst_01BX5ZZKBKACTAV9WEVGEMMVRZ"
+		password := must(delivery.NewVariable(delivery.NewVariableProps{
+			OrganizationID: orgA, ApplicationID: new(app.ID()), Name: "Database.Password", Kind: delivery.VariableKindSecret,
+			DeliverAs: new(delivery.VariableDeliverAsValue), ValuesPath: new("database.password"),
+			Values: []delivery.NewVariableValueProps{
+				{Secret: &delivery.SecretReference{StoreID: store, Path: "payments/#{Region}/db", Field: "password", Version: "7"}},
+				{Secret: &delivery.SecretReference{StoreID: store, Path: "payments/staging"}, Scope: delivery.VariableScope{EnvironmentIDs: []string{staging.ID()}}},
+			},
+		}, nil))
+		require.NoError(t, variables.CreateVariable(ctx, password))
+		got, err := variables.GetVariable(ctx, orgA, password.ID())
+		require.NoError(t, err)
+		assert.Equal(t, password.Snapshot(), got.Snapshot())
+
+		n, err := variables.CountActiveVariablesWithSecretStore(ctx, orgA, store)
+		require.NoError(t, err)
+		assert.Equal(t, 1, n)
+		got.Archive()
+		require.NoError(t, variables.UpdateVariable(ctx, got))
+		n, err = variables.CountActiveVariablesWithSecretStore(ctx, orgA, store)
+		require.NoError(t, err)
+		assert.Equal(t, 0, n, "an archived variable holds no store")
+	})
+
 	t.Run("counts the active variables scoped to a record", func(t *testing.T) {
 		count := func(n int, err error) int { require.NoError(t, err); return n }
 		assert.Equal(t, 1, count(variables.CountActiveVariablesWithTarget(ctx, orgA, target.ID())))

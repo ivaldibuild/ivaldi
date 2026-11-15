@@ -57,7 +57,7 @@ func TestNewVariable(t *testing.T) {
 		{"two owners", func(p *NewVariableProps) { p.ApplicationID = &domVarApp }, "not both"},
 		{"a space in the name", func(p *NewVariableProps) { p.Name = "Database Host" }, "name must be"},
 		{"a system variable's name", func(p *NewVariableProps) { p.Name = "ivaldi.Release.Version" }, "reserved for system variables"},
-		{"a secret", func(p *NewVariableProps) { p.Kind = VariableKindSecret }, "must be text"},
+		{"an unknown kind", func(p *NewVariableProps) { p.Kind = "file" }, "must be text or secret"},
 		{"a delivery on a text variable", func(p *NewVariableProps) { p.DeliverAs = new(VariableDeliverAsValue) }, "only a secret variable"},
 		{"an empty key in the values path", func(p *NewVariableProps) { p.ValuesPath = new("database..host") }, "dot-separated keys"},
 		{"a values path in Ivaldi's values", func(p *NewVariableProps) { p.ValuesPath = new("global.ivaldi.release") }, "reserved for Ivaldi"},
@@ -129,6 +129,71 @@ func TestVariableRefusesValuesThatCouldTie(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, v.UpdateValue(value.ID, VariableValueProps{Value: "warn"}))
 		assert.Equal(t, "warn", v.Values()[0].Value)
+	})
+}
+
+// A secret variable's values are references to a Secret Store, never the
+// secret, and it says how the chart receives it.
+func TestSecretVariables(t *testing.T) {
+	store := "sst_01BX5ZZKBKACTAV9WEVGEMMVRZ"
+	secret := func(mutate func(*NewVariableProps)) (*Variable, error) {
+		props := NewVariableProps{
+			OrganizationID: "org_a", ApplicationID: &domVarApp, Name: "Database.Password", Kind: VariableKindSecret,
+			Values: []NewVariableValueProps{{Secret: &SecretReference{StoreID: store, Path: "payments/#{Ivaldi.Environment.Slug}/db", Field: "password"}}},
+		}
+		if mutate != nil {
+			mutate(&props)
+		}
+		return NewVariable(props, nil)
+	}
+
+	v, err := secret(nil)
+	require.NoError(t, err)
+	assert.Equal(t, VariableDeliverAsSecret, *v.Snapshot().DeliverAs, "delivered as a Kubernetes Secret unless it asks otherwise")
+	assert.Equal(t, []string{store}, v.SecretStoreIDs())
+	assert.Equal(t, "password", v.Values()[0].Secret.Field)
+
+	tests := []struct {
+		name   string
+		mutate func(*NewVariableProps)
+		reason string
+	}{
+		{"the secret itself", func(p *NewVariableProps) { p.Values = []NewVariableValueProps{{Value: "hunter2"}} }, "never the secret itself"},
+		{"no path", func(p *NewVariableProps) { p.Values[0].Secret = &SecretReference{StoreID: store} }, "path must be"},
+		{"not a store", func(p *NewVariableProps) { p.Values[0].Secret = &SecretReference{StoreID: domEnvProd, Path: "x"} }, "not a secret store ID"},
+		{"as a value with nowhere to write it", func(p *NewVariableProps) { p.DeliverAs = new(VariableDeliverAsValue) }, "needs a values path"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := secret(tt.mutate)
+			require.ErrorIs(t, err, ErrInvalid)
+			assert.Contains(t, err.Error(), tt.reason)
+		})
+	}
+
+	t.Run("a text variable's value is never a reference", func(t *testing.T) {
+		text := domApplicationVariable(t, "Log.Level", nil)
+		_, err := text.AddValue(VariableValueProps{Secret: &SecretReference{StoreID: store, Path: "x"}})
+		require.ErrorIs(t, err, ErrInvalid)
+	})
+
+	t.Run("how it is delivered can change, with a path to write it at", func(t *testing.T) {
+		v, err := secret(nil)
+		require.NoError(t, err)
+		require.ErrorIs(t, v.Update(UpdateVariableProps{DeliverAs: new(VariableDeliverAsValue)}), ErrInvalid)
+		require.NoError(t, v.Update(UpdateVariableProps{DeliverAs: new(VariableDeliverAsValue), ValuesPath: new("database.password")}))
+		assert.Equal(t, VariableDeliverAsValue, *v.Snapshot().DeliverAs)
+	})
+
+	t.Run("no other value may bind it", func(t *testing.T) {
+		password, err := secret(nil)
+		require.NoError(t, err)
+		url := domApplicationVariable(t, "Database.Url", func(p *NewVariableProps) {
+			p.Values = []NewVariableValueProps{{Value: "postgres://app:#{database.password}@db"}}
+		})
+		err = CheckDeployable(nil, []*Variable{password, url})
+		require.ErrorIs(t, err, ErrInvalid)
+		assert.Contains(t, err.Error(), "binds the secret Database.Password")
 	})
 }
 

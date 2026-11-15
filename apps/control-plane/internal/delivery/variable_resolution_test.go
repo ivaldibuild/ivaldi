@@ -109,3 +109,64 @@ func TestCheckBindings(t *testing.T) {
 		})
 	}
 }
+
+func TestSecretsForADeployment(t *testing.T) {
+	const kubernetes, vault = "sst_01BX5ZZKBKACTAV9WEVGEMMVRZ", "sst_01BX5ZZKBKACTAV9WEVGEMMVR0"
+	stores := map[string]SecretStoreRef{
+		kubernetes: {ID: kubernetes, DisplayName: "In-cluster", Settings: StoreSettings{ID: kubernetes, Kind: StoreKubernetes, Kubernetes: &KubernetesStore{}}},
+		vault: {ID: vault, DisplayName: "Vault", EnvironmentIDs: []string{"staging"},
+			Settings: StoreSettings{ID: vault, Kind: StoreVault, Vault: &VaultStore{Address: "https://vault.example.com", Mount: "kv", AuthRole: "ivaldi"}}},
+	}
+	secret := func(name, store, path string, deliverAs VariableDeliverAs, valuesPath *string) SnapshotVariable {
+		return SnapshotVariable{
+			Name: name, Source: VariableSourceApplication, Kind: VariableKindSecret, DeliverAs: &deliverAs, ValuesPath: valuesPath,
+			Values: []SnapshotValue{{Secret: &SecretReference{StoreID: store, Path: path, Field: "password", Version: "7"}}},
+		}
+	}
+	resolve := func(variables ...SnapshotVariable) []ResolvedVariable {
+		return ResolveVariables(variables, DeploymentScope{EnvironmentID: "prod"})
+	}
+	password := secret("Database.Password", kubernetes, "db-#{Region}", VariableDeliverAsSecret, nil)
+	region := snapshotVariable("Region", VariableSourceProject, SnapshotValue{Value: "eu"})
+
+	t.Run("the agent is sent the reference and how to reach its store", func(t *testing.T) {
+		resolved := resolve(password, region, secret("Api.Key", kubernetes, "api", VariableDeliverAsValue, new("api.key")))
+		require.NoError(t, CheckBindings(resolved))
+		require.NoError(t, CheckSecretStores(resolved, stores, "prod", []string{"kubernetes"}))
+		assert.Equal(t, []string{kubernetes}, SecretStoreIDs(resolved))
+		assert.Equal(t, []AssignmentSecret{
+			{Name: "Api.Key", Source: VariableSourceApplication, ValuesPath: "api.key", DeliverAs: VariableDeliverAsValue,
+				Store: stores[kubernetes].Settings, Ref: SecretRef{Path: "api", Field: "password", Version: "7"}},
+			{Name: "Database.Password", Source: VariableSourceApplication, DeliverAs: VariableDeliverAsSecret,
+				Store: stores[kubernetes].Settings, Ref: SecretRef{Path: "db-#{Region}", Field: "password", Version: "7"}},
+		}, AssignmentSecrets(resolved, stores))
+		assert.Equal(t, []AssignmentVariable{{Name: "Region", Source: VariableSourceProject, Kind: VariableKindText, Value: "eu"}},
+			AssignmentVariables(resolved), "a secret is never sent as a variable")
+	})
+
+	t.Run("a path may bind only what has a value", func(t *testing.T) {
+		err := CheckBindings(resolve(password))
+		require.ErrorIs(t, err, ErrInvalid)
+		assert.Contains(t, err.Error(), "the path of secret Database.Password binds #{Region}")
+	})
+
+	refusals := []struct {
+		name   string
+		stores map[string]SecretStoreRef
+		store  string
+		kinds  []string
+		reason string
+	}{
+		{"a store not allowed for the environment", stores, vault, []string{"vault"}, "not allowed for this environment"},
+		{"a kind the agent cannot read", stores, kubernetes, []string{"vault"}, "cannot read kubernetes secret stores"},
+		{"an archived store", map[string]SecretStoreRef{kubernetes: {DisplayName: "In-cluster", Archived: true}}, kubernetes, []string{"kubernetes"}, "is archived"},
+		{"a store that is gone", map[string]SecretStoreRef{}, kubernetes, []string{"kubernetes"}, "no longer exists"},
+	}
+	for _, tt := range refusals {
+		t.Run(tt.name, func(t *testing.T) {
+			err := CheckSecretStores(resolve(secret("Api.Key", tt.store, "api", VariableDeliverAsSecret, nil)), tt.stores, "prod", tt.kinds)
+			require.ErrorIs(t, err, ErrInvalid)
+			assert.Contains(t, err.Error(), tt.reason)
+		})
+	}
+}

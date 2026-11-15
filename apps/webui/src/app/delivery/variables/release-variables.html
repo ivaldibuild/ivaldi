@@ -35,7 +35,11 @@
               </td>
               @if (variable.value !== null) {
                 <td class="border-border border-b px-4 py-3">
-                  <code class="break-all whitespace-pre-wrap">{{ variable.value }}</code>
+                  @if (variable.secret) {
+                    {{ variable.value }}
+                  } @else {
+                    <code class="break-all whitespace-pre-wrap">{{ variable.value }}</code>
+                  }
                 </td>
                 <td class="border-border border-b px-4 py-3">
                   {{ variable.source }}

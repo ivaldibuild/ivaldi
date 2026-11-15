@@ -57,8 +57,11 @@ type SnapshotVariable struct {
 
 // SnapshotValue is one value of a variable in a revision.
 type SnapshotValue struct {
-	Value string        `json:"value"`
-	Scope VariableScope `json:"scope"`
+	Value string `json:"value"`
+	// Secret is a secret variable's reference; a revision never holds a
+	// secret's value.
+	Secret *SecretReference `json:"secret"`
+	Scope  VariableScope    `json:"scope"`
 }
 
 // ReleaseVariablesSnapshot is a revision's state, for repositories, audit
@@ -147,7 +150,7 @@ func copySnapshotVariables(in []SnapshotVariable) []SnapshotVariable {
 			Values: make([]SnapshotValue, len(v.Values)),
 		}
 		for j, value := range v.Values {
-			out[i].Values[j] = SnapshotValue{Value: value.Value, Scope: value.Scope.clone()}
+			out[i].Values[j] = SnapshotValue{Value: value.Value, Secret: copySecret(value.Secret), Scope: value.Scope.clone()}
 		}
 	}
 	return out
@@ -165,7 +168,7 @@ func SnapshotVariables(project, application []*Variable) ([]SnapshotVariable, er
 		s := v.Snapshot()
 		values := make([]SnapshotValue, len(s.Values))
 		for i, value := range s.Values {
-			values[i] = SnapshotValue{Value: value.Value, Scope: value.Scope}
+			values[i] = SnapshotValue{Value: value.Value, Secret: value.Secret, Scope: value.Scope}
 		}
 		out = append(out, SnapshotVariable{
 			Name: s.Name, Source: v.Source(), Kind: s.Kind,

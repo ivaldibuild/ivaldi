@@ -20,6 +20,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/outbox"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 	"github.com/ivaldibuild/ivaldi/pkg/transaction"
 )
 
@@ -52,6 +53,7 @@ type options struct {
 	environments EnvironmentLookup
 	targets      TargetLookup
 	workspaces   delivery.Workspaces
+	stores       delivery.SecretStores
 	locker       transaction.Locker
 	authz        authorization.Authorizer
 	writer       change.Writer
@@ -71,6 +73,11 @@ func WithTargetLookup(t TargetLookup) VariableServiceOption {
 }
 func WithWorkspaces(w delivery.Workspaces) VariableServiceOption {
 	return func(o *options) { o.workspaces = w }
+}
+
+// WithSecretStores looks up the Secret Stores secret values are kept in.
+func WithSecretStores(s delivery.SecretStores) VariableServiceOption {
+	return func(o *options) { o.stores = s }
 }
 
 // WithLocker makes changes to one Project's variables, and its
@@ -112,6 +119,7 @@ func NewVariableService(opts ...VariableServiceOption) (delivery.VariableService
 		{"EnvironmentLookup", o.environments != nil},
 		{"TargetLookup", o.targets != nil},
 		{"Workspaces", o.workspaces != nil},
+		{"SecretStores", o.stores != nil},
 		{"Locker", o.locker != nil},
 		{"Authorizer", o.authz != nil},
 	}
@@ -129,6 +137,7 @@ func NewVariableService(opts ...VariableServiceOption) (delivery.VariableService
 		environments: o.environments,
 		targets:      o.targets,
 		workspaces:   o.workspaces,
+		stores:       o.stores,
 		locker:       o.locker,
 		w:            o.writer,
 	}
@@ -144,6 +153,7 @@ type service struct {
 	environments EnvironmentLookup
 	targets      TargetLookup
 	workspaces   delivery.Workspaces
+	stores       delivery.SecretStores
 	locker       transaction.Locker
 	w            change.Writer
 }
@@ -185,7 +195,7 @@ func (s *service) activeOwner(ctx context.Context, v *delivery.Variable) (owner,
 func (s *service) CreateVariable(ctx context.Context, actor identity.Actor, in delivery.CreateVariableInput) (*delivery.Variable, error) {
 	values := make([]delivery.NewVariableValueProps, len(in.Values))
 	for i, value := range in.Values {
-		values[i] = delivery.NewVariableValueProps{Value: value.Value, Scope: value.Scope}
+		values[i] = delivery.NewVariableValueProps{Value: value.Value, Secret: value.Secret, Scope: value.Scope}
 	}
 	v, err := delivery.NewVariable(delivery.NewVariableProps{
 		OrganizationID: in.OrganizationID,
@@ -195,6 +205,7 @@ func (s *service) CreateVariable(ctx context.Context, actor identity.Actor, in d
 		Description:    &in.Description,
 		Kind:           in.Kind,
 		ValuesPath:     &in.ValuesPath,
+		DeliverAs:      optional.Of(in.DeliverAs),
 		Values:         values,
 	}, nil)
 	if err != nil {
@@ -206,6 +217,9 @@ func (s *service) CreateVariable(ctx context.Context, actor identity.Actor, in d
 			return err
 		}
 		if err := s.checkScope(ctx, v, o.workspaceID, v.Scope()); err != nil {
+			return err
+		}
+		if err := s.checkSecretStores(ctx, v, o.workspaceID); err != nil {
 			return err
 		}
 		if err := s.checkProject(ctx, o.projectID, v); err != nil {
@@ -277,6 +291,51 @@ func (s *service) checkScope(ctx context.Context, v *delivery.Variable, workspac
 		}
 		if c.Archived() {
 			return fmt.Errorf("%w: channel %s", delivery.ErrArchived, channelID)
+		}
+	}
+	return nil
+}
+
+// checkSecretStores checks the stores a secret Variable's values are kept
+// in: each is active and in the Variable's Workspace, and may be read from
+// every Environment its value names, directly or through a Target. A value
+// that names no Environment is checked when it is deployed, against the
+// Environment it is deployed to.
+func (s *service) checkSecretStores(ctx context.Context, v *delivery.Variable, workspaceID string) error {
+	ids := v.SecretStoreIDs()
+	if len(ids) == 0 {
+		return nil
+	}
+	stores, err := s.stores.LookupSecretStores(ctx, v.OrganizationID(), ids)
+	if err != nil {
+		return fmt.Errorf("look up secret stores: %w", err)
+	}
+	for _, value := range v.Values() {
+		if value.Secret == nil {
+			continue
+		}
+		store, ok := stores[value.Secret.StoreID]
+		switch {
+		case !ok:
+			return delivery.NewErrInvalidInput(fmt.Sprintf("secret store %s does not exist", value.Secret.StoreID))
+		case store.WorkspaceID != workspaceID:
+			return fmt.Errorf("%w: secret store %s is not in workspace %s", delivery.ErrWorkspaceMismatch, store.ID, workspaceID)
+		case store.Archived:
+			return fmt.Errorf("%w: secret store %s", delivery.ErrArchived, store.ID)
+		}
+		environmentIDs := slices.Clone(value.Scope.EnvironmentIDs)
+		for _, targetID := range value.Scope.TargetIDs {
+			t, err := s.targets.GetTarget(ctx, v.OrganizationID(), targetID)
+			if err != nil {
+				return fmt.Errorf("get target %s: %w", targetID, err)
+			}
+			environmentIDs = append(environmentIDs, t.EnvironmentID())
+		}
+		for _, environmentID := range environmentIDs {
+			if !store.Allows(environmentID) {
+				return delivery.NewErrInvalidInput(fmt.Sprintf(
+					"secret store %s is not allowed for environment %s, which the value is scoped to", store.DisplayName, environmentID))
+			}
 		}
 	}
 	return nil
@@ -377,6 +436,9 @@ func (s *service) changeVariable(ctx context.Context, actor identity.Actor, orga
 				return err
 			}
 			if err := s.checkScope(ctx, v, o.workspaceID, scope); err != nil {
+				return err
+			}
+			if err := s.checkSecretStores(ctx, v, o.workspaceID); err != nil {
 				return err
 			}
 			return s.checkProject(ctx, o.projectID, v)

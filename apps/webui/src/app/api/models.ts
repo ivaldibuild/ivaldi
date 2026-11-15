@@ -53,18 +53,35 @@ export type ChannelRule = Schemas['ChannelRuleSnapshot'];
 export type Channel = Schemas['ChannelSnapshot'];
 export type Placement = Schemas['PlacementSnapshot'];
 
+/** A secret manager a runtime agent reads secret variables from; it holds no credential. */
+export type SecretStore = Schemas['SecretStoreSnapshot'];
+export type SecretStoreKind = SecretStore['kind'];
+/** Where a secret variable's value is kept: never the secret itself. */
+export type SecretReference = Schemas['SecretReference'];
+
 /** A named piece of configuration a Project's Applications, or one Application, deploy with. */
-export type Variable = Schemas['VariableSnapshot'];
-export type VariableValue = Schemas['VariableValueSnapshot'];
+/**
+ * The generated types can't say an object is null, so these say it: a text variable's value has
+ * no `secret`.
+ */
+export type VariableValue = Omit<Schemas['VariableValueSnapshot'], 'secret'> & {
+  secret: SecretReference | null;
+};
+export type Variable = Omit<Schemas['VariableSnapshot'], 'values'> & { values: VariableValue[] };
 /** The Deployments a value applies to; an empty list matches any. */
 export type VariableScope = Schemas['VariableScope'];
 
+/** A value that matches a Deployment: a text variable's text, or where a secret is kept. */
+export type ResolvedValue = Omit<Schemas['ResolvedValue'], 'secret'> & {
+  secret: SecretReference | null;
+};
 /**
- * A variable as one Deployment gets it: the value that wins and the ones it beat. The generated
- * type can't say an object is null, so this says it: `winner` is null when no value applies.
+ * A variable as one Deployment gets it: the value that wins and the ones it beat. `winner` is null
+ * when no value applies.
  */
-export type ResolvedVariable = Omit<Schemas['ResolvedVariable'], 'winner'> & {
-  winner: Schemas['ResolvedValue'] | null;
+export type ResolvedVariable = Omit<Schemas['ResolvedVariable'], 'winner' | 'beaten'> & {
+  winner: ResolvedValue | null;
+  beaten: ResolvedValue[];
 };
 /**
  * A Release's current revision of variables, and what a Target would get of them. `revision` is

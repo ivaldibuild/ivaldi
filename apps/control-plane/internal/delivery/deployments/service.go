@@ -44,6 +44,7 @@ type options struct {
 	lifecycles   Lifecycles
 	variables    Variables
 	snapshots    VariableSnapshots
+	stores       delivery.SecretStores
 	history      vcs.History
 	changes      provenance.Lookup
 	authz        authorization.Authorizer
@@ -78,6 +79,11 @@ func WithLifecycles(r Lifecycles) ServiceOption {
 // WithVariables reads the revisions of Releases' variables Deployments use.
 func WithVariables(r Variables) ServiceOption {
 	return func(o *options) { o.variables = r }
+}
+
+// WithSecretStores looks up the Secret Stores a Deployment's secrets are in.
+func WithSecretStores(s delivery.SecretStores) ServiceOption {
+	return func(o *options) { o.stores = s }
 }
 
 // WithVariableSnapshots snapshots the variables of a Release Ivaldi observed.
@@ -141,6 +147,7 @@ func NewService(opts ...ServiceOption) (delivery.DeploymentService, error) {
 		{"Lifecycles", o.lifecycles != nil},
 		{"Variables", o.variables != nil},
 		{"VariableSnapshots", o.snapshots != nil},
+		{"SecretStores", o.stores != nil},
 		{"HeartbeatInterval", o.heartbeat > 0},
 		{"CommitHistory", o.history != nil},
 		{"Authorizer", o.authz != nil},
@@ -434,6 +441,9 @@ func (s *service) ReportDeployment(ctx context.Context, actor identity.Actor, in
 		if err := d.MoveTo(*in.Status); err != nil {
 			return err
 		}
+		if err := s.recordSecrets(ctx, d, in.Detail); err != nil {
+			return err
+		}
 		if err := s.deployments.UpdateDeployment(ctx, d); err != nil {
 			return err
 		}
@@ -453,6 +463,70 @@ func (s *service) ReportDeployment(ctx context.Context, actor identity.Actor, in
 }
 
 // checkTargetAgent refuses anyone but the agent of the Target's Cluster.
+// recordSecrets stores which version of each secret the agent says it
+// resolved, with its fingerprint, beside where the Deployment's revision
+// says the secret is kept. A report without secrets changes nothing.
+func (s *service) recordSecrets(ctx context.Context, d *delivery.Deployment, detail json.RawMessage) error {
+	var reported struct {
+		Secrets []struct {
+			Name        string `json:"name"`
+			Version     string `json:"version"`
+			Fingerprint string `json:"fingerprint"`
+			DeliveredAs string `json:"delivered_as"`
+		} `json:"secrets"`
+	}
+	// The detail is the agent's to shape; one that is not an object simply
+	// names no secrets.
+	if len(detail) == 0 || json.Unmarshal(detail, &reported) != nil || len(reported.Secrets) == 0 {
+		return nil
+	}
+	references := map[string]delivery.SecretReference{}
+	if snapshotID := d.VariableSnapshotID(); snapshotID != nil {
+		revision, err := s.variables.GetReleaseVariables(ctx, d.OrganizationID(), *snapshotID)
+		if err != nil {
+			return err
+		}
+		rel, err := s.releases.GetRelease(ctx, d.OrganizationID(), d.ReleaseID())
+		if err != nil {
+			return err
+		}
+		resolved := delivery.ResolveVariables(revision.Variables(), delivery.DeploymentScope{
+			TargetID: d.TargetID(), EnvironmentID: d.EnvironmentID(), ChannelID: rel.ChannelID(),
+		})
+		for _, r := range resolved {
+			if r.Winner != nil && r.Winner.Secret != nil {
+				references[r.Name] = *r.Winner.Secret
+			}
+		}
+	}
+	versions := make([]delivery.SecretVersion, 0, len(reported.Secrets))
+	for _, secret := range reported.Secrets {
+		ref, sent := references[secret.Name]
+		if !sent {
+			return delivery.NewErrInvalidInput(fmt.Sprintf("the report names secret %q, which the deployment was not sent", secret.Name))
+		}
+		deliveredAs := delivery.VariableDeliverAsSecret
+		if secret.DeliveredAs == string(delivery.VariableDeliverAsValue) {
+			deliveredAs = delivery.VariableDeliverAsValue
+		}
+		versions = append(versions, delivery.SecretVersion{
+			Name: secret.Name, StoreID: ref.StoreID, Path: ref.Path, Field: ref.Field,
+			Version: secret.Version, Fingerprint: secret.Fingerprint, DeliveredAs: deliveredAs,
+		})
+	}
+	return d.RecordSecretVersions(versions)
+}
+
+// storeKinds returns the kinds of the stores, for a check that does not
+// concern what the agent can read.
+func storeKinds(stores map[string]delivery.SecretStoreRef) []string {
+	var out []string
+	for _, store := range stores {
+		out = append(out, string(store.Settings.Kind))
+	}
+	return out
+}
+
 func (s *service) checkTargetAgent(ctx context.Context, organizationID string, target *delivery.Target, principalID string) error {
 	cluster, err := s.clusters.GetCluster(ctx, organizationID, target.ClusterID())
 	if err != nil {
@@ -774,17 +848,51 @@ func (s *service) plan(ctx context.Context, organizationID string, rel *delivery
 	if err != nil {
 		return nil, err
 	}
-	bound := delivery.CheckBindings(s.resolve(p.variables, rel, target))
-	var unbound *delivery.ErrInvalidInput
-	switch {
-	case bound == nil:
-		p.checks = append(p.checks, check("variables_defined", true, ""))
-	case errors.As(bound, &unbound):
-		p.checks = append(p.checks, check("variables_defined", false, unbound.Message))
-	default:
-		return nil, bound
+	resolved := s.resolve(p.variables, rel, target)
+	if err := refusal(&p.checks, "variables_defined", delivery.CheckBindings(resolved)); err != nil {
+		return nil, err
+	}
+	stores, err := s.stores.LookupSecretStores(ctx, organizationID, delivery.SecretStoreIDs(resolved))
+	if err != nil {
+		return nil, fmt.Errorf("look up secret stores: %w", err)
+	}
+	allowed := delivery.CheckSecretStores(resolved, stores, target.EnvironmentID(), agentStoreKinds(cluster))
+	if err := refusal(&p.checks, "secret_stores_allowed", allowed); err != nil {
+		return nil, err
 	}
 	return p, nil
+}
+
+// refusal adds a check that passes unless err says the input is invalid,
+// whose message is the reason. Any other error is returned.
+func refusal(checks *[]delivery.DeploymentCheck, name string, err error) error {
+	var invalid *delivery.ErrInvalidInput
+	switch {
+	case err == nil:
+		*checks = append(*checks, check(name, true, ""))
+	case errors.As(err, &invalid):
+		*checks = append(*checks, check(name, false, invalid.Message))
+	default:
+		return err
+	}
+	return nil
+}
+
+// agentStoreKinds returns the secret-store kinds the Cluster's agent last
+// said it can read.
+func agentStoreKinds(cluster *delivery.Cluster) []string {
+	var out []string
+	switch kinds := cluster.AgentCapabilities()["secret_store_kinds"].(type) {
+	case []string:
+		out = kinds
+	case []any:
+		for _, k := range kinds {
+			if s, ok := k.(string); ok {
+				out = append(out, s)
+			}
+		}
+	}
+	return out
 }
 
 // currentVariables returns the revision of its variables a Release deploys
@@ -909,13 +1017,24 @@ func (s *service) assignment(ctx context.Context, d *delivery.Deployment) (*deli
 	if config == nil {
 		return nil, delivery.NewErrInvalidInput("the target has no apply config; deployments there are tracked only")
 	}
-	variables := []delivery.AssignmentVariable{}
+	variables, secrets := []delivery.AssignmentVariable{}, []delivery.AssignmentSecret{}
 	if snapshotID := d.VariableSnapshotID(); snapshotID != nil {
 		revision, err := s.variables.GetReleaseVariables(ctx, d.OrganizationID(), *snapshotID)
 		if err != nil {
 			return nil, err
 		}
-		variables = delivery.AssignmentVariables(s.resolve(revision, rel, target))
+		resolved := s.resolve(revision, rel, target)
+		variables = delivery.AssignmentVariables(resolved)
+		stores, err := s.stores.LookupSecretStores(ctx, d.OrganizationID(), delivery.SecretStoreIDs(resolved))
+		if err != nil {
+			return nil, fmt.Errorf("look up secret stores: %w", err)
+		}
+		// A store archived or narrowed since the request would leave the
+		// agent without a way to read the secret.
+		if err := delivery.CheckSecretStores(resolved, stores, d.EnvironmentID(), storeKinds(stores)); err != nil {
+			return nil, err
+		}
+		secrets = delivery.AssignmentSecrets(resolved, stores)
 	}
 	apply := delivery.ApplyAssignment{
 		Deployer:  delivery.DeployerHelm,
@@ -923,7 +1042,7 @@ func (s *service) assignment(ctx context.Context, d *delivery.Deployment) (*deli
 		Overlays:  config.Values,
 		Images:    map[string]delivery.AssignmentImage{},
 		Variables: variables,
-		Secrets:   []delivery.AssignmentSecret{},
+		Secrets:   secrets,
 		Helm:      &delivery.HelmApply{ReleaseName: helmReleaseName(d.ApplicationID())},
 		Reason:    d.Reason(),
 	}

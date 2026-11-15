@@ -19,8 +19,8 @@ const revision = {
       values_path: 'log.level',
       deliver_as: null,
       values: [
-        { value: 'info', scope },
-        { value: 'warn', scope },
+        { value: 'info', secret: null, scope },
+        { value: 'warn', secret: null, scope },
       ],
     },
     {
@@ -96,8 +96,8 @@ describe('ReleaseVariables', () => {
             kind: 'text',
             values_path: 'log.level',
             deliver_as: null,
-            winner: { value: 'warn', scope, source: 'application' },
-            beaten: [{ value: 'info', scope, source: 'application' }],
+            winner: { value: 'warn', secret: null, scope, source: 'application' },
+            beaten: [{ value: 'info', secret: null, scope, source: 'application' }],
           },
           {
             name: 'Region',

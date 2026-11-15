@@ -37,6 +37,8 @@ const (
 	maxVariableValueLength = 16384
 	maxVariableValues      = 50
 	maxScopeNames          = 50
+	maxSecretPathLength    = 512
+	maxSecretFieldLength   = 255
 	// maxClusterCapabilitiesBytes bounds the facts an agent reports about
 	// itself, so a malformed or hostile report cannot fill a row.
 	maxClusterCapabilitiesBytes = 64 * 1024

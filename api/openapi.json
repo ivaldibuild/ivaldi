@@ -2461,6 +2461,10 @@
             "format": "date-time",
             "type": "string"
           },
+          "variable_snapshot_id": {
+            "nullable": true,
+            "type": "string"
+          },
           "work_item_id": {
             "nullable": true,
             "type": "string"
@@ -2482,6 +2486,7 @@
           "work_item_id",
           "external_ref",
           "policy_decision_id",
+          "variable_snapshot_id",
           "findings",
           "requested_at",
           "started_at",
@@ -4355,6 +4360,84 @@
         ],
         "type": "object"
       },
+      "ReleaseVariablesSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "application_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "organization_id": {
+            "type": "string"
+          },
+          "release_id": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "current",
+              "superseded"
+            ],
+            "type": "string"
+          },
+          "taken_by_principal_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "variables": {
+            "items": {
+              "$ref": "#/components/schemas/SnapshotVariable"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "application_id",
+          "release_id",
+          "revision",
+          "status",
+          "variables",
+          "taken_by_principal_id",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "ReleaseVariablesView": {
+        "additionalProperties": false,
+        "properties": {
+          "resolved": {
+            "items": {
+              "$ref": "#/components/schemas/ResolvedVariable"
+            },
+            "type": "array"
+          },
+          "revision": {
+            "$ref": "#/components/schemas/ReleaseVariablesSnapshot"
+          }
+        },
+        "required": [
+          "revision",
+          "resolved"
+        ],
+        "type": "object"
+      },
       "RenewRequestBody": {
         "additionalProperties": false,
         "properties": {
@@ -4543,6 +4626,75 @@
           "value",
           "from_default",
           "locked"
+        ],
+        "type": "object"
+      },
+      "ResolvedValue": {
+        "additionalProperties": false,
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/VariableScope"
+          },
+          "source": {
+            "enum": [
+              "project",
+              "application"
+            ],
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "scope",
+          "source"
+        ],
+        "type": "object"
+      },
+      "ResolvedVariable": {
+        "additionalProperties": false,
+        "properties": {
+          "beaten": {
+            "items": {
+              "$ref": "#/components/schemas/ResolvedValue"
+            },
+            "type": "array"
+          },
+          "deliver_as": {
+            "enum": [
+              "secret",
+              "value"
+            ],
+            "nullable": true,
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "text",
+              "secret"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "values_path": {
+            "nullable": true,
+            "type": "string"
+          },
+          "winner": {
+            "$ref": "#/components/schemas/ResolvedValue"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "values_path",
+          "deliver_as",
+          "winner",
+          "beaten"
         ],
         "type": "object"
       },
@@ -5850,6 +6002,35 @@
           },
           "data": {
             "$ref": "#/components/schemas/ReleaseChanges",
+            "description": "Response payload, always present: an empty list is [], not omitted"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ResponseReleaseVariablesView": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseReleaseVariablesView.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ReleaseVariablesView",
             "description": "Response payload, always present: an empty list is [], not omitted"
           },
           "message": {
@@ -7708,6 +7889,71 @@
           "login_challenge",
           "signup_token",
           "organization_name"
+        ],
+        "type": "object"
+      },
+      "SnapshotValue": {
+        "additionalProperties": false,
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/VariableScope"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "scope"
+        ],
+        "type": "object"
+      },
+      "SnapshotVariable": {
+        "additionalProperties": false,
+        "properties": {
+          "deliver_as": {
+            "enum": [
+              "secret",
+              "value"
+            ],
+            "nullable": true,
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "text",
+              "secret"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "project",
+              "application"
+            ],
+            "type": "string"
+          },
+          "values": {
+            "items": {
+              "$ref": "#/components/schemas/SnapshotValue"
+            },
+            "type": "array"
+          },
+          "values_path": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "source",
+          "kind",
+          "values_path",
+          "deliver_as",
+          "values"
         ],
         "type": "object"
       },
@@ -15551,6 +15797,64 @@
           }
         ],
         "summary": "Publish a draft Release that meets its Channel's rules",
+        "tags": [
+          "releases"
+        ]
+      }
+    },
+    "/v1/releases/{release_id}/variables": {
+      "get": {
+        "operationId": "get-release-variables",
+        "parameters": [
+          {
+            "description": "The Release",
+            "in": "path",
+            "name": "release_id",
+            "required": true,
+            "schema": {
+              "description": "The Release",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A Target, to also get the value of each variable a Deployment there would get",
+            "explode": false,
+            "in": "query",
+            "name": "target_id",
+            "schema": {
+              "description": "A Target, to also get the value of each variable a Deployment there would get",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseReleaseVariablesView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get the variables a Release deploys with, and what a Target would get",
         "tags": [
           "releases"
         ]

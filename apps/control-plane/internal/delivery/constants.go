@@ -55,19 +55,20 @@ const AssignmentPageSize = 100
 // Aggregate types name the domain objects that raise events. An envelope
 // carries the type and ID of the object whose change raised it.
 const (
-	AggregateEnvironment = "delivery.Environment"
-	AggregateTarget      = "delivery.Target"
-	AggregateCluster     = "delivery.Cluster"
-	AggregateLifecycle   = "delivery.Lifecycle"
-	AggregateRegistry    = "delivery.Registry"
-	AggregateApplication = "delivery.Application"
-	AggregateArtifact    = "delivery.Artifact"
-	AggregateChannel     = "delivery.Channel"
-	AggregatePlacement   = "delivery.Placement"
-	AggregateBuild       = "delivery.Build"
-	AggregateRelease     = "delivery.Release"
-	AggregateDeployment  = "delivery.Deployment"
-	AggregateVariable    = "delivery.Variable"
+	AggregateEnvironment      = "delivery.Environment"
+	AggregateTarget           = "delivery.Target"
+	AggregateCluster          = "delivery.Cluster"
+	AggregateLifecycle        = "delivery.Lifecycle"
+	AggregateRegistry         = "delivery.Registry"
+	AggregateApplication      = "delivery.Application"
+	AggregateArtifact         = "delivery.Artifact"
+	AggregateChannel          = "delivery.Channel"
+	AggregatePlacement        = "delivery.Placement"
+	AggregateBuild            = "delivery.Build"
+	AggregateRelease          = "delivery.Release"
+	AggregateDeployment       = "delivery.Deployment"
+	AggregateVariable         = "delivery.Variable"
+	AggregateReleaseVariables = "delivery.ReleaseVariables"
 )
 
 // Permissions this capability asks the authorizer about. The full catalog,
@@ -110,14 +111,15 @@ const (
 // Actions name what an actor asks the authorizer to allow. Policy rules
 // and approval requests match on them, and they appear in its decisions.
 const (
-	ActionVariableAddValue    = "variable.add_value"
-	ActionVariableArchive     = "variable.archive"
-	ActionVariableCreate      = "variable.create"
-	ActionVariableList        = "variable.list"
-	ActionVariableRead        = "variable.read"
-	ActionVariableRemoveValue = "variable.remove_value"
-	ActionVariableUpdate      = "variable.update"
-	ActionVariableUpdateValue = "variable.update_value"
+	ActionVariableAddValue     = "variable.add_value"
+	ActionVariableArchive      = "variable.archive"
+	ActionVariableCreate       = "variable.create"
+	ActionVariableList         = "variable.list"
+	ActionVariableRead         = "variable.read"
+	ActionVariableRemoveValue  = "variable.remove_value"
+	ActionVariableUpdate       = "variable.update"
+	ActionVariableUpdateValue  = "variable.update_value"
+	ActionReleaseVariablesRead = "release.read_variables"
 )
 
 const (

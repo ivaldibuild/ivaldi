@@ -42,6 +42,8 @@ type options struct {
 	targets      Targets
 	clusters     Clusters
 	lifecycles   Lifecycles
+	variables    Variables
+	snapshots    VariableSnapshots
 	history      vcs.History
 	changes      provenance.Lookup
 	authz        authorization.Authorizer
@@ -71,6 +73,16 @@ func WithTargets(r Targets) ServiceOption {
 }
 func WithLifecycles(r Lifecycles) ServiceOption {
 	return func(o *options) { o.lifecycles = r }
+}
+
+// WithVariables reads the revisions of Releases' variables Deployments use.
+func WithVariables(r Variables) ServiceOption {
+	return func(o *options) { o.variables = r }
+}
+
+// WithVariableSnapshots snapshots the variables of a Release Ivaldi observed.
+func WithVariableSnapshots(v VariableSnapshots) ServiceOption {
+	return func(o *options) { o.snapshots = v }
 }
 func WithClusters(r Clusters) ServiceOption {
 	return func(o *options) { o.clusters = r }
@@ -127,6 +139,8 @@ func NewService(opts ...ServiceOption) (delivery.DeploymentService, error) {
 		{"Targets", o.targets != nil},
 		{"Clusters", o.clusters != nil},
 		{"Lifecycles", o.lifecycles != nil},
+		{"Variables", o.variables != nil},
+		{"VariableSnapshots", o.snapshots != nil},
 		{"HeartbeatInterval", o.heartbeat > 0},
 		{"CommitHistory", o.history != nil},
 		{"Authorizer", o.authz != nil},
@@ -196,6 +210,9 @@ func (s *service) RequestDeployments(ctx context.Context, actor identity.Actor, 
 				InitiatedByPrincipalID: optional.Of(actor.PrincipalID), SessionID: in.SessionID,
 				WorkItemID: in.WorkItemID, PolicyDecisionID: optional.Of(decision.ID),
 				RequestedAt: &now,
+			}
+			if plan.variables != nil {
+				props.VariableSnapshotID = new(plan.variables.ID())
 			}
 			if status == release.DeploymentApplying {
 				props.StartedAt = &now
@@ -661,7 +678,10 @@ type plan struct {
 	target      *delivery.Target
 	environment *delivery.Environment
 	placement   *delivery.Placement
-	checks      []delivery.DeploymentCheck
+	// variables is the revision of the Release's variables a Deployment
+	// would use; nil for a Release that has none.
+	variables *delivery.ReleaseVariables
+	checks    []delivery.DeploymentCheck
 }
 
 func (s *service) plan(ctx context.Context, organizationID string, rel *delivery.Release, targetID string) (*plan, error) {
@@ -749,7 +769,43 @@ func (s *service) plan(ctx context.Context, organizationID string, rel *delivery
 		open, reason = phaseOpen(lifecycle, phaseIndex, succeeded)
 	}
 	p.checks = append(p.checks, check("phase_open", open, reason))
+
+	p.variables, err = s.currentVariables(ctx, rel)
+	if err != nil {
+		return nil, err
+	}
+	bound := delivery.CheckBindings(s.resolve(p.variables, rel, target))
+	var unbound *delivery.ErrInvalidInput
+	switch {
+	case bound == nil:
+		p.checks = append(p.checks, check("variables_defined", true, ""))
+	case errors.As(bound, &unbound):
+		p.checks = append(p.checks, check("variables_defined", false, unbound.Message))
+	default:
+		return nil, bound
+	}
 	return p, nil
+}
+
+// currentVariables returns the revision of its variables a Release deploys
+// with now, or nil for a Release created before they were snapshotted.
+func (s *service) currentVariables(ctx context.Context, rel *delivery.Release) (*delivery.ReleaseVariables, error) {
+	current, err := s.variables.GetCurrentReleaseVariables(ctx, rel.OrganizationID(), rel.ID())
+	if errors.Is(err, delivery.ErrNotFound) {
+		return nil, nil
+	}
+	return current, err
+}
+
+// resolve picks the value of each variable in a revision for a Deployment
+// of the Release to the Target.
+func (s *service) resolve(revision *delivery.ReleaseVariables, rel *delivery.Release, target *delivery.Target) []delivery.ResolvedVariable {
+	if revision == nil {
+		return nil
+	}
+	return delivery.ResolveVariables(revision.Variables(), delivery.DeploymentScope{
+		TargetID: target.ID(), EnvironmentID: target.EnvironmentID(), ChannelID: rel.ChannelID(),
+	})
 }
 
 func phaseOf(l *delivery.Lifecycle, environmentID string) (bool, int) {
@@ -853,12 +909,20 @@ func (s *service) assignment(ctx context.Context, d *delivery.Deployment) (*deli
 	if config == nil {
 		return nil, delivery.NewErrInvalidInput("the target has no apply config; deployments there are tracked only")
 	}
+	variables := []delivery.AssignmentVariable{}
+	if snapshotID := d.VariableSnapshotID(); snapshotID != nil {
+		revision, err := s.variables.GetReleaseVariables(ctx, d.OrganizationID(), *snapshotID)
+		if err != nil {
+			return nil, err
+		}
+		variables = delivery.AssignmentVariables(s.resolve(revision, rel, target))
+	}
 	apply := delivery.ApplyAssignment{
 		Deployer:  delivery.DeployerHelm,
 		Namespace: target.Locator()[delivery.LocatorNamespace],
 		Overlays:  config.Values,
 		Images:    map[string]delivery.AssignmentImage{},
-		Variables: []delivery.AssignmentVariable{},
+		Variables: variables,
 		Secrets:   []delivery.AssignmentSecret{},
 		Helm:      &delivery.HelmApply{ReleaseName: helmReleaseName(d.ApplicationID())},
 		Reason:    d.Reason(),
@@ -1097,8 +1161,21 @@ func (s *service) Observe(ctx context.Context, actor identity.Actor, in delivery
 				if err != nil {
 					return err
 				}
-			} else if err := s.writer.Events(ctx, delivery.AggregateRelease, rel.ID(), rel); err != nil {
-				return err
+			} else {
+				if err := s.writer.Events(ctx, delivery.AggregateRelease, rel.ID(), rel); err != nil {
+					return err
+				}
+				// An observed Release deploys, if Ivaldi later executes it,
+				// with the variables its Application had when it was first seen.
+				revisions, err := s.snapshots.Take(ctx, rel, app.ProjectID(), nil)
+				if err != nil {
+					return err
+				}
+				for _, rv := range revisions {
+					if err := s.writer.Events(ctx, delivery.AggregateReleaseVariables, rv.ID(), rv); err != nil {
+						return err
+					}
+				}
 			}
 		} else if err != nil {
 			return err

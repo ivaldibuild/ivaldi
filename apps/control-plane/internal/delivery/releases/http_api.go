@@ -37,6 +37,8 @@ func (c *ReleaseController) RegisterRoutes(h huma.API) {
 	register(h, "list-releases", http.MethodGet, "/applications/{application}/releases",
 		"List an Application's Releases", 0, c.ListReleases)
 	register(h, "get-release", http.MethodGet, "/releases/{release_id}", "Get a Release with its Builds", 0, c.GetRelease)
+	register(h, "get-release-variables", http.MethodGet, "/releases/{release_id}/variables",
+		"Get the variables a Release deploys with, and what a Target would get", 0, c.GetReleaseVariables)
 	register(h, "publish-release", http.MethodPost, "/releases/{release_id}/publish",
 		"Publish a draft Release that meets its Channel's rules", 0, c.PublishRelease)
 	register(h, "withdraw-release", http.MethodPost, "/releases/{release_id}/withdraw",
@@ -132,6 +134,18 @@ func (c *ReleaseController) ListReleases(ctx context.Context, req *ListReleasesR
 
 func (c *ReleaseController) GetRelease(ctx context.Context, req *ReleaseRequest) (*ReleaseResponse, error) {
 	return c.onRelease(ctx, req.ReleaseID, c.service.GetRelease)
+}
+
+func (c *ReleaseController) GetReleaseVariables(ctx context.Context, req *ReleaseVariablesRequest) (*ReleaseVariablesResponse, error) {
+	who, err := caller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	view, err := c.service.GetReleaseVariables(ctx, who.Actor, who.OrganizationID, req.ReleaseID, req.TargetID)
+	if err != nil {
+		return nil, httpError(ctx, err)
+	}
+	return &ReleaseVariablesResponse{Body: api.SuccessResponse(nil, *view)}, nil
 }
 
 func (c *ReleaseController) PublishRelease(ctx context.Context, req *ReleaseRequest) (*ReleaseResponse, error) {

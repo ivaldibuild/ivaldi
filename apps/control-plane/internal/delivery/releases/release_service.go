@@ -36,6 +36,25 @@ type Applications interface {
 	ListChannels(ctx context.Context, organizationID, applicationID string, includeArchived bool) ([]*delivery.Channel, error)
 }
 
+// VariableSnapshots takes the revisions of a Release's variables and reads
+// the current one. delivery.ReleaseVariablesTaker and
+// delivery.ReleaseVariablesRepository provide it.
+type VariableSnapshots interface {
+	Take(ctx context.Context, rel *delivery.Release, projectID string, takenBy *string) ([]*delivery.ReleaseVariables, error)
+}
+
+// CurrentVariables reads the revision of its variables a Release deploys
+// with. delivery.ReleaseVariablesRepository provides it.
+type CurrentVariables interface {
+	GetCurrentReleaseVariables(ctx context.Context, organizationID, releaseID string) (*delivery.ReleaseVariables, error)
+}
+
+// TargetLookup reads the Target a Release's variables are resolved for.
+// delivery.TargetRepository provides it.
+type TargetLookup interface {
+	GetTarget(ctx context.Context, organizationID, targetID string) (*delivery.Target, error)
+}
+
 // publishSubject is the subject the authorizing layer files the publish
 // decision under when a Release is created and published in one call, apart
 // from the decision to create it.
@@ -48,6 +67,9 @@ type options struct {
 	releases     delivery.ReleaseRepository
 	applications Applications
 	tags         delivery.TagResolver
+	snapshots    VariableSnapshots
+	variables    CurrentVariables
+	targets      TargetLookup
 	authz        authorization.Authorizer
 	writer       change.Writer
 }
@@ -60,6 +82,17 @@ func WithReleaseRepo(r delivery.ReleaseRepository) ReleaseServiceOption {
 }
 func WithApplications(a Applications) ReleaseServiceOption {
 	return func(o *options) { o.applications = a }
+}
+
+// WithVariableSnapshots snapshots a new Release's variables.
+func WithVariableSnapshots(v VariableSnapshots) ReleaseServiceOption {
+	return func(o *options) { o.snapshots = v }
+}
+func WithCurrentVariables(v CurrentVariables) ReleaseServiceOption {
+	return func(o *options) { o.variables = v }
+}
+func WithTargetLookup(t TargetLookup) ReleaseServiceOption {
+	return func(o *options) { o.targets = t }
 }
 
 // WithTagResolver resolves Builds named by tag. delivery.NoTagResolver
@@ -99,6 +132,9 @@ func NewReleaseService(opts ...ReleaseServiceOption) (delivery.ReleaseService, e
 		{"ReleaseRepo", o.releases != nil},
 		{"Applications", o.applications != nil},
 		{"TagResolver", o.tags != nil},
+		{"VariableSnapshots", o.snapshots != nil},
+		{"CurrentVariables", o.variables != nil},
+		{"TargetLookup", o.targets != nil},
 		{"Authorizer", o.authz != nil},
 	}
 	for _, r := range required {
@@ -352,6 +388,10 @@ func (s *service) CreateRelease(ctx context.Context, actor identity.Actor, in de
 			return err
 		}
 
+		if err := s.snapshotVariables(ctx, rel, optional.Of(actor.PrincipalID)); err != nil {
+			return err
+		}
+
 		if in.Publish {
 			// The publish decision is filed apart from the one to create.
 			d, ok := authorization.DecisionFor(ctx, publishSubject)
@@ -374,6 +414,60 @@ func (s *service) CreateRelease(ctx context.Context, actor identity.Actor, in de
 		return nil, err
 	}
 	return out, nil
+}
+
+// snapshotVariables takes revision 1 of a new Release's variables: what its
+// Application deploys with now, so later changes to the variables do not
+// change what the Release deploys.
+func (s *service) snapshotVariables(ctx context.Context, rel *delivery.Release, takenBy *string) error {
+	app, err := s.applications.GetApplication(ctx, rel.OrganizationID(), rel.ApplicationID())
+	if err != nil {
+		return err
+	}
+	revisions, err := s.snapshots.Take(ctx, rel, app.ProjectID(), takenBy)
+	if err != nil {
+		return err
+	}
+	for _, rv := range revisions {
+		if err := s.writer.Events(ctx, delivery.AggregateReleaseVariables, rv.ID(), rv); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// GetReleaseVariables returns the Release's current revision and, for a
+// Target, what a Deployment there would get.
+func (s *service) GetReleaseVariables(ctx context.Context, _ identity.Actor, organizationID, releaseID, targetID string) (*delivery.ReleaseVariablesView, error) {
+	rel, err := s.releases.GetRelease(ctx, organizationID, releaseID)
+	if err != nil {
+		return nil, err
+	}
+	view := &delivery.ReleaseVariablesView{Resolved: []delivery.ResolvedVariable{}}
+	var variables []delivery.SnapshotVariable
+	current, err := s.variables.GetCurrentReleaseVariables(ctx, organizationID, releaseID)
+	switch {
+	case errors.Is(err, delivery.ErrNotFound):
+	case err != nil:
+		return nil, err
+	default:
+		view.Revision = new(current.Snapshot())
+		variables = current.Variables()
+	}
+	if targetID == "" {
+		return view, nil
+	}
+	target, err := s.targets.GetTarget(ctx, organizationID, targetID)
+	if errors.Is(err, delivery.ErrNotFound) {
+		return nil, delivery.NewErrInvalidInput(fmt.Sprintf("target %s does not exist", targetID))
+	}
+	if err != nil {
+		return nil, err
+	}
+	view.Resolved = delivery.ResolveVariables(variables, delivery.DeploymentScope{
+		TargetID: target.ID(), EnvironmentID: target.EnvironmentID(), ChannelID: rel.ChannelID(),
+	})
+	return view, nil
 }
 
 // chooseChannel returns the Channel named, if it admits the Release, or

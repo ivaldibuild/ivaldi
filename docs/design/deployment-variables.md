@@ -74,12 +74,13 @@ System variables are always defined, and can be bound but not overridden:
 
 | Name | Value |
 |---|---|
-| `Ivaldi.Organization.Slug`, `Ivaldi.Workspace.Slug`, `Ivaldi.Project.Slug` | The Application's |
-| `Ivaldi.Application.Slug`, `Ivaldi.Application.Id` | |
-| `Ivaldi.Environment.Slug`, `Ivaldi.Environment.Tier` | The Target's Environment |
-| `Ivaldi.Target.Slug`, `Ivaldi.Target.Namespace`, `Ivaldi.Cluster.Slug` | |
-| `Ivaldi.Channel.Slug`, `Ivaldi.Release.Version`, `Ivaldi.Release.Id` | |
+| `Ivaldi.Application.Id` | The Application's |
+| `Ivaldi.Environment.Slug`, `Ivaldi.Environment.Id` | The Target's Environment |
+| `Ivaldi.Target.Slug`, `Ivaldi.Target.Id`, `Ivaldi.Target.Namespace`, `Ivaldi.Cluster.Slug` | |
+| `Ivaldi.Release.Version`, `Ivaldi.Release.Id` | |
 | `Ivaldi.Deployment.Id` | |
+
+The agent defines these from the assignment, and the control plane's list of their names (`delivery.SystemVariableNames`) must match. The Organization's, Workspace's, Project's, Application's, and Channel's slugs and the Environment's tier are not defined yet: the assignment does not carry them.
 
 ## Snapshots
 
@@ -87,7 +88,7 @@ System variables are always defined, and can be bound but not overridden:
 
 **Refreshing creates a new revision.** "Update variables" on a Release takes a fresh snapshot from the Application's current variables and makes it the Release's current revision. Earlier revisions are kept. Octopus can also update chosen variables only; Ivaldi refreshes the whole snapshot, and the API's preview shows what would change before it does. Refreshing needs `release.manage`, and a human's approval when it changes what production would get ([below](#refreshes-that-change-production-need-approval)). It is allowed on a draft and on a published Release, because a snapshot is configuration and not one of the Release's Builds. It is not allowed on a withdrawn Release.
 
-A Release created before snapshots existed has none and deploys with no variables; it is not backfilled.
+A Release created before snapshots existed has none and deploys with no variables; it is not backfilled. A Release Ivaldi observed is snapshotted when it is first seen, so executing it later deploys the variables its Application had then.
 
 **Deployments use the current revision** of their Release's snapshot when they are requested, except rollbacks (below), and record which revision that was. Redeploying a Release uses its current revision, so a redeploy after a variable change needs a refresh first, as in Octopus. A Deployment's record keeps the revision it used even if the Release is refreshed later.
 
@@ -144,9 +145,9 @@ Overlays and text values may contain `#{…}` bindings, which are resolved befor
 
 **A rollback is checked, not guessed.** The agent fetches each pinned secret version, computes the keyed fingerprint, and fails the Deployment before applying when the fingerprint differs. Doppler cannot pin a per-secret version, so its rollbacks compare the fingerprint alone.
 
-**A preview shows the result before deploying.** `GET /v1/releases/{release_id}/variables?target_id=…` returns, for each variable, the winning value and the values it beat, with secrets shown as references. The deploy sheet shows it, and it answers "why did production get this value" without reading the precedence rules.
+**A preview shows the result before deploying.** `GET /v1/releases/{release_id}/variables` returns the Release's current revision, and with `?target_id=…` also, for each variable, the winning value and the matching values it beat, with secrets shown as references. A variable none of whose values match the Target has no winner, and the Target does not get it. The deploy sheet shows it, and it answers "why did production get this value" without reading the precedence rules.
 
-**Checks before a Deployment is accepted.** A Deployment request is refused when a winning `secret` value's Secret Store is not allowed for the Target's Environment, or a binding names a variable that is not defined, in the snapshot revision it would use. Both can be known before the agent runs, so the person deploying hears it straight away.
+**Checks before a Deployment is accepted.** A Deployment request is refused when a winning `secret` value's Secret Store is not allowed for the Target's Environment, or a binding names a variable that is not defined, or variables bind each other in a cycle, in the snapshot revision it would use. All can be known before the agent runs, so the person deploying hears it straight away: the deploy sheet's `variables_defined` check.
 
 ## Permissions and audit
 
@@ -164,9 +165,9 @@ All in the `delivery` schema, following its conventions. Secret Stores belong to
 |---|---|---|
 | `variables` | `var` | Exactly one of `project_id` or `application_id`; `name` (unique case-insensitively within its owner), `description`, `kind`, `values_path`, `deliver_as` |
 | `variable_values` | `vvl` | Child of a variable: `text_value`, or `store_id`, `path`, `field`, `version`; `environment_ids`, `target_ids`, `channel_ids` |
-| `variable_snapshots` | `vsn` | One per Release revision: `release_id`, `revision`, the snapshot as JSON, `status` (`current`, `pending_approval`, `rejected`, `superseded`), `approval_decision_id`, who took it and when |
+| `variable_snapshots` | `vsn` | One per Release revision: `release_id`, `revision`, the snapshot as JSON, `status` (`current`, `superseded`; `pending_approval` and `rejected` come with approvals), who took it and when. A Release's current revision is the one row with status `current`, which a unique index keeps to one |
 
-`releases` gains `variable_snapshot_id` (the current revision). `deployments` gains `variable_snapshot_id` (the revision it used), `secret_versions` (for each secret variable: its store, path, field, and the version ID the agent resolved), `secrets_latest` (a rollback that asked for current secrets), and `restores_deployment_id` (for a rollback, the Deployment it replays). A variable and its values form one aggregate, changed through the variable's methods. Environments, Targets, and Channels named in a scope cannot be archived while an active value names them, matching delivery's rule that configuration is not archived out from under what uses it.
+`deployments` gains `variable_snapshot_id` (the revision it used), `secret_versions` (for each secret variable: its store, path, field, and the version ID the agent resolved), `secrets_latest` (a rollback that asked for current secrets), and `restores_deployment_id` (for a rollback, the Deployment it replays). A variable and its values form one aggregate, changed through the variable's methods. Environments, Targets, and Channels named in a scope cannot be archived while an active value names them, matching delivery's rule that configuration is not archived out from under what uses it.
 
 `apply_config.values` names the chart's overlay values files, in order, such as `values.production.yaml`. The chart's digest makes them immutable, and a rollback restores them with the Release. Variables are for individual values.
 

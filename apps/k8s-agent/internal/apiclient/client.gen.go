@@ -651,6 +651,7 @@ type DeploymentSnapshot struct {
 	SucceededAt            *time.Time               `json:"succeeded_at"`
 	TargetId               string                   `json:"target_id"`
 	UpdatedAt              time.Time                `json:"updated_at"`
+	VariableSnapshotId     *string                  `json:"variable_snapshot_id"`
 	WorkItemId             *string                  `json:"work_item_id"`
 }
 

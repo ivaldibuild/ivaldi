@@ -12,6 +12,7 @@ import { formatDayAndTime } from '../../shared/dates';
 import { RequestStatus } from '../../shared/request-status';
 import { DeliveryApi } from '../delivery-api';
 import { PageHeader } from '../page-header';
+import { ReleaseVariables } from '../variables/release-variables';
 import { channelName } from './release-labels';
 
 /** One Release: its Channel, its Builds in full, and publishing or withdrawing it. */
@@ -21,6 +22,7 @@ import { channelName } from './release-labels';
     NgIcon,
     RouterLink,
     PageHeader,
+    ReleaseVariables,
     HlmAlertImports,
     HlmBadgeImports,
     HlmButtonImports,

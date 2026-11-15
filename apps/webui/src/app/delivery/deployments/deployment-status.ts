@@ -48,6 +48,7 @@ const checkLabels: Record<string, string> = {
   no_in_flight: 'Nothing else is deploying there',
   environment_in_lifecycle: 'The Environment is in the Channel’s Lifecycle',
   phase_open: 'Its Lifecycle phase is open',
+  variables_defined: 'Every variable a value binds has a value here',
 };
 
 /** A check's name in words, or its machine name for one the web app doesn't know yet. */

@@ -1651,6 +1651,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/releases/{release_id}/variables': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get the variables a Release deploys with, and what a Target would get */
+    get: operations['get-release-variables'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/releases/{release_id}/withdraw': {
     parameters: {
       query?: never;
@@ -3277,6 +3294,7 @@ export interface components {
       target_id: string;
       /** Format: date-time */
       updated_at: string;
+      variable_snapshot_id: string | null;
       work_item_id: string | null;
     };
     DopplerStore: {
@@ -3891,6 +3909,26 @@ export interface components {
       /** Format: date-time */
       withdrawn_at: string | null;
     };
+    ReleaseVariablesSnapshot: {
+      application_id: string;
+      /** Format: date-time */
+      created_at: string;
+      id: string;
+      organization_id: string;
+      release_id: string;
+      /** Format: int64 */
+      revision: number;
+      /** @enum {string} */
+      status: 'current' | 'superseded';
+      taken_by_principal_id: string | null;
+      /** Format: date-time */
+      updated_at: string;
+      variables: components['schemas']['SnapshotVariable'][];
+    };
+    ReleaseVariablesView: {
+      resolved: components['schemas']['ResolvedVariable'][];
+      revision: components['schemas']['ReleaseVariablesSnapshot'];
+    };
     RenewRequestBody: {
       /**
        * Format: uri
@@ -3971,6 +4009,22 @@ export interface components {
       locked: boolean;
       /** @description The effective value; null when there is none */
       value: unknown;
+    };
+    ResolvedValue: {
+      scope: components['schemas']['VariableScope'];
+      /** @enum {string} */
+      source: 'project' | 'application';
+      value: string;
+    };
+    ResolvedVariable: {
+      beaten: components['schemas']['ResolvedValue'][];
+      /** @enum {string|null} */
+      deliver_as: 'secret' | 'value' | null;
+      /** @enum {string} */
+      kind: 'text' | 'secret';
+      name: string;
+      values_path: string | null;
+      winner: components['schemas']['ResolvedValue'];
     };
     ResponseAPITokenSnapshot: {
       /**
@@ -4583,6 +4637,20 @@ export interface components {
       readonly $schema?: string;
       /** @description Response payload, always present: an empty list is [], not omitted */
       data: components['schemas']['ReleaseChanges'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
+    ResponseReleaseVariablesView: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseReleaseVariablesView.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['ReleaseVariablesView'];
       /** @description Human-readable message */
       message?: string;
       /** @description Request status */
@@ -5282,6 +5350,21 @@ export interface components {
       organization_slug?: string;
       /** @description The signup_token the provider sign-in sent the browser back with */
       signup_token: string;
+    };
+    SnapshotValue: {
+      scope: components['schemas']['VariableScope'];
+      value: string;
+    };
+    SnapshotVariable: {
+      /** @enum {string|null} */
+      deliver_as: 'secret' | 'value' | null;
+      /** @enum {string} */
+      kind: 'text' | 'secret';
+      name: string;
+      /** @enum {string} */
+      source: 'project' | 'application';
+      values: components['schemas']['SnapshotValue'][];
+      values_path: string | null;
     };
     SourceSnapshot: {
       /** Format: date-time */
@@ -9815,6 +9898,41 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ResponseRelease'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'get-release-variables': {
+    parameters: {
+      query?: {
+        /** @description A Target, to also get the value of each variable a Deployment there would get */
+        target_id?: string;
+      };
+      header?: never;
+      path: {
+        /** @description The Release */
+        release_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseReleaseVariablesView'];
         };
       };
       /** @description Error */

@@ -134,6 +134,56 @@ func TestCreateReleaseJoinsTheChannelItMeets(t *testing.T) {
 	})
 }
 
+// A Release deploys with the variables its Application had when it was
+// created, so creating one snapshots them.
+func TestCreateReleaseSnapshotsItsVariables(t *testing.T) {
+	w := newWorld(t)
+	d := w.create(t, "1.4.0", apiBuild("a"))
+	assert.Equal(t, []string{d.Release.ID() + " by prn_ada in " + project}, w.snapshotted)
+
+	_, err := w.svc.CreateRelease(ctx, ada, delivery.CreateReleaseInput{OrganizationID: org, ApplicationID: w.app.ID(), Version: "1.4.0", Builds: []delivery.BuildInput{apiBuild("c")}})
+	require.Error(t, err)
+	assert.Len(t, w.snapshotted, 1, "a release that was not created has no variables")
+}
+
+func TestGetReleaseVariables(t *testing.T) {
+	w := newWorld(t)
+	rel := w.create(t, "1.4.0", apiBuild("a")).Release
+
+	view, err := w.svc.GetReleaseVariables(ctx, ada, org, rel.ID(), "")
+	require.NoError(t, err)
+	assert.Nil(t, view.Revision, "a release with no snapshot deploys with no variables")
+	assert.Empty(t, view.Resolved)
+
+	environment := "env_01BX5ZZKBKACTAV9WEVGEMMVRZ"
+	target := must(delivery.NewTarget(delivery.NewTargetProps{
+		OrganizationID: org, EnvironmentID: environment, ClusterID: "cls_01BX5ZZKBKACTAV9WEVGEMMVRZ", Slug: "eu", DisplayName: "EU",
+		Runtime: delivery.RuntimeKubernetes, Locator: map[string]string{delivery.LocatorCluster: "prod", delivery.LocatorNamespace: "payments"},
+	}, nil))
+	w.targets = map[string]*delivery.Target{target.ID(): target}
+	w.current = map[string]*delivery.ReleaseVariables{rel.ID(): must(delivery.NewReleaseVariables(delivery.NewReleaseVariablesProps{
+		OrganizationID: org, ApplicationID: w.app.ID(), ReleaseID: rel.ID(), Revision: 1,
+		Variables: []delivery.SnapshotVariable{{
+			Name: "Log.Level", Source: delivery.VariableSourceApplication, Kind: delivery.VariableKindText,
+			Values: []delivery.SnapshotValue{
+				{Value: "info"},
+				{Value: "warn", Scope: delivery.VariableScope{EnvironmentIDs: []string{environment}}},
+			},
+		}},
+	}, nil))}
+
+	view, err = w.svc.GetReleaseVariables(ctx, ada, org, rel.ID(), target.ID())
+	require.NoError(t, err)
+	require.NotNil(t, view.Revision)
+	assert.Equal(t, 1, view.Revision.Revision)
+	require.Len(t, view.Resolved, 1)
+	assert.Equal(t, "warn", view.Resolved[0].Winner.Value)
+	assert.Equal(t, "info", view.Resolved[0].Beaten[0].Value)
+
+	_, err = w.svc.GetReleaseVariables(ctx, ada, org, rel.ID(), "tgt_01BX5ZZKBKACTAV9WEVGEMMVZZ")
+	assert.ErrorIs(t, err, delivery.ErrInvalid, "an unknown target")
+}
+
 func TestCreateReleaseRecordsWhoTriggeredIt(t *testing.T) {
 	w := newWorld(t)
 	d, err := w.svc.CreateRelease(ctx, ada, delivery.CreateReleaseInput{

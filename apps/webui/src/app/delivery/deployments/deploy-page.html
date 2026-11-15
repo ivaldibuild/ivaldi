@@ -201,6 +201,10 @@
                         </p>
                       }
                     }
+                    <div class="flex flex-col gap-2">
+                      <h4 class="text-sm font-semibold">Variables</h4>
+                      <app-release-variables [releaseId]="id()" [targetId]="item.target.id" />
+                    </div>
                     <ul class="flex flex-col gap-1.5 text-sm" aria-label="Checks">
                       @for (check of item.preview.changes.checks; track check.name) {
                         <li class="flex items-start gap-2">

@@ -369,7 +369,7 @@ func (s *service) changeVariable(ctx context.Context, actor identity.Actor, orga
 			if o, err = s.activeOwner(ctx, v); err != nil {
 				return nil, err
 			}
-			return s.variables.GetVariable(ctx, organizationID, variableID)
+			return s.reload(ctx, organizationID, variableID)
 		},
 		Apply: func(ctx context.Context, v *delivery.Variable) error {
 			scope, err := apply(v)
@@ -426,6 +426,19 @@ func (s *service) RemoveVariableValue(ctx context.Context, actor identity.Actor,
 		})
 }
 
+// reload reads a Variable once its Project's variables are held, and refuses
+// one changed since the caller was authorized to change it.
+func (s *service) reload(ctx context.Context, organizationID, variableID string) (*delivery.Variable, error) {
+	v, err := s.variables.GetVariable(ctx, organizationID, variableID)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkDecidedOn(ctx, v); err != nil {
+		return nil, err
+	}
+	return v, nil
+}
+
 // lockOwner holds the variables of the Project a Variable sits in for the
 // transaction, whether or not its owner is active.
 func (s *service) lockOwner(ctx context.Context, v *delivery.Variable) error {
@@ -457,7 +470,7 @@ func (s *service) ArchiveVariable(ctx context.Context, actor identity.Actor, org
 			if err := s.lockOwner(ctx, v); err != nil {
 				return nil, err
 			}
-			return s.variables.GetVariable(ctx, organizationID, variableID)
+			return s.reload(ctx, organizationID, variableID)
 		},
 		Apply: func(_ context.Context, v *delivery.Variable) error {
 			if v.Archived() {

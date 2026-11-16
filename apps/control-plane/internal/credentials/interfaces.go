@@ -14,9 +14,17 @@ type SecretStoreRepository interface {
 	// active store with the slug.
 	CreateSecretStore(ctx context.Context, s *SecretStore) error
 	GetSecretStore(ctx context.Context, organizationID, storeID string) (*SecretStore, error)
+	// GetSecretStoreForUpdate is GetSecretStore that also locks the row
+	// until the transaction ends. It must be called inside a transaction.
+	GetSecretStoreForUpdate(ctx context.Context, organizationID, storeID string) (*SecretStore, error)
 	// GetSecretStores returns the stores that exist among the IDs, archived
 	// ones included.
 	GetSecretStores(ctx context.Context, organizationID string, storeIDs []string) ([]*SecretStore, error)
+	// GetSecretStoresForShare is GetSecretStores that also holds the rows
+	// FOR SHARE, in ID order, until the transaction ends, so they cannot be
+	// changed or archived meanwhile while other readers still can read them.
+	// It must be called inside a transaction.
+	GetSecretStoresForShare(ctx context.Context, organizationID string, storeIDs []string) ([]*SecretStore, error)
 	// ListSecretStores returns a Workspace's stores by name.
 	ListSecretStores(ctx context.Context, organizationID, workspaceID string, includeArchived bool) ([]*SecretStore, error)
 	UpdateSecretStore(ctx context.Context, s *SecretStore) error

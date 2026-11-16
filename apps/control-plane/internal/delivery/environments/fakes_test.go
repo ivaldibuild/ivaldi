@@ -56,6 +56,10 @@ type store struct {
 	// up in the transaction that just failed is caught.
 	inTx    int
 	aborted bool
+	// lockedEnvironments and lockedTargets count the locking reads, so a
+	// test can tell a change takes the rows it checks.
+	lockedEnvironments int
+	lockedTargets      int
 }
 
 var errTxAborted = errors.New("current transaction is aborted, commands ignored until end of transaction block")
@@ -154,6 +158,7 @@ func (s *store) GetEnvironment(_ context.Context, organizationID, id string) (*d
 }
 
 func (s *store) GetEnvironmentForUpdate(ctx context.Context, organizationID, id string) (*delivery.Environment, error) {
+	s.lockedEnvironments++
 	return s.GetEnvironment(ctx, organizationID, id)
 }
 
@@ -174,6 +179,11 @@ func (s *store) GetEnvironments(ctx context.Context, organizationID string, ids 
 		}
 	}
 	return out, nil
+}
+
+func (s *store) GetEnvironmentsForUpdate(ctx context.Context, organizationID string, ids []string) ([]*delivery.Environment, error) {
+	s.lockedEnvironments++
+	return s.GetEnvironments(ctx, organizationID, ids)
 }
 
 func (s *store) ListEnvironments(_ context.Context, q delivery.ListEnvironmentsQuery) (*pagination.Result[*delivery.Environment], error) {
@@ -277,7 +287,18 @@ func (s *store) GetTarget(_ context.Context, organizationID, id string) (*delive
 }
 
 func (s *store) GetTargetForUpdate(ctx context.Context, organizationID, id string) (*delivery.Target, error) {
+	s.lockedTargets++
 	return s.GetTarget(ctx, organizationID, id)
+}
+
+func (s *store) GetTargetsForUpdate(ctx context.Context, organizationID string, ids []string) ([]*delivery.Target, error) {
+	var out []*delivery.Target
+	for _, id := range ids {
+		if t, err := s.GetTargetForUpdate(ctx, organizationID, id); err == nil {
+			out = append(out, t)
+		}
+	}
+	return out, nil
 }
 
 func (s *store) GetTargetBySlug(_ context.Context, organizationID, environmentID, slug string) (*delivery.Target, error) {

@@ -270,6 +270,23 @@ func TestArchiveEnvironments(t *testing.T) {
 		}
 	})
 
+	t.Run("answers in the order asked, though it takes them in ID order", func(t *testing.T) {
+		w := newWorld(t)
+		a := w.env(t, wsActive, "a", false)
+		b := w.env(t, wsActive, "b", false)
+		first, second := b, a
+		if b.ID() < a.ID() {
+			first, second = a, b
+		}
+
+		got, err := w.svc.ArchiveEnvironments(ctx, ada, org, []string{first.ID(), second.ID()})
+		require.NoError(t, err)
+
+		require.Len(t, got, 2)
+		assert.Equal(t, []string{first.ID(), second.ID()}, []string{got[0].ID(), got[1].ID()})
+		assert.Equal(t, second.ID(), w.audit[0].ResourceID, "the lower ID is taken first")
+	})
+
 	t.Run("leaves archived ones as they are", func(t *testing.T) {
 		w := newWorld(t)
 		e := w.env(t, wsActive, "old", true)
@@ -415,6 +432,15 @@ func TestTargetChanges(t *testing.T) {
 			assert.True(t, got.Archived())
 		}
 		assert.Equal(t, []string{delivery.EventTargetArchived}, w.auditTypes())
+	})
+
+	t.Run("archive reads the target locked, so a save cannot slip past it", func(t *testing.T) {
+		w := newWorld(t)
+		env := w.env(t, wsActive, "staging", false)
+		tg := w.target(t, env.ID(), "web", false)
+		_, err := w.svc.ArchiveTarget(ctx, ada, org, tg.ID())
+		require.NoError(t, err)
+		assert.Positive(t, w.lockedTargets, "the archive holds the row the count runs under")
 	})
 
 	t.Run("archive is refused while a variable's value is scoped to it", func(t *testing.T) {

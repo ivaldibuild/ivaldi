@@ -18,6 +18,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	auditmigrations "github.com/ivaldibuild/ivaldi-control-plane/internal/audit/migrations"
+	credentialsmigrations "github.com/ivaldibuild/ivaldi-control-plane/internal/credentials/migrations"
 	deliverymigrations "github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/migrations"
 	iammigrations "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/migrations"
 	orchestrationmigrations "github.com/ivaldibuild/ivaldi-control-plane/internal/orchestration/migrations"
@@ -52,6 +53,7 @@ func Capabilities() []Capability {
 		{Name: "team", FS: teammigrations.FS},
 		{Name: "policy", FS: policymigrations.FS},
 		{Name: "orchestration", FS: orchestrationmigrations.FS},
+		{Name: "credentials", FS: credentialsmigrations.FS},
 	}
 }
 

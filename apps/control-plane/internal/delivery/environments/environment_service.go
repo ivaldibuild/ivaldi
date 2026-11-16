@@ -265,7 +265,7 @@ func (s *service) ArchiveEnvironments(ctx context.Context, actor identity.Actor,
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	return inCallerOrder(environmentIDs, out), nil
 }
 
 func (s *service) checkUnused(ctx context.Context, e *delivery.Environment) error {
@@ -332,7 +332,7 @@ func (s *service) RestoreEnvironments(ctx context.Context, actor identity.Actor,
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	return inCallerOrder(environmentIDs, out), nil
 }
 
 // CreateTarget adds a Target to an active Environment. Its locator names an
@@ -414,8 +414,11 @@ func (s *service) changeTarget(ctx context.Context, actor identity.Actor, organi
 	t, err := change.Run(ctx, s.w, actor, change.Spec[*delivery.Target]{
 		AggregateType: delivery.AggregateTarget,
 		AggregateID:   func(t *delivery.Target) string { return t.ID() },
+		// Locked, because archiving a Target counts the values scoped to it
+		// and a save of one takes this row first: whichever runs first, the
+		// other sees it.
 		Load: func(ctx context.Context) (*delivery.Target, error) {
-			return s.targets.GetTarget(ctx, organizationID, targetID)
+			return s.targets.GetTargetForUpdate(ctx, organizationID, targetID)
 		},
 		Apply:    apply,
 		Save:     s.targets.UpdateTarget,
@@ -522,12 +525,28 @@ func (s *service) namespaceTakenError(ctx context.Context, t *delivery.Target) e
 		namespace, locator[delivery.LocatorCluster], existing.Slug(), environment))
 }
 
-// uniqueIDs returns ids without repeats, in their first order.
+// uniqueIDs returns the IDs without duplicates, in sorted order, so changes
+// that take several rows take them in one order however the caller listed
+// them.
 func uniqueIDs(ids []string) []string {
-	out := make([]string, 0, len(ids))
+	out := slices.Clone(ids)
+	slices.Sort(out)
+	return slices.Compact(out)
+}
+
+// inCallerOrder returns the Environments in the order the caller listed their
+// IDs, without repeats: they are taken in ID order, but answered in the
+// order asked.
+func inCallerOrder(ids []string, envs []*delivery.Environment) []*delivery.Environment {
+	byID := make(map[string]*delivery.Environment, len(envs))
+	for _, e := range envs {
+		byID[e.ID()] = e
+	}
+	out := make([]*delivery.Environment, 0, len(envs))
 	for _, id := range ids {
-		if !slices.Contains(out, id) {
-			out = append(out, id)
+		if e, ok := byID[id]; ok {
+			out = append(out, e)
+			delete(byID, id)
 		}
 	}
 	return out

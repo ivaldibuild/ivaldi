@@ -209,8 +209,11 @@ func (s *service) changeStore(ctx context.Context, actor identity.Actor, organiz
 	return change.Run(ctx, s.w, actor, change.Spec[*credentials.SecretStore]{
 		AggregateType: credentials.AggregateSecretStore,
 		AggregateID:   func(store *credentials.SecretStore) string { return store.ID() },
+		// Locked, because archiving a store counts the values kept in it and
+		// a save of one holds the store's row FOR SHARE: whichever runs
+		// first, the other sees it.
 		Load: func(ctx context.Context) (*credentials.SecretStore, error) {
-			return s.stores.GetSecretStore(ctx, organizationID, storeID)
+			return s.stores.GetSecretStoreForUpdate(ctx, organizationID, storeID)
 		},
 		Apply:    apply,
 		Save:     s.stores.UpdateSecretStore,

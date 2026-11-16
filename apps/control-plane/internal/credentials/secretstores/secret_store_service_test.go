@@ -32,6 +32,9 @@ type world struct {
 	workspace    *workspace.Workspace
 	environments map[string]*delivery.Environment
 	inUse        map[string]int
+	// lockedStores counts the locking reads, so a test can tell a change
+	// holds the store's row while it counts what uses it.
+	lockedStores int
 	asked        []authorization.Request
 	audit        []audit.Event
 	svc          credentials.SecretStoreService
@@ -66,7 +69,14 @@ func (w *world) GetSecretStore(_ context.Context, _, id string) (*credentials.Se
 	}
 	return nil, credentials.ErrNotFound
 }
+func (w *world) GetSecretStoreForUpdate(ctx context.Context, organizationID, id string) (*credentials.SecretStore, error) {
+	w.lockedStores++
+	return w.GetSecretStore(ctx, organizationID, id)
+}
 func (w *world) GetSecretStores(context.Context, string, []string) ([]*credentials.SecretStore, error) {
+	return nil, nil
+}
+func (w *world) GetSecretStoresForShare(context.Context, string, []string) ([]*credentials.SecretStore, error) {
 	return nil, nil
 }
 func (w *world) ListSecretStores(context.Context, string, string, bool) ([]*credentials.SecretStore, error) {
@@ -162,6 +172,7 @@ func TestArchiveSecretStore(t *testing.T) {
 	w.inUse[store.ID()] = 2
 	_, err = w.svc.ArchiveSecretStore(ctx, ada, org, store.ID())
 	require.ErrorIs(t, err, credentials.ErrInUse, "variables still keep values in it")
+	assert.Positive(t, w.lockedStores, "the count runs under the store's row, which a save holds FOR SHARE")
 
 	w.inUse[store.ID()] = 0
 	for range 2 {

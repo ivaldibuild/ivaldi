@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -107,6 +108,28 @@ func TestEnvironmentRepository(t *testing.T) {
 		none, err := f.envs.GetEnvironments(ctx, orgA, nil)
 		require.NoError(t, err)
 		assert.Empty(t, none)
+	})
+
+	t.Run("locking read holds the rows in ID order", func(t *testing.T) {
+		a := f.createEnv(t, orgA, wsB, "locked-a")
+		b := f.createEnv(t, orgA, wsB, "locked-b")
+		archived := f.createEnv(t, orgA, wsB, "locked-archived")
+		archived.Archive()
+		require.NoError(t, f.envs.UpdateEnvironment(ctx, archived))
+		f.assertNotLocked(t, "environments", a.ID())
+
+		require.NoError(t, f.tx.WithinTx(ctx, func(ctx context.Context) error {
+			got, err := f.envs.GetEnvironmentsForUpdate(ctx, orgA, []string{b.ID(), id.New("env"), archived.ID(), a.ID()})
+			if err != nil {
+				return err
+			}
+			assert.True(t, slices.IsSorted(idsOf(got)), "the rows are taken in ID order")
+			assert.ElementsMatch(t, []string{a.ID(), b.ID(), archived.ID()}, idsOf(got), "archived rows are read too")
+			f.assertLocked(t, "environments", a.ID())
+			f.assertLocked(t, "environments", b.ID())
+			return nil
+		}))
+		f.assertNotLocked(t, "environments", a.ID())
 	})
 
 	t.Run("update writes the whole state", func(t *testing.T) {

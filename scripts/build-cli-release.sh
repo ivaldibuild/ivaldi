@@ -27,6 +27,8 @@ ldflags="-s -w \
 	-X github.com/ivaldibuild/ivaldi-cli/internal/cli.BUILDTIME=${built}"
 
 mkdir -p "$out"
+# Absolute, because the Windows archive is zipped from inside its directory.
+out=$(cd "$out" && pwd)
 
 for os in linux darwin windows; do
 	for arch in amd64 arm64; do

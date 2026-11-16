@@ -29,20 +29,26 @@ import (
 // delivery.ApplicationRepository provides it.
 type ApplicationLookup interface {
 	GetApplication(ctx context.Context, organizationID, applicationID string) (*delivery.Application, error)
+	GetApplicationForUpdate(ctx context.Context, organizationID, applicationID string) (*delivery.Application, error)
 	GetApplicationByIdentifier(ctx context.Context, organizationID, identifier string) (*delivery.Application, error)
 	GetChannel(ctx context.Context, organizationID, channelID string) (*delivery.Channel, error)
 }
 
-// EnvironmentLookup reads the Environments a value is scoped to.
+// EnvironmentLookup reads the Environments a value is scoped to, locked so
+// they cannot be archived while the value is saved.
 // delivery.EnvironmentRepository provides it.
 type EnvironmentLookup interface {
-	GetEnvironments(ctx context.Context, organizationID string, environmentIDs []string) ([]*delivery.Environment, error)
+	GetEnvironmentsForUpdate(ctx context.Context, organizationID string, environmentIDs []string) ([]*delivery.Environment, error)
 }
 
 // TargetLookup reads the Targets a value is scoped to.
 // delivery.TargetRepository provides it.
 type TargetLookup interface {
 	GetTarget(ctx context.Context, organizationID, targetID string) (*delivery.Target, error)
+	// GetTargetForUpdate is GetTarget that also locks the row until the
+	// transaction ends, so the Target cannot be archived while a value
+	// scoped to it is saved.
+	GetTargetForUpdate(ctx context.Context, organizationID, targetID string) (*delivery.Target, error)
 }
 
 type VariableServiceOption func(*options)
@@ -168,20 +174,41 @@ type owner struct {
 }
 
 // activeOwner returns where an owner sits, if its Application and Project
-// are active, and holds the Project's variables for the transaction.
+// are active, and holds the Project's variables and, for an Application's
+// Variable, the Application for the transaction.
 func (s *service) activeOwner(ctx context.Context, v *delivery.Variable) (owner, error) {
-	projectID := v.ProjectID()
-	if applicationID := v.ApplicationID(); applicationID != nil {
-		app, err := s.applications.GetApplication(ctx, v.OrganizationID(), *applicationID)
+	organizationID := v.OrganizationID()
+	applicationID := v.ApplicationID()
+	// An Application is read once to name the Project whose variables are
+	// held first, then locked: the rest of delivery takes the Project's
+	// variables and then the Application, so nothing here may take them the
+	// other way round.
+	if applicationID != nil {
+		app, err := s.applications.GetApplication(ctx, organizationID, *applicationID)
+		if err != nil {
+			return owner{}, err
+		}
+		project, err := delivery.ActiveProject(ctx, s.workspaces, organizationID, app.ProjectID())
+		if err != nil {
+			return owner{}, err
+		}
+		if err := s.locker.Lock(ctx, delivery.VariablesLock(project.ID())); err != nil {
+			return owner{}, err
+		}
+		// Locked so the Application cannot be archived while a Variable of
+		// it is checked and saved, and so its Channels cannot change: a
+		// Channel's own changes take this row too, which is what keeps a
+		// value scoped to a Channel from outliving it.
+		app, err = s.applications.GetApplicationForUpdate(ctx, organizationID, *applicationID)
 		if err != nil {
 			return owner{}, err
 		}
 		if app.Archived() {
 			return owner{}, fmt.Errorf("%w: application %s", delivery.ErrArchived, app.ID())
 		}
-		projectID = new(app.ProjectID())
+		return owner{projectID: project.ID(), workspaceID: project.WorkspaceID()}, nil
 	}
-	project, err := delivery.ActiveProject(ctx, s.workspaces, v.OrganizationID(), *projectID)
+	project, err := delivery.ActiveProject(ctx, s.workspaces, organizationID, *v.ProjectID())
 	if err != nil {
 		return owner{}, err
 	}
@@ -216,10 +243,7 @@ func (s *service) CreateVariable(ctx context.Context, actor identity.Actor, in d
 		if err != nil {
 			return err
 		}
-		if err := s.checkScope(ctx, v, o.workspaceID, v.Scope()); err != nil {
-			return err
-		}
-		if err := s.checkSecretStores(ctx, v, o.workspaceID); err != nil {
+		if err := s.checkScopeAndStores(ctx, v, o.workspaceID, v.Scope()); err != nil {
 			return err
 		}
 		if err := s.checkProject(ctx, o.projectID, v); err != nil {
@@ -241,29 +265,38 @@ func (s *service) CreateVariable(ctx context.Context, actor identity.Actor, in d
 
 // checkScope checks that everything a scope names is active and the
 // Variable's to use: Environments and Targets in its Workspace, and Channels
-// of its Application.
-func (s *service) checkScope(ctx context.Context, v *delivery.Variable, workspaceID string, scope delivery.VariableScope) error {
+// of its Application. It returns the Targets it read, locked, so a later
+// check uses the same rows.
+//
+// The rows are read FOR UPDATE, in one order (Targets, then Environments),
+// because an archive counts the values that name a record under the same
+// row's lock, and a save takes its rows in that order however its values are
+// stored. A Variable's Application is already locked when this runs, so a
+// value scoped to a Channel cannot outlive the Channel. Every Target the
+// Variable names is read, not only the ones the change names, so the rows are
+// always taken in one order; only scope is checked.
+func (s *service) checkScope(ctx context.Context, v *delivery.Variable, workspaceID string, scope delivery.VariableScope) (map[string]*delivery.Target, error) {
 	organizationID := v.OrganizationID()
+	targets, err := s.lockTargets(ctx, organizationID, unionIDs(v.Scope().TargetIDs, scope.TargetIDs))
+	if err != nil {
+		return nil, err
+	}
 	environmentIDs := slices.Clone(scope.EnvironmentIDs)
 	for _, targetID := range scope.TargetIDs {
-		t, err := s.targets.GetTarget(ctx, organizationID, targetID)
-		if errors.Is(err, delivery.ErrNotFound) {
-			return delivery.NewErrInvalidInput(fmt.Sprintf("target %s does not exist", targetID))
-		}
-		if err != nil {
-			return fmt.Errorf("get target %s: %w", targetID, err)
-		}
-		if t.Archived() {
-			return fmt.Errorf("%w: target %s", delivery.ErrArchived, targetID)
-		}
-		if !slices.Contains(environmentIDs, t.EnvironmentID()) {
+		t, ok := targets[targetID]
+		switch {
+		case !ok:
+			return nil, delivery.NewErrInvalidInput(fmt.Sprintf("target %s does not exist", targetID))
+		case t.Archived():
+			return nil, fmt.Errorf("%w: target %s", delivery.ErrArchived, targetID)
+		case !slices.Contains(environmentIDs, t.EnvironmentID()):
 			environmentIDs = append(environmentIDs, t.EnvironmentID())
 		}
 	}
 	if len(environmentIDs) > 0 {
-		envs, err := s.environments.GetEnvironments(ctx, organizationID, environmentIDs)
+		envs, err := s.environments.GetEnvironmentsForUpdate(ctx, organizationID, environmentIDs)
 		if err != nil {
-			return fmt.Errorf("get environments: %w", err)
+			return nil, fmt.Errorf("get environments: %w", err)
 		}
 		byID := make(map[string]*delivery.Environment, len(envs))
 		for _, e := range envs {
@@ -273,35 +306,71 @@ func (s *service) checkScope(ctx context.Context, v *delivery.Variable, workspac
 			e, ok := byID[id]
 			switch {
 			case !ok:
-				return delivery.NewErrInvalidInput(fmt.Sprintf("environment %s does not exist", id))
+				return nil, delivery.NewErrInvalidInput(fmt.Sprintf("environment %s does not exist", id))
 			case e.WorkspaceID() != workspaceID:
-				return fmt.Errorf("%w: environment %s is not in workspace %s", delivery.ErrWorkspaceMismatch, id, workspaceID)
+				return nil, fmt.Errorf("%w: environment %s is not in workspace %s", delivery.ErrWorkspaceMismatch, id, workspaceID)
 			case e.Archived():
-				return fmt.Errorf("%w: environment %s", delivery.ErrArchived, id)
+				return nil, fmt.Errorf("%w: environment %s", delivery.ErrArchived, id)
 			}
 		}
 	}
 	for _, channelID := range scope.ChannelIDs {
 		c, err := s.applications.GetChannel(ctx, organizationID, channelID)
 		if errors.Is(err, delivery.ErrNotFound) || (err == nil && !equal(v.ApplicationID(), c.ApplicationID())) {
-			return delivery.NewErrInvalidInput(fmt.Sprintf("channel %s is not one of the application's channels", channelID))
+			return nil, delivery.NewErrInvalidInput(fmt.Sprintf("channel %s is not one of the application's channels", channelID))
 		}
 		if err != nil {
-			return fmt.Errorf("get channel %s: %w", channelID, err)
+			return nil, fmt.Errorf("get channel %s: %w", channelID, err)
 		}
 		if c.Archived() {
-			return fmt.Errorf("%w: channel %s", delivery.ErrArchived, channelID)
+			return nil, fmt.Errorf("%w: channel %s", delivery.ErrArchived, channelID)
 		}
 	}
-	return nil
+	return targets, nil
+}
+
+// checkScopeAndStores checks what a scope names and then the stores a secret
+// value is kept in, using the Targets the first check read and locked.
+func (s *service) checkScopeAndStores(ctx context.Context, v *delivery.Variable, workspaceID string, scope delivery.VariableScope) error {
+	targets, err := s.checkScope(ctx, v, workspaceID, scope)
+	if err != nil {
+		return err
+	}
+	return s.checkSecretStores(ctx, v, workspaceID, targets)
+}
+
+// lockTargets reads the Targets among IDs FOR UPDATE, in ID order, leaving out
+// the ones that do not exist.
+func (s *service) lockTargets(ctx context.Context, organizationID string, targetIDs []string) (map[string]*delivery.Target, error) {
+	out := make(map[string]*delivery.Target, len(targetIDs))
+	for _, targetID := range targetIDs {
+		t, err := s.targets.GetTargetForUpdate(ctx, organizationID, targetID)
+		if errors.Is(err, delivery.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("get target %s: %w", targetID, err)
+		}
+		out[targetID] = t
+	}
+	return out, nil
+}
+
+// unionIDs returns the IDs of both lists, sorted and without duplicates, so
+// rows are always taken in one order.
+func unionIDs(a, b []string) []string {
+	out := append(slices.Clone(a), b...)
+	slices.Sort(out)
+	return slices.Compact(out)
 }
 
 // checkSecretStores checks the stores a secret Variable's values are kept
 // in: each is active and in the Variable's Workspace, and may be read from
 // every Environment its value names, directly or through a Target. A value
 // that names no Environment is checked when it is deployed, against the
-// Environment it is deployed to.
-func (s *service) checkSecretStores(ctx context.Context, v *delivery.Variable, workspaceID string) error {
+// Environment it is deployed to. targets are the ones checkScope read,
+// locked, by ID.
+func (s *service) checkSecretStores(ctx context.Context, v *delivery.Variable, workspaceID string, targets map[string]*delivery.Target) error {
 	ids := v.SecretStoreIDs()
 	if len(ids) == 0 {
 		return nil
@@ -325,9 +394,9 @@ func (s *service) checkSecretStores(ctx context.Context, v *delivery.Variable, w
 		}
 		environmentIDs := slices.Clone(value.Scope.EnvironmentIDs)
 		for _, targetID := range value.Scope.TargetIDs {
-			t, err := s.targets.GetTarget(ctx, v.OrganizationID(), targetID)
-			if err != nil {
-				return fmt.Errorf("get target %s: %w", targetID, err)
+			t, ok := targets[targetID]
+			if !ok {
+				return delivery.NewErrInvalidInput(fmt.Sprintf("target %s does not exist", targetID))
 			}
 			environmentIDs = append(environmentIDs, t.EnvironmentID())
 		}
@@ -435,10 +504,7 @@ func (s *service) changeVariable(ctx context.Context, actor identity.Actor, orga
 			if err != nil {
 				return err
 			}
-			if err := s.checkScope(ctx, v, o.workspaceID, scope); err != nil {
-				return err
-			}
-			if err := s.checkSecretStores(ctx, v, o.workspaceID); err != nil {
+			if err := s.checkScopeAndStores(ctx, v, o.workspaceID, scope); err != nil {
 				return err
 			}
 			return s.checkProject(ctx, o.projectID, v)

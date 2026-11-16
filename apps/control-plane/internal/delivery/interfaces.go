@@ -47,6 +47,10 @@ type EnvironmentRepository interface {
 	// GetEnvironments retrieves the environments with the given IDs, in no
 	// particular order. IDs that match nothing are left out.
 	GetEnvironments(ctx context.Context, organizationID string, environmentIDs []string) ([]*Environment, error)
+	// GetEnvironmentsForUpdate is GetEnvironments that also locks the rows,
+	// in ID order, until the transaction ends. It must be called inside a
+	// transaction.
+	GetEnvironmentsForUpdate(ctx context.Context, organizationID string, environmentIDs []string) ([]*Environment, error)
 	// ListEnvironments lists environments based on the provided query parameters.
 	ListEnvironments(ctx context.Context, query ListEnvironmentsQuery) (*pagination.Result[*Environment], error)
 	// ListActiveEnvironments returns a Workspace's active Environments,

@@ -84,7 +84,18 @@ func (s *service) changeChannel(ctx context.Context, actor identity.Actor, organ
 	return change.Run(ctx, s.w, actor, change.Spec[*delivery.Channel]{
 		AggregateType: delivery.AggregateChannel,
 		AggregateID:   func(c *delivery.Channel) string { return c.ID() },
+		// Loaded with the Application's row locked, as a Channel's changes and
+		// a variable's value scoped to it must not interleave: archiving a
+		// Channel counts the values scoped to it, and a save of one holds this
+		// row first.
 		Load: func(ctx context.Context) (*delivery.Channel, error) {
+			found, err := s.applications.GetChannel(ctx, organizationID, channelID)
+			if err != nil {
+				return nil, err
+			}
+			if _, err := s.applications.GetApplicationForUpdate(ctx, organizationID, found.ApplicationID()); err != nil {
+				return nil, err
+			}
 			return s.applications.GetChannel(ctx, organizationID, channelID)
 		},
 		// An archived Application's Channels change only once it is restored.

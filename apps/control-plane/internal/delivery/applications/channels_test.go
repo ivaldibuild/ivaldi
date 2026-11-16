@@ -263,6 +263,7 @@ func TestSetDefaultChannel(t *testing.T) {
 		_, err := s.svc.ArchiveChannel(ctx, ada, org, s.defaultCh.ID())
 		require.ErrorIs(t, err, delivery.ErrInUse)
 		assert.Equal(t, before, s.state)
+		assert.Positive(t, s.lockedApplications, "the count runs under the application's row, as a save takes it")
 	})
 
 	t.Run("the old default can now be archived", func(t *testing.T) {

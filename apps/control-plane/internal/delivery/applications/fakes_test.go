@@ -82,6 +82,9 @@ type store struct {
 	settings map[string]map[string]json.RawMessage
 	// resolved records the scopes settings were resolved for.
 	resolved []workspace.Scope
+	// lockedApplications counts the locking reads of Applications, so a test
+	// can tell a change holds the row it checks.
+	lockedApplications int
 }
 
 func newStore() *store {
@@ -239,6 +242,7 @@ func (s *store) GetApplicationForUpdate(ctx context.Context, organizationID, id 
 	if err := requireTx(ctx, "GetApplicationForUpdate"); err != nil {
 		return nil, err
 	}
+	s.lockedApplications++
 	return s.GetApplication(ctx, organizationID, id)
 }
 

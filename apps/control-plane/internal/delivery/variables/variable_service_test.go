@@ -144,6 +144,53 @@ func TestScopesMustBeTheVariablesToUse(t *testing.T) {
 	assert.NoError(t, err, "its own application's channel")
 }
 
+// A save reads what its scope names, and its Application, under the row locks
+// those records' own changes take: whichever runs first, the other sees it, so
+// an active value never names an archived record.
+func TestAScopeIsReadLocked(t *testing.T) {
+	t.Run("a save reads the application, its targets, and their environments locked", func(t *testing.T) {
+		w := newWorld(t)
+		_, err := w.create(t, w.inBilling(), "Feature.Flag", "", delivery.VariableValueProps{
+			Value: "on", Scope: delivery.VariableScope{TargetIDs: []string{w.prodEU.ID()}},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, 1, w.lockedApplications, "the variable's application is held")
+		assert.Equal(t, 1, w.lockedTargets, "the target is read for update")
+		assert.Equal(t, 1, w.lockedEnvironments, "so is its environment")
+	})
+
+	t.Run("a target archived just before the save is refused", func(t *testing.T) {
+		w := newWorld(t)
+		w.onLock = func() { w.targets[w.prodEU.ID()].Archive() }
+
+		_, err := w.create(t, w.inProject(), "Feature.Flag", "", delivery.VariableValueProps{
+			Value: "on", Scope: delivery.VariableScope{TargetIDs: []string{w.prodEU.ID()}},
+		})
+		require.ErrorIs(t, err, delivery.ErrArchived)
+		assert.Empty(t, w.variables, "nothing is saved")
+	})
+
+	t.Run("an environment archived just before the save is refused", func(t *testing.T) {
+		w := newWorld(t)
+		w.onLock = func() { w.environments[w.prod.ID()].Archive() }
+
+		_, err := w.create(t, w.inProject(), "Feature.Flag", "", delivery.VariableValueProps{
+			Value: "on", Scope: envScope(w.prod.ID()),
+		})
+		require.ErrorIs(t, err, delivery.ErrArchived)
+		assert.Empty(t, w.variables)
+	})
+
+	t.Run("an application archived just before the save is refused", func(t *testing.T) {
+		w := newWorld(t)
+		w.onLock = func() { w.applications[w.billing.ID()].Archive() }
+
+		_, err := w.create(t, w.inBilling(), "Feature.Flag", "", delivery.VariableValueProps{Value: "on"})
+		require.ErrorIs(t, err, delivery.ErrArchived)
+		assert.Empty(t, w.variables)
+	})
+}
+
 // The rules that span variables are checked for every Application in the
 // Project, whichever side the change is on.
 func TestVariablesAnApplicationDeploysWithMustAgree(t *testing.T) {

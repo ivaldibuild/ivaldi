@@ -417,6 +417,15 @@ func TestTargetChanges(t *testing.T) {
 		assert.Equal(t, []string{delivery.EventTargetArchived}, w.auditTypes())
 	})
 
+	t.Run("archive reads the target locked, so a save cannot slip past it", func(t *testing.T) {
+		w := newWorld(t)
+		env := w.env(t, wsActive, "staging", false)
+		tg := w.target(t, env.ID(), "web", false)
+		_, err := w.svc.ArchiveTarget(ctx, ada, org, tg.ID())
+		require.NoError(t, err)
+		assert.Positive(t, w.lockedTargets, "the archive holds the row the count runs under")
+	})
+
 	t.Run("archive is refused while a variable's value is scoped to it", func(t *testing.T) {
 		w := newWorld(t)
 		env := w.env(t, wsActive, "staging", false)

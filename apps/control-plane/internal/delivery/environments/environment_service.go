@@ -414,8 +414,11 @@ func (s *service) changeTarget(ctx context.Context, actor identity.Actor, organi
 	t, err := change.Run(ctx, s.w, actor, change.Spec[*delivery.Target]{
 		AggregateType: delivery.AggregateTarget,
 		AggregateID:   func(t *delivery.Target) string { return t.ID() },
+		// Locked, because archiving a Target counts the values scoped to it
+		// and a save of one takes this row first: whichever runs first, the
+		// other sees it.
 		Load: func(ctx context.Context) (*delivery.Target, error) {
-			return s.targets.GetTarget(ctx, organizationID, targetID)
+			return s.targets.GetTargetForUpdate(ctx, organizationID, targetID)
 		},
 		Apply:    apply,
 		Save:     s.targets.UpdateTarget,
@@ -522,13 +525,11 @@ func (s *service) namespaceTakenError(ctx context.Context, t *delivery.Target) e
 		namespace, locator[delivery.LocatorCluster], existing.Slug(), environment))
 }
 
-// uniqueIDs returns ids without repeats, in their first order.
+// uniqueIDs returns the IDs without duplicates, in sorted order, so changes
+// that take several rows take them in one order however the caller listed
+// them.
 func uniqueIDs(ids []string) []string {
-	out := make([]string, 0, len(ids))
-	for _, id := range ids {
-		if !slices.Contains(out, id) {
-			out = append(out, id)
-		}
-	}
-	return out
+	out := slices.Clone(ids)
+	slices.Sort(out)
+	return slices.Compact(out)
 }

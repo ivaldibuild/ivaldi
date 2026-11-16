@@ -41,6 +41,11 @@ type store struct {
 	audit        []audit.Event
 	events       []events.Envelope
 	locked       []string
+	// lockedApplications, lockedTargets, and lockedEnvironments count the
+	// locking reads, so a test can tell a save takes the rows it checks.
+	lockedApplications int
+	lockedTargets      int
+	lockedEnvironments int
 	// onLock runs when the Project's variables are taken, as another
 	// writer's change committing just before would.
 	onLock func()
@@ -161,6 +166,10 @@ func find[T any](m map[string]T, id string) (T, error) {
 func (s *store) GetApplication(_ context.Context, _, id string) (*delivery.Application, error) {
 	return find(s.applications, id)
 }
+func (s *store) GetApplicationForUpdate(ctx context.Context, organizationID, id string) (*delivery.Application, error) {
+	s.lockedApplications++
+	return s.GetApplication(ctx, organizationID, id)
+}
 func (s *store) GetApplicationByIdentifier(_ context.Context, _, identifier string) (*delivery.Application, error) {
 	for _, app := range s.applications {
 		if app.ID() == identifier || app.Slug() == identifier {
@@ -175,6 +184,10 @@ func (s *store) GetChannel(_ context.Context, _, id string) (*delivery.Channel, 
 func (s *store) GetTarget(_ context.Context, _, id string) (*delivery.Target, error) {
 	return find(s.targets, id)
 }
+func (s *store) GetTargetForUpdate(ctx context.Context, organizationID, id string) (*delivery.Target, error) {
+	s.lockedTargets++
+	return s.GetTarget(ctx, organizationID, id)
+}
 func (s *store) GetEnvironments(_ context.Context, _ string, ids []string) ([]*delivery.Environment, error) {
 	var out []*delivery.Environment
 	for _, id := range ids {
@@ -183,6 +196,10 @@ func (s *store) GetEnvironments(_ context.Context, _ string, ids []string) ([]*d
 		}
 	}
 	return out, nil
+}
+func (s *store) GetEnvironmentsForUpdate(ctx context.Context, organizationID string, ids []string) ([]*delivery.Environment, error) {
+	s.lockedEnvironments++
+	return s.GetEnvironments(ctx, organizationID, ids)
 }
 func (s *store) LookupWorkspace(context.Context, string, string) (*workspace.Workspace, error) {
 	return nil, workspace.ErrNotFound

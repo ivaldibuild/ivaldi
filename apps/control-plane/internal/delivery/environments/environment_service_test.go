@@ -270,6 +270,23 @@ func TestArchiveEnvironments(t *testing.T) {
 		}
 	})
 
+	t.Run("answers in the order asked, though it takes them in ID order", func(t *testing.T) {
+		w := newWorld(t)
+		a := w.env(t, wsActive, "a", false)
+		b := w.env(t, wsActive, "b", false)
+		first, second := b, a
+		if b.ID() < a.ID() {
+			first, second = a, b
+		}
+
+		got, err := w.svc.ArchiveEnvironments(ctx, ada, org, []string{first.ID(), second.ID()})
+		require.NoError(t, err)
+
+		require.Len(t, got, 2)
+		assert.Equal(t, []string{first.ID(), second.ID()}, []string{got[0].ID(), got[1].ID()})
+		assert.Equal(t, second.ID(), w.audit[0].ResourceID, "the lower ID is taken first")
+	})
+
 	t.Run("leaves archived ones as they are", func(t *testing.T) {
 		w := newWorld(t)
 		e := w.env(t, wsActive, "old", true)

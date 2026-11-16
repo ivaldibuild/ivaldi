@@ -11,6 +11,7 @@ package applications
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/audit"
@@ -66,6 +67,13 @@ type VariableSet interface {
 	ListVariablesInProject(ctx context.Context, organizationID, projectID string) ([]*delivery.Variable, map[string][]*delivery.Variable, error)
 }
 
+// VariableScopes checks what a restored Application's variables are scoped
+// to, and the Secret Stores they are kept in, under those records' locks.
+// delivery.NewVariableScopeChecker provides it.
+type VariableScopes interface {
+	Check(ctx context.Context, workspaceID string, variables ...*delivery.Variable) error
+}
+
 // ProjectLookup reads the Projects Applications belong to, for labelling a
 // "what runs where" read with Project names. workspace.NewLookups provides
 // it.
@@ -84,7 +92,7 @@ type options struct {
 	projects     ProjectLookup
 	variables    VariableUsage
 	variableSet  VariableSet
-	scopes       *delivery.VariableScopeChecks
+	scopes       VariableScopes
 	workspaces   delivery.Workspaces
 	settings     workspace.SettingResolver
 	teams        team.Directory
@@ -122,7 +130,7 @@ func WithVariableSet(v VariableSet) ApplicationServiceOption {
 
 // WithVariableScopes checks what a restored Application's variables are
 // scoped to, under the rows' locks, as a save does.
-func WithVariableScopes(c *delivery.VariableScopeChecks) ApplicationServiceOption {
+func WithVariableScopes(c VariableScopes) ApplicationServiceOption {
 	return func(o *options) { o.scopes = c }
 }
 
@@ -231,7 +239,7 @@ type service struct {
 	projects     ProjectLookup
 	variables    VariableUsage
 	variableSet  VariableSet
-	scopes       *delivery.VariableScopeChecks
+	scopes       VariableScopes
 	workspaces   delivery.Workspaces
 	settings     workspace.SettingResolver
 	teams        team.Directory
@@ -533,11 +541,16 @@ func (s *service) checkVariableSet(ctx context.Context, a *delivery.Application)
 	if err != nil {
 		return fmt.Errorf("list the application's variables: %w", err)
 	}
-	if len(own) > delivery.MaxVariablesPerOwner {
-		return delivery.NewErrInvalidInput(fmt.Sprintf("an application can have at most %d variables", delivery.MaxVariablesPerOwner))
-	}
 	if err := delivery.CheckDeployable(project, own); err != nil {
 		return err
 	}
-	return s.scopes.Check(ctx, a.WorkspaceID(), own...)
+	// The archive guards leave an archived Application's variables out of
+	// their counts, so what one names may have been archived meanwhile. Its
+	// variables cannot be edited until it is restored, but they can be
+	// archived, so the error says so.
+	err = s.scopes.Check(ctx, a.WorkspaceID(), own...)
+	if errors.Is(err, delivery.ErrArchived) || errors.Is(err, delivery.ErrInvalid) || errors.Is(err, delivery.ErrWorkspaceMismatch) {
+		return fmt.Errorf("%w; restore what the variable names or archive the variable, then restore the application", err)
+	}
+	return err
 }

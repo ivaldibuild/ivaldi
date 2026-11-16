@@ -39,6 +39,29 @@ func (r *targetRepository) GetTargetForUpdate(ctx context.Context, organizationI
 		Where("organization_id = ? AND id = ?", organizationID, targetID))
 }
 
+// GetTargetsForUpdate locks the Targets in ID order, so writes that take
+// several take them in one order however their callers listed them.
+func (r *targetRepository) GetTargetsForUpdate(ctx context.Context, organizationID string, targetIDs []string) ([]*delivery.Target, error) {
+	if len(targetIDs) == 0 {
+		return nil, nil
+	}
+	var entities []targetEntity
+	err := r.conn(ctx).Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate}).
+		Where("organization_id = ? AND id IN ?", organizationID, targetIDs).Order("id").Find(&entities).Error
+	if err != nil {
+		return nil, translate(err)
+	}
+	targets := make([]*delivery.Target, 0, len(entities))
+	for i := range entities {
+		t, err := r.mapper.ToDomain(&entities[i])
+		if err != nil {
+			return nil, err
+		}
+		targets = append(targets, t)
+	}
+	return targets, nil
+}
+
 func (r *targetRepository) GetTarget(ctx context.Context, organizationID, targetID string) (*delivery.Target, error) {
 	return r.get(r.conn(ctx).Where("organization_id = ? AND id = ?", organizationID, targetID))
 }

@@ -108,6 +108,10 @@ type TargetRepository interface {
 	// GetTargetForUpdate is GetTarget that also locks the row until the
 	// transaction ends.
 	GetTargetForUpdate(ctx context.Context, organizationID, targetID string) (*Target, error)
+	// GetTargetsForUpdate reads the Targets with the given IDs and locks
+	// them, in ID order, until the transaction ends. IDs that match nothing
+	// are left out. It must be called inside a transaction.
+	GetTargetsForUpdate(ctx context.Context, organizationID string, targetIDs []string) ([]*Target, error)
 	GetTargetBySlug(ctx context.Context, organizationID, environmentID, slug string) (*Target, error)
 	// GetTargetByNamespace returns the active Target in the Cluster's
 	// namespace, which is how a refused duplicate is named.
@@ -686,6 +690,11 @@ type SecretStores interface {
 	// LookupSecretStores returns the stores that exist among the IDs, by
 	// ID, archived ones included.
 	LookupSecretStores(ctx context.Context, organizationID string, storeIDs []string) (map[string]SecretStoreRef, error)
+	// LookupSecretStoresForShare is LookupSecretStores that also holds the
+	// rows FOR SHARE until the transaction ends, so a store cannot be
+	// archived while a value kept in it is checked and saved. It must be
+	// called inside a transaction.
+	LookupSecretStoresForShare(ctx context.Context, organizationID string, storeIDs []string) (map[string]SecretStoreRef, error)
 }
 
 // CreateVariableInput describes a Variable to create. Owner.ApplicationID

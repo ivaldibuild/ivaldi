@@ -41,11 +41,13 @@ type store struct {
 	audit        []audit.Event
 	events       []events.Envelope
 	locked       []string
-	// lockedApplications, lockedTargets, and lockedEnvironments count the
-	// locking reads, so a test can tell a save takes the rows it checks.
+	// lockedApplications, lockedTargets, lockedEnvironments, and
+	// lockedStores count the locking reads, so a test can tell a save takes
+	// the rows it checks.
 	lockedApplications int
 	lockedTargets      int
 	lockedEnvironments int
+	lockedStores       int
 	// onLock runs when the Project's variables are taken, as another
 	// writer's change committing just before would.
 	onLock func()
@@ -144,7 +146,8 @@ func (s *store) CountActiveVariablesWithChannel(context.Context, string, string)
 func (s *store) CountActiveVariablesWithSecretStore(context.Context, string, string) (int, error) {
 	return 0, nil
 }
-func (s *store) LookupSecretStores(_ context.Context, _ string, ids []string) (map[string]delivery.SecretStoreRef, error) {
+func (s *store) LookupSecretStoresForShare(_ context.Context, _ string, ids []string) (map[string]delivery.SecretStoreRef, error) {
+	s.lockedStores++
 	out := map[string]delivery.SecretStoreRef{}
 	for _, id := range ids {
 		if ref, ok := s.stores[id]; ok {
@@ -184,9 +187,15 @@ func (s *store) GetChannel(_ context.Context, _, id string) (*delivery.Channel, 
 func (s *store) GetTarget(_ context.Context, _, id string) (*delivery.Target, error) {
 	return find(s.targets, id)
 }
-func (s *store) GetTargetForUpdate(ctx context.Context, organizationID, id string) (*delivery.Target, error) {
+func (s *store) GetTargetsForUpdate(_ context.Context, _ string, ids []string) ([]*delivery.Target, error) {
 	s.lockedTargets++
-	return s.GetTarget(ctx, organizationID, id)
+	var out []*delivery.Target
+	for _, id := range ids {
+		if t, ok := s.targets[id]; ok {
+			out = append(out, t)
+		}
+	}
+	return out, nil
 }
 func (s *store) GetEnvironments(_ context.Context, _ string, ids []string) ([]*delivery.Environment, error) {
 	var out []*delivery.Environment
@@ -319,9 +328,11 @@ func newWorld(t *testing.T) *world {
 	}, nil))
 	s.targets[w.prodEU.ID()] = w.prodEU
 
+	scopes, err := delivery.NewVariableScopeChecker(s, s, s, s)
+	require.NoError(t, err)
 	svc, err := NewVariableService(
-		WithVariableRepo(s), WithApplicationLookup(s), WithEnvironmentLookup(s), WithTargetLookup(s),
-		WithWorkspaces(s), WithSecretStores(s), WithLocker(s), WithAuthorizer(w.authz), WithTransactor(s),
+		WithVariableRepo(s), WithApplicationLookup(s), WithTargetLookup(s), WithVariableScopes(scopes),
+		WithWorkspaces(s), WithLocker(s), WithAuthorizer(w.authz), WithTransactor(s),
 		WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
 	)
 	require.NoError(t, err)

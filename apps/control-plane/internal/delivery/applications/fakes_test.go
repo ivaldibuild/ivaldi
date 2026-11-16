@@ -82,17 +82,17 @@ type store struct {
 	settings map[string]map[string]json.RawMessage
 	// resolved records the scopes settings were resolved for.
 	resolved []workspace.Scope
-	// lockedApplications, lockedTargets, and lockedEnvironments count the
-	// locking reads, and locked names the locks taken, so a test can tell a
-	// change holds the rows and the Project it checks.
+	// lockedApplications counts the locking reads of Applications, and
+	// locked names the locks taken, so a test can tell a change holds the
+	// row and the Project it checks.
 	lockedApplications int
-	lockedTargets      int
-	lockedEnvironments int
 	locked             []string
-	// variables are the Variables a restore checks, and stores the Secret
-	// Stores a variable's secret values are kept in.
-	variables []*delivery.Variable
-	stores    map[string]delivery.SecretStoreRef
+	// variables are the Variables a restore checks. scopesChecked names the
+	// ones whose scopes were checked, and scopeErr is what that check
+	// refuses with.
+	variables     []*delivery.Variable
+	scopesChecked []string
+	scopeErr      error
 }
 
 func newStore() *store {
@@ -109,7 +109,6 @@ func newStore() *store {
 		},
 		workspaces:         map[string]*workspace.Workspace{},
 		projects:           map[string]*workspace.Project{},
-		stores:             map[string]delivery.SecretStoreRef{},
 		teams:              map[string]bool{},
 		teamNames:          map[string]string{},
 		releaseVersions:    map[string]string{},
@@ -629,38 +628,16 @@ func (s *store) GetTarget(_ context.Context, organizationID, id string) (*delive
 	}, &snap.ID)), nil
 }
 
-func (s *store) GetTargetForUpdate(ctx context.Context, organizationID, id string) (*delivery.Target, error) {
-	if err := requireTx(ctx, "GetTargetForUpdate"); err != nil {
-		return nil, err
+// Check fakes delivery.VariableScopeChecker, whose own tests cover what it
+// reads and refuses.
+func (s *store) Check(ctx context.Context, _ string, variables ...*delivery.Variable) error {
+	if err := requireTx(ctx, "Check"); err != nil {
+		return err
 	}
-	s.lockedTargets++
-	return s.GetTarget(ctx, organizationID, id)
-}
-
-// GetEnvironmentsForUpdate reads the Environments a variable's values are
-// scoped to, as the variables service does, locked.
-func (s *store) GetEnvironmentsForUpdate(ctx context.Context, organizationID string, ids []string) ([]*delivery.Environment, error) {
-	if err := requireTx(ctx, "GetEnvironmentsForUpdate"); err != nil {
-		return nil, err
+	for _, v := range variables {
+		s.scopesChecked = append(s.scopesChecked, v.Name())
 	}
-	s.lockedEnvironments++
-	var out []*delivery.Environment
-	for _, id := range ids {
-		if e, err := s.GetEnvironment(ctx, organizationID, id); err == nil {
-			out = append(out, e)
-		}
-	}
-	return out, nil
-}
-
-func (s *store) LookupSecretStores(_ context.Context, _ string, ids []string) (map[string]delivery.SecretStoreRef, error) {
-	out := map[string]delivery.SecretStoreRef{}
-	for _, id := range ids {
-		if ref, ok := s.stores[id]; ok {
-			out[id] = ref
-		}
-	}
-	return out, nil
+	return s.scopeErr
 }
 
 // Variables.
@@ -908,13 +885,9 @@ func newWorld(t *testing.T) *world {
 }
 
 func (s *store) options(authz authorization.Authorizer) []ApplicationServiceOption {
-	scopes, err := delivery.NewVariableScopeChecks(s, s, s, s)
-	if err != nil {
-		panic(err)
-	}
 	return []ApplicationServiceOption{
 		WithApplicationRepo(s), WithLifecycleLookup(s), WithRegistryLookup(s), WithTargetLookup(s),
-		WithEnvironmentLookup(s), WithVariableUsage(s), WithVariableSet(s), WithVariableScopes(scopes),
+		WithEnvironmentLookup(s), WithVariableUsage(s), WithVariableSet(s), WithVariableScopes(s),
 		WithProjectLookup(s), WithWorkspaces(s), WithSettingResolver(s), WithTeamDirectory(s), WithLocker(s), WithAuthorizer(authz),
 		WithTransactor(s), WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
 	}

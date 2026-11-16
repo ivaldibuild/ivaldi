@@ -1,6 +1,8 @@
 package postgres
 
 import (
+	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -163,6 +165,25 @@ func TestTargetRepository(t *testing.T) {
 		thirdLocator[delivery.LocatorNamespace] = "shared"
 		require.NoError(t, third.Update(delivery.UpdateTargetProps{Locator: thirdLocator}))
 		require.NoError(t, f.targets.CreateTarget(ctx, third), "the same namespace in another cluster is fine")
+	})
+
+	t.Run("locking read holds the rows in ID order", func(t *testing.T) {
+		a := f.createTarget(t, orgA, env.ID(), "locked-a")
+		b := f.createTarget(t, orgA, env.ID(), "locked-b")
+		f.assertNotLocked(t, "targets", a.ID())
+
+		require.NoError(t, f.tx.WithinTx(ctx, func(ctx context.Context) error {
+			got, err := f.targets.GetTargetsForUpdate(ctx, orgA, []string{b.ID(), id.New("tgt"), a.ID()})
+			if err != nil {
+				return err
+			}
+			assert.True(t, slices.IsSorted(idsOf(got)), "the rows are taken in ID order")
+			assert.ElementsMatch(t, []string{a.ID(), b.ID()}, idsOf(got), "unknown IDs left out")
+			f.assertLocked(t, "targets", a.ID())
+			f.assertLocked(t, "targets", b.ID())
+			return nil
+		}))
+		f.assertNotLocked(t, "targets", a.ID())
 	})
 }
 

@@ -1245,6 +1245,10 @@ func TestRequestDeploymentsRefusesABindingWithNoValue(t *testing.T) {
 	assert.True(t, failed, "the deploy sheet says so before it is requested")
 }
 
+func (s *store) LookupSecretStoresForShare(ctx context.Context, organizationID string, ids []string) (map[string]delivery.SecretStoreRef, error) {
+	return s.LookupSecretStores(ctx, organizationID, ids)
+}
+
 func (s *store) LookupSecretStores(_ context.Context, _ string, ids []string) (map[string]delivery.SecretStoreRef, error) {
 	out := map[string]delivery.SecretStoreRef{}
 	for _, id := range ids {

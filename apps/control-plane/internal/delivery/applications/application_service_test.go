@@ -2,6 +2,8 @@ package applications
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -765,36 +767,28 @@ func TestRestoreApplicationChecksItsVariables(t *testing.T) {
 		assert.Contains(t, err.Error(), "overlapping")
 	})
 
-	t.Run("a value scoped to an environment archived meanwhile", func(t *testing.T) {
+	t.Run("a scope whose record was archived meanwhile", func(t *testing.T) {
 		w, app := archived(t)
-		old := w.env(t, wsActive, "old")
-		old.Archive()
-		w.environments[old.ID()] = old.Snapshot()
-		w.variables = []*delivery.Variable{
-			textVariable(t, prjActive, app.ID(), "Feature.Flag", "",
-				delivery.VariableValueProps{Value: "on", Scope: delivery.VariableScope{EnvironmentIDs: []string{old.ID()}}}),
-		}
+		w.variables = []*delivery.Variable{textVariable(t, prjActive, app.ID(), "Feature.Flag", "")}
+		w.scopeErr = fmt.Errorf("variable Feature.Flag: %w: environment env_old", delivery.ErrArchived)
+		before := w.state.clone()
 
 		_, err := w.svc.RestoreApplication(ctx, ada, org, app.ID())
 
 		require.ErrorIs(t, err, delivery.ErrArchived)
-		assert.Positive(t, w.lockedEnvironments, "the environment is read under its lock")
+		assert.Contains(t, err.Error(), "archive the variable", "the error says how to get past it")
+		assert.Equal(t, before, w.state, "nothing is restored")
 	})
 
-	t.Run("a secret kept in a store archived meanwhile", func(t *testing.T) {
-		const storeID = "sst_01JZ0000000000000000000001"
+	t.Run("a failure to check is not dressed as a refusal", func(t *testing.T) {
 		w, app := archived(t)
-		w.stores[storeID] = delivery.SecretStoreRef{ID: storeID, WorkspaceID: wsActive, DisplayName: "Vault", Archived: true}
-		w.variables = []*delivery.Variable{must(delivery.NewVariable(delivery.NewVariableProps{
-			OrganizationID: org, ApplicationID: new(app.ID()),
-			Name: "Api.Key", Kind: delivery.VariableKindSecret,
-			Values: []delivery.NewVariableValueProps{{Secret: &delivery.SecretReference{StoreID: storeID, Path: "api/key"}}},
-		}, nil))}
+		w.variables = []*delivery.Variable{textVariable(t, prjActive, app.ID(), "Feature.Flag", "")}
+		w.scopeErr = errors.New("connection reset")
 
 		_, err := w.svc.RestoreApplication(ctx, ada, org, app.ID())
 
-		require.ErrorIs(t, err, delivery.ErrArchived)
-		assert.Contains(t, err.Error(), "secret store")
+		require.Error(t, err)
+		assert.NotContains(t, err.Error(), "archive the variable")
 	})
 
 	t.Run("the variables come back checked", func(t *testing.T) {
@@ -811,7 +805,7 @@ func TestRestoreApplicationChecksItsVariables(t *testing.T) {
 		require.NoError(t, err)
 		assert.False(t, restored.Archived())
 		assert.Equal(t, []string{delivery.VariablesLock(prjActive)}, w.locked)
-		assert.Positive(t, w.lockedEnvironments, "what the variables are scoped to is read under its lock")
+		assert.Equal(t, []string{"Database.Host"}, w.scopesChecked, "only the application's own variables are checked again")
 	})
 }
 

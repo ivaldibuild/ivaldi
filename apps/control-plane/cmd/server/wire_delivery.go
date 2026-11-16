@@ -112,9 +112,9 @@ func (a *app) wireDelivery(runners config.Runners) error {
 		return err
 	}
 
-	// A Variable's save and an Application's restore check that same
+	// A Variable's save and an Application's restore check the same
 	// records, under their rows' locks.
-	scopes, err := delivery.NewVariableScopeChecks(targetRepo, envRepo, applicationRepo, storeLookup)
+	scopes, err := delivery.NewVariableScopeChecker(targetRepo, envRepo, applicationRepo, storeLookup)
 	if err != nil {
 		return err
 	}
@@ -210,10 +210,9 @@ func (a *app) wireDelivery(runners config.Runners) error {
 	vars, err := variables.NewVariableService(
 		variables.WithVariableRepo(variableRepo),
 		variables.WithApplicationLookup(applicationRepo),
-		variables.WithEnvironmentLookup(envRepo),
 		variables.WithTargetLookup(targetRepo),
+		variables.WithVariableScopes(scopes),
 		variables.WithWorkspaces(workspaces),
-		variables.WithSecretStores(storeLookup),
 		variables.WithLocker(database.NewLocker(a.db)),
 		variables.WithAuthorizer(a.authz),
 		variables.WithTransactor(a.tx),

@@ -144,6 +144,7 @@ func TestChannelRules(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "Fixes", *got.Description())
 		assert.Equal(t, delivery.EventChannelUpdated, s.lastAudit().Type)
+		assert.Zero(t, s.lockedApplications, "only an archive needs the application's row")
 
 		_, err = s.svc.UpdateChannel(ctx, ada, org, c.ID(), delivery.UpdateChannelProps{Slug: ptr(delivery.DefaultChannelSlug)})
 		require.ErrorIs(t, err, delivery.ErrSlugTaken)

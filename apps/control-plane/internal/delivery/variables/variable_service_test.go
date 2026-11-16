@@ -336,6 +336,7 @@ func TestSecretValuesAreCheckedAgainstTheirStore(t *testing.T) {
 	}
 
 	require.NoError(t, secret(here, envScope(w.prod.ID())))
+	assert.Equal(t, 1, w.lockedStores, "the store is held, so it cannot be archived while the value is saved")
 	require.NoError(t, secret(stagingOnly, envScope(w.staging.ID())))
 	require.NoError(t, secret(stagingOnly, delivery.VariableScope{}), "a value naming no environment is checked when it is deployed")
 

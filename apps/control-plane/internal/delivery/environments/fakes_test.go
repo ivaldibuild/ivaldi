@@ -291,6 +291,16 @@ func (s *store) GetTargetForUpdate(ctx context.Context, organizationID, id strin
 	return s.GetTarget(ctx, organizationID, id)
 }
 
+func (s *store) GetTargetsForUpdate(ctx context.Context, organizationID string, ids []string) ([]*delivery.Target, error) {
+	var out []*delivery.Target
+	for _, id := range ids {
+		if t, err := s.GetTargetForUpdate(ctx, organizationID, id); err == nil {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+
 func (s *store) GetTargetBySlug(_ context.Context, organizationID, environmentID, slug string) (*delivery.Target, error) {
 	for _, snap := range s.targets {
 		if snap.OrganizationID == organizationID && snap.EnvironmentID == environmentID && snap.Slug == slug && snap.DeletedAt == nil {

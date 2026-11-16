@@ -265,7 +265,7 @@ func (s *service) ArchiveEnvironments(ctx context.Context, actor identity.Actor,
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	return inCallerOrder(environmentIDs, out), nil
 }
 
 func (s *service) checkUnused(ctx context.Context, e *delivery.Environment) error {
@@ -332,7 +332,7 @@ func (s *service) RestoreEnvironments(ctx context.Context, actor identity.Actor,
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	return inCallerOrder(environmentIDs, out), nil
 }
 
 // CreateTarget adds a Target to an active Environment. Its locator names an
@@ -532,4 +532,22 @@ func uniqueIDs(ids []string) []string {
 	out := slices.Clone(ids)
 	slices.Sort(out)
 	return slices.Compact(out)
+}
+
+// inCallerOrder returns the Environments in the order the caller listed their
+// IDs, without repeats: they are taken in ID order, but answered in the
+// order asked.
+func inCallerOrder(ids []string, envs []*delivery.Environment) []*delivery.Environment {
+	byID := make(map[string]*delivery.Environment, len(envs))
+	for _, e := range envs {
+		byID[e.ID()] = e
+	}
+	out := make([]*delivery.Environment, 0, len(envs))
+	for _, id := range ids {
+		if e, ok := byID[id]; ok {
+			out = append(out, e)
+			delete(byID, id)
+		}
+	}
+	return out
 }

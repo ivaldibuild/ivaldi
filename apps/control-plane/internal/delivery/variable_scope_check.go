@@ -7,11 +7,33 @@ import (
 	"slices"
 )
 
+// VariableScopeChecker checks what Variables' values name: that every
+// Environment, Target, and Channel a scope names is active and the
+// Variable's to use, and that every Secret Store a secret value is kept in is
+// active, in its Workspace, and allowed for the Environments the value names.
+// A save and an Application's restore both use it, so a restored Variable is
+// checked exactly as a saved one was.
+//
+// It reads the records under their rows' locks, each table once and in ID
+// order: the Targets, then their Environments, then the Secret Stores. The
+// archives that count what names a record take the same row first, so
+// whichever runs first, the other sees it. Callers hold the Variable's
+// Project's variables and, for an Application's Variable, the Application's
+// row, which is what keeps its Channels from changing meanwhile.
+type VariableScopeChecker interface {
+	// Check checks every scope of every Variable given, and the stores their
+	// secret values are kept in. An error names the Variable it is about.
+	Check(ctx context.Context, workspaceID string, variables ...*Variable) error
+	// CheckScope checks the one scope a change to v names, and the stores
+	// v's secret values are kept in.
+	CheckScope(ctx context.Context, workspaceID string, v *Variable, scope VariableScope) error
+}
+
 // VariableTargetLookup reads the Targets a Variable's values are scoped to,
 // locked so they cannot be archived while the Variable is checked.
 // delivery.TargetRepository provides it.
 type VariableTargetLookup interface {
-	GetTargetForUpdate(ctx context.Context, organizationID, targetID string) (*Target, error)
+	GetTargetsForUpdate(ctx context.Context, organizationID string, targetIDs []string) ([]*Target, error)
 }
 
 // VariableEnvironmentLookup reads the Environments a Variable's values are
@@ -27,22 +49,16 @@ type VariableChannelLookup interface {
 	GetChannel(ctx context.Context, organizationID, channelID string) (*Channel, error)
 }
 
-// VariableScopeChecks checks what a Variable's values name: that every
-// Environment, Target, and Channel a scope names is active and the Variable's
-// to use, and that every Secret Store a secret value is kept in is active,
-// in its Workspace, and allowed for the Environments the value names. A save
-// and restoring an Application both use it, so a restored Variable is checked
-// exactly as a saved one was.
-type VariableScopeChecks struct {
-	targets      VariableTargetLookup
-	environments VariableEnvironmentLookup
-	channels     VariableChannelLookup
-	stores       SecretStores
+// VariableStoreLookup reads the Secret Stores a Variable's values are kept
+// in, held so they cannot be archived while the Variable is checked.
+// delivery.SecretStores provides it.
+type VariableStoreLookup interface {
+	LookupSecretStoresForShare(ctx context.Context, organizationID string, storeIDs []string) (map[string]SecretStoreRef, error)
 }
 
-// NewVariableScopeChecks returns the checks over the lookups given, or an
+// NewVariableScopeChecker returns the checks over the lookups given, or an
 // error naming a missing one.
-func NewVariableScopeChecks(targets VariableTargetLookup, environments VariableEnvironmentLookup, channels VariableChannelLookup, stores SecretStores) (*VariableScopeChecks, error) {
+func NewVariableScopeChecker(targets VariableTargetLookup, environments VariableEnvironmentLookup, channels VariableChannelLookup, stores VariableStoreLookup) (VariableScopeChecker, error) {
 	required := []struct {
 		name string
 		ok   bool
@@ -50,67 +66,138 @@ func NewVariableScopeChecks(targets VariableTargetLookup, environments VariableE
 		{"VariableTargetLookup", targets != nil},
 		{"VariableEnvironmentLookup", environments != nil},
 		{"VariableChannelLookup", channels != nil},
-		{"SecretStores", stores != nil},
+		{"VariableStoreLookup", stores != nil},
 	}
 	for _, r := range required {
 		if !r.ok {
-			return nil, fmt.Errorf("variable scope checks: %s is required", r.name)
+			return nil, fmt.Errorf("variable scope checker: %s is required", r.name)
 		}
 	}
-	return &VariableScopeChecks{targets: targets, environments: environments, channels: channels, stores: stores}, nil
+	return &scopeChecker{targets: targets, environments: environments, channels: channels, stores: stores}, nil
 }
 
-// Check checks every scope of every Variable given, and the stores their
-// secret values are kept in. All the Targets are read and locked first, so a
-// restore of many Variables takes its rows in one order.
-func (c *VariableScopeChecks) Check(ctx context.Context, workspaceID string, variables ...*Variable) error {
-	var targetIDs []string
-	for _, v := range variables {
-		targetIDs = append(targetIDs, v.Scope().TargetIDs...)
+type scopeChecker struct {
+	targets      VariableTargetLookup
+	environments VariableEnvironmentLookup
+	channels     VariableChannelLookup
+	stores       VariableStoreLookup
+}
+
+// scopeCheck is one scope to check, and the Variable it belongs to.
+type scopeCheck struct {
+	v     *Variable
+	scope VariableScope
+}
+
+// lockedRows are the records a set of checks reads, by ID. Records that do
+// not exist are left out.
+type lockedRows struct {
+	targets      map[string]*Target
+	environments map[string]*Environment
+	stores       map[string]SecretStoreRef
+}
+
+func (c *scopeChecker) Check(ctx context.Context, workspaceID string, variables ...*Variable) error {
+	checks := make([]scopeCheck, len(variables))
+	for i, v := range variables {
+		checks[i] = scopeCheck{v: v, scope: v.Scope()}
 	}
-	organizationID := ""
-	if len(variables) > 0 {
-		organizationID = variables[0].OrganizationID()
-	}
-	targets, err := c.lockTargets(ctx, organizationID, targetIDs)
+	rows, err := c.lock(ctx, checks)
 	if err != nil {
 		return err
 	}
-	for _, v := range variables {
-		if err := c.checkScope(ctx, v, workspaceID, v.Scope(), targets); err != nil {
-			return err
-		}
-		if err := c.checkStores(ctx, v, workspaceID, targets); err != nil {
-			return err
+	for _, ch := range checks {
+		if err := c.verify(ctx, workspaceID, ch, rows); err != nil {
+			return fmt.Errorf("variable %s: %w", ch.v.Name(), err)
 		}
 	}
 	return nil
 }
 
-// CheckScope checks the one scope a change names, and the stores a Variable's
-// secret values are kept in. Every Target the Variable names is read and
-// locked, not only the ones scope names, so a save always takes its rows in
-// one order.
-func (c *VariableScopeChecks) CheckScope(ctx context.Context, workspaceID string, v *Variable, scope VariableScope) error {
-	targets, err := c.lockTargets(ctx, v.OrganizationID(), append(slices.Clone(v.Scope().TargetIDs), scope.TargetIDs...))
+func (c *scopeChecker) CheckScope(ctx context.Context, workspaceID string, v *Variable, scope VariableScope) error {
+	ch := scopeCheck{v: v, scope: scope}
+	rows, err := c.lock(ctx, []scopeCheck{ch})
 	if err != nil {
 		return err
 	}
-	if err := c.checkScope(ctx, v, workspaceID, scope, targets); err != nil {
+	return c.verify(ctx, workspaceID, ch, rows)
+}
+
+// lock reads everything the checks name, one statement per table: every
+// Target any of the Variables' values names (the stores' checks need their
+// Environments), every Environment a checked scope names directly or through
+// a Target, and every store a secret value is kept in.
+func (c *scopeChecker) lock(ctx context.Context, checks []scopeCheck) (lockedRows, error) {
+	rows := lockedRows{targets: map[string]*Target{}, environments: map[string]*Environment{}, stores: map[string]SecretStoreRef{}}
+	if len(checks) == 0 {
+		return rows, nil
+	}
+	organizationID := checks[0].v.OrganizationID()
+
+	var targetIDs []string
+	for _, ch := range checks {
+		targetIDs = append(targetIDs, ch.v.Scope().TargetIDs...)
+		targetIDs = append(targetIDs, ch.scope.TargetIDs...)
+	}
+	if targetIDs = sortedUnique(targetIDs); len(targetIDs) > 0 {
+		targets, err := c.targets.GetTargetsForUpdate(ctx, organizationID, targetIDs)
+		if err != nil {
+			return lockedRows{}, fmt.Errorf("get targets: %w", err)
+		}
+		for _, t := range targets {
+			rows.targets[t.ID()] = t
+		}
+	}
+
+	var environmentIDs []string
+	for _, ch := range checks {
+		environmentIDs = append(environmentIDs, ch.scope.EnvironmentIDs...)
+		for _, id := range ch.scope.TargetIDs {
+			if t, ok := rows.targets[id]; ok {
+				environmentIDs = append(environmentIDs, t.EnvironmentID())
+			}
+		}
+	}
+	if environmentIDs = sortedUnique(environmentIDs); len(environmentIDs) > 0 {
+		envs, err := c.environments.GetEnvironmentsForUpdate(ctx, organizationID, environmentIDs)
+		if err != nil {
+			return lockedRows{}, fmt.Errorf("get environments: %w", err)
+		}
+		for _, e := range envs {
+			rows.environments[e.ID()] = e
+		}
+	}
+
+	var storeIDs []string
+	for _, ch := range checks {
+		storeIDs = append(storeIDs, ch.v.SecretStoreIDs()...)
+	}
+	if storeIDs = sortedUnique(storeIDs); len(storeIDs) > 0 {
+		stores, err := c.stores.LookupSecretStoresForShare(ctx, organizationID, storeIDs)
+		if err != nil {
+			return lockedRows{}, fmt.Errorf("look up secret stores: %w", err)
+		}
+		rows.stores = stores
+	}
+	return rows, nil
+}
+
+// verify checks one scope against the rows read for it, then the stores its
+// Variable's secret values are kept in.
+func (c *scopeChecker) verify(ctx context.Context, workspaceID string, ch scopeCheck, rows lockedRows) error {
+	if err := c.checkScope(ctx, workspaceID, ch.v, ch.scope, rows); err != nil {
 		return err
 	}
-	return c.checkStores(ctx, v, workspaceID, targets)
+	return checkStores(workspaceID, ch.v, rows)
 }
 
 // checkScope checks that everything scope names is active and the Variable's
 // to use: Environments and Targets in its Workspace, and Channels of its
-// Application. Callers hold the Variable's Application, if it has one, so a
-// value scoped to a Channel cannot outlive the Channel.
-func (c *VariableScopeChecks) checkScope(ctx context.Context, v *Variable, workspaceID string, scope VariableScope, targets map[string]*Target) error {
-	organizationID := v.OrganizationID()
+// Application.
+func (c *scopeChecker) checkScope(ctx context.Context, workspaceID string, v *Variable, scope VariableScope, rows lockedRows) error {
 	environmentIDs := slices.Clone(scope.EnvironmentIDs)
 	for _, targetID := range scope.TargetIDs {
-		t, ok := targets[targetID]
+		t, ok := rows.targets[targetID]
 		switch {
 		case !ok:
 			return NewErrInvalidInput(fmt.Sprintf("target %s does not exist", targetID))
@@ -120,29 +207,19 @@ func (c *VariableScopeChecks) checkScope(ctx context.Context, v *Variable, works
 			environmentIDs = append(environmentIDs, t.EnvironmentID())
 		}
 	}
-	if len(environmentIDs) > 0 {
-		envs, err := c.environments.GetEnvironmentsForUpdate(ctx, organizationID, environmentIDs)
-		if err != nil {
-			return fmt.Errorf("get environments: %w", err)
-		}
-		byID := make(map[string]*Environment, len(envs))
-		for _, e := range envs {
-			byID[e.ID()] = e
-		}
-		for _, id := range environmentIDs {
-			e, ok := byID[id]
-			switch {
-			case !ok:
-				return NewErrInvalidInput(fmt.Sprintf("environment %s does not exist", id))
-			case e.WorkspaceID() != workspaceID:
-				return fmt.Errorf("%w: environment %s is not in workspace %s", ErrWorkspaceMismatch, id, workspaceID)
-			case e.Archived():
-				return fmt.Errorf("%w: environment %s", ErrArchived, id)
-			}
+	for _, id := range environmentIDs {
+		e, ok := rows.environments[id]
+		switch {
+		case !ok:
+			return NewErrInvalidInput(fmt.Sprintf("environment %s does not exist", id))
+		case e.WorkspaceID() != workspaceID:
+			return fmt.Errorf("%w: environment %s is not in workspace %s", ErrWorkspaceMismatch, id, workspaceID)
+		case e.Archived():
+			return fmt.Errorf("%w: environment %s", ErrArchived, id)
 		}
 	}
 	for _, channelID := range scope.ChannelIDs {
-		ch, err := c.channels.GetChannel(ctx, organizationID, channelID)
+		ch, err := c.channels.GetChannel(ctx, v.OrganizationID(), channelID)
 		if errors.Is(err, ErrNotFound) || (err == nil && !sameID(v.ApplicationID(), ch.ApplicationID())) {
 			return NewErrInvalidInput(fmt.Sprintf("channel %s is not one of the application's channels", channelID))
 		}
@@ -161,20 +238,12 @@ func (c *VariableScopeChecks) checkScope(ctx context.Context, v *Variable, works
 // Environment its value names, directly or through a Target. A value that
 // names no Environment is checked when it is deployed, against the
 // Environment it is deployed to.
-func (c *VariableScopeChecks) checkStores(ctx context.Context, v *Variable, workspaceID string, targets map[string]*Target) error {
-	ids := v.SecretStoreIDs()
-	if len(ids) == 0 {
-		return nil
-	}
-	stores, err := c.stores.LookupSecretStores(ctx, v.OrganizationID(), ids)
-	if err != nil {
-		return fmt.Errorf("look up secret stores: %w", err)
-	}
+func checkStores(workspaceID string, v *Variable, rows lockedRows) error {
 	for _, value := range v.Values() {
 		if value.Secret == nil {
 			continue
 		}
-		store, ok := stores[value.Secret.StoreID]
+		store, ok := rows.stores[value.Secret.StoreID]
 		switch {
 		case !ok:
 			return NewErrInvalidInput(fmt.Sprintf("secret store %s does not exist", value.Secret.StoreID))
@@ -185,7 +254,7 @@ func (c *VariableScopeChecks) checkStores(ctx context.Context, v *Variable, work
 		}
 		environmentIDs := slices.Clone(value.Scope.EnvironmentIDs)
 		for _, targetID := range value.Scope.TargetIDs {
-			t, ok := targets[targetID]
+			t, ok := rows.targets[targetID]
 			if !ok {
 				return NewErrInvalidInput(fmt.Sprintf("target %s does not exist", targetID))
 			}
@@ -201,23 +270,12 @@ func (c *VariableScopeChecks) checkStores(ctx context.Context, v *Variable, work
 	return nil
 }
 
-// lockTargets reads the Targets among IDs FOR UPDATE, in ID order, leaving out
-// the ones that do not exist.
-func (c *VariableScopeChecks) lockTargets(ctx context.Context, organizationID string, targetIDs []string) (map[string]*Target, error) {
-	slices.Sort(targetIDs)
-	targetIDs = slices.Compact(targetIDs)
-	out := make(map[string]*Target, len(targetIDs))
-	for _, targetID := range targetIDs {
-		t, err := c.targets.GetTargetForUpdate(ctx, organizationID, targetID)
-		if errors.Is(err, ErrNotFound) {
-			continue
-		}
-		if err != nil {
-			return nil, fmt.Errorf("get target %s: %w", targetID, err)
-		}
-		out[targetID] = t
-	}
-	return out, nil
+// sortedUnique returns the IDs sorted and without repeats, so rows are taken
+// in one order however the caller listed them.
+func sortedUnique(ids []string) []string {
+	out := slices.Clone(ids)
+	slices.Sort(out)
+	return slices.Compact(out)
 }
 
 func sameID(a *string, b string) bool { return a != nil && *a == b }

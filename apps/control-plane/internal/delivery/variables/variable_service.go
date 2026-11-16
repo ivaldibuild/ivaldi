@@ -24,30 +24,18 @@ import (
 )
 
 // ApplicationLookup reads the Application that owns a variable, to find its
-// Project, and the Channels a value is scoped to.
+// Project, and holds it while the variable is saved.
 // delivery.ApplicationRepository provides it.
 type ApplicationLookup interface {
 	GetApplication(ctx context.Context, organizationID, applicationID string) (*delivery.Application, error)
 	GetApplicationForUpdate(ctx context.Context, organizationID, applicationID string) (*delivery.Application, error)
 	GetApplicationByIdentifier(ctx context.Context, organizationID, identifier string) (*delivery.Application, error)
-	GetChannel(ctx context.Context, organizationID, channelID string) (*delivery.Channel, error)
 }
 
-// EnvironmentLookup reads the Environments a value is scoped to, locked so
-// they cannot be archived while the value is saved.
-// delivery.EnvironmentRepository provides it.
-type EnvironmentLookup interface {
-	GetEnvironmentsForUpdate(ctx context.Context, organizationID string, environmentIDs []string) ([]*delivery.Environment, error)
-}
-
-// TargetLookup reads the Targets a value is scoped to.
-// delivery.TargetRepository provides it.
+// TargetLookup reads the Targets a value is scoped to, to authorize a change
+// against their Environments. delivery.TargetRepository provides it.
 type TargetLookup interface {
 	GetTarget(ctx context.Context, organizationID, targetID string) (*delivery.Target, error)
-	// GetTargetForUpdate is GetTarget that also locks the row until the
-	// transaction ends, so the Target cannot be archived while a value
-	// scoped to it is saved.
-	GetTargetForUpdate(ctx context.Context, organizationID, targetID string) (*delivery.Target, error)
 }
 
 type VariableServiceOption func(*options)
@@ -55,10 +43,9 @@ type VariableServiceOption func(*options)
 type options struct {
 	variables    delivery.VariableRepository
 	applications ApplicationLookup
-	environments EnvironmentLookup
 	targets      TargetLookup
+	scopes       delivery.VariableScopeChecker
 	workspaces   delivery.Workspaces
-	stores       delivery.SecretStores
 	locker       transaction.Locker
 	authz        authorization.Authorizer
 	writer       change.Writer
@@ -70,9 +57,6 @@ func WithVariableRepo(r delivery.VariableRepository) VariableServiceOption {
 func WithApplicationLookup(a ApplicationLookup) VariableServiceOption {
 	return func(o *options) { o.applications = a }
 }
-func WithEnvironmentLookup(e EnvironmentLookup) VariableServiceOption {
-	return func(o *options) { o.environments = e }
-}
 func WithTargetLookup(t TargetLookup) VariableServiceOption {
 	return func(o *options) { o.targets = t }
 }
@@ -80,9 +64,10 @@ func WithWorkspaces(w delivery.Workspaces) VariableServiceOption {
 	return func(o *options) { o.workspaces = w }
 }
 
-// WithSecretStores looks up the Secret Stores secret values are kept in.
-func WithSecretStores(s delivery.SecretStores) VariableServiceOption {
-	return func(o *options) { o.stores = s }
+// WithVariableScopes checks what a value is scoped to, and the Secret Store
+// it is kept in, under those records' locks.
+func WithVariableScopes(c delivery.VariableScopeChecker) VariableServiceOption {
+	return func(o *options) { o.scopes = c }
 }
 
 // WithLocker makes changes to one Project's variables, and its
@@ -121,10 +106,9 @@ func NewVariableService(opts ...VariableServiceOption) (delivery.VariableService
 	}{
 		{"VariableRepo", o.variables != nil},
 		{"ApplicationLookup", o.applications != nil},
-		{"EnvironmentLookup", o.environments != nil},
 		{"TargetLookup", o.targets != nil},
+		{"VariableScopes", o.scopes != nil},
 		{"Workspaces", o.workspaces != nil},
-		{"SecretStores", o.stores != nil},
 		{"Locker", o.locker != nil},
 		{"Authorizer", o.authz != nil},
 	}
@@ -136,14 +120,10 @@ func NewVariableService(opts ...VariableServiceOption) (delivery.VariableService
 	if err := o.writer.Check(); err != nil {
 		return nil, fmt.Errorf("variable service: %w", err)
 	}
-	scopes, err := delivery.NewVariableScopeChecks(o.targets, o.environments, o.applications, o.stores)
-	if err != nil {
-		return nil, fmt.Errorf("variable service: %w", err)
-	}
 	s := &service{
 		variables:    o.variables,
 		applications: o.applications,
-		scopes:       scopes,
+		scopes:       o.scopes,
 		workspaces:   o.workspaces,
 		locker:       o.locker,
 		w:            o.writer,
@@ -157,7 +137,7 @@ func NewVariableService(opts ...VariableServiceOption) (delivery.VariableService
 type service struct {
 	variables    delivery.VariableRepository
 	applications ApplicationLookup
-	scopes       *delivery.VariableScopeChecks
+	scopes       delivery.VariableScopeChecker
 	workspaces   delivery.Workspaces
 	locker       transaction.Locker
 	w            change.Writer
@@ -242,7 +222,7 @@ func (s *service) CreateVariable(ctx context.Context, actor identity.Actor, in d
 		if err != nil {
 			return err
 		}
-		if err := s.scopes.Check(ctx, o.workspaceID, v); err != nil {
+		if err := s.scopes.CheckScope(ctx, o.workspaceID, v, v.Scope()); err != nil {
 			return err
 		}
 		if err := s.checkProject(ctx, o.projectID, v); err != nil {

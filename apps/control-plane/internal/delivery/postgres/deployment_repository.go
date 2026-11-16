@@ -32,6 +32,7 @@ type deploymentEntity struct {
 	PolicyDecisionID     *string    `gorm:"column:policy_decision_id"`
 	VariableSnapshotID   *string    `gorm:"column:variable_snapshot_id"`
 	SecretVersions       []byte     `gorm:"column:secret_versions;type:jsonb"`
+	SecretPaths          []byte     `gorm:"column:secret_paths;type:jsonb"`
 	RestoresDeploymentID *string    `gorm:"column:restores_deployment_id"`
 	SecretsLatest        bool       `gorm:"column:secrets_latest"`
 	Findings             []byte     `gorm:"column:findings;type:jsonb"`
@@ -96,13 +97,20 @@ func deploymentToPersistence(d *delivery.Deployment) (*deploymentEntity, error) 
 	if err != nil {
 		return nil, err
 	}
+	// NULL, not "null", for a Deployment whose paths were never fixed.
+	var secretPaths []byte
+	if s.SecretPaths != nil {
+		if secretPaths, err = json.Marshal(s.SecretPaths); err != nil {
+			return nil, err
+		}
+	}
 	return &deploymentEntity{
 		ID: s.ID, OrganizationID: s.OrganizationID, ApplicationID: s.ApplicationID, ReleaseID: s.ReleaseID,
 		EnvironmentID: s.EnvironmentID, TargetID: s.TargetID, Source: string(s.Source), Reason: string(s.Reason),
 		Status: string(s.Status), PreviousDeploymentID: s.PreviousDeploymentID,
 		InitiatedBy: s.InitiatedByPrincipalID, SessionID: s.SessionID, WorkItemID: s.WorkItemID,
 		ExternalRef: s.ExternalRef, PolicyDecisionID: s.PolicyDecisionID, VariableSnapshotID: s.VariableSnapshotID, SecretVersions: secretVersions,
-		RestoresDeploymentID: s.RestoresDeploymentID, SecretsLatest: s.SecretsLatest, Findings: findings,
+		SecretPaths: secretPaths, RestoresDeploymentID: s.RestoresDeploymentID, SecretsLatest: s.SecretsLatest, Findings: findings,
 		RequestedAt: s.RequestedAt, StartedAt: s.StartedAt, FinishedAt: s.FinishedAt, SucceededAt: s.SucceededAt,
 		StatusChangedAt: s.StatusChangedAt, CreatedAt: s.CreatedAt, UpdatedAt: s.UpdatedAt,
 	}, nil
@@ -121,13 +129,19 @@ func deploymentToDomain(e *deploymentEntity) (*delivery.Deployment, error) {
 			return nil, err
 		}
 	}
+	var secretPaths map[string]string
+	if len(e.SecretPaths) > 0 {
+		if err := json.Unmarshal(e.SecretPaths, &secretPaths); err != nil {
+			return nil, err
+		}
+	}
 	return delivery.NewDeployment(delivery.NewDeploymentProps{
 		OrganizationID: e.OrganizationID, ApplicationID: e.ApplicationID, ReleaseID: e.ReleaseID,
 		EnvironmentID: e.EnvironmentID, TargetID: e.TargetID, Source: delivery.DeploymentSource(e.Source),
 		Reason: delivery.DeploymentReason(e.Reason), Status: release.DeploymentStatus(e.Status),
 		PreviousDeploymentID: e.PreviousDeploymentID, InitiatedByPrincipalID: e.InitiatedBy,
 		SessionID: e.SessionID, WorkItemID: e.WorkItemID, ExternalRef: e.ExternalRef,
-		PolicyDecisionID: e.PolicyDecisionID, VariableSnapshotID: e.VariableSnapshotID, SecretVersions: secretVersions,
+		PolicyDecisionID: e.PolicyDecisionID, VariableSnapshotID: e.VariableSnapshotID, SecretVersions: secretVersions, SecretPaths: secretPaths,
 		RestoresDeploymentID: e.RestoresDeploymentID, SecretsLatest: e.SecretsLatest, Findings: findings, RequestedAt: utc(e.RequestedAt),
 		StartedAt: utcPtr(e.StartedAt), FinishedAt: utcPtr(e.FinishedAt), SucceededAt: utcPtr(e.SucceededAt),
 		StatusChangedAt: utc(e.StatusChangedAt), CreatedAt: utc(e.CreatedAt), UpdatedAt: utc(e.UpdatedAt),

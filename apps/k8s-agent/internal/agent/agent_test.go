@@ -27,6 +27,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/auth"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/deploy"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/report"
+	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/secrets"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/state"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/targets"
 )
@@ -445,22 +446,42 @@ func TestWork_SkipsAHeartbeatItCannotFillIn(t *testing.T) {
 	assert.False(t, sent, "a heartbeat without the Kubernetes version would be refused, so none is sent")
 }
 
-// fakeDeployer applies by returning err, or by blocking until ctx ends.
+// fakeDeployer applies by returning applied and err, or by blocking until ctx
+// ends. committed, when set, is what an earlier attempt applied.
 type fakeDeployer struct {
-	err   error
-	block bool
+	err       error
+	block     bool
+	applied   deploy.Applied
+	committed *deploy.Applied
+	applies   int
 }
 
 func (f *fakeDeployer) Name() string { return "helm" }
 
+func (f *fakeDeployer) Committed(context.Context, deploy.Assignment) (deploy.Applied, bool, error) {
+	if f.committed != nil {
+		return *f.committed, true, nil
+	}
+	return deploy.Applied{}, false, nil
+}
+
 func (f *fakeDeployer) Apply(ctx context.Context, _ deploy.Assignment, progress deploy.Progress) (deploy.Applied, error) {
+	f.applies++
 	progress(deploy.StepFetching, "pulling")
 	if f.block {
 		<-ctx.Done()
 		return deploy.Applied{}, ctx.Err()
 	}
-	return deploy.Applied{Ref: map[string]any{"type": "helm"}}, f.err
+	return f.applied, f.err
 }
+
+// fakeSecretWriter writes nothing.
+type fakeSecretWriter struct{}
+
+func (fakeSecretWriter) Write(context.Context, string, string, string, []secrets.Resolved) (string, error) {
+	return "", nil
+}
+func (fakeSecretWriter) Prune(context.Context, string, string, string) error { return nil }
 
 func applyingAssignment(id string) apiclient.DeploymentAssignment {
 	return apiclient.DeploymentAssignment{
@@ -495,6 +516,78 @@ func TestExecutor(t *testing.T) {
 			if len(tt.want) == 2 && tt.want[1] == "dep_1:failed" {
 				assert.Equal(t, map[string]any{"reason": "no chart"}, cp.reports[1].Detail)
 			}
+		})
+	}
+}
+
+// secretAssignment is an applying Deployment that resolves one secret.
+func secretAssignment(id string) apiclient.DeploymentAssignment {
+	a := applyingAssignment(id)
+	a.Apply.Secrets = []apiclient.AssignmentSecret{{
+		Name: "DB_PASSWORD", DeliverAs: apiclient.AssignmentSecretDeliverAsValue,
+		Store: apiclient.StoreSettings{Id: "sst_1", Kind: apiclient.StoreSettingsKindKubernetes},
+		Ref:   apiclient.SecretRef{Path: "db"},
+	}}
+	return a
+}
+
+// failingResolver is a store that cannot be reached.
+type failingResolver struct{ calls *int }
+
+func (r failingResolver) Resolve(context.Context, string, []apiclient.AssignmentSecret) ([]secrets.Resolved, error) {
+	*r.calls++
+	return nil, deploy.Failf("the store is unreachable")
+}
+func (failingResolver) Release([]secrets.Resolved) {}
+
+// A retry that finds its Deployment already applied reports what the apply
+// that committed kept, without reading a secret: a secret that rotated or a
+// store that is down since cannot fail a Deployment Helm applied. Without
+// pins it fails the Deployment, rather than record versions the chart may
+// not hold.
+func TestExecutor_ARetryOfAnAppliedDeploymentReportsWhatCommitted(t *testing.T) {
+	kept := deploy.SecretPin{Name: "DB_PASSWORD", Path: "db", Version: "40", Fingerprint: "hmac-sha256:v1:kept", DeliveredAs: "secret"}
+	tests := []struct {
+		name      string
+		committed deploy.Applied
+		want      []string
+		pins      []deploy.SecretPin
+	}{
+		{
+			name:      "the pins the revision kept",
+			committed: deploy.Applied{Skipped: true, SecretPins: []deploy.SecretPin{kept}, SecretsInValues: []string{"DB_PASSWORD"}},
+			want:      []string{"dep_1:applied"},
+			pins:      []deploy.SecretPin{kept},
+		},
+		{
+			name:      "no pins kept fails rather than guess",
+			committed: deploy.Applied{Skipped: true},
+			want:      []string{"dep_1:failed"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cp := &fakeControlPlane{assignments: []apiclient.DeploymentAssignment{secretAssignment("dep_1")}}
+			log := slog.New(slog.DiscardHandler)
+			deployer := &fakeDeployer{committed: &tt.committed}
+			exec := newExecutor(cp, map[string]deploy.Deployer{"helm": deployer}, report.New(cp, log), log, 1)
+			var resolves int
+			exec.withSecrets(failingResolver{calls: &resolves}, fakeSecretWriter{}, secrets.NewMasker())
+
+			_, err := exec.poll(t.Context(), "prod-eu")
+			require.NoError(t, err)
+			exec.wait()
+
+			assert.Equal(t, tt.want, cp.reportIDs())
+			assert.Zero(t, resolves, "no secret is read for a deployment already applied")
+			assert.Zero(t, deployer.applies)
+			last := cp.reports[len(cp.reports)-1].Detail.(map[string]any)
+			if tt.pins != nil {
+				assert.Equal(t, tt.pins, last["secrets"], "the versions the applied revision read")
+				assert.Equal(t, []string{"DB_PASSWORD"}, last["secrets_in_values"], "and how they reached the chart")
+				return
+			}
+			assert.Contains(t, last["reason"], "without keeping the versions of its secrets")
 		})
 	}
 }

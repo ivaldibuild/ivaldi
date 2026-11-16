@@ -3,6 +3,7 @@ package delivery
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"time"
 
@@ -53,6 +54,7 @@ type Deployment struct {
 	policyDecisionID     *string
 	variableSnapshotID   *string
 	secretVersions       []SecretVersion
+	secretPaths          map[string]string
 	restoresDeploymentID *string
 	secretsLatest        bool
 	findings             []string
@@ -90,6 +92,10 @@ type DeploymentSnapshot struct {
 	// SecretVersions are the secrets the agent resolved, by version and
 	// fingerprint: what a rollback to this Deployment replays.
 	SecretVersions []SecretVersion `json:"secret_versions"`
+	// SecretPaths are where the Deployment's secrets are read from, by
+	// variable name, fixed when it is requested. Its secret versions show
+	// what was read, so they are no part of the events' contract.
+	SecretPaths map[string]string `json:"-"`
 	// RestoresDeploymentID is the Deployment a rollback replays: it uses
 	// that Deployment's revision of variables and, unless SecretsLatest,
 	// the secret versions it resolved.
@@ -112,8 +118,10 @@ type SecretVersion struct {
 	// Name is the secret variable's name.
 	Name    string `json:"name"`
 	StoreID string `json:"store_id"`
-	Path    string `json:"path"`
-	Field   string `json:"field"`
+	// Path is the path the agent read, with the bindings the Release's
+	// reference holds filled in for this Deployment.
+	Path  string `json:"path"`
+	Field string `json:"field"`
 	// Version is the store's version the agent read; empty for a store
 	// that has none.
 	Version     string `json:"version"`
@@ -143,6 +151,7 @@ type NewDeploymentProps struct {
 	PolicyDecisionID       *string
 	VariableSnapshotID     *string
 	SecretVersions         []SecretVersion
+	SecretPaths            map[string]string
 	RestoresDeploymentID   *string
 	SecretsLatest          bool
 	Findings               []string
@@ -268,6 +277,7 @@ func NewDeployment(props NewDeploymentProps, deploymentID *string) (*Deployment,
 		policyDecisionID:     optional.OfPtr(props.PolicyDecisionID),
 		variableSnapshotID:   optional.OfPtr(props.VariableSnapshotID),
 		secretVersions:       slices.Clone(props.SecretVersions),
+		secretPaths:          maps.Clone(props.SecretPaths),
 		restoresDeploymentID: optional.OfPtr(props.RestoresDeploymentID),
 		secretsLatest:        props.SecretsLatest,
 		findings:             findings,
@@ -331,6 +341,26 @@ func (d *Deployment) SecretVersions() []SecretVersion {
 	return slices.Clone(d.secretVersions)
 }
 
+// SecretPaths returns where the Deployment's secrets are read from, by
+// variable name, as fixed when it was requested; nil for one requested before
+// they were fixed.
+func (d *Deployment) SecretPaths() map[string]string { return maps.Clone(d.secretPaths) }
+
+// ReadSecretsFrom fixes where the Deployment's secrets are read from, with
+// their bindings filled in, once, when it is requested: what it reads cannot
+// change if a slug a path binds is renamed before the agent reports. It is
+// part of the request, so it records no event of its own.
+func (d *Deployment) ReadSecretsFrom(paths map[string]string) error {
+	if d.secretPaths != nil {
+		return NewErrInvalidInput("where a deployment's secrets are read from is fixed when it is requested")
+	}
+	if paths == nil {
+		paths = map[string]string{}
+	}
+	d.secretPaths = maps.Clone(paths)
+	return nil
+}
+
 // RecordSecretVersions records which version of each secret the agent
 // resolved, and its fingerprint, before it applied anything. It is usage
 // the agent reports, so it records no event of its own.
@@ -364,6 +394,7 @@ func (d *Deployment) Snapshot() DeploymentSnapshot {
 		InitiatedByPrincipalID: copyString(d.initiatedBy), SessionID: copyString(d.sessionID),
 		WorkItemID: copyString(d.workItemID), ExternalRef: append(json.RawMessage(nil), d.externalRef...),
 		PolicyDecisionID: copyString(d.policyDecisionID), VariableSnapshotID: copyString(d.variableSnapshotID), SecretVersions: d.SecretVersions(),
+		SecretPaths:          d.SecretPaths(),
 		RestoresDeploymentID: copyString(d.restoresDeploymentID), SecretsLatest: d.secretsLatest,
 		Findings:    copyStrings(d.findings),
 		RequestedAt: d.requestedAt, StartedAt: clock.CopyTime(d.startedAt), FinishedAt: clock.CopyTime(d.finishedAt),

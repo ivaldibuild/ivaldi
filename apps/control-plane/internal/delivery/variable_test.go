@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
+	"github.com/ivaldibuild/ivaldi/pkg/binding"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
 )
 
@@ -204,6 +205,44 @@ func TestBindingNames(t *testing.T) {
 
 	_, err = BindingNames("#{}")
 	require.ErrorIs(t, err, ErrInvalid)
+}
+
+// A secret's path is filled in with the Deployment's own values, as the agent
+// would, and a rollback reads again the path the Deployment it restores read.
+func TestSecretPaths(t *testing.T) {
+	secret := func(name, path string) ResolvedVariable {
+		return ResolvedVariable{Name: name, Kind: VariableKindSecret, Winner: &ResolvedValue{Secret: &SecretReference{StoreID: "sst_1", Path: path}}}
+	}
+	text := func(name, value string) ResolvedVariable {
+		return ResolvedVariable{Name: name, Kind: VariableKindText, Winner: &ResolvedValue{Value: value}}
+	}
+	resolved := []ResolvedVariable{
+		text("Prefix", "a##{b}"),
+		text("Region", "#{Ivaldi.Target.Slug}-1"),
+		secret("Db.Password", "payments/#{Ivaldi.Environment.Slug}/#{Region}/db"),
+		secret("Api.Key", "#{Prefix}/api"),
+		secret("Plain", "payments/plain"),
+		secret("Legacy", "payments/#{Ivaldi.Environment.Slug}/legacy"),
+	}
+	system := binding.System{EnvironmentSlug: "production", TargetSlug: "eu"}
+
+	paths, err := SecretPaths(resolved, system, nil)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{
+		"Db.Password": "payments/production/eu-1/db",
+		"Api.Key":     "a#{b}/api",
+		"Plain":       "payments/plain",
+		"Legacy":      "payments/production/legacy",
+	}, paths, "a text variable may hold a literal #{, which is part of the path")
+
+	renamed := binding.System{EnvironmentSlug: "prod", TargetSlug: "eu"}
+	paths, err = SecretPaths(resolved, renamed, []SecretVersion{
+		{Name: "Db.Password", Path: "payments/production/eu-1/db"},
+		{Name: "Legacy", Path: "payments/#{Ivaldi.Environment.Slug}/legacy"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "payments/production/eu-1/db", paths["Db.Password"], "a rollback reads the path that was read")
+	assert.Equal(t, "payments/prod/legacy", paths["Legacy"], "a pin that kept the template is filled in again")
 }
 
 func TestCheckDeployable(t *testing.T) {

@@ -4,22 +4,13 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/ivaldibuild/ivaldi/pkg/binding"
 )
 
 // SystemVariableNames are the variables the runtime agent defines for every
 // Deployment, which a value may bind but no variable may redefine.
-var SystemVariableNames = []string{
-	"Ivaldi.Application.Id",
-	"Ivaldi.Cluster.Slug",
-	"Ivaldi.Deployment.Id",
-	"Ivaldi.Environment.Id",
-	"Ivaldi.Environment.Slug",
-	"Ivaldi.Release.Id",
-	"Ivaldi.Release.Version",
-	"Ivaldi.Target.Id",
-	"Ivaldi.Target.Namespace",
-	"Ivaldi.Target.Slug",
-}
+var SystemVariableNames = binding.SystemNames
 
 // DeploymentScope is what a Deployment's variables are resolved for: its
 // Target, the Target's Environment, and its Release's Channel.
@@ -356,4 +347,60 @@ func ChangedWinners(before, after []SnapshotVariable, scope DeploymentScope) []s
 func sameWinner(a, b ResolvedVariable) bool {
 	return a.Kind == b.Kind && equalPtr(a.ValuesPath, b.ValuesPath) && equalPtr(a.DeliverAs, b.DeliverAs) &&
 		a.Winner.Value == b.Winner.Value && equalPtr(a.Winner.Secret, b.Winner.Secret)
+}
+
+// DeploymentSystem is what the system variables stand for in d: the values
+// the agent fills them in with, from the same records.
+func DeploymentSystem(d *Deployment, rel *Release, target *Target, env *Environment, clusterSlug string) binding.System {
+	return binding.System{
+		ApplicationID:   d.ApplicationID(),
+		ClusterSlug:     clusterSlug,
+		DeploymentID:    d.ID(),
+		EnvironmentID:   env.ID(),
+		EnvironmentSlug: env.Slug(),
+		ReleaseID:       rel.ID(),
+		ReleaseVersion:  rel.Version(),
+		TargetID:        target.ID(),
+		TargetNamespace: target.Locator()[LocatorNamespace],
+		TargetSlug:      target.Slug(),
+	}
+}
+
+// SecretPaths returns, by variable name, the path each secret a Deployment
+// gets is read from: its reference's path with the bindings filled in from
+// system and the Deployment's text variables. A rollback reads what the
+// Deployment it restores read, given in restored, so a slug renamed since, or
+// a binding of the Deployment's own ID, cannot point it elsewhere. A pin that
+// recorded the reference's path unchanged, as Deployments did before paths
+// were filled in here, is filled in again.
+func SecretPaths(resolved []ResolvedVariable, system binding.System, restored []SecretVersion) (map[string]string, error) {
+	var vars []binding.Variable
+	for _, v := range AssignmentVariables(resolved) {
+		vars = append(vars, binding.Variable{Name: v.Name, Value: v.Value})
+	}
+	bound, err := binding.Resolve(system.Map(), vars)
+	if err != nil {
+		return nil, err
+	}
+	read := map[string]string{}
+	for _, pin := range restored {
+		read[pin.Name] = pin.Path
+	}
+	out := map[string]string{}
+	for _, r := range resolved {
+		if r.Winner == nil || r.Winner.Secret == nil {
+			continue
+		}
+		template := r.Winner.Secret.Path
+		if path, ok := read[r.Name]; ok && path != "" && path != template {
+			out[r.Name] = path
+			continue
+		}
+		path, err := binding.Substitute(template, binding.Lookup(bound))
+		if err != nil {
+			return nil, fmt.Errorf("secret %s: %w", r.Name, err)
+		}
+		out[r.Name] = path
+	}
+	return out, nil
 }

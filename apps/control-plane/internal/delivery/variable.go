@@ -1,6 +1,7 @@
 package delivery
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
+	"github.com/ivaldibuild/ivaldi/pkg/binding"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
 	"github.com/ivaldibuild/ivaldi/pkg/optional"
@@ -429,29 +431,16 @@ func (s VariableScope) tiesWith(o VariableScope) (string, bool) {
 // of first use. ##{ writes a literal #{. It follows the agent's syntax,
 // which fills the bindings in when a Release is deployed.
 func BindingNames(text string) ([]string, error) {
-	var names []string
-	for s := text; ; {
-		i := strings.Index(s, "#{")
-		if i < 0 {
-			return names, nil
-		}
-		if i > 0 && s[i-1] == '#' {
-			s = s[i+2:]
-			continue
-		}
-		end := strings.IndexByte(s[i:], '}')
-		if end < 0 {
-			return nil, NewErrInvalidInput("the value has an unclosed #{")
-		}
-		name := strings.TrimSpace(s[i+2 : i+end])
-		if name == "" {
-			return nil, NewErrInvalidInput("the value has an empty #{}")
-		}
-		if !slices.Contains(names, name) {
-			names = append(names, name)
-		}
-		s = s[i+end+1:]
+	names, err := binding.Names(text)
+	switch {
+	case errors.Is(err, binding.ErrUnclosed):
+		return nil, NewErrInvalidInput("the value has an unclosed #{")
+	case errors.Is(err, binding.ErrEmpty):
+		return nil, NewErrInvalidInput("the value has an empty #{}")
+	case err != nil:
+		return nil, NewErrInvalidInput(err.Error())
 	}
+	return names, nil
 }
 
 func (Variable) Prefix() string      { return "var" }

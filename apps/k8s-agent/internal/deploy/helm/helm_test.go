@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -88,24 +89,32 @@ type fixture struct {
 	store    *storage.Storage
 	loads    int
 	steps    []deploy.Step
-	// kube, when set, is the Kubernetes client Helm writes through.
-	kube kube.Interface
+	// kube is the Kubernetes client Helm writes through, and where the
+	// revisions' Secrets are.
+	kube *k8sfake.Clientset
+	// applyClient, when set, is the client Helm applies through.
+	applyClient kube.Interface
 }
 
 func (f *fixture) kubeClient() kube.Interface {
-	if f.kube != nil {
-		return f.kube
+	if f.applyClient != nil {
+		return f.applyClient
 	}
 	return &kubefake.PrintingKubeClient{Out: io.Discard}
 }
 
+// namespace is where the fixture's assignments run.
+const namespace = "payments-prod"
+
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	f := &fixture{store: storage.Init(driver.NewMemory())}
+	f := &fixture{kube: k8sfake.NewSimpleClientset()}
+	f.store = storage.Init(driver.NewSecrets(f.kube.CoreV1().Secrets(namespace)))
 	f.deployer = &deployer{
-		cfg: Config{Timeout: 10 * time.Minute, RESTConfig: &rest.Config{}},
+		cfg: Config{Timeout: 10 * time.Minute, RESTConfig: &rest.Config{}, Kube: f.kube, Logger: slog.New(slog.DiscardHandler)},
 		now: time.Now,
-		configure: func(string, *rest.Config) (*action.Configuration, error) {
+		configure: func(namespace string, _ *rest.Config) (*action.Configuration, error) {
+			f.store = storage.Init(driver.NewSecrets(f.kube.CoreV1().Secrets(namespace)))
 			return &action.Configuration{
 				Releases:     f.store,
 				KubeClient:   f.kubeClient(),
@@ -165,6 +174,72 @@ func TestApply_InstallsUpgradesAndSkipsAnAppliedDeployment(t *testing.T) {
 	assert.Equal(t, "2", applied.Ref["revision"])
 }
 
+// A retry asks whether its Deployment is already applied before it reads a
+// secret, and reports what the apply that committed kept: the versions it
+// read, and which went into Helm's values.
+func TestCommitted_ReportsWhatTheAppliedRevisionKept(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	first := assignment("dep_1")
+	first.SecretPins = []deploy.SecretPin{{
+		Name: "Database.Password", Path: "payments/production/db", Version: "41",
+		Fingerprint: "hmac-sha256:v1:first", DeliveredAs: "secret",
+	}}
+
+	_, done, err := f.deployer.Committed(ctx, first)
+	require.NoError(t, err)
+	assert.False(t, done, "nothing is applied yet")
+
+	applied, err := f.deployer.Apply(ctx, first, f.progress)
+	require.NoError(t, err)
+	require.False(t, applied.Skipped)
+	assert.Equal(t, "1", applied.Ref["revision"])
+	revision, err := f.kube.CoreV1().Secrets(namespace).Get(ctx, revisionSecret("payments", 1), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Contains(t, revision.Annotations[pinsAnnotation], "hmac-sha256:v1:first")
+
+	// The agent stopped before reporting; the retry reads no secret.
+	committed, done, err := f.deployer.Committed(ctx, assignment("dep_1"))
+	require.NoError(t, err)
+	require.True(t, done)
+	assert.True(t, committed.Skipped)
+	assert.Equal(t, first.SecretPins, committed.SecretPins, "the pins of the apply that committed")
+	assert.Equal(t, "1", committed.Ref["revision"])
+
+	_, done, err = f.deployer.Committed(ctx, assignment("dep_2"))
+	require.NoError(t, err)
+	assert.False(t, done, "another Deployment's revision")
+
+	// A revision an earlier agent applied kept none, and the retry says so.
+	_, err = f.deployer.Apply(ctx, assignment("dep_3"), f.progress)
+	require.NoError(t, err)
+	without, done, err := f.deployer.Committed(ctx, assignment("dep_3"))
+	require.NoError(t, err)
+	require.True(t, done)
+	assert.Nil(t, without.SecretPins)
+}
+
+// A secret an overlay bound went into Helm's values, and a retry reports it
+// so, not as the variable's own delivery says.
+func TestCommitted_KeepsTheSecretsThatWentIntoTheValues(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	a := assignment("dep_1")
+	_, err := f.deployer.Apply(ctx, a, f.progress)
+	require.NoError(t, err)
+	rel, err := latest(f.store, "payments")
+	require.NoError(t, err)
+	pins := []deploy.SecretPin{{Name: "Api.Key", Path: "api", Fingerprint: "hmac-sha256:v1:k", DeliveredAs: "secret"}}
+
+	f.deployer.keep(ctx, a, rel, kept{Secrets: pins, SecretsInValues: []string{"Api.Key"}})
+
+	committed, done, err := f.deployer.Committed(ctx, a)
+	require.NoError(t, err)
+	require.True(t, done)
+	assert.Equal(t, pins, committed.SecretPins)
+	assert.Equal(t, []string{"Api.Key"}, committed.SecretsInValues)
+}
+
 func TestApply_FailsOnAMissingOverlay(t *testing.T) {
 	f := newFixture(t)
 	a := assignment("dep_1")
@@ -222,7 +297,7 @@ func TestPrepare_PendingRevisions(t *testing.T) {
 
 			d := &deployer{cfg: Config{Timeout: timeout}, now: func() time.Time { return now }}
 			var steps []deploy.Step
-			install, err := d.prepare(store, assignment("dep_1"), func(s deploy.Step, _ string) { steps = append(steps, s) })
+			install, _, err := d.prepare(store, assignment("dep_1"), func(s deploy.Step, _ string) { steps = append(steps, s) })
 			if tt.wantFailure != "" {
 				var failure *deploy.Failure
 				require.ErrorAs(t, err, &failure)
@@ -282,7 +357,7 @@ func (b *blockingKube) GetWaiterWithOptions(strategy kube.WaitStrategy, opts ...
 func TestApply_ReturnsOnlyOnceHelmHasStoppedWriting(t *testing.T) {
 	f := newFixture(t)
 	blocking := &blockingKube{PrintingKubeClient: kubefake.PrintingKubeClient{Out: io.Discard}, called: make(chan struct{}), release: make(chan struct{})}
-	f.kube = blocking
+	f.applyClient = blocking
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error)
 	go func() {

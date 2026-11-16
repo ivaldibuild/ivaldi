@@ -112,8 +112,9 @@ func TestResolver(t *testing.T) {
 	assert.Equal(t, "7", resolved[0].Version)
 	assert.Equal(t, "****", masker.Mask("hunter22"), "a resolved value is masked")
 	pin := resolved[0].Pin()
-	assert.NotContains(t, pin, "value")
-	assert.Equal(t, keys.Fingerprint("hunter22"), pin["fingerprint"])
+	assert.Equal(t, "db", pin.Path, "the pin names the path the agent read")
+	assert.Equal(t, keys.Fingerprint("hunter22"), pin.Fingerprint)
+	assert.Equal(t, "secret", pin.DeliveredAs)
 
 	r.Release(resolved)
 	assert.Equal(t, "hunter22", masker.Mask("hunter22"))

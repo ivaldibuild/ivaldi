@@ -103,7 +103,9 @@ func (e *executor) poll(ctx context.Context, clusterSlug string) ([]apiclient.De
 
 // boundPaths returns the assignment's secrets with the bindings in their
 // paths filled in, so one reference can serve every Environment:
-// payments/#{Ivaldi.Environment.Slug}/database.
+// payments/#{Ivaldi.Environment.Slug}/database. The control plane sends each
+// path filled in already and escaped, which this leaves as the path to read;
+// filling in here serves a control plane that sends the template.
 func boundPaths(a deploy.Assignment) ([]apiclient.AssignmentSecret, error) {
 	paths := make([]string, len(a.SecretRefs))
 	for i, s := range a.SecretRefs {
@@ -121,7 +123,7 @@ func boundPaths(a deploy.Assignment) ([]apiclient.AssignmentSecret, error) {
 }
 
 // resolveSecrets resolves the assignment's secrets and writes those
-// delivered as a Secret, filling a's Secrets and SecretName.
+// delivered as a Secret, filling a's Secrets, SecretName, and SecretPins.
 func (e *executor) resolveSecrets(ctx context.Context, a *deploy.Assignment, progress deploy.Progress) ([]secrets.Resolved, error) {
 	if len(a.SecretRefs) == 0 {
 		return nil, nil
@@ -140,9 +142,30 @@ func (e *executor) resolveSecrets(ctx context.Context, a *deploy.Assignment, pro
 	}
 	for _, r := range resolved {
 		a.Secrets = append(a.Secrets, values.Secret{Name: r.Name, Value: r.Value, ValuesPath: r.ValuesPath, AsValue: r.AsValue})
+		a.SecretPins = append(a.SecretPins, r.Pin())
 	}
 	a.SecretName, err = e.writer.Write(ctx, a.Namespace, a.ApplicationID, a.DeploymentID, resolved)
 	return resolved, err
+}
+
+// run applies a with its deployer. It first asks whether an earlier attempt
+// already applied it, and only otherwise resolves and writes its secrets, so
+// a retry neither depends on a store nor trips over a secret that rotated
+// since that apply committed. The secrets it resolves are left in resolved
+// for the caller to release.
+func (e *executor) run(ctx context.Context, a *deploy.Assignment, progress deploy.Progress, resolved *[]secrets.Resolved) (deploy.Applied, error) {
+	deployer, ok := e.deployers[a.Deployer]
+	if !ok {
+		return deploy.Applied{}, deploy.Failf("this agent has no %q deployer", a.Deployer)
+	}
+	applied, done, err := deployer.Committed(ctx, *a)
+	if err != nil || done {
+		return applied, err
+	}
+	if *resolved, err = e.resolveSecrets(ctx, a, progress); err != nil {
+		return deploy.Applied{}, err
+	}
+	return deployer.Apply(ctx, *a, progress)
 }
 
 // wait waits for the applies in flight to finish their reports.
@@ -164,23 +187,22 @@ func (e *executor) apply(ctx context.Context, a deploy.Assignment) {
 		})
 	}
 
-	var applied deploy.Applied
-	resolved, err := e.resolveSecrets(applyCtx, &a, progress)
+	var resolved []secrets.Resolved
 	defer func() {
 		if e.secrets != nil {
 			e.secrets.Release(resolved)
 		}
 	}()
-	if err == nil {
-		deployer, ok := e.deployers[a.Deployer]
-		err = deploy.Failf("this agent has no %q deployer", a.Deployer)
-		if ok {
-			applied, err = deployer.Apply(applyCtx, a, progress)
-		}
-	}
+	applied, err := e.run(applyCtx, &a, progress, &resolved)
 	if ctx.Err() != nil {
 		log.Info("stopped mid-apply; the deployment stays applying")
 		return
+	}
+	// An earlier attempt applied this Deployment and kept no pins, so what
+	// the chart holds may not be what this attempt would resolve. Recording
+	// fresh versions would be a guess; saying so is not.
+	if err == nil && applied.Skipped && len(a.SecretRefs) > 0 && applied.SecretPins == nil {
+		err = deploy.Failf("an earlier attempt applied this deployment without keeping the versions of its secrets; request the deployment again")
 	}
 
 	final, done := context.WithTimeout(context.WithoutCancel(ctx), finalReportTimeout)
@@ -205,12 +227,13 @@ func (e *executor) apply(ctx context.Context, a deploy.Assignment) {
 	if a.IsRollback() {
 		detail["restores"] = a.Restores
 	}
-	if len(resolved) > 0 {
-		// The pins a rollback replays, never the values.
-		pins := make([]any, 0, len(resolved))
-		for _, r := range resolved {
-			pins = append(pins, r.Pin())
-		}
+	// The pins a rollback replays, never the values: the ones the apply that
+	// committed kept when this attempt found it already applied.
+	pins := a.SecretPins
+	if applied.Skipped {
+		pins = applied.SecretPins
+	}
+	if len(pins) > 0 {
 		detail["secrets"] = pins
 	}
 	if len(applied.SecretsInValues) > 0 {

@@ -268,4 +268,19 @@ func TestReleaseRepositoryFindsAReleaseByItsImages(t *testing.T) {
 	assert.ErrorIs(t, err, delivery.ErrNotFound)
 	_, err = releases.GetReleaseWithImages(f.ctx, orgB, app.ID(), []string{apiV1.ID(), workerV1.ID()})
 	assert.ErrorIs(t, err, delivery.ErrNotFound, "another organization sees nothing")
+
+	// A migrate job built from the api's repository runs the api's Build, so
+	// the Release holds that Build twice: it runs one image, not two.
+	migrate := must(delivery.NewArtifact(delivery.NewArtifactProps{
+		OrganizationID: orgA, ApplicationID: app.ID(), Name: "migrate",
+		ArtifactKind: delivery.ArtifactContainerImage, ArtifactName: api.ArtifactName(),
+	}, nil))
+	require.NoError(t, f.apps.CreateArtifact(f.ctx, migrate))
+	at(t, 3*time.Minute)
+	shared := newRelease("1.1.0", delivery.ReleaseCreated, api, apiV1, migrate, apiV1)
+	got, err = find(apiV1.ID())
+	require.NoError(t, err)
+	assert.Equal(t, shared.ID(), got.ID(), "a Build held twice is one image")
+	_, err = find(apiV1.ID(), build(api, "6").ID())
+	assert.ErrorIs(t, err, delivery.ErrNotFound, "a Build the Release does not hold is not matched by one it holds twice")
 }

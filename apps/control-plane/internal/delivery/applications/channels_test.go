@@ -144,6 +144,7 @@ func TestChannelRules(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "Fixes", *got.Description())
 		assert.Equal(t, delivery.EventChannelUpdated, s.lastAudit().Type)
+		assert.Zero(t, s.lockedApplications, "only an archive needs the application's row")
 
 		_, err = s.svc.UpdateChannel(ctx, ada, org, c.ID(), delivery.UpdateChannelProps{Slug: ptr(delivery.DefaultChannelSlug)})
 		require.ErrorIs(t, err, delivery.ErrSlugTaken)
@@ -263,6 +264,7 @@ func TestSetDefaultChannel(t *testing.T) {
 		_, err := s.svc.ArchiveChannel(ctx, ada, org, s.defaultCh.ID())
 		require.ErrorIs(t, err, delivery.ErrInUse)
 		assert.Equal(t, before, s.state)
+		assert.Positive(t, s.lockedApplications, "the count runs under the application's row, as a save takes it")
 	})
 
 	t.Run("the old default can now be archived", func(t *testing.T) {

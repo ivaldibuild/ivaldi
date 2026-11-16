@@ -80,11 +80,24 @@ func (s *service) ListChannels(ctx context.Context, _ identity.Actor, organizati
 	return s.applications.ListChannels(ctx, organizationID, applicationID, includeArchived)
 }
 
-func (s *service) changeChannel(ctx context.Context, actor identity.Actor, organizationID, channelID, event string, apply func(context.Context, *delivery.Channel) error) (*delivery.Channel, error) {
+// changeChannel applies a change to a Channel of an active Application.
+// lockApplication loads it with the Application's row locked, for a change
+// that must not interleave with a variable's save: archiving a Channel counts
+// the values scoped to it, and a save of one holds that row first. Other
+// changes leave the row alone, so they do not wait on each other or on saves.
+func (s *service) changeChannel(ctx context.Context, actor identity.Actor, organizationID, channelID, event string, lockApplication bool, apply func(context.Context, *delivery.Channel) error) (*delivery.Channel, error) {
 	return change.Run(ctx, s.w, actor, change.Spec[*delivery.Channel]{
 		AggregateType: delivery.AggregateChannel,
 		AggregateID:   func(c *delivery.Channel) string { return c.ID() },
 		Load: func(ctx context.Context) (*delivery.Channel, error) {
+			found, err := s.applications.GetChannel(ctx, organizationID, channelID)
+			if err != nil || !lockApplication {
+				return found, err
+			}
+			if _, err := s.applications.GetApplicationForUpdate(ctx, organizationID, found.ApplicationID()); err != nil {
+				return nil, err
+			}
+			// Read again under the lock, so the count sees what is stored.
 			return s.applications.GetChannel(ctx, organizationID, channelID)
 		},
 		// An archived Application's Channels change only once it is restored.
@@ -104,14 +117,14 @@ func (s *service) changeChannel(ctx context.Context, actor identity.Actor, organ
 
 // UpdateChannel changes an active Channel's slug, name, or description.
 func (s *service) UpdateChannel(ctx context.Context, actor identity.Actor, organizationID, channelID string, props delivery.UpdateChannelProps) (*delivery.Channel, error) {
-	return s.changeChannel(ctx, actor, organizationID, channelID, delivery.EventChannelUpdated,
+	return s.changeChannel(ctx, actor, organizationID, channelID, delivery.EventChannelUpdated, false,
 		func(_ context.Context, c *delivery.Channel) error { return c.Update(props) })
 }
 
 // SetChannelLifecycle makes a Channel follow another active Lifecycle in
 // its Application's Workspace.
 func (s *service) SetChannelLifecycle(ctx context.Context, actor identity.Actor, organizationID, channelID, lifecycleID string) (*delivery.Channel, error) {
-	return s.changeChannel(ctx, actor, organizationID, channelID, delivery.EventChannelUpdated,
+	return s.changeChannel(ctx, actor, organizationID, channelID, delivery.EventChannelUpdated, false,
 		func(ctx context.Context, c *delivery.Channel) error {
 			app, err := s.applications.GetApplication(ctx, organizationID, c.ApplicationID())
 			if err != nil {
@@ -126,7 +139,7 @@ func (s *service) SetChannelLifecycle(ctx context.Context, actor identity.Actor,
 
 // AddChannelRule adds a rule to a Channel.
 func (s *service) AddChannelRule(ctx context.Context, actor identity.Actor, organizationID, channelID string, props delivery.ChannelRuleProps) (*delivery.Channel, error) {
-	return s.changeChannel(ctx, actor, organizationID, channelID, delivery.EventChannelUpdated,
+	return s.changeChannel(ctx, actor, organizationID, channelID, delivery.EventChannelUpdated, false,
 		func(ctx context.Context, c *delivery.Channel) error {
 			if _, err := c.AddRule(props); err != nil {
 				return err
@@ -137,7 +150,7 @@ func (s *service) AddChannelRule(ctx context.Context, actor identity.Actor, orga
 
 // UpdateChannelRule replaces one of a Channel's rules.
 func (s *service) UpdateChannelRule(ctx context.Context, actor identity.Actor, organizationID, channelID, ruleID string, props delivery.ChannelRuleProps) (*delivery.Channel, error) {
-	return s.changeChannel(ctx, actor, organizationID, channelID, delivery.EventChannelUpdated,
+	return s.changeChannel(ctx, actor, organizationID, channelID, delivery.EventChannelUpdated, false,
 		func(ctx context.Context, c *delivery.Channel) error {
 			if err := c.UpdateRule(ruleID, props); err != nil {
 				return err
@@ -148,7 +161,7 @@ func (s *service) UpdateChannelRule(ctx context.Context, actor identity.Actor, o
 
 // RemoveChannelRule removes one of a Channel's rules.
 func (s *service) RemoveChannelRule(ctx context.Context, actor identity.Actor, organizationID, channelID, ruleID string) (*delivery.Channel, error) {
-	return s.changeChannel(ctx, actor, organizationID, channelID, delivery.EventChannelUpdated,
+	return s.changeChannel(ctx, actor, organizationID, channelID, delivery.EventChannelUpdated, false,
 		func(_ context.Context, c *delivery.Channel) error { return c.RemoveRule(ruleID) })
 }
 
@@ -215,7 +228,7 @@ func (s *service) SetDefaultChannel(ctx context.Context, actor identity.Actor, o
 // and that no variable's value is scoped to.
 // Its Releases keep referring to it. Archiving an archived one does nothing.
 func (s *service) ArchiveChannel(ctx context.Context, actor identity.Actor, organizationID, channelID string) (*delivery.Channel, error) {
-	return s.changeChannel(ctx, actor, organizationID, channelID, delivery.EventChannelArchived,
+	return s.changeChannel(ctx, actor, organizationID, channelID, delivery.EventChannelArchived, true,
 		func(ctx context.Context, c *delivery.Channel) error {
 			if c.Archived() {
 				return change.ErrUnchanged
@@ -234,7 +247,7 @@ func (s *service) ArchiveChannel(ctx context.Context, actor identity.Actor, orga
 // RestoreChannel restores an archived Channel of an active Application whose
 // Lifecycle, and the artifacts its rules are scoped to, are still active.
 func (s *service) RestoreChannel(ctx context.Context, actor identity.Actor, organizationID, channelID string) (*delivery.Channel, error) {
-	return s.changeChannel(ctx, actor, organizationID, channelID, delivery.EventChannelRestored,
+	return s.changeChannel(ctx, actor, organizationID, channelID, delivery.EventChannelRestored, false,
 		func(ctx context.Context, c *delivery.Channel) error {
 			if !c.Archived() {
 				return change.ErrUnchanged

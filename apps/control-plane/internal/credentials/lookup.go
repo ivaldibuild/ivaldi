@@ -22,11 +22,22 @@ type storeLookup struct {
 }
 
 func (l storeLookup) LookupSecretStores(ctx context.Context, organizationID string, storeIDs []string) (map[string]delivery.SecretStoreRef, error) {
+	return l.lookup(ctx, organizationID, storeIDs, l.stores.GetSecretStores)
+}
+
+// LookupSecretStoresForShare holds the stores against the archive and the
+// update that take them FOR UPDATE, until the transaction ends.
+func (l storeLookup) LookupSecretStoresForShare(ctx context.Context, organizationID string, storeIDs []string) (map[string]delivery.SecretStoreRef, error) {
+	return l.lookup(ctx, organizationID, storeIDs, l.stores.GetSecretStoresForShare)
+}
+
+func (l storeLookup) lookup(ctx context.Context, organizationID string, storeIDs []string,
+	get func(context.Context, string, []string) ([]*SecretStore, error)) (map[string]delivery.SecretStoreRef, error) {
 	out := map[string]delivery.SecretStoreRef{}
 	if len(storeIDs) == 0 {
 		return out, nil
 	}
-	stores, err := l.stores.GetSecretStores(ctx, organizationID, storeIDs)
+	stores, err := get(ctx, organizationID, storeIDs)
 	if err != nil {
 		return nil, err
 	}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/credentials"
 	"github.com/ivaldibuild/ivaldi/pkg/database"
@@ -130,12 +131,31 @@ func (r *secretStoreRepository) GetSecretStore(ctx context.Context, organization
 	return toDomain(&e)
 }
 
+func (r *secretStoreRepository) GetSecretStoreForUpdate(ctx context.Context, organizationID, storeID string) (*credentials.SecretStore, error) {
+	var e secretStoreEntity
+	err := r.conn(ctx).Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate}).
+		Where("organization_id = ? AND id = ?", organizationID, storeID).Take(&e).Error
+	if err != nil {
+		return nil, translate(err)
+	}
+	return toDomain(&e)
+}
+
 func (r *secretStoreRepository) GetSecretStores(ctx context.Context, organizationID string, storeIDs []string) ([]*credentials.SecretStore, error) {
+	return r.stores(r.conn(ctx), organizationID, storeIDs)
+}
+
+func (r *secretStoreRepository) GetSecretStoresForShare(ctx context.Context, organizationID string, storeIDs []string) ([]*credentials.SecretStore, error) {
+	return r.stores(r.conn(ctx).Clauses(clause.Locking{Strength: clause.LockingStrengthShare}), organizationID, storeIDs)
+}
+
+// stores reads the stores among the IDs, in ID order.
+func (r *secretStoreRepository) stores(q *gorm.DB, organizationID string, storeIDs []string) ([]*credentials.SecretStore, error) {
 	if len(storeIDs) == 0 {
 		return []*credentials.SecretStore{}, nil
 	}
 	var entities []secretStoreEntity
-	if err := r.conn(ctx).Where("organization_id = ? AND id IN ?", organizationID, storeIDs).Order("id").Find(&entities).Error; err != nil {
+	if err := q.Where("organization_id = ? AND id IN ?", organizationID, storeIDs).Order("id").Find(&entities).Error; err != nil {
 		return nil, translate(err)
 	}
 	return toDomains(entities)

@@ -276,25 +276,23 @@ jobs:
         run: make migrate_up
       # The path a released image uses: the migrations embedded in the binary,
       # with no source tree and no migrate CLI. It runs from an empty database,
-      # so a capability the embedded list misses fails here.
+      # so a capability the embedded list misses fails here. The check that
+      # the list matches the migrations on disk runs in the same step, while
+      # the database exists: a capability the Makefile migrates but the binary
+      # does not (or the reverse) would strand a table in production.
       - name: Apply every migration with the binary
         run: |
+          url='postgres://ivaldi:ivaldi@localhost:5432/embedded_migrations?sslmode=disable'
           dropdb() { PGPASSWORD=ivaldi psql -h localhost -U ivaldi -d postgres -qc "drop database if exists embedded_migrations with (force)"; }
           PGPASSWORD=ivaldi psql -h localhost -U ivaldi -d postgres -qc "create database embedded_migrations"
           trap 'dropdb' EXIT
-          IVALDI_DATABASE_URL='postgres://ivaldi:ivaldi@localhost:5432/embedded_migrations?sslmode=disable' \
-            go run ./apps/control-plane/cmd migrate up
-          IVALDI_DATABASE_URL='postgres://ivaldi:ivaldi@localhost:5432/embedded_migrations?sslmode=disable' \
-            go run ./apps/control-plane/cmd migrate version
-      # A capability the Makefile migrates but the binary does not (or the
-      # reverse) would strand a table in production.
-      - name: Check the embedded capability list matches the migrations on disk
-        run: |
+          IVALDI_DATABASE_URL="$url" go run ./apps/control-plane/cmd migrate up
+          versions=$(IVALDI_DATABASE_URL="$url" go run ./apps/control-plane/cmd migrate version)
+          echo "$versions"
           on_disk=$(for dir in apps/control-plane/internal/*/migrations; do
             find "$dir" -name '*.up.sql' | grep -q . && basename "$(dirname "$dir")"
           done | sort)
-          embedded=$(IVALDI_DATABASE_URL='postgres://ivaldi:ivaldi@localhost:5432/embedded_migrations?sslmode=disable' \
-            go run ./apps/control-plane/cmd migrate version | awk '{print $1}' | sort)
+          embedded=$(echo "$versions" | awk '{print $1}' | sort)
           if [ "$on_disk" != "$embedded" ]; then
             echo "::error::capabilities with migrations on disk differ from the ones the binary applies"
             diff <(echo "$on_disk") <(echo "$embedded") || true

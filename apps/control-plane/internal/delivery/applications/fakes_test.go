@@ -82,6 +82,17 @@ type store struct {
 	settings map[string]map[string]json.RawMessage
 	// resolved records the scopes settings were resolved for.
 	resolved []workspace.Scope
+	// lockedApplications counts the locking reads of Applications, and
+	// locked names the locks taken, so a test can tell a change holds the
+	// row and the Project it checks.
+	lockedApplications int
+	locked             []string
+	// variables are the Variables a restore checks. scopesChecked names the
+	// ones whose scopes were checked, and scopeErr is what that check
+	// refuses with.
+	variables     []*delivery.Variable
+	scopesChecked []string
+	scopeErr      error
 }
 
 func newStore() *store {
@@ -239,6 +250,7 @@ func (s *store) GetApplicationForUpdate(ctx context.Context, organizationID, id 
 	if err := requireTx(ctx, "GetApplicationForUpdate"); err != nil {
 		return nil, err
 	}
+	s.lockedApplications++
 	return s.GetApplication(ctx, organizationID, id)
 }
 
@@ -616,6 +628,67 @@ func (s *store) GetTarget(_ context.Context, organizationID, id string) (*delive
 	}, &snap.ID)), nil
 }
 
+// Check fakes delivery.VariableScopeChecker, whose own tests cover what it
+// reads and refuses.
+func (s *store) Check(ctx context.Context, _ string, variables ...*delivery.Variable) error {
+	if err := requireTx(ctx, "Check"); err != nil {
+		return err
+	}
+	for _, v := range variables {
+		s.scopesChecked = append(s.scopesChecked, v.Name())
+	}
+	return s.scopeErr
+}
+
+// Variables.
+
+func (s *store) ListVariables(_ context.Context, organizationID string, owner delivery.VariableOwner) ([]*delivery.Variable, error) {
+	var out []*delivery.Variable
+	for _, v := range s.variables {
+		if v.OrganizationID() != organizationID || v.Archived() {
+			continue
+		}
+		if owner.ApplicationID != "" {
+			if id := v.ApplicationID(); id != nil && *id == owner.ApplicationID {
+				out = append(out, v)
+			}
+			continue
+		}
+		if id := v.ProjectID(); id != nil && *id == owner.ProjectID {
+			out = append(out, v)
+		}
+	}
+	return out, nil
+}
+
+func (s *store) ListVariablesInProject(_ context.Context, organizationID, projectID string) ([]*delivery.Variable, map[string][]*delivery.Variable, error) {
+	project := []*delivery.Variable{}
+	applications := map[string][]*delivery.Variable{}
+	for _, v := range s.variables {
+		if v.OrganizationID() != organizationID || v.Archived() {
+			continue
+		}
+		if appID := v.ApplicationID(); appID != nil {
+			app, ok := s.applications[*appID]
+			if !ok || app.ArchivedAt != nil || app.ProjectID != projectID {
+				continue
+			}
+			applications[*appID] = append(applications[*appID], v)
+			continue
+		}
+		if id := v.ProjectID(); id != nil && *id == projectID {
+			project = append(project, v)
+		}
+	}
+	return project, applications, nil
+}
+
+// Lock holds a Project's variables, as the variables service does.
+func (s *store) Lock(_ context.Context, key string) error {
+	s.locked = append(s.locked, key)
+	return nil
+}
+
 func (s *store) GetEnvironment(_ context.Context, organizationID, id string) (*delivery.Environment, error) {
 	snap, ok := s.environments[id]
 	if !ok || snap.OrganizationID != organizationID {
@@ -814,7 +887,8 @@ func newWorld(t *testing.T) *world {
 func (s *store) options(authz authorization.Authorizer) []ApplicationServiceOption {
 	return []ApplicationServiceOption{
 		WithApplicationRepo(s), WithLifecycleLookup(s), WithRegistryLookup(s), WithTargetLookup(s),
-		WithEnvironmentLookup(s), WithVariableUsage(s), WithProjectLookup(s), WithWorkspaces(s), WithSettingResolver(s), WithTeamDirectory(s), WithAuthorizer(authz),
+		WithEnvironmentLookup(s), WithVariableUsage(s), WithVariableSet(s), WithVariableScopes(s),
+		WithProjectLookup(s), WithWorkspaces(s), WithSettingResolver(s), WithTeamDirectory(s), WithLocker(s), WithAuthorizer(authz),
 		WithTransactor(s), WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
 	}
 }

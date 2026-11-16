@@ -10,7 +10,6 @@ package variables
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 
@@ -25,22 +24,16 @@ import (
 )
 
 // ApplicationLookup reads the Application that owns a variable, to find its
-// Project, and the Channels a value is scoped to.
+// Project, and holds it while the variable is saved.
 // delivery.ApplicationRepository provides it.
 type ApplicationLookup interface {
 	GetApplication(ctx context.Context, organizationID, applicationID string) (*delivery.Application, error)
+	GetApplicationForUpdate(ctx context.Context, organizationID, applicationID string) (*delivery.Application, error)
 	GetApplicationByIdentifier(ctx context.Context, organizationID, identifier string) (*delivery.Application, error)
-	GetChannel(ctx context.Context, organizationID, channelID string) (*delivery.Channel, error)
 }
 
-// EnvironmentLookup reads the Environments a value is scoped to.
-// delivery.EnvironmentRepository provides it.
-type EnvironmentLookup interface {
-	GetEnvironments(ctx context.Context, organizationID string, environmentIDs []string) ([]*delivery.Environment, error)
-}
-
-// TargetLookup reads the Targets a value is scoped to.
-// delivery.TargetRepository provides it.
+// TargetLookup reads the Targets a value is scoped to, to authorize a change
+// against their Environments. delivery.TargetRepository provides it.
 type TargetLookup interface {
 	GetTarget(ctx context.Context, organizationID, targetID string) (*delivery.Target, error)
 }
@@ -50,10 +43,9 @@ type VariableServiceOption func(*options)
 type options struct {
 	variables    delivery.VariableRepository
 	applications ApplicationLookup
-	environments EnvironmentLookup
 	targets      TargetLookup
+	scopes       delivery.VariableScopeChecker
 	workspaces   delivery.Workspaces
-	stores       delivery.SecretStores
 	locker       transaction.Locker
 	authz        authorization.Authorizer
 	writer       change.Writer
@@ -65,9 +57,6 @@ func WithVariableRepo(r delivery.VariableRepository) VariableServiceOption {
 func WithApplicationLookup(a ApplicationLookup) VariableServiceOption {
 	return func(o *options) { o.applications = a }
 }
-func WithEnvironmentLookup(e EnvironmentLookup) VariableServiceOption {
-	return func(o *options) { o.environments = e }
-}
 func WithTargetLookup(t TargetLookup) VariableServiceOption {
 	return func(o *options) { o.targets = t }
 }
@@ -75,9 +64,10 @@ func WithWorkspaces(w delivery.Workspaces) VariableServiceOption {
 	return func(o *options) { o.workspaces = w }
 }
 
-// WithSecretStores looks up the Secret Stores secret values are kept in.
-func WithSecretStores(s delivery.SecretStores) VariableServiceOption {
-	return func(o *options) { o.stores = s }
+// WithVariableScopes checks what a value is scoped to, and the Secret Store
+// it is kept in, under those records' locks.
+func WithVariableScopes(c delivery.VariableScopeChecker) VariableServiceOption {
+	return func(o *options) { o.scopes = c }
 }
 
 // WithLocker makes changes to one Project's variables, and its
@@ -116,10 +106,9 @@ func NewVariableService(opts ...VariableServiceOption) (delivery.VariableService
 	}{
 		{"VariableRepo", o.variables != nil},
 		{"ApplicationLookup", o.applications != nil},
-		{"EnvironmentLookup", o.environments != nil},
 		{"TargetLookup", o.targets != nil},
+		{"VariableScopes", o.scopes != nil},
 		{"Workspaces", o.workspaces != nil},
-		{"SecretStores", o.stores != nil},
 		{"Locker", o.locker != nil},
 		{"Authorizer", o.authz != nil},
 	}
@@ -134,10 +123,8 @@ func NewVariableService(opts ...VariableServiceOption) (delivery.VariableService
 	s := &service{
 		variables:    o.variables,
 		applications: o.applications,
-		environments: o.environments,
-		targets:      o.targets,
+		scopes:       o.scopes,
 		workspaces:   o.workspaces,
-		stores:       o.stores,
 		locker:       o.locker,
 		w:            o.writer,
 	}
@@ -150,10 +137,8 @@ func NewVariableService(opts ...VariableServiceOption) (delivery.VariableService
 type service struct {
 	variables    delivery.VariableRepository
 	applications ApplicationLookup
-	environments EnvironmentLookup
-	targets      TargetLookup
+	scopes       delivery.VariableScopeChecker
 	workspaces   delivery.Workspaces
-	stores       delivery.SecretStores
 	locker       transaction.Locker
 	w            change.Writer
 }
@@ -168,20 +153,41 @@ type owner struct {
 }
 
 // activeOwner returns where an owner sits, if its Application and Project
-// are active, and holds the Project's variables for the transaction.
+// are active, and holds the Project's variables and, for an Application's
+// Variable, the Application for the transaction.
 func (s *service) activeOwner(ctx context.Context, v *delivery.Variable) (owner, error) {
-	projectID := v.ProjectID()
-	if applicationID := v.ApplicationID(); applicationID != nil {
-		app, err := s.applications.GetApplication(ctx, v.OrganizationID(), *applicationID)
+	organizationID := v.OrganizationID()
+	applicationID := v.ApplicationID()
+	// An Application is read once to name the Project whose variables are
+	// held first, then locked: the rest of delivery takes the Project's
+	// variables and then the Application, so nothing here may take them the
+	// other way round.
+	if applicationID != nil {
+		app, err := s.applications.GetApplication(ctx, organizationID, *applicationID)
+		if err != nil {
+			return owner{}, err
+		}
+		project, err := delivery.ActiveProject(ctx, s.workspaces, organizationID, app.ProjectID())
+		if err != nil {
+			return owner{}, err
+		}
+		if err := s.locker.Lock(ctx, delivery.VariablesLock(project.ID())); err != nil {
+			return owner{}, err
+		}
+		// Locked so the Application cannot be archived while a Variable of
+		// it is checked and saved, and so its Channels cannot change: a
+		// Channel's own changes take this row too, which is what keeps a
+		// value scoped to a Channel from outliving it.
+		app, err = s.applications.GetApplicationForUpdate(ctx, organizationID, *applicationID)
 		if err != nil {
 			return owner{}, err
 		}
 		if app.Archived() {
 			return owner{}, fmt.Errorf("%w: application %s", delivery.ErrArchived, app.ID())
 		}
-		projectID = new(app.ProjectID())
+		return owner{projectID: project.ID(), workspaceID: project.WorkspaceID()}, nil
 	}
-	project, err := delivery.ActiveProject(ctx, s.workspaces, v.OrganizationID(), *projectID)
+	project, err := delivery.ActiveProject(ctx, s.workspaces, organizationID, *v.ProjectID())
 	if err != nil {
 		return owner{}, err
 	}
@@ -216,10 +222,7 @@ func (s *service) CreateVariable(ctx context.Context, actor identity.Actor, in d
 		if err != nil {
 			return err
 		}
-		if err := s.checkScope(ctx, v, o.workspaceID, v.Scope()); err != nil {
-			return err
-		}
-		if err := s.checkSecretStores(ctx, v, o.workspaceID); err != nil {
+		if err := s.scopes.CheckScope(ctx, o.workspaceID, v, v.Scope()); err != nil {
 			return err
 		}
 		if err := s.checkProject(ctx, o.projectID, v); err != nil {
@@ -238,110 +241,6 @@ func (s *service) CreateVariable(ctx context.Context, actor identity.Actor, in d
 	}
 	return v, nil
 }
-
-// checkScope checks that everything a scope names is active and the
-// Variable's to use: Environments and Targets in its Workspace, and Channels
-// of its Application.
-func (s *service) checkScope(ctx context.Context, v *delivery.Variable, workspaceID string, scope delivery.VariableScope) error {
-	organizationID := v.OrganizationID()
-	environmentIDs := slices.Clone(scope.EnvironmentIDs)
-	for _, targetID := range scope.TargetIDs {
-		t, err := s.targets.GetTarget(ctx, organizationID, targetID)
-		if errors.Is(err, delivery.ErrNotFound) {
-			return delivery.NewErrInvalidInput(fmt.Sprintf("target %s does not exist", targetID))
-		}
-		if err != nil {
-			return fmt.Errorf("get target %s: %w", targetID, err)
-		}
-		if t.Archived() {
-			return fmt.Errorf("%w: target %s", delivery.ErrArchived, targetID)
-		}
-		if !slices.Contains(environmentIDs, t.EnvironmentID()) {
-			environmentIDs = append(environmentIDs, t.EnvironmentID())
-		}
-	}
-	if len(environmentIDs) > 0 {
-		envs, err := s.environments.GetEnvironments(ctx, organizationID, environmentIDs)
-		if err != nil {
-			return fmt.Errorf("get environments: %w", err)
-		}
-		byID := make(map[string]*delivery.Environment, len(envs))
-		for _, e := range envs {
-			byID[e.ID()] = e
-		}
-		for _, id := range environmentIDs {
-			e, ok := byID[id]
-			switch {
-			case !ok:
-				return delivery.NewErrInvalidInput(fmt.Sprintf("environment %s does not exist", id))
-			case e.WorkspaceID() != workspaceID:
-				return fmt.Errorf("%w: environment %s is not in workspace %s", delivery.ErrWorkspaceMismatch, id, workspaceID)
-			case e.Archived():
-				return fmt.Errorf("%w: environment %s", delivery.ErrArchived, id)
-			}
-		}
-	}
-	for _, channelID := range scope.ChannelIDs {
-		c, err := s.applications.GetChannel(ctx, organizationID, channelID)
-		if errors.Is(err, delivery.ErrNotFound) || (err == nil && !equal(v.ApplicationID(), c.ApplicationID())) {
-			return delivery.NewErrInvalidInput(fmt.Sprintf("channel %s is not one of the application's channels", channelID))
-		}
-		if err != nil {
-			return fmt.Errorf("get channel %s: %w", channelID, err)
-		}
-		if c.Archived() {
-			return fmt.Errorf("%w: channel %s", delivery.ErrArchived, channelID)
-		}
-	}
-	return nil
-}
-
-// checkSecretStores checks the stores a secret Variable's values are kept
-// in: each is active and in the Variable's Workspace, and may be read from
-// every Environment its value names, directly or through a Target. A value
-// that names no Environment is checked when it is deployed, against the
-// Environment it is deployed to.
-func (s *service) checkSecretStores(ctx context.Context, v *delivery.Variable, workspaceID string) error {
-	ids := v.SecretStoreIDs()
-	if len(ids) == 0 {
-		return nil
-	}
-	stores, err := s.stores.LookupSecretStores(ctx, v.OrganizationID(), ids)
-	if err != nil {
-		return fmt.Errorf("look up secret stores: %w", err)
-	}
-	for _, value := range v.Values() {
-		if value.Secret == nil {
-			continue
-		}
-		store, ok := stores[value.Secret.StoreID]
-		switch {
-		case !ok:
-			return delivery.NewErrInvalidInput(fmt.Sprintf("secret store %s does not exist", value.Secret.StoreID))
-		case store.WorkspaceID != workspaceID:
-			return fmt.Errorf("%w: secret store %s is not in workspace %s", delivery.ErrWorkspaceMismatch, store.ID, workspaceID)
-		case store.Archived:
-			return fmt.Errorf("%w: secret store %s", delivery.ErrArchived, store.ID)
-		}
-		environmentIDs := slices.Clone(value.Scope.EnvironmentIDs)
-		for _, targetID := range value.Scope.TargetIDs {
-			t, err := s.targets.GetTarget(ctx, v.OrganizationID(), targetID)
-			if err != nil {
-				return fmt.Errorf("get target %s: %w", targetID, err)
-			}
-			environmentIDs = append(environmentIDs, t.EnvironmentID())
-		}
-		for _, environmentID := range environmentIDs {
-			if !store.Allows(environmentID) {
-				return delivery.NewErrInvalidInput(fmt.Sprintf(
-					"secret store %s is not allowed for environment %s, which the value is scoped to", store.DisplayName, environmentID))
-			}
-		}
-	}
-	return nil
-}
-
-func equal(a *string, b string) bool { return a != nil && *a == b }
 
 // checkProject checks the variables every Application in the Project would
 // deploy with once changed is saved: what an Application's variable shadows
@@ -435,10 +334,7 @@ func (s *service) changeVariable(ctx context.Context, actor identity.Actor, orga
 			if err != nil {
 				return err
 			}
-			if err := s.checkScope(ctx, v, o.workspaceID, scope); err != nil {
-				return err
-			}
-			if err := s.checkSecretStores(ctx, v, o.workspaceID); err != nil {
+			if err := s.scopes.CheckScope(ctx, o.workspaceID, v, scope); err != nil {
 				return err
 			}
 			return s.checkProject(ctx, o.projectID, v)

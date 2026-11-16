@@ -57,11 +57,25 @@ func (r *environmentRepository) get(q *gorm.DB) (*delivery.Environment, error) {
 }
 
 func (r *environmentRepository) GetEnvironments(ctx context.Context, organizationID string, environmentIDs []string) ([]*delivery.Environment, error) {
+	return r.environments(r.conn(ctx).
+		Where("organization_id = ? AND id IN ?", organizationID, environmentIDs), environmentIDs)
+}
+
+// GetEnvironmentsForUpdate is GetEnvironments that also locks the rows, in
+// ID order, so a write that checks what a scope names takes its rows in one
+// order however its caller listed them.
+func (r *environmentRepository) GetEnvironmentsForUpdate(ctx context.Context, organizationID string, environmentIDs []string) ([]*delivery.Environment, error) {
+	return r.environments(r.conn(ctx).Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate}).
+		Where("organization_id = ? AND id IN ?", organizationID, environmentIDs).Order("id"), environmentIDs)
+}
+
+// environments reads the Environments a query selected.
+func (r *environmentRepository) environments(q *gorm.DB, environmentIDs []string) ([]*delivery.Environment, error) {
 	if len(environmentIDs) == 0 {
 		return nil, nil
 	}
 	var entities []environmentEntity
-	err := r.conn(ctx).Where("organization_id = ? AND id IN ?", organizationID, environmentIDs).Find(&entities).Error
+	err := q.Find(&entities).Error
 	if err != nil {
 		return nil, translate(err)
 	}

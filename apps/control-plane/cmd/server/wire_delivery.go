@@ -112,6 +112,13 @@ func (a *app) wireDelivery(runners config.Runners) error {
 		return err
 	}
 
+	// A Variable's save and an Application's restore check the same
+	// records, under their rows' locks.
+	scopes, err := delivery.NewVariableScopeChecker(targetRepo, envRepo, applicationRepo, storeLookup)
+	if err != nil {
+		return err
+	}
+
 	revoker, err := enrollment.NewAgentRevoker(
 		iampg.NewPrincipalRepository(a.db),
 		iampg.NewWorkloadRepository(a.db),
@@ -185,9 +192,12 @@ func (a *app) wireDelivery(runners config.Runners) error {
 		applications.WithEnvironmentLookup(envRepo),
 		applications.WithProjectLookup(workspaces),
 		applications.WithVariableUsage(variableRepo),
+		applications.WithVariableSet(variableRepo),
+		applications.WithVariableScopes(scopes),
 		applications.WithWorkspaces(workspaces),
 		applications.WithTeamDirectory(a.teams),
 		applications.WithSettingResolver(a.settingResolver),
+		applications.WithLocker(database.NewLocker(a.db)),
 		applications.WithAuthorizer(a.authz),
 		applications.WithTransactor(a.tx),
 		applications.WithOutboxRecorder(a.outbox),
@@ -200,10 +210,9 @@ func (a *app) wireDelivery(runners config.Runners) error {
 	vars, err := variables.NewVariableService(
 		variables.WithVariableRepo(variableRepo),
 		variables.WithApplicationLookup(applicationRepo),
-		variables.WithEnvironmentLookup(envRepo),
 		variables.WithTargetLookup(targetRepo),
+		variables.WithVariableScopes(scopes),
 		variables.WithWorkspaces(workspaces),
-		variables.WithSecretStores(storeLookup),
 		variables.WithLocker(database.NewLocker(a.db)),
 		variables.WithAuthorizer(a.authz),
 		variables.WithTransactor(a.tx),

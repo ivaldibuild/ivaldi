@@ -10,6 +10,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/credentials"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/credentials/migrations"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
+	"github.com/ivaldibuild/ivaldi/pkg/database"
 	"github.com/ivaldibuild/ivaldi/pkg/database/databasetest"
 	"github.com/ivaldibuild/ivaldi/pkg/secretstore"
 )
@@ -58,4 +59,27 @@ func TestSecretStoreRepository(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, both, 2, "archived ones included, unknown ones left out")
 	assert.NoError(t, stores.CreateSecretStore(ctx, newStore("Vault", secretstore.KindKubernetes, credentials.Settings{})), "an archived store frees its slug")
+
+	t.Run("reads for share and for update hold the rows", func(t *testing.T) {
+		tx := database.NewTransactor(db)
+		other := func() error {
+			return db.Exec("SELECT 1 FROM credentials.secret_stores WHERE id = ? FOR UPDATE NOWAIT", cluster.ID()).Error
+		}
+		require.NoError(t, tx.WithinTx(ctx, func(ctx context.Context) error {
+			got, err := stores.GetSecretStoresForShare(ctx, org, []string{cluster.ID()})
+			require.NoError(t, err)
+			require.Len(t, got, 1)
+			assert.Error(t, other(), "an archive cannot take a store a save holds")
+			require.NoError(t, db.Exec("SELECT 1 FROM credentials.secret_stores WHERE id = ? FOR SHARE NOWAIT", cluster.ID()).Error,
+				"another save still can")
+			return nil
+		}))
+		require.NoError(t, tx.WithinTx(ctx, func(ctx context.Context) error {
+			_, err := stores.GetSecretStoreForUpdate(ctx, org, cluster.ID())
+			require.NoError(t, err)
+			assert.Error(t, other(), "the archive holds the row")
+			return nil
+		}))
+		assert.NoError(t, other(), "released at commit")
+	})
 }

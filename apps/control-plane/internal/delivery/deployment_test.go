@@ -86,6 +86,17 @@ func TestNewDeploymentRefusesInvalidInput(t *testing.T) {
 		{"unknown reason", func(p *delivery.NewDeploymentProps) { p.Reason = "experiment" }},
 		{"unknown status", func(p *delivery.NewDeploymentProps) { p.Status = "waiting" }},
 		{"bad external ref", func(p *delivery.NewDeploymentProps) { p.ExternalRef = []byte("{") }},
+		{"findings on an executed deployment", func(p *delivery.NewDeploymentProps) {
+			p.Findings = []delivery.Finding{delivery.FindingOutsideLifecycle}
+		}},
+		{"unknown finding", func(p *delivery.NewDeploymentProps) {
+			p.Source = delivery.DeploymentObserved
+			p.Findings = []delivery.Finding{"looked_odd"}
+		}},
+		{"a finding twice", func(p *delivery.NewDeploymentProps) {
+			p.Source = delivery.DeploymentObserved
+			p.Findings = []delivery.Finding{delivery.FindingPhaseNotOpen, delivery.FindingPhaseNotOpen}
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

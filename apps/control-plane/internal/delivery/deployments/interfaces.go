@@ -67,6 +67,7 @@ type Lifecycles interface {
 type Releases interface {
 	GetRelease(ctx context.Context, organizationID, releaseID string) (*delivery.Release, error)
 	GetReleaseByVersion(ctx context.Context, organizationID, applicationID, version string) (*delivery.Release, error)
+	GetReleaseWithImages(ctx context.Context, organizationID, applicationID string, buildIDs []string) (*delivery.Release, error)
 	CreateRelease(ctx context.Context, r *delivery.Release) error
 }
 

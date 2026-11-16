@@ -194,6 +194,11 @@ func (s *store) GetReleaseForUpdate(ctx context.Context, organizationID, release
 	return s.GetRelease(ctx, organizationID, releaseID)
 }
 
+// GetReleaseWithImages is for observations; the release service never calls it.
+func (s *store) GetReleaseWithImages(context.Context, string, string, []string) (*delivery.Release, error) {
+	return nil, delivery.ErrNotFound
+}
+
 func (s *store) GetReleaseByVersion(_ context.Context, organizationID, applicationID, version string) (*delivery.Release, error) {
 	for _, snap := range s.releases {
 		if snap.OrganizationID == organizationID && snap.ApplicationID == applicationID && snap.Version == version {

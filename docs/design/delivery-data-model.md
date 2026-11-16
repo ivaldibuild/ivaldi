@@ -128,7 +128,7 @@ Ivaldi uses a Registry only for lookups: resolving a tag to a digest when a Rele
   - `application_id` and `environment_id` are copied from the Release and the Target, for queries and for the progression check.
   - Trigger and provenance: `initiated_by_principal_id`, `session_id`, and `work_item_id` for executed Deployments; `external_ref` for observed ones, such as the deployer and its own revision.
   - Policy: `policy_decision_id` refers to the authorizer's decision. Observed Deployments are evaluated after the fact.
-  - `findings` lists the rules an observed Deployment broke: `outside_lifecycle` (its Environment is not in the Channel's Lifecycle), `phase_not_open` (an earlier phase was skipped), `would_require_approval`, or `would_deny`. It is empty when nothing was broken, and always empty for executed Deployments, which are refused instead.
+  - `findings` lists the rules an observed Deployment broke: `outside_lifecycle` (its Environment is not in the Channel's Lifecycle), `phase_not_open` (an earlier phase was skipped), `would_require_approval`, or `would_deny` (the last two are not recorded until policy evaluates observed Deployments). It is empty when nothing was broken, and always empty for executed Deployments, which are refused instead.
   - Timing: `requested_at`, `started_at`, `finished_at` (when the rollout ended), and `status_changed_at`.
 - **deployment_events** — an append-only history of status changes, progress, and health reports. Each event records who reported it, the status it moved to (if any), runtime-specific `detail`, the time it happened (`occurred_at`), and the time it was stored (`recorded_at`). Agents send a `report_id` with each event, and `(deployment_id, report_id)` is unique, so a retried report is stored once.
 
@@ -141,8 +141,8 @@ Ivaldi uses a Registry only for lookups: resolving a tag to a digest when a Rele
 | `rejected` | Policy denied it, or the approval was refused. | Yes |
 | `cancelled` | Stopped before it was applied. | Yes |
 | `applying` | The agent is applying it. | No |
-| `progressing` | The rollout is in progress. Observed Deployments start here. | No |
-| `healthy` | The rollout finished and the workloads are healthy. | No |
+| `progressing` | The rollout is in progress. | No |
+| `healthy` | The rollout finished and the workloads are healthy. Observed Deployments start here: the agent saw them already running. | No |
 | `degraded` | The rollout stalled, or workloads became unhealthy after it finished. | No |
 | `failed` | The rollout failed. | Yes |
 | `superseded` | A later Deployment replaced it on the Target. | Yes |
@@ -174,10 +174,11 @@ Ivaldi uses a Registry only for lookups: resolving a tag to a digest when a Rele
 
 **Recording an observed Deployment.**
 1. The agent sees a workload change on a Target that matches an Application's selector, and reports the images and digests it found.
-2. Each image is matched to an artifact by `artifact_name`; an image that matches none creates an observed artifact. If no Build exists for a digest, one is created with observed provenance. If no Release of the Application has exactly those Builds, an observed Release is created. It joins the one Channel whose `git_ref` rules match its Builds, or the default Channel if there is no single match.
-3. The capability creates an observed Release and a Deployment with `source: observed` and `status: healthy`, creates an observed `application_targets` row if the pair is new, and makes the Deployment current.
-4. The capability checks the Deployment against the Channel's Lifecycle, policy evaluates it, and any broken rules are recorded in `findings`.
-5. If the change is the result of an executed Deployment the agent is applying, the agent reports it against that Deployment instead, and no observed Deployment is created.
+2. Each image is matched to an artifact by `artifact_name`; an image that matches none creates an observed artifact. If no Build exists for a digest, one is created with observed provenance.
+3. The Deployment's Release is the Application's Release whose container-image Builds are exactly those Builds, such as a Release CI created that a GitOps tool then deployed. Charts and other artifacts are not compared, because the agent sees only images. When several match, a created Release wins over an observed one, then the newest. When none matches, an observed Release is created, with a version generated from its digests, in the Channel of the Target's current Release, or the Application's default Channel. Observed Builds carry no Git ref, so Channel rules could not choose one.
+4. The capability creates a Deployment with `source: observed` and `status: healthy`, creates an observed `application_targets` row if the pair is new, and makes the Deployment current.
+5. The capability checks the Deployment against the Lifecycle of its Release's Channel, as the deploy plan does, and records what it broke in `findings`: `outside_lifecycle` when the Environment is not in the Lifecycle, or `phase_not_open` when an earlier required phase has not succeeded for the Release. `would_require_approval` and `would_deny` are reserved until policy evaluates observed Deployments: there is no policy engine yet, and an observed change has no known actor to evaluate.
+6. If the change is the result of an executed Deployment the agent is applying, the agent reports it against that Deployment instead, and no observed Deployment is created.
 
 **Routing work to the owning Team.** Delivery emits events with the Application's `owner_team_id`, and the capabilities that notify people, request approvals, or create Work Items route them to that Team. When policy requires an approval for an executed Deployment, the request goes to the owning Team by default; policy can name other approvers. When a current Deployment becomes `degraded`, or an observed Deployment has findings, the owning Team is told. Delivery does not store who was notified; that belongs to the capability that sends the notification.
 

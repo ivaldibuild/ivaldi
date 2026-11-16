@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"slices"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -125,6 +126,26 @@ func (r *releaseRepository) GetReleaseForUpdate(ctx context.Context, organizatio
 func (r *releaseRepository) GetReleaseByVersion(ctx context.Context, organizationID, applicationID, version string) (*delivery.Release, error) {
 	return r.get(r.conn(ctx), r.conn(ctx).Where(
 		"organization_id = ? AND application_id = ? AND version = ?", organizationID, applicationID, version))
+}
+
+func (r *releaseRepository) GetReleaseWithImages(ctx context.Context, organizationID, applicationID string, buildIDs []string) (*delivery.Release, error) {
+	buildIDs = slices.Compact(slices.Sorted(slices.Values(buildIDs)))
+	if len(buildIDs) == 0 {
+		return nil, delivery.ErrNotFound
+	}
+	// Two artifacts can run one image (an api and a migrate job built from
+	// the same repository), so a Release can hold a Build twice. Counting
+	// distinct Builds compares sets: n of them, all among buildIDs, is an
+	// exact match.
+	matching := r.conn(ctx).Table("delivery.release_builds AS rb").
+		Select("rb.release_id").
+		Joins("JOIN delivery.application_artifacts AS a ON a.organization_id = rb.organization_id AND a.application_id = rb.application_id AND a.id = rb.artifact_id").
+		Where("rb.organization_id = ? AND rb.application_id = ? AND a.artifact_kind = ?", organizationID, applicationID, string(delivery.ArtifactContainerImage)).
+		Group("rb.release_id").
+		Having("count(DISTINCT rb.build_id) = ? AND count(DISTINCT rb.build_id) FILTER (WHERE rb.build_id IN ?) = ?", len(buildIDs), buildIDs, len(buildIDs))
+	return r.get(r.conn(ctx), r.conn(ctx).
+		Where("organization_id = ? AND application_id = ? AND id IN (?)", organizationID, applicationID, matching).
+		Order(clause.OrderBy{Expression: clause.Expr{SQL: "source = ? , created_at DESC, id DESC", Vars: []any{string(delivery.ReleaseObserved)}}}))
 }
 
 func (r *releaseRepository) get(db, q *gorm.DB) (*delivery.Release, error) {

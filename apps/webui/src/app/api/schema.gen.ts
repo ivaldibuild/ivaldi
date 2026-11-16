@@ -3353,7 +3353,9 @@ export interface components {
       created_at: string;
       environment_id: string;
       external_ref: unknown;
-      findings: string[];
+      findings: (
+        'outside_lifecycle' | 'phase_not_open' | 'would_require_approval' | 'would_deny'
+      )[];
       /** Format: date-time */
       finished_at: string | null;
       id: string;

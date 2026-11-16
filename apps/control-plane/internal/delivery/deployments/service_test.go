@@ -3,6 +3,7 @@ package deployments
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -256,6 +257,39 @@ func (f fakeReleases) GetReleaseByVersion(_ context.Context, organizationID, app
 		}
 	}
 	return nil, delivery.ErrNotFound
+}
+
+// GetReleaseWithImages matches what the PostgreSQL repository does: the
+// container-image Builds are exactly buildIDs, a created Release beats an
+// observed one, then the newest wins.
+func (f fakeReleases) GetReleaseWithImages(_ context.Context, organizationID, applicationID string, buildIDs []string) (*delivery.Release, error) {
+	want := map[string]bool{}
+	for _, id := range buildIDs {
+		want[id] = true
+	}
+	var best *delivery.Release
+	for _, r := range f.releases {
+		if r.OrganizationID() != organizationID || r.ApplicationID() != applicationID {
+			continue
+		}
+		images := map[string]bool{}
+		for _, rb := range r.Builds() {
+			if a := f.artifacts[rb.ArtifactID]; a != nil && a.ArtifactKind() == delivery.ArtifactContainerImage {
+				images[rb.BuildID] = true
+			}
+		}
+		if !maps.Equal(images, want) {
+			continue
+		}
+		if best == nil || (best.Source() == delivery.ReleaseObserved && r.Source() != delivery.ReleaseObserved) ||
+			(best.Source() == r.Source() && r.CreatedAt().After(best.CreatedAt())) {
+			best = r
+		}
+	}
+	if best == nil {
+		return nil, delivery.ErrNotFound
+	}
+	return best, nil
 }
 
 func (f fakeReleases) CreateRelease(_ context.Context, r *delivery.Release) error {
@@ -1060,6 +1094,7 @@ func TestObserve(t *testing.T) {
 		assert.Equal(t, delivery.DeploymentObserved, detail.Deployment.Source)
 		assert.Equal(t, release.DeploymentHealthy, detail.Deployment.Status)
 		assert.Equal(t, appID, detail.Deployment.ApplicationID)
+		assert.Empty(t, detail.Deployment.Findings, "the Environment is the Lifecycle's only phase")
 		require.Len(t, detail.Events, 1, "the initial status is on the timeline")
 
 		placement := w.placements[placementKey(appID, targetID)]
@@ -1131,6 +1166,60 @@ func TestObserve(t *testing.T) {
 
 		detail := observe(t, w, "obs-1", digest)
 		assert.Equal(t, current.ID(), detail.Deployment.ID, "the chart does not make the image set differ")
+	})
+
+	// CI created a Release and a GitOps tool deployed it: the observation is
+	// that Release, not a new observed one.
+	t.Run("finds the release that holds exactly the images", func(t *testing.T) {
+		w := newWorld(t)
+		image := mustArtifact(appID, "api", delivery.ArtifactContainerImage)
+		imageBuild := must(delivery.NewBuild(delivery.NewBuildProps{
+			OrganizationID: org, ArtifactKind: delivery.ArtifactContainerImage,
+			ArtifactName: image.ArtifactName(), Digest: digest, Provenance: delivery.BuildCIReported,
+		}, nil))
+		w.artifacts[image.ID()] = image
+		w.builds[imageBuild.ID()] = imageBuild
+		chart := w.releases[mustOneID(w.releases)]
+		created := must(delivery.NewRelease(delivery.NewReleaseProps{
+			OrganizationID: org, ApplicationID: appID, ChannelID: chart.ChannelID(), Version: "2.0.0",
+			Status: release.StatusPublished,
+			Builds: []delivery.NewReleaseBuildProps{
+				{ArtifactID: chart.Builds()[0].ArtifactID, BuildID: chart.Builds()[0].BuildID},
+				{ArtifactID: image.ID(), BuildID: imageBuild.ID()},
+			},
+		}, nil))
+		w.releases[created.ID()] = created
+		releases := len(w.releases)
+
+		detail := observe(t, w, "obs-1", digest)
+
+		assert.Equal(t, created.ID(), detail.Deployment.ReleaseID)
+		assert.Len(t, w.releases, releases, "no observed Release is made")
+		assert.Equal(t, created.ID(), *w.placements[placementKey(appID, targetID)].CurrentReleaseID())
+	})
+
+	t.Run("records the lifecycle rules it broke", func(t *testing.T) {
+		otherEnv := "env_01ARZ3NDEKTSV4RRFFQ69G5FAW"
+		withPhases := func(w *world, phases ...delivery.NewLifecyclePhaseProps) {
+			channel := w.channels[mustOneID(w.channels)]
+			id := channel.LifecycleID()
+			w.lifecycles[id] = must(delivery.NewLifecycle(delivery.NewLifecycleProps{
+				OrganizationID: org, WorkspaceID: "wsp_01ARZ3NDEKTSV4RRFFQ69G5FAV", DisplayName: "Mainline", Phases: phases,
+			}, &id))
+		}
+
+		w := newWorld(t)
+		withPhases(w, delivery.NewLifecyclePhaseProps{Name: "Staging", EnvironmentIDs: []string{otherEnv}})
+		detail := observe(t, w, "obs-1", digest)
+		assert.Equal(t, []delivery.Finding{delivery.FindingOutsideLifecycle}, detail.Deployment.Findings)
+		assert.Equal(t, w.deployments[detail.Deployment.ID].Findings(), detail.Deployment.Findings, "they are stored")
+
+		w = newWorld(t)
+		withPhases(w,
+			delivery.NewLifecyclePhaseProps{Name: "Staging", EnvironmentIDs: []string{otherEnv}},
+			delivery.NewLifecyclePhaseProps{Name: "Production", EnvironmentIDs: []string{envID}})
+		detail = observe(t, w, "obs-1", digest)
+		assert.Equal(t, []delivery.Finding{delivery.FindingPhaseNotOpen}, detail.Deployment.Findings, "staging never succeeded")
 	})
 
 	t.Run("a changed digest supersedes the previous deployment", func(t *testing.T) {

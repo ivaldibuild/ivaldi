@@ -2441,6 +2441,12 @@
           "external_ref": {},
           "findings": {
             "items": {
+              "enum": [
+                "outside_lifecycle",
+                "phase_not_open",
+                "would_require_approval",
+                "would_deny"
+              ],
               "type": "string"
             },
             "type": "array"

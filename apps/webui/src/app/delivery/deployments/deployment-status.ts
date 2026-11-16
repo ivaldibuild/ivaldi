@@ -10,7 +10,7 @@ import {
   lucideTriangleAlert,
 } from '@ng-icons/lucide';
 import { HlmBadgeImports } from '@spartan-ng/helm/badge';
-import { DeploymentCheck, DeploymentStatus } from '../../api/models';
+import { DeploymentCheck, DeploymentFinding, DeploymentStatus } from '../../api/models';
 
 export const deploymentStatusLabels: Record<DeploymentStatus, string> = {
   pending: 'Pending',
@@ -55,6 +55,18 @@ const checkLabels: Record<string, string> = {
 /** A check's name in words, or its machine name for one the web app doesn't know yet. */
 export function checkLabel(check: DeploymentCheck): string {
   return checkLabels[check.name] ?? check.name.replace(/_/g, ' ');
+}
+
+const findingLabels: Record<DeploymentFinding, string> = {
+  outside_lifecycle: 'Its Environment is not in the Lifecycle of the Release’s Channel',
+  phase_not_open: 'An earlier phase of the Lifecycle had not succeeded for this Release',
+  would_require_approval: 'Policy would have asked a person to approve it',
+  would_deny: 'Policy would have refused it',
+};
+
+/** What an observed Deployment's finding means, in words. */
+export function findingLabel(finding: DeploymentFinding): string {
+  return findingLabels[finding];
 }
 
 const looks: Record<

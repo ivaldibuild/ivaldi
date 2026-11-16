@@ -227,6 +227,30 @@ func (e DeploymentEventSnapshotKind) Valid() bool {
 	}
 }
 
+// Defines values for DeploymentSnapshotFindings.
+const (
+	DeploymentSnapshotFindingsOutsideLifecycle     DeploymentSnapshotFindings = "outside_lifecycle"
+	DeploymentSnapshotFindingsPhaseNotOpen         DeploymentSnapshotFindings = "phase_not_open"
+	DeploymentSnapshotFindingsWouldDeny            DeploymentSnapshotFindings = "would_deny"
+	DeploymentSnapshotFindingsWouldRequireApproval DeploymentSnapshotFindings = "would_require_approval"
+)
+
+// Valid indicates whether the value is a known member of the DeploymentSnapshotFindings enum.
+func (e DeploymentSnapshotFindings) Valid() bool {
+	switch e {
+	case DeploymentSnapshotFindingsOutsideLifecycle:
+		return true
+	case DeploymentSnapshotFindingsPhaseNotOpen:
+		return true
+	case DeploymentSnapshotFindingsWouldDeny:
+		return true
+	case DeploymentSnapshotFindingsWouldRequireApproval:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DeploymentSnapshotReason.
 const (
 	DeploymentSnapshotReasonRedeploy DeploymentSnapshotReason = "redeploy"
@@ -647,34 +671,37 @@ type DeploymentEventSnapshotKind string
 
 // DeploymentSnapshot defines model for DeploymentSnapshot.
 type DeploymentSnapshot struct {
-	ApplicationId          string                   `json:"application_id"`
-	CreatedAt              time.Time                `json:"created_at"`
-	EnvironmentId          string                   `json:"environment_id"`
-	ExternalRef            interface{}              `json:"external_ref"`
-	Findings               []string                 `json:"findings"`
-	FinishedAt             *time.Time               `json:"finished_at"`
-	Id                     string                   `json:"id"`
-	InitiatedByPrincipalId *string                  `json:"initiated_by_principal_id"`
-	OrganizationId         string                   `json:"organization_id"`
-	PolicyDecisionId       *string                  `json:"policy_decision_id"`
-	PreviousDeploymentId   *string                  `json:"previous_deployment_id"`
-	Reason                 DeploymentSnapshotReason `json:"reason"`
-	ReleaseId              string                   `json:"release_id"`
-	RequestedAt            time.Time                `json:"requested_at"`
-	RestoresDeploymentId   *string                  `json:"restores_deployment_id"`
-	SecretVersions         []SecretVersion          `json:"secret_versions"`
-	SecretsLatest          bool                     `json:"secrets_latest"`
-	SessionId              *string                  `json:"session_id"`
-	Source                 DeploymentSnapshotSource `json:"source"`
-	StartedAt              *time.Time               `json:"started_at"`
-	Status                 DeploymentSnapshotStatus `json:"status"`
-	StatusChangedAt        time.Time                `json:"status_changed_at"`
-	SucceededAt            *time.Time               `json:"succeeded_at"`
-	TargetId               string                   `json:"target_id"`
-	UpdatedAt              time.Time                `json:"updated_at"`
-	VariableSnapshotId     *string                  `json:"variable_snapshot_id"`
-	WorkItemId             *string                  `json:"work_item_id"`
+	ApplicationId          string                       `json:"application_id"`
+	CreatedAt              time.Time                    `json:"created_at"`
+	EnvironmentId          string                       `json:"environment_id"`
+	ExternalRef            interface{}                  `json:"external_ref"`
+	Findings               []DeploymentSnapshotFindings `json:"findings"`
+	FinishedAt             *time.Time                   `json:"finished_at"`
+	Id                     string                       `json:"id"`
+	InitiatedByPrincipalId *string                      `json:"initiated_by_principal_id"`
+	OrganizationId         string                       `json:"organization_id"`
+	PolicyDecisionId       *string                      `json:"policy_decision_id"`
+	PreviousDeploymentId   *string                      `json:"previous_deployment_id"`
+	Reason                 DeploymentSnapshotReason     `json:"reason"`
+	ReleaseId              string                       `json:"release_id"`
+	RequestedAt            time.Time                    `json:"requested_at"`
+	RestoresDeploymentId   *string                      `json:"restores_deployment_id"`
+	SecretVersions         []SecretVersion              `json:"secret_versions"`
+	SecretsLatest          bool                         `json:"secrets_latest"`
+	SessionId              *string                      `json:"session_id"`
+	Source                 DeploymentSnapshotSource     `json:"source"`
+	StartedAt              *time.Time                   `json:"started_at"`
+	Status                 DeploymentSnapshotStatus     `json:"status"`
+	StatusChangedAt        time.Time                    `json:"status_changed_at"`
+	SucceededAt            *time.Time                   `json:"succeeded_at"`
+	TargetId               string                       `json:"target_id"`
+	UpdatedAt              time.Time                    `json:"updated_at"`
+	VariableSnapshotId     *string                      `json:"variable_snapshot_id"`
+	WorkItemId             *string                      `json:"work_item_id"`
 }
+
+// DeploymentSnapshotFindings defines model for DeploymentSnapshot.Findings.
+type DeploymentSnapshotFindings string
 
 // DeploymentSnapshotReason defines model for DeploymentSnapshot.Reason.
 type DeploymentSnapshotReason string

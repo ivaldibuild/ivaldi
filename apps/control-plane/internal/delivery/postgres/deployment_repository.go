@@ -87,7 +87,7 @@ func deploymentToPersistence(d *delivery.Deployment) (*deploymentEntity, error) 
 	s := d.Snapshot()
 	// The column must hold an array; a nil slice would marshal as null.
 	if s.Findings == nil {
-		s.Findings = []string{}
+		s.Findings = []delivery.Finding{}
 	}
 	findings, err := json.Marshal(s.Findings)
 	if err != nil {
@@ -117,7 +117,7 @@ func deploymentToPersistence(d *delivery.Deployment) (*deploymentEntity, error) 
 }
 
 func deploymentToDomain(e *deploymentEntity) (*delivery.Deployment, error) {
-	var findings []string
+	var findings []delivery.Finding
 	if len(e.Findings) > 0 {
 		if err := json.Unmarshal(e.Findings, &findings); err != nil {
 			return nil, err

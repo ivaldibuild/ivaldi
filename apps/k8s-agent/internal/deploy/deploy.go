@@ -30,6 +30,24 @@ type Artifact struct {
 // Ref is the artifact's reference by digest.
 func (a Artifact) Ref() string { return a.Repository + "@" + a.Digest }
 
+// SecretPin is what a Deployment records about one secret it resolved: where
+// it was read from, the store's version of it, and a keyed fingerprint of its
+// value whose key never leaves the cluster. Never the value.
+type SecretPin struct {
+	// Name is the secret variable's name.
+	Name string `json:"name"`
+	// Path is the secret's path with its bindings filled in, as it was read.
+	// The Release keeps the template.
+	Path string `json:"path,omitempty"`
+	// Version is the store's version the agent read; empty for a store that
+	// has none.
+	Version string `json:"version,omitempty"`
+	// Fingerprint identifies the value without revealing it.
+	Fingerprint string `json:"fingerprint"`
+	// DeliveredAs is how the chart received the secret.
+	DeliveredAs string `json:"delivered_as" enum:"secret,value"`
+}
+
 // Assignment is one Deployment to apply, in the terms every deployer uses.
 type Assignment struct {
 	DeploymentID  string
@@ -63,6 +81,10 @@ type Assignment struct {
 	// Secret holding those delivered as a Secret.
 	Secrets    []values.Secret
 	SecretName string
+	// SecretPins are what this attempt resolved, for the deployer to keep
+	// with the apply. A retry that finds the Deployment already applied
+	// reports them, not what it resolved again.
+	SecretPins []SecretPin
 }
 
 // IsRollback reports whether the assignment replays an earlier Deployment.
@@ -97,6 +119,10 @@ type Applied struct {
 	// SecretsInValues names the secrets whose values went into the
 	// deployer's values, and so into its own records.
 	SecretsInValues []string
+	// SecretPins are the pins the apply that committed used, which a
+	// deployer returns when Skipped so the retry reports them. Nil when it
+	// kept none.
+	SecretPins []SecretPin
 }
 
 // Deployer applies assignments.
@@ -104,8 +130,10 @@ type Deployer interface {
 	// Name is the deployer's name in assignments and heartbeats.
 	Name() string
 	// Apply applies a, reporting progress as it goes. It is idempotent: an
-	// assignment already applied is skipped. A failure the person must act
-	// on is a *Failure.
+	// assignment already applied is skipped, and its Applied carries the
+	// pins that apply kept, so a retry reports what committed rather than
+	// what it resolved again. A failure the person must act on is a
+	// *Failure.
 	Apply(ctx context.Context, a Assignment, progress Progress) (Applied, error)
 }
 

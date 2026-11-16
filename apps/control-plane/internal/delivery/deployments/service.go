@@ -468,12 +468,14 @@ func (s *service) ReportDeployment(ctx context.Context, actor identity.Actor, in
 
 // checkTargetAgent refuses anyone but the agent of the Target's Cluster.
 // recordSecrets stores which version of each secret the agent says it
-// resolved, with its fingerprint, beside where the Deployment's revision
-// says the secret is kept. A report without secrets changes nothing.
+// resolved, with the path it read it from and a fingerprint, beside where the
+// Deployment's revision says the secret is kept. A report without secrets
+// changes nothing.
 func (s *service) recordSecrets(ctx context.Context, d *delivery.Deployment, detail json.RawMessage) error {
 	var reported struct {
 		Secrets []struct {
 			Name        string `json:"name"`
+			Path        string `json:"path"`
 			Version     string `json:"version"`
 			Fingerprint string `json:"fingerprint"`
 			DeliveredAs string `json:"delivered_as"`
@@ -512,12 +514,22 @@ func (s *service) recordSecrets(ctx context.Context, d *delivery.Deployment, det
 		if !sent {
 			return delivery.NewErrInvalidInput(fmt.Sprintf("the report names secret %q, which the deployment was not sent", secret.Name))
 		}
+		// The path the agent read is the reference with its bindings filled
+		// in; the snapshot keeps the template. An agent of an earlier
+		// version names none, and its pin says where the template points.
+		path := ref.Path
+		if secret.Path != "" {
+			if err := delivery.CheckSecretPath(ref.Path, secret.Path); err != nil {
+				return err
+			}
+			path = secret.Path
+		}
 		deliveredAs := delivery.VariableDeliverAsSecret
 		if secret.DeliveredAs == string(delivery.VariableDeliverAsValue) || slices.Contains(reported.SecretsInValues, secret.Name) {
 			deliveredAs = delivery.VariableDeliverAsValue
 		}
 		versions = append(versions, delivery.SecretVersion{
-			Name: secret.Name, StoreID: ref.StoreID, Path: ref.Path, Field: ref.Field,
+			Name: secret.Name, StoreID: ref.StoreID, Path: path, Field: ref.Field,
 			Version: secret.Version, Fingerprint: secret.Fingerprint, DeliveredAs: deliveredAs,
 		})
 	}

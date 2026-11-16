@@ -206,6 +206,37 @@ func TestBindingNames(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalid)
 }
 
+func TestCheckSecretPath(t *testing.T) {
+	tests := []struct {
+		name     string
+		template string
+		reported string
+		ok       bool
+	}{
+		{name: "a path with no bindings is the path read", template: "payments/db", reported: "payments/db", ok: true},
+		{name: "another path is not", template: "payments/db", reported: "payments/other", ok: false},
+		{name: "a binding is filled in", template: "payments/#{Ivaldi.Environment.Slug}/db", reported: "payments/production/db", ok: true},
+		{name: "the template is not filled in", template: "payments/#{Ivaldi.Environment.Slug}/db", reported: "payments/#{Ivaldi.Environment.Slug}/db", ok: false},
+		{name: "the literal parts must match", template: "payments/#{Ivaldi.Environment.Slug}/db", reported: "other/production/db", ok: false},
+		{name: "a missing part is refused", template: "payments/#{Ivaldi.Environment.Slug}/db", reported: "payments/db", ok: false},
+		{name: "a later part must still come after", template: "#{A}/db/#{B}/key", reported: "x/db/y/key", ok: true},
+		{name: "the later parts are ordered", template: "#{A}/db/#{B}/key", reported: "x/key/y/db", ok: false},
+		{name: "two bindings may sit side by side", template: "#{A}#{B}/db", reported: "xy/db", ok: true},
+		{name: "an escaped binding is read literally", template: "payments/##{literal}/db", reported: "payments/#{literal}/db", ok: true},
+		{name: "an empty path was not read", template: "payments/#{A}/db", reported: "", ok: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := CheckSecretPath(tt.template, tt.reported)
+			if tt.ok {
+				assert.NoError(t, err)
+				return
+			}
+			assert.ErrorIs(t, err, ErrInvalid)
+		})
+	}
+}
+
 func TestCheckDeployable(t *testing.T) {
 	path := func(p string) func(*NewVariableProps) {
 		return func(props *NewVariableProps) { props.ValuesPath = &p }

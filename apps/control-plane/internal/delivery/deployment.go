@@ -112,8 +112,10 @@ type SecretVersion struct {
 	// Name is the secret variable's name.
 	Name    string `json:"name"`
 	StoreID string `json:"store_id"`
-	Path    string `json:"path"`
-	Field   string `json:"field"`
+	// Path is the path the agent read, with the bindings the Release's
+	// reference holds filled in for this Deployment.
+	Path  string `json:"path"`
+	Field string `json:"field"`
 	// Version is the store's version the agent read; empty for a store
 	// that has none.
 	Version     string `json:"version"`

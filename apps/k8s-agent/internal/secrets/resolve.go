@@ -32,7 +32,9 @@ const retries = 4
 // Resolved is one secret resolved for a Deployment. Value never leaves the
 // agent; the rest is reported as the Deployment's pin.
 type Resolved struct {
-	Name        string
+	Name string
+	// Path is the secret's path with its bindings filled in, as it was read.
+	Path        string
 	Value       string
 	Version     string
 	Fingerprint string
@@ -41,15 +43,14 @@ type Resolved struct {
 }
 
 // Pin is what the Deployment records about the secret: never the value.
-func (r Resolved) Pin() map[string]any {
-	out := map[string]any{"name": r.Name, "fingerprint": r.Fingerprint, "delivered_as": "secret"}
+func (r Resolved) Pin() deploy.SecretPin {
+	deliveredAs := "secret"
 	if r.AsValue {
-		out["delivered_as"] = "value"
+		deliveredAs = "value"
 	}
-	if r.Version != "" {
-		out["version"] = r.Version
+	return deploy.SecretPin{
+		Name: r.Name, Path: r.Path, Version: r.Version, Fingerprint: r.Fingerprint, DeliveredAs: deliveredAs,
 	}
-	return out
 }
 
 // Resolver resolves a Deployment's secrets.
@@ -170,7 +171,7 @@ func (r *resolver) Resolve(ctx context.Context, namespace string, secrets []apic
 			r.cfg.Masker.Add(v.Value)
 			added = append(added, v.Value)
 			resolved := Resolved{
-				Name: s.Name, Value: v.Value, Version: v.Version, Fingerprint: keys.Fingerprint(v.Value),
+				Name: s.Name, Path: s.Ref.Path, Value: v.Value, Version: v.Version, Fingerprint: keys.Fingerprint(v.Value),
 				AsValue: s.DeliverAs == apiclient.AssignmentSecretDeliverAsValue,
 			}
 			if s.ValuesPath != nil {

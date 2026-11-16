@@ -1308,6 +1308,51 @@ func TestADeploymentRecordsTheSecretsItsAgentResolved(t *testing.T) {
 	assert.Equal(t, release.DeploymentProgressing, w.deployments[out[0].ID()].Status())
 }
 
+// The path a secret's value holds may bind what Ivaldi knows per Deployment,
+// so the snapshot keeps the template and the Deployment records the path the
+// agent read: a rollback replays the Secret that was read, not a template
+// expanded again.
+func TestADeploymentRecordsTheSecretPathItsAgentRead(t *testing.T) {
+	const storeID = "sst_01BX5ZZKBKACTAV9WEVGEMMVRZ"
+	w := newWorld(t)
+	require.NoError(t, w.clusters[clusterID].RecordHeartbeat(agentID, map[string]any{"secret_store_kinds": []string{"kubernetes"}}))
+	w.stores = map[string]delivery.SecretStoreRef{storeID: {
+		ID: storeID, DisplayName: "In-cluster",
+		Settings: delivery.StoreSettings{ID: storeID, Kind: delivery.StoreKubernetes, Kubernetes: &delivery.KubernetesStore{}},
+	}}
+	w.withVariables(delivery.SnapshotVariable{
+		Name: "Database.Password", Source: delivery.VariableSourceApplication, Kind: delivery.VariableKindSecret,
+		Values: []delivery.SnapshotValue{{Secret: &delivery.SecretReference{
+			StoreID: storeID, Path: "payments/#{Ivaldi.Environment.Slug}/db", Field: "password",
+		}}},
+	})
+	out, err := w.svc.RequestDeployments(ctx, ada, delivery.RequestDeploymentsInput{
+		OrganizationID: org, ReleaseID: w.rel.ID(), TargetIDs: []string{targetID},
+	})
+	require.NoError(t, err)
+
+	agent := identity.Actor{PrincipalID: agentID}
+	items, err := w.svc.ListClusterAssignments(ctx, agent, org, clusterID)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, "payments/#{Ivaldi.Environment.Slug}/db", items[0].Apply.Secrets[0].Ref.Path, "the assignment carries the template; the agent fills it in")
+
+	report := func(reportID, detail string) error {
+		_, err := w.svc.ReportDeployment(ctx, agent, delivery.ReportDeploymentInput{
+			OrganizationID: org, DeploymentID: out[0].ID(), Kind: delivery.DeploymentEventHealth,
+			Status: new(release.DeploymentProgressing), Detail: json.RawMessage(detail), ReportID: reportID,
+		})
+		return err
+	}
+	require.ErrorIs(t, report("unfilled", `{"secrets":[{"name":"Database.Password","path":"payments/#{Ivaldi.Environment.Slug}/db","version":"1","fingerprint":"hmac-sha256:v1:aa"}]}`),
+		delivery.ErrInvalid, "the template, with its bindings still in it")
+	require.ErrorIs(t, report("other", `{"secrets":[{"name":"Database.Password","path":"other/production/db","version":"1","fingerprint":"hmac-sha256:v1:aa"}]}`),
+		delivery.ErrInvalid, "a path the deployment was not sent")
+
+	require.NoError(t, report("applied", `{"secrets":[{"name":"Database.Password","path":"payments/production/db","version":"4812","fingerprint":"hmac-sha256:v1:ab12"}]}`))
+	assert.Equal(t, "payments/production/db", w.deployments[out[0].ID()].SecretVersions()[0].Path)
+}
+
 func TestRequestDeploymentsRefusesASecretItsTargetCannotUse(t *testing.T) {
 	const storeID = "sst_01BX5ZZKBKACTAV9WEVGEMMVRZ"
 	w := newWorld(t)

@@ -429,29 +429,89 @@ func (s VariableScope) tiesWith(o VariableScope) (string, bool) {
 // of first use. ##{ writes a literal #{. It follows the agent's syntax,
 // which fills the bindings in when a Release is deployed.
 func BindingNames(text string) ([]string, error) {
-	var names []string
+	_, names, err := splitBindings(text)
+	return names, err
+}
+
+// CheckSecretPath checks the path an agent reports it read against the path a
+// Release holds. The record says where the secret was read, not the template
+// it came from, so it must be that template with its bindings filled in: the
+// same literal parts, in order, and nothing else. What a binding stands for is
+// the agent's to fill in — a text variable's own value may bind another — so
+// this checks the shape; the snapshot keeps the template either way.
+func CheckSecretPath(template, reported string) error {
+	segments, _, err := splitBindings(template)
+	if err != nil {
+		return err
+	}
+	mismatch := func() error {
+		return NewErrInvalidInput(fmt.Sprintf(
+			"the secret path %q the agent read is not the path %q the deployment was sent", reported, template))
+	}
+	if reported == "" {
+		return mismatch()
+	}
+	// A path with a binding still in it is the template, not what the agent
+	// read. A template may hold a literal #{ from ##{, which the agent reads
+	// as one too.
+	if strings.Contains(reported, "#{") && !slices.ContainsFunc(segments, func(s string) bool { return strings.Contains(s, "#{") }) {
+		return mismatch()
+	}
+	if len(segments) == 1 {
+		if reported != segments[0] {
+			return mismatch()
+		}
+		return nil
+	}
+	first, last := segments[0], segments[len(segments)-1]
+	if len(reported) < len(first)+len(last) || !strings.HasPrefix(reported, first) || !strings.HasSuffix(reported, last) {
+		return mismatch()
+	}
+	rest := reported[len(first) : len(reported)-len(last)]
+	for _, segment := range segments[1 : len(segments)-1] {
+		i := strings.Index(rest, segment)
+		if i < 0 {
+			return mismatch()
+		}
+		rest = rest[i+len(segment):]
+	}
+	return nil
+}
+
+// splitBindings splits text into the literal parts between its #{Name}
+// bindings and the names, in order of first use. There is one more part than
+// there are bindings. ##{ writes a literal #{.
+func splitBindings(text string) (segments, names []string, err error) {
+	var literal strings.Builder
 	for s := text; ; {
 		i := strings.Index(s, "#{")
 		if i < 0 {
-			return names, nil
+			literal.WriteString(s)
+			break
 		}
 		if i > 0 && s[i-1] == '#' {
+			literal.WriteString(s[:i-1])
+			literal.WriteString("#{")
 			s = s[i+2:]
 			continue
 		}
 		end := strings.IndexByte(s[i:], '}')
 		if end < 0 {
-			return nil, NewErrInvalidInput("the value has an unclosed #{")
+			return nil, nil, NewErrInvalidInput("the value has an unclosed #{")
 		}
 		name := strings.TrimSpace(s[i+2 : i+end])
 		if name == "" {
-			return nil, NewErrInvalidInput("the value has an empty #{}")
+			return nil, nil, NewErrInvalidInput("the value has an empty #{}")
 		}
+		literal.WriteString(s[:i])
+		segments = append(segments, literal.String())
+		literal.Reset()
 		if !slices.Contains(names, name) {
 			names = append(names, name)
 		}
 		s = s[i+end+1:]
 	}
+	return append(segments, literal.String()), names, nil
 }
 
 func (Variable) Prefix() string      { return "var" }

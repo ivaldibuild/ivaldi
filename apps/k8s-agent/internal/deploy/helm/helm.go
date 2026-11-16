@@ -6,6 +6,7 @@ package helm
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -21,6 +22,8 @@ import (
 	"helm.sh/helm/v4/pkg/storage"
 	"helm.sh/helm/v4/pkg/storage/driver"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
@@ -35,6 +38,16 @@ const maxHistory = 10
 
 // releaseLabel names, on a Helm revision, the Deployment that made it.
 const releaseLabel = "ivaldi.build/deployment"
+
+// pinsAnnotation names, on a Helm revision's Secret, the secret versions the
+// apply that made it read. Helm keeps one revision per Secret and rebuilds a
+// revision only when it supersedes it, so the annotation outlives reporting.
+const pinsAnnotation = "ivaldi.build/secrets"
+
+// maxPinsSize bounds what is kept in the annotation, which Kubernetes bounds
+// at 256 KiB with everything else on the object. A Deployment whose secrets
+// do not fit keeps none, and a retry is told rather than guessing.
+const maxPinsSize = 128 << 10
 
 // Config configures the Helm deployer.
 type Config struct {
@@ -56,6 +69,12 @@ type Config struct {
 
 // New returns the Helm deployer.
 func New(cfg Config) (deploy.Deployer, error) {
+	switch {
+	case cfg.RESTConfig == nil:
+		return nil, fmt.Errorf("the Helm deployer needs a REST config")
+	case cfg.Kube == nil:
+		return nil, fmt.Errorf("the Helm deployer needs a Kubernetes client")
+	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.New(slog.DiscardHandler)
 	}
@@ -106,7 +125,7 @@ func (d *deployer) Apply(ctx context.Context, a deploy.Assignment, progress depl
 		return deploy.Applied{}, err
 	}
 	if install == nil {
-		return deploy.Applied{Skipped: true, Ref: d.ref(cfg.Releases, a.HelmReleaseName)}, nil
+		return d.alreadyApplied(ctx, cfg.Releases, a)
 	}
 
 	progress(deploy.StepFetching, "pulling chart "+a.Definition.Ref())
@@ -170,7 +189,93 @@ func (d *deployer) Apply(ctx context.Context, a deploy.Assignment, progress depl
 		}
 		return deploy.Applied{}, &deploy.Failure{Reason: "helm could not apply release " + a.HelmReleaseName, Err: err}
 	}
+	d.keepPins(ctx, cfg.Releases, a)
 	return deploy.Applied{Ref: d.ref(cfg.Releases, a.HelmReleaseName), SecretsInValues: built.SecretsInValues}, nil
+}
+
+// alreadyApplied reports a Deployment an earlier attempt applied: its revision
+// is the one that committed, so its pins are what the Deployment records. An
+// earlier attempt may have died before keeping them, in which case the report
+// carries none and the caller refuses rather than report this attempt's.
+func (d *deployer) alreadyApplied(ctx context.Context, store *storage.Storage, a deploy.Assignment) (deploy.Applied, error) {
+	out := deploy.Applied{Skipped: true, Ref: d.ref(store, a.HelmReleaseName)}
+	last, err := latest(store, a.HelmReleaseName)
+	if err != nil {
+		return deploy.Applied{}, fmt.Errorf("read helm release %s: %w", a.HelmReleaseName, err)
+	}
+	pins, err := d.readPins(ctx, a.Namespace, a.HelmReleaseName, last.Version)
+	if err != nil {
+		return deploy.Applied{}, &deploy.Failure{
+			Reason: fmt.Sprintf("could not read the versions of the secrets Deployment %s applied", a.DeploymentID),
+			Err:    err,
+		}
+	}
+	out.SecretPins = pins
+	return out, nil
+}
+
+// keepPins keeps what this apply resolved on its revision, so a retry that
+// finds the Deployment already applied reports the truth. Failing to keep them
+// does not fail the apply: this attempt's own report is right either way, and
+// a later attempt is refused rather than guessing.
+func (d *deployer) keepPins(ctx context.Context, store *storage.Storage, a deploy.Assignment) {
+	if len(a.SecretPins) == 0 {
+		return
+	}
+	last, err := latest(store, a.HelmReleaseName)
+	if err != nil {
+		d.cfg.Logger.Warn("could not keep the deployment's secret versions", "deployment_id", a.DeploymentID, "error", err)
+		return
+	}
+	if err := d.writePins(ctx, a.Namespace, a.HelmReleaseName, last, a.SecretPins); err != nil {
+		d.cfg.Logger.Warn("could not keep the deployment's secret versions", "deployment_id", a.DeploymentID, "error", err)
+	}
+}
+
+// revisionSecret names the Secret the Helm secret storage keeps a revision in:
+// <helm storage type>.<release name>.v<version>.
+func revisionSecret(release string, version int) string {
+	return fmt.Sprintf("%s.%s.v%d", storage.HelmStorageType, release, version)
+}
+
+// readPins returns the pins kept on a revision, or nil when it kept none.
+func (d *deployer) readPins(ctx context.Context, namespace, release string, version int) ([]deploy.SecretPin, error) {
+	secret, err := d.cfg.Kube.CoreV1().Secrets(namespace).Get(ctx, revisionSecret(release, version), metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("read the release revision: %w", err)
+	}
+	raw := secret.Annotations[pinsAnnotation]
+	if raw == "" {
+		return nil, nil
+	}
+	var pins []deploy.SecretPin
+	if err := json.Unmarshal([]byte(raw), &pins); err != nil {
+		return nil, fmt.Errorf("read the release revision's pins: %w", err)
+	}
+	return pins, nil
+}
+
+// writePins adds the pins to a revision's annotations, without disturbing
+// anything else on the object.
+func (d *deployer) writePins(ctx context.Context, namespace, release string, rel *releasev1.Release, pins []deploy.SecretPin) error {
+	raw, err := json.Marshal(pins)
+	if err != nil {
+		return err
+	}
+	if len(raw) > maxPinsSize {
+		return fmt.Errorf("%d secrets are too many to keep with the release", len(pins))
+	}
+	patch, err := json.Marshal(map[string]any{
+		"metadata": map[string]any{"annotations": map[string]string{pinsAnnotation: string(raw)}},
+	})
+	if err != nil {
+		return err
+	}
+	_, err = d.cfg.Kube.CoreV1().Secrets(namespace).Patch(ctx, revisionSecret(release, rel.Version), types.MergePatchType, patch, metav1.PatchOptions{})
+	if err != nil {
+		return fmt.Errorf("keep the release revision's pins: %w", err)
+	}
+	return nil
 }
 
 // prepare reads the release's latest revision and decides what to do:

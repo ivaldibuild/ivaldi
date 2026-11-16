@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -88,24 +89,32 @@ type fixture struct {
 	store    *storage.Storage
 	loads    int
 	steps    []deploy.Step
-	// kube, when set, is the Kubernetes client Helm writes through.
-	kube kube.Interface
+	// kube is the Kubernetes client Helm writes through, and where the
+	// revisions' Secrets are.
+	kube *k8sfake.Clientset
+	// applyClient, when set, is the client Helm applies through.
+	applyClient kube.Interface
 }
 
 func (f *fixture) kubeClient() kube.Interface {
-	if f.kube != nil {
-		return f.kube
+	if f.applyClient != nil {
+		return f.applyClient
 	}
 	return &kubefake.PrintingKubeClient{Out: io.Discard}
 }
 
+// namespace is where the fixture's assignments run.
+const namespace = "payments-prod"
+
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	f := &fixture{store: storage.Init(driver.NewMemory())}
+	f := &fixture{kube: k8sfake.NewSimpleClientset()}
+	f.store = storage.Init(driver.NewSecrets(f.kube.CoreV1().Secrets(namespace)))
 	f.deployer = &deployer{
-		cfg: Config{Timeout: 10 * time.Minute, RESTConfig: &rest.Config{}},
+		cfg: Config{Timeout: 10 * time.Minute, RESTConfig: &rest.Config{}, Kube: f.kube, Logger: slog.New(slog.DiscardHandler)},
 		now: time.Now,
-		configure: func(string, *rest.Config) (*action.Configuration, error) {
+		configure: func(namespace string, _ *rest.Config) (*action.Configuration, error) {
+			f.store = storage.Init(driver.NewSecrets(f.kube.CoreV1().Secrets(namespace)))
 			return &action.Configuration{
 				Releases:     f.store,
 				KubeClient:   f.kubeClient(),
@@ -163,6 +172,45 @@ func TestApply_InstallsUpgradesAndSkipsAnAppliedDeployment(t *testing.T) {
 	applied, err = f.deployer.Apply(t.Context(), assignment("dep_2"), f.progress)
 	require.NoError(t, err)
 	assert.Equal(t, "2", applied.Ref["revision"])
+}
+
+// A retry that finds its Deployment already applied reports the secret
+// versions the revision that committed kept, not what it resolved again.
+func TestApply_ASkippedDeploymentReportsThePinsItsRevisionKept(t *testing.T) {
+	f := newFixture(t)
+	first := assignment("dep_1")
+	first.SecretPins = []deploy.SecretPin{{
+		Name: "Database.Password", Path: "payments/production/db", Version: "41",
+		Fingerprint: "hmac-sha256:v1:first", DeliveredAs: "value",
+	}}
+
+	applied, err := f.deployer.Apply(t.Context(), first, f.progress)
+	require.NoError(t, err)
+	require.False(t, applied.Skipped)
+	kept, err := f.kube.CoreV1().Secrets(namespace).Get(t.Context(), revisionSecret("payments", 1), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Contains(t, kept.Annotations[pinsAnnotation], "hmac-sha256:v1:first")
+
+	// The agent stopped before reporting, and a secret rotated meanwhile.
+	retry := assignment("dep_1")
+	retry.SecretPins = []deploy.SecretPin{{
+		Name: "Database.Password", Path: "payments/production/db", Version: "42",
+		Fingerprint: "hmac-sha256:v1:second", DeliveredAs: "value",
+	}}
+	skipped, err := f.deployer.Apply(t.Context(), retry, f.progress)
+	require.NoError(t, err)
+	require.True(t, skipped.Skipped)
+	assert.Equal(t, first.SecretPins, skipped.SecretPins, "the pins of the apply that committed")
+
+	// A revision an earlier agent applied kept none, and the retry says so.
+	older := assignment("dep_3")
+	older.SecretPins = nil
+	_, err = f.deployer.Apply(t.Context(), older, f.progress)
+	require.NoError(t, err)
+	without, err := f.deployer.Apply(t.Context(), assignment("dep_3"), f.progress)
+	require.NoError(t, err)
+	assert.True(t, without.Skipped)
+	assert.Nil(t, without.SecretPins)
 }
 
 func TestApply_FailsOnAMissingOverlay(t *testing.T) {
@@ -282,7 +330,7 @@ func (b *blockingKube) GetWaiterWithOptions(strategy kube.WaitStrategy, opts ...
 func TestApply_ReturnsOnlyOnceHelmHasStoppedWriting(t *testing.T) {
 	f := newFixture(t)
 	blocking := &blockingKube{PrintingKubeClient: kubefake.PrintingKubeClient{Out: io.Discard}, called: make(chan struct{}), release: make(chan struct{})}
-	f.kube = blocking
+	f.applyClient = blocking
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error)
 	go func() {

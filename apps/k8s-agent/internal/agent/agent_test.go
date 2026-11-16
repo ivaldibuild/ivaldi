@@ -27,6 +27,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/auth"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/deploy"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/report"
+	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/secrets"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/state"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/targets"
 )
@@ -445,10 +446,12 @@ func TestWork_SkipsAHeartbeatItCannotFillIn(t *testing.T) {
 	assert.False(t, sent, "a heartbeat without the Kubernetes version would be refused, so none is sent")
 }
 
-// fakeDeployer applies by returning err, or by blocking until ctx ends.
+// fakeDeployer applies by returning applied and err, or by blocking until ctx
+// ends.
 type fakeDeployer struct {
-	err   error
-	block bool
+	err     error
+	block   bool
+	applied deploy.Applied
 }
 
 func (f *fakeDeployer) Name() string { return "helm" }
@@ -459,8 +462,24 @@ func (f *fakeDeployer) Apply(ctx context.Context, _ deploy.Assignment, progress 
 		<-ctx.Done()
 		return deploy.Applied{}, ctx.Err()
 	}
-	return deploy.Applied{Ref: map[string]any{"type": "helm"}}, f.err
+	return f.applied, f.err
 }
+
+// fakeResolver resolves every secret to the same value, and fakeSecretWriter
+// writes nothing.
+type fakeResolver struct{}
+
+func (fakeResolver) Resolve(context.Context, string, []apiclient.AssignmentSecret) ([]secrets.Resolved, error) {
+	return []secrets.Resolved{{Name: "DB_PASSWORD", Path: "db", Value: "hunter22", Version: "41", Fingerprint: "hmac-sha256:v1:aa"}}, nil
+}
+func (fakeResolver) Release([]secrets.Resolved) {}
+
+type fakeSecretWriter struct{}
+
+func (fakeSecretWriter) Write(context.Context, string, string, string, []secrets.Resolved) (string, error) {
+	return "", nil
+}
+func (fakeSecretWriter) Prune(context.Context, string, string, string) error { return nil }
 
 func applyingAssignment(id string) apiclient.DeploymentAssignment {
 	return apiclient.DeploymentAssignment{
@@ -495,6 +514,62 @@ func TestExecutor(t *testing.T) {
 			if len(tt.want) == 2 && tt.want[1] == "dep_1:failed" {
 				assert.Equal(t, map[string]any{"reason": "no chart"}, cp.reports[1].Detail)
 			}
+		})
+	}
+}
+
+// secretAssignment is an applying Deployment that resolves one secret.
+func secretAssignment(id string) apiclient.DeploymentAssignment {
+	a := applyingAssignment(id)
+	a.Apply.Secrets = []apiclient.AssignmentSecret{{
+		Name: "DB_PASSWORD", DeliverAs: apiclient.AssignmentSecretDeliverAsValue,
+		Store: apiclient.StoreSettings{Id: "sst_1", Kind: apiclient.StoreSettingsKindKubernetes},
+		Ref:   apiclient.SecretRef{Path: "db"},
+	}}
+	return a
+}
+
+// A retry that finds its Deployment already applied reports the pins the apply
+// that committed kept. Without them it fails the Deployment, rather than record
+// versions that the chart may not hold.
+func TestExecutor_ASkippedApplyReportsThePinsThatCommitted(t *testing.T) {
+	kept := deploy.SecretPin{Name: "DB_PASSWORD", Path: "db", Version: "40", Fingerprint: "hmac-sha256:v1:kept", DeliveredAs: "value"}
+	tests := []struct {
+		name    string
+		applied deploy.Applied
+		want    []string
+		pins    []deploy.SecretPin
+	}{
+		{
+			name:    "the pins the revision kept",
+			applied: deploy.Applied{Skipped: true, SecretPins: []deploy.SecretPin{kept}},
+			want:    []string{"dep_1:resolving", "dep_1:fetching", "dep_1:applied"},
+			pins:    []deploy.SecretPin{kept},
+		},
+		{
+			name:    "no pins kept fails rather than guess",
+			applied: deploy.Applied{Skipped: true},
+			want:    []string{"dep_1:resolving", "dep_1:fetching", "dep_1:failed"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cp := &fakeControlPlane{assignments: []apiclient.DeploymentAssignment{secretAssignment("dep_1")}}
+			log := slog.New(slog.DiscardHandler)
+			exec := newExecutor(cp, map[string]deploy.Deployer{"helm": &fakeDeployer{applied: tt.applied}}, report.New(cp, log), log, 1)
+			exec.withSecrets(fakeResolver{}, fakeSecretWriter{}, secrets.NewMasker())
+
+			_, err := exec.poll(t.Context(), "prod-eu")
+			require.NoError(t, err)
+			exec.wait()
+
+			assert.Equal(t, tt.want, cp.reportIDs())
+			last := cp.reports[len(cp.reports)-1].Detail.(map[string]any)
+			if tt.pins != nil {
+				assert.Equal(t, tt.pins, last["secrets"], "the versions the applied revision read")
+				return
+			}
+			assert.Contains(t, last["reason"], "without keeping the versions of its secrets")
 		})
 	}
 }

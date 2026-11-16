@@ -121,7 +121,7 @@ func boundPaths(a deploy.Assignment) ([]apiclient.AssignmentSecret, error) {
 }
 
 // resolveSecrets resolves the assignment's secrets and writes those
-// delivered as a Secret, filling a's Secrets and SecretName.
+// delivered as a Secret, filling a's Secrets, SecretName, and SecretPins.
 func (e *executor) resolveSecrets(ctx context.Context, a *deploy.Assignment, progress deploy.Progress) ([]secrets.Resolved, error) {
 	if len(a.SecretRefs) == 0 {
 		return nil, nil
@@ -140,6 +140,7 @@ func (e *executor) resolveSecrets(ctx context.Context, a *deploy.Assignment, pro
 	}
 	for _, r := range resolved {
 		a.Secrets = append(a.Secrets, values.Secret{Name: r.Name, Value: r.Value, ValuesPath: r.ValuesPath, AsValue: r.AsValue})
+		a.SecretPins = append(a.SecretPins, r.Pin())
 	}
 	a.SecretName, err = e.writer.Write(ctx, a.Namespace, a.ApplicationID, a.DeploymentID, resolved)
 	return resolved, err
@@ -182,6 +183,12 @@ func (e *executor) apply(ctx context.Context, a deploy.Assignment) {
 		log.Info("stopped mid-apply; the deployment stays applying")
 		return
 	}
+	// An earlier attempt applied this Deployment and kept no pins, so what
+	// the chart holds may not be what this attempt resolved. Recording this
+	// attempt's versions would be a guess; saying so is not.
+	if err == nil && applied.Skipped && len(a.SecretPins) > 0 && applied.SecretPins == nil {
+		err = deploy.Failf("an earlier attempt applied this deployment without keeping the versions of its secrets; request the deployment again")
+	}
 
 	final, done := context.WithTimeout(context.WithoutCancel(ctx), finalReportTimeout)
 	defer done()
@@ -205,12 +212,13 @@ func (e *executor) apply(ctx context.Context, a deploy.Assignment) {
 	if a.IsRollback() {
 		detail["restores"] = a.Restores
 	}
-	if len(resolved) > 0 {
-		// The pins a rollback replays, never the values.
-		pins := make([]any, 0, len(resolved))
-		for _, r := range resolved {
-			pins = append(pins, r.Pin())
-		}
+	// The pins a rollback replays, never the values: the ones the apply that
+	// committed kept when this attempt found it already applied.
+	pins := a.SecretPins
+	if applied.Skipped && applied.SecretPins != nil {
+		pins = applied.SecretPins
+	}
+	if len(pins) > 0 {
 		detail["secrets"] = pins
 	}
 	if len(applied.SecretsInValues) > 0 {

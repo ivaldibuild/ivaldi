@@ -896,26 +896,13 @@ func (s *service) plan(ctx context.Context, organizationID string, rel *delivery
 	} else {
 		p.checks = append(p.checks, check("no_in_flight", false, "deployment "+inFlight.ID()+" is still in flight"))
 	}
-	channel, err := s.applications.GetChannel(ctx, organizationID, rel.ChannelID())
+	position, err := s.lifecyclePosition(ctx, rel, target.EnvironmentID())
 	if err != nil {
 		return nil, err
 	}
-	lifecycle, err := s.lifecycles.GetLifecycle(ctx, organizationID, channel.LifecycleID())
-	if err != nil {
-		return nil, err
-	}
-	inLifecycle, phaseIndex := phaseOf(lifecycle, target.EnvironmentID())
-	p.checks = append(p.checks, check("environment_in_lifecycle", inLifecycle, "the environment is not in the release channel's lifecycle"))
-	open := false
-	reason := "the environment is not in the release channel's lifecycle"
-	if inLifecycle {
-		succeeded, err := s.deployments.ListSucceededEnvironmentIDs(ctx, organizationID, rel.ID())
-		if err != nil {
-			return nil, err
-		}
-		open, reason = phaseOpen(lifecycle, phaseIndex, succeeded)
-	}
-	p.checks = append(p.checks, check("phase_open", open, reason))
+	p.checks = append(p.checks,
+		check("environment_in_lifecycle", position.inLifecycle, "the environment is not in the release channel's lifecycle"),
+		check("phase_open", position.open, position.reason))
 
 	p.reason, p.restores, err = s.reasonFor(ctx, rel, p.placement, targetID)
 	if err != nil {
@@ -1031,6 +1018,51 @@ func (s *service) resolve(revision *delivery.ReleaseVariables, rel *delivery.Rel
 	return delivery.ResolveVariables(revision.Variables(), delivery.DeploymentScope{
 		TargetID: target.ID(), EnvironmentID: target.EnvironmentID(), ChannelID: rel.ChannelID(),
 	})
+}
+
+// lifecycle is where an Environment stands in a Release's Lifecycle.
+type lifecycle struct {
+	inLifecycle bool
+	// open says whether every earlier required phase has succeeded for the
+	// Release; reason says why not.
+	open   bool
+	reason string
+}
+
+// lifecyclePosition checks an Environment against the Lifecycle of the
+// Release's Channel: the deploy plan refuses what fails, and an observation
+// records it as findings.
+func (s *service) lifecyclePosition(ctx context.Context, rel *delivery.Release, environmentID string) (lifecycle, error) {
+	channel, err := s.applications.GetChannel(ctx, rel.OrganizationID(), rel.ChannelID())
+	if err != nil {
+		return lifecycle{}, err
+	}
+	l, err := s.lifecycles.GetLifecycle(ctx, rel.OrganizationID(), channel.LifecycleID())
+	if err != nil {
+		return lifecycle{}, err
+	}
+	inLifecycle, phaseIndex := phaseOf(l, environmentID)
+	if !inLifecycle {
+		return lifecycle{reason: "the environment is not in the release channel's lifecycle"}, nil
+	}
+	succeeded, err := s.deployments.ListSucceededEnvironmentIDs(ctx, rel.OrganizationID(), rel.ID())
+	if err != nil {
+		return lifecycle{}, err
+	}
+	open, reason := phaseOpen(l, phaseIndex, succeeded)
+	return lifecycle{inLifecycle: true, open: open, reason: reason}, nil
+}
+
+// findings are the Lifecycle rules an observed Deployment broke. Policy's
+// findings wait until policy evaluates observed Deployments.
+func (l lifecycle) findings() []delivery.Finding {
+	switch {
+	case !l.inLifecycle:
+		return []delivery.Finding{delivery.FindingOutsideLifecycle}
+	case !l.open:
+		return []delivery.Finding{delivery.FindingPhaseNotOpen}
+	}
+	return []delivery.Finding{}
 }
 
 func phaseOf(l *delivery.Lifecycle, environmentID string) (bool, int) {
@@ -1476,9 +1508,11 @@ func (s *service) Observe(ctx context.Context, actor identity.Actor, in delivery
 		if err != nil {
 			return err
 		}
-		version := observedVersion(in.Artifacts)
-		rel, err := s.releases.GetReleaseByVersion(ctx, in.OrganizationID, app.ID(), version)
+		// A Release that already holds exactly these images, such as one CI
+		// created and a GitOps tool deployed, is the one running.
+		rel, err := s.releases.GetReleaseWithImages(ctx, in.OrganizationID, app.ID(), buildIDsOf(releaseBuilds))
 		if errors.Is(err, delivery.ErrNotFound) {
+			version := observedVersion(in.Artifacts)
 			channel, err := s.observedChannel(ctx, in.OrganizationID, app.ID(), placement)
 			if err != nil {
 				return err
@@ -1518,13 +1552,18 @@ func (s *service) Observe(ctx context.Context, actor identity.Actor, in delivery
 		} else if err != nil {
 			return err
 		}
+		position, err := s.lifecyclePosition(ctx, rel, env.ID())
+		if err != nil {
+			return err
+		}
 
 		d, err := delivery.NewDeployment(delivery.NewDeploymentProps{
 			OrganizationID: in.OrganizationID, ApplicationID: app.ID(), ReleaseID: rel.ID(),
 			EnvironmentID: env.ID(), TargetID: target.ID(),
 			Source: delivery.DeploymentObserved, Reason: delivery.DeploymentRollout,
 			Status: release.DeploymentHealthy, PreviousDeploymentID: placement.CurrentDeploymentID(),
-			ExternalRef: in.ExternalRef, RequestedAt: &observedAt, StartedAt: &observedAt, FinishedAt: &observedAt, SucceededAt: &observedAt,
+			ExternalRef: in.ExternalRef, Findings: position.findings(),
+			RequestedAt: &observedAt, StartedAt: &observedAt, FinishedAt: &observedAt, SucceededAt: &observedAt,
 		}, nil)
 		if err != nil {
 			return err
@@ -1722,6 +1761,14 @@ func (s *service) observedChannel(ctx context.Context, organizationID, applicati
 		}
 	}
 	return s.applications.GetDefaultChannel(ctx, organizationID, applicationID)
+}
+
+func buildIDsOf(builds []delivery.NewReleaseBuildProps) []string {
+	ids := make([]string, len(builds))
+	for i, b := range builds {
+		ids[i] = b.BuildID
+	}
+	return ids
 }
 
 // observedVersion names an observed Release after the images it runs, so a

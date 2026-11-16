@@ -127,6 +127,23 @@ func (r *releaseRepository) GetReleaseByVersion(ctx context.Context, organizatio
 		"organization_id = ? AND application_id = ? AND version = ?", organizationID, applicationID, version))
 }
 
+func (r *releaseRepository) GetReleaseWithImages(ctx context.Context, organizationID, applicationID string, buildIDs []string) (*delivery.Release, error) {
+	if len(buildIDs) == 0 {
+		return nil, delivery.ErrNotFound
+	}
+	// The primary key is (release_id, artifact_id), so a Release holds each
+	// image once: n images, all of them among buildIDs, is an exact match.
+	matching := r.conn(ctx).Table("delivery.release_builds AS rb").
+		Select("rb.release_id").
+		Joins("JOIN delivery.application_artifacts AS a ON a.organization_id = rb.organization_id AND a.application_id = rb.application_id AND a.id = rb.artifact_id").
+		Where("rb.organization_id = ? AND rb.application_id = ? AND a.artifact_kind = ?", organizationID, applicationID, string(delivery.ArtifactContainerImage)).
+		Group("rb.release_id").
+		Having("count(*) = ? AND count(*) FILTER (WHERE rb.build_id IN ?) = ?", len(buildIDs), buildIDs, len(buildIDs))
+	return r.get(r.conn(ctx), r.conn(ctx).
+		Where("organization_id = ? AND application_id = ? AND id IN (?)", organizationID, applicationID, matching).
+		Order(clause.OrderBy{Expression: clause.Expr{SQL: "source = ? , created_at DESC, id DESC", Vars: []any{string(delivery.ReleaseObserved)}}}))
+}
+
 func (r *releaseRepository) get(db, q *gorm.DB) (*delivery.Release, error) {
 	var e releaseEntity
 	if err := q.Take(&e).Error; err != nil {

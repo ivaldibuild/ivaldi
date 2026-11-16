@@ -37,6 +37,8 @@ func TestSnapshotEnumTagsMatchTheDomain(t *testing.T) {
 	assert.ElementsMatch(t, []string{string(VariableKindText), string(VariableKindSecret)}, enumTag(t, VariableSnapshot{}, "Kind"))
 	assert.ElementsMatch(t, []string{string(ReleaseVariablesCurrent), string(ReleaseVariablesSuperseded)}, enumTag(t, ReleaseVariablesSnapshot{}, "Status"))
 	assert.ElementsMatch(t, []string{string(VariableDeliverAsSecret), string(VariableDeliverAsValue)}, enumTag(t, VariableSnapshot{}, "DeliverAs"))
+	assert.ElementsMatch(t, []string{string(FindingOutsideLifecycle), string(FindingPhaseNotOpen), string(FindingWouldRequireApproval), string(FindingWouldDeny)},
+		enumTag(t, DeploymentSnapshot{}, "Findings"))
 }
 
 // The assignment is the agent's contract, frozen from slice 5 on: its enum

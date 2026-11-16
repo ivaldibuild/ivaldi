@@ -201,3 +201,71 @@ func TestReleaseRepository(t *testing.T) {
 		assert.ErrorIs(t, err, delivery.ErrNotFound)
 	})
 }
+
+func TestReleaseRepositoryFindsAReleaseByItsImages(t *testing.T) {
+	f := newFixture(t)
+	builds := NewBuildRepository(f.db)
+	releases := NewReleaseRepository(f.db)
+	at(t, 0)
+
+	env := f.createEnv(t, orgA, wsA, "prod")
+	lc := f.createLifecycle(t, orgA, wsA, "standard", phase("Prod", env.ID()))
+	app := f.createApp(t, orgA, wsA, projA, "api")
+	api := f.createArtifact(t, orgA, app.ID(), "api")
+	worker := f.createArtifact(t, orgA, app.ID(), "worker")
+	chart := must(delivery.NewArtifact(delivery.NewArtifactProps{
+		OrganizationID: orgA, ApplicationID: app.ID(), Name: "chart",
+		ArtifactKind: delivery.ArtifactHelmChart, ArtifactName: "ghcr.io/acme/charts/api",
+	}, nil))
+	require.NoError(t, f.apps.CreateArtifact(f.ctx, chart))
+	main := f.createChannel(t, orgA, app.ID(), lc.ID(), "main", true)
+
+	build := func(artifact *delivery.Artifact, c string) *delivery.Build {
+		b := must(delivery.NewBuild(delivery.NewBuildProps{
+			OrganizationID: orgA, ArtifactKind: artifact.ArtifactKind(), ArtifactName: artifact.ArtifactName(),
+			Digest: digest(c), Provenance: delivery.BuildCIReported,
+		}, nil))
+		_, err := builds.CreateBuild(f.ctx, b)
+		require.NoError(t, err)
+		return b
+	}
+	newRelease := func(version string, source delivery.ReleaseSource, pairs ...any) *delivery.Release {
+		props := delivery.NewReleaseProps{OrganizationID: orgA, ApplicationID: app.ID(), ChannelID: main.ID(), Version: version, Source: source}
+		for i := 0; i < len(pairs); i += 2 {
+			props.Builds = append(props.Builds, delivery.NewReleaseBuildProps{
+				ArtifactID: pairs[i].(*delivery.Artifact).ID(), BuildID: pairs[i+1].(*delivery.Build).ID(),
+			})
+		}
+		r := must(delivery.NewRelease(props, nil))
+		require.NoError(t, releases.CreateRelease(f.ctx, r))
+		return r
+	}
+	apiV1, workerV1, chartV1, chartV2 := build(api, "1"), build(worker, "2"), build(chart, "3"), build(chart, "4")
+
+	observed := newRelease("observed-1", delivery.ReleaseObserved, api, apiV1, worker, workerV1)
+	at(t, time.Minute)
+	created := newRelease("1.0.0", delivery.ReleaseCreated, api, apiV1, worker, workerV1, chart, chartV1)
+	at(t, 2*time.Minute)
+	newer := newRelease("1.0.1", delivery.ReleaseCreated, api, apiV1, worker, workerV1, chart, chartV2)
+	newRelease("0.9.0", delivery.ReleaseCreated, api, apiV1)
+
+	find := func(ids ...string) (*delivery.Release, error) {
+		return releases.GetReleaseWithImages(f.ctx, orgA, app.ID(), ids)
+	}
+	got, err := find(apiV1.ID(), workerV1.ID())
+	require.NoError(t, err)
+	assert.Equal(t, newer.ID(), got.ID(), "charts are not compared; a created Release beats an observed one, then the newest wins")
+	assert.NotEqual(t, created.ID(), got.ID())
+	assert.NotEqual(t, observed.ID(), got.ID())
+
+	got, err = find(apiV1.ID())
+	require.NoError(t, err)
+	assert.Equal(t, "0.9.0", got.Version(), "a subset of a Release's images is not that Release")
+
+	_, err = find(workerV1.ID())
+	assert.ErrorIs(t, err, delivery.ErrNotFound)
+	_, err = find(apiV1.ID(), workerV1.ID(), build(api, "5").ID())
+	assert.ErrorIs(t, err, delivery.ErrNotFound)
+	_, err = releases.GetReleaseWithImages(f.ctx, orgB, app.ID(), []string{apiV1.ID(), workerV1.ID()})
+	assert.ErrorIs(t, err, delivery.ErrNotFound, "another organization sees nothing")
+}

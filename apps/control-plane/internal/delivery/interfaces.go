@@ -536,6 +536,13 @@ type ReleaseRepository interface {
 	// GetReleaseByVersion returns the Application's Release with the version,
 	// which is how an observed Release is found again.
 	GetReleaseByVersion(ctx context.Context, organizationID, applicationID, version string) (*Release, error)
+	// GetReleaseWithImages returns the Application's Release whose
+	// container-image Builds are exactly buildIDs, which is how an
+	// observation finds the Release it runs. Other artifacts, such as a
+	// chart, are not compared: the agent sees only images. When several
+	// match, a Release someone created wins over an observed one, then the
+	// newest. ErrNotFound when none matches.
+	GetReleaseWithImages(ctx context.Context, organizationID, applicationID string, buildIDs []string) (*Release, error)
 	ListReleases(ctx context.Context, query ListReleasesQuery) (*pagination.Result[*Release], error)
 	// UpdateRelease writes a Release's status, publish decision, and
 	// timestamps. Its Channel, version, and Builds never change.

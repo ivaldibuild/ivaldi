@@ -96,9 +96,14 @@
     @if (deployment()!.findings.length > 0) {
       <section aria-labelledby="findings-heading" class="flex flex-col gap-3">
         <h2 id="findings-heading" class="text-heading text-lg font-semibold">Findings</h2>
+        <p class="text-muted-foreground text-sm">
+          Another tool made this Deployment, and Ivaldi would have refused it:
+        </p>
         <ul class="border-border flex flex-col border">
-          @for (finding of deployment()!.findings; track $index) {
-            <li class="border-border border-b px-4 py-3 text-sm last:border-b-0">{{ finding }}</li>
+          @for (finding of deployment()!.findings; track finding) {
+            <li class="border-border border-b px-4 py-3 text-sm last:border-b-0">
+              {{ findingLabel(finding) }}
+            </li>
           }
         </ul>
       </section>

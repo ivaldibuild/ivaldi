@@ -25,6 +25,7 @@ import {
   cancellable,
   DeploymentStatusBadge,
   deploymentStatusLabels,
+  findingLabel,
   inFlight,
 } from './deployment-status';
 
@@ -89,6 +90,7 @@ export class DeploymentPage {
   );
 
   protected readonly deployment = computed(() => this.loaded()?.deployment ?? null);
+  protected readonly findingLabel = findingLabel;
   protected readonly release = computed(() => this.loaded()?.release ?? null);
   protected readonly application = computed(() => this.loaded()?.application ?? null);
   protected readonly project = computed(() => this.loaded()?.project ?? null);

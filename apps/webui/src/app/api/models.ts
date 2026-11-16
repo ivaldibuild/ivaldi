@@ -110,6 +110,8 @@ export type Build = Schemas['BuildSnapshot'];
 export type ApplyConfig = Schemas['ApplyConfig'];
 export type Deployment = Schemas['DeploymentSnapshot'];
 export type DeploymentStatus = Deployment['status'];
+/** A rule an observed Deployment broke: another tool deployed what Ivaldi would have refused. */
+export type DeploymentFinding = Deployment['findings'][number];
 export type DeploymentEvent = Schemas['DeploymentEventSnapshot'];
 /** A Deployment with its timeline, from `GET /v1/deployments/{id}`. */
 export type DeploymentDetail = Schemas['DeploymentDetail'];

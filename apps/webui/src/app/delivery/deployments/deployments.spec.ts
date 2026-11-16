@@ -409,6 +409,18 @@ describe('deployments', () => {
       expect(button(el, 'Cancel deployment')).toBeUndefined();
     });
 
+    it('says which rules an observed Deployment broke', async () => {
+      const { el } = await renderDeployment(
+        deployment({ status: 'healthy', source: 'observed', findings: ['phase_not_open'] }),
+      );
+
+      const findings = el.querySelector('section[aria-labelledby="findings-heading"]');
+      expect(findings?.textContent).toContain(
+        'An earlier phase of the Lifecycle had not succeeded for this Release',
+      );
+      expect(findings?.textContent).not.toContain('phase_not_open');
+    });
+
     it('cancels a Deployment waiting for approval once confirmed', async () => {
       const { fixture, el } = await renderDeployment(
         deployment({ status: 'awaiting_approval', started_at: null }),

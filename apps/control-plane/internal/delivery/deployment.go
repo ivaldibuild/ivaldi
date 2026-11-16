@@ -25,6 +25,33 @@ const (
 	DeploymentObserved DeploymentSource = "observed"
 )
 
+// Finding is a rule an observed Deployment broke. Ivaldi refuses to execute
+// a Deployment that breaks one, so only observed Deployments carry them.
+type Finding string
+
+const (
+	// FindingOutsideLifecycle means the Target's Environment is not in the
+	// Lifecycle of the Release's Channel.
+	FindingOutsideLifecycle Finding = "outside_lifecycle"
+	// FindingPhaseNotOpen means an earlier phase of that Lifecycle has not
+	// succeeded for the Release.
+	FindingPhaseNotOpen Finding = "phase_not_open"
+	// FindingWouldRequireApproval and FindingWouldDeny are what policy would
+	// have said had Ivaldi executed it. Nothing records them until policy
+	// evaluates observed Deployments.
+	FindingWouldRequireApproval Finding = "would_require_approval"
+	FindingWouldDeny            Finding = "would_deny"
+)
+
+// Valid reports whether f is a finding Ivaldi records.
+func (f Finding) Valid() bool {
+	switch f {
+	case FindingOutsideLifecycle, FindingPhaseNotOpen, FindingWouldRequireApproval, FindingWouldDeny:
+		return true
+	}
+	return false
+}
+
 // DeploymentReason says why a Deployment was made.
 type DeploymentReason string
 
@@ -57,7 +84,7 @@ type Deployment struct {
 	secretPaths          map[string]string
 	restoresDeploymentID *string
 	secretsLatest        bool
-	findings             []string
+	findings             []Finding
 	requestedAt          time.Time
 	startedAt            *time.Time
 	finishedAt           *time.Time
@@ -101,7 +128,7 @@ type DeploymentSnapshot struct {
 	// the secret versions it resolved.
 	RestoresDeploymentID *string    `json:"restores_deployment_id"`
 	SecretsLatest        bool       `json:"secrets_latest"`
-	Findings             []string   `json:"findings"`
+	Findings             []Finding  `json:"findings" enum:"outside_lifecycle,phase_not_open,would_require_approval,would_deny"`
 	RequestedAt          time.Time  `json:"requested_at"`
 	StartedAt            *time.Time `json:"started_at"`
 	FinishedAt           *time.Time `json:"finished_at"`
@@ -154,7 +181,7 @@ type NewDeploymentProps struct {
 	SecretPaths            map[string]string
 	RestoresDeploymentID   *string
 	SecretsLatest          bool
-	Findings               []string
+	Findings               []Finding
 	RequestedAt            *time.Time
 	StartedAt              *time.Time
 	FinishedAt             *time.Time
@@ -246,19 +273,14 @@ func NewDeployment(props NewDeploymentProps, deploymentID *string) (*Deployment,
 	if len(props.ExternalRef) > 0 && !json.Valid(props.ExternalRef) {
 		return nil, NewErrInvalidInput("external reference must be valid JSON")
 	}
-	if err := validateFindings(props.Findings); err != nil {
+	if err := validateFindings(props.Source, props.Findings); err != nil {
 		return nil, err
-	}
-	for _, f := range props.Findings {
-		if f == "" {
-			return nil, NewErrInvalidInput("deployment findings must not be empty")
-		}
 	}
 
 	now := clock.Now()
-	findings := copyStrings(props.Findings)
+	findings := slices.Clone(props.Findings)
 	if findings == nil {
-		findings = []string{}
+		findings = []Finding{}
 	}
 	d := &Deployment{
 		organizationID:       props.OrganizationID,
@@ -310,9 +332,19 @@ func validateDeploymentReference(name string, value *string) error {
 	return nil
 }
 
-func validateFindings(findings []string) error {
-	if len(findings) > 20 {
-		return NewErrInvalidInput("a deployment can have at most 20 findings")
+func validateFindings(source DeploymentSource, findings []Finding) error {
+	if len(findings) > 0 && source != DeploymentObserved {
+		return NewErrInvalidInput("only an observed deployment has findings")
+	}
+	seen := map[Finding]bool{}
+	for _, f := range findings {
+		if !f.Valid() {
+			return NewErrInvalidInput(fmt.Sprintf("%q is not a deployment finding", f))
+		}
+		if seen[f] {
+			return NewErrInvalidInput(fmt.Sprintf("finding %q is listed twice", f))
+		}
+		seen[f] = true
 	}
 	return nil
 }
@@ -377,7 +409,7 @@ func (d *Deployment) RecordSecretVersions(versions []SecretVersion) error {
 	d.updatedAt = clock.Now()
 	return nil
 }
-func (d *Deployment) Findings() []string         { return copyStrings(d.findings) }
+func (d *Deployment) Findings() []Finding        { return slices.Clone(d.findings) }
 func (d *Deployment) RequestedAt() time.Time     { return d.requestedAt }
 func (d *Deployment) StartedAt() *time.Time      { return clock.CopyTime(d.startedAt) }
 func (d *Deployment) FinishedAt() *time.Time     { return clock.CopyTime(d.finishedAt) }
@@ -396,7 +428,7 @@ func (d *Deployment) Snapshot() DeploymentSnapshot {
 		PolicyDecisionID: copyString(d.policyDecisionID), VariableSnapshotID: copyString(d.variableSnapshotID), SecretVersions: d.SecretVersions(),
 		SecretPaths:          d.SecretPaths(),
 		RestoresDeploymentID: copyString(d.restoresDeploymentID), SecretsLatest: d.secretsLatest,
-		Findings:    copyStrings(d.findings),
+		Findings:    slices.Clone(d.findings),
 		RequestedAt: d.requestedAt, StartedAt: clock.CopyTime(d.startedAt), FinishedAt: clock.CopyTime(d.finishedAt),
 		SucceededAt: clock.CopyTime(d.succeededAt), StatusChangedAt: d.statusChangedAt,
 		CreatedAt: d.createdAt, UpdatedAt: d.updatedAt,

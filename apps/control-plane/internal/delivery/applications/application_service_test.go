@@ -717,3 +717,123 @@ func TestRestoreApplicationNeedsItsLifecycles(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, restored.Archived())
 }
+
+// Archived Applications are left out of the Project's variable checks and of
+// the archive guards' counts, so restoring one checks what it brings back
+// again: a shadow or an overlap the Project no longer allows, or a scope whose
+// record was archived meanwhile, refuses the restore rather than surfacing
+// when a Release is created.
+func TestRestoreApplicationChecksItsVariables(t *testing.T) {
+	ctx := context.Background()
+
+	archived := func(t *testing.T) (*world, *delivery.Application) {
+		t.Helper()
+		w := newWorld(t)
+		lifecycle := w.lifecycle(t, wsActive, "main", false)
+		app, _ := w.app(t, prjActive, "batch", lifecycle)
+		w.archiveApp(t, app)
+		w.locked = nil
+		return w, app
+	}
+
+	t.Run("a shadow that no longer agrees", func(t *testing.T) {
+		w, app := archived(t)
+		w.variables = []*delivery.Variable{
+			textVariable(t, prjActive, "", "Database.Host", "database.host"),
+			textVariable(t, prjActive, app.ID(), "Database.Host", "db.host"),
+		}
+		before := w.state.clone()
+
+		_, err := w.svc.RestoreApplication(ctx, ada, org, app.ID())
+
+		require.ErrorIs(t, err, delivery.ErrInvalid)
+		assert.Contains(t, err.Error(), "shadows")
+		assert.Equal(t, before, w.state, "nothing is restored")
+		assert.Equal(t, []string{delivery.VariablesLock(prjActive)}, w.locked, "the project's variables are held while they are checked")
+	})
+
+	t.Run("an overlapping values path", func(t *testing.T) {
+		w, app := archived(t)
+		w.variables = []*delivery.Variable{
+			textVariable(t, prjActive, "", "Database", "database"),
+			textVariable(t, prjActive, app.ID(), "Database.Host", "database.host"),
+		}
+
+		_, err := w.svc.RestoreApplication(ctx, ada, org, app.ID())
+
+		require.ErrorIs(t, err, delivery.ErrInvalid)
+		assert.Contains(t, err.Error(), "overlapping")
+	})
+
+	t.Run("a value scoped to an environment archived meanwhile", func(t *testing.T) {
+		w, app := archived(t)
+		old := w.env(t, wsActive, "old")
+		old.Archive()
+		w.environments[old.ID()] = old.Snapshot()
+		w.variables = []*delivery.Variable{
+			textVariable(t, prjActive, app.ID(), "Feature.Flag", "",
+				delivery.VariableValueProps{Value: "on", Scope: delivery.VariableScope{EnvironmentIDs: []string{old.ID()}}}),
+		}
+
+		_, err := w.svc.RestoreApplication(ctx, ada, org, app.ID())
+
+		require.ErrorIs(t, err, delivery.ErrArchived)
+		assert.Positive(t, w.lockedEnvironments, "the environment is read under its lock")
+	})
+
+	t.Run("a secret kept in a store archived meanwhile", func(t *testing.T) {
+		const storeID = "sst_01JZ0000000000000000000001"
+		w, app := archived(t)
+		w.stores[storeID] = delivery.SecretStoreRef{ID: storeID, WorkspaceID: wsActive, DisplayName: "Vault", Archived: true}
+		w.variables = []*delivery.Variable{must(delivery.NewVariable(delivery.NewVariableProps{
+			OrganizationID: org, ApplicationID: new(app.ID()),
+			Name: "Api.Key", Kind: delivery.VariableKindSecret,
+			Values: []delivery.NewVariableValueProps{{Secret: &delivery.SecretReference{StoreID: storeID, Path: "api/key"}}},
+		}, nil))}
+
+		_, err := w.svc.RestoreApplication(ctx, ada, org, app.ID())
+
+		require.ErrorIs(t, err, delivery.ErrArchived)
+		assert.Contains(t, err.Error(), "secret store")
+	})
+
+	t.Run("the variables come back checked", func(t *testing.T) {
+		w, app := archived(t)
+		env := w.env(t, wsActive, "staging")
+		w.variables = []*delivery.Variable{
+			textVariable(t, prjActive, "", "Database.Host", "database.host"),
+			textVariable(t, prjActive, app.ID(), "Database.Host", "database.host",
+				delivery.VariableValueProps{Value: "billing-db", Scope: delivery.VariableScope{EnvironmentIDs: []string{env.ID()}}}),
+		}
+
+		restored, err := w.svc.RestoreApplication(ctx, ada, org, app.ID())
+
+		require.NoError(t, err)
+		assert.False(t, restored.Archived())
+		assert.Equal(t, []string{delivery.VariablesLock(prjActive)}, w.locked)
+		assert.Positive(t, w.lockedEnvironments, "what the variables are scoped to is read under its lock")
+	})
+}
+
+// textVariable returns a text Variable of the Project, or of the Application
+// when applicationID is set, with one unscoped value unless values are given.
+func textVariable(t *testing.T, projectID, applicationID, name, path string, values ...delivery.VariableValueProps) *delivery.Variable {
+	t.Helper()
+	newValues := make([]delivery.NewVariableValueProps, len(values))
+	for i, v := range values {
+		newValues[i] = delivery.NewVariableValueProps{Value: v.Value, Secret: v.Secret, Scope: v.Scope}
+	}
+	props := delivery.NewVariableProps{OrganizationID: org, Name: name, Kind: delivery.VariableKindText, Values: newValues}
+	if applicationID != "" {
+		props.ApplicationID = &applicationID
+	} else {
+		props.ProjectID = &projectID
+	}
+	if path != "" {
+		props.ValuesPath = &path
+	}
+	if len(values) == 0 {
+		props.Values = []delivery.NewVariableValueProps{{Value: "x"}}
+	}
+	return must(delivery.NewVariable(props, nil))
+}

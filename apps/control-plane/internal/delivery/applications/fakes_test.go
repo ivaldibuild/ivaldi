@@ -82,9 +82,17 @@ type store struct {
 	settings map[string]map[string]json.RawMessage
 	// resolved records the scopes settings were resolved for.
 	resolved []workspace.Scope
-	// lockedApplications counts the locking reads of Applications, so a test
-	// can tell a change holds the row it checks.
+	// lockedApplications, lockedTargets, and lockedEnvironments count the
+	// locking reads, and locked names the locks taken, so a test can tell a
+	// change holds the rows and the Project it checks.
 	lockedApplications int
+	lockedTargets      int
+	lockedEnvironments int
+	locked             []string
+	// variables are the Variables a restore checks, and stores the Secret
+	// Stores a variable's secret values are kept in.
+	variables []*delivery.Variable
+	stores    map[string]delivery.SecretStoreRef
 }
 
 func newStore() *store {
@@ -101,6 +109,7 @@ func newStore() *store {
 		},
 		workspaces:         map[string]*workspace.Workspace{},
 		projects:           map[string]*workspace.Project{},
+		stores:             map[string]delivery.SecretStoreRef{},
 		teams:              map[string]bool{},
 		teamNames:          map[string]string{},
 		releaseVersions:    map[string]string{},
@@ -620,6 +629,89 @@ func (s *store) GetTarget(_ context.Context, organizationID, id string) (*delive
 	}, &snap.ID)), nil
 }
 
+func (s *store) GetTargetForUpdate(ctx context.Context, organizationID, id string) (*delivery.Target, error) {
+	if err := requireTx(ctx, "GetTargetForUpdate"); err != nil {
+		return nil, err
+	}
+	s.lockedTargets++
+	return s.GetTarget(ctx, organizationID, id)
+}
+
+// GetEnvironmentsForUpdate reads the Environments a variable's values are
+// scoped to, as the variables service does, locked.
+func (s *store) GetEnvironmentsForUpdate(ctx context.Context, organizationID string, ids []string) ([]*delivery.Environment, error) {
+	if err := requireTx(ctx, "GetEnvironmentsForUpdate"); err != nil {
+		return nil, err
+	}
+	s.lockedEnvironments++
+	var out []*delivery.Environment
+	for _, id := range ids {
+		if e, err := s.GetEnvironment(ctx, organizationID, id); err == nil {
+			out = append(out, e)
+		}
+	}
+	return out, nil
+}
+
+func (s *store) LookupSecretStores(_ context.Context, _ string, ids []string) (map[string]delivery.SecretStoreRef, error) {
+	out := map[string]delivery.SecretStoreRef{}
+	for _, id := range ids {
+		if ref, ok := s.stores[id]; ok {
+			out[id] = ref
+		}
+	}
+	return out, nil
+}
+
+// Variables.
+
+func (s *store) ListVariables(_ context.Context, organizationID string, owner delivery.VariableOwner) ([]*delivery.Variable, error) {
+	var out []*delivery.Variable
+	for _, v := range s.variables {
+		if v.OrganizationID() != organizationID || v.Archived() {
+			continue
+		}
+		if owner.ApplicationID != "" {
+			if id := v.ApplicationID(); id != nil && *id == owner.ApplicationID {
+				out = append(out, v)
+			}
+			continue
+		}
+		if id := v.ProjectID(); id != nil && *id == owner.ProjectID {
+			out = append(out, v)
+		}
+	}
+	return out, nil
+}
+
+func (s *store) ListVariablesInProject(_ context.Context, organizationID, projectID string) ([]*delivery.Variable, map[string][]*delivery.Variable, error) {
+	project := []*delivery.Variable{}
+	applications := map[string][]*delivery.Variable{}
+	for _, v := range s.variables {
+		if v.OrganizationID() != organizationID || v.Archived() {
+			continue
+		}
+		if appID := v.ApplicationID(); appID != nil {
+			app, ok := s.applications[*appID]
+			if !ok || app.ArchivedAt != nil || app.ProjectID != projectID {
+				continue
+			}
+			applications[*appID] = append(applications[*appID], v)
+			continue
+		}
+		if id := v.ProjectID(); id != nil && *id == projectID {
+			project = append(project, v)
+		}
+	}
+	return project, applications, nil
+}
+
+// Lock holds a Project's variables, as the variables service does.
+func (s *store) Lock(_ context.Context, key string) error {
+	s.locked = append(s.locked, key)
+	return nil
+}
+
 func (s *store) GetEnvironment(_ context.Context, organizationID, id string) (*delivery.Environment, error) {
 	snap, ok := s.environments[id]
 	if !ok || snap.OrganizationID != organizationID {
@@ -816,9 +908,14 @@ func newWorld(t *testing.T) *world {
 }
 
 func (s *store) options(authz authorization.Authorizer) []ApplicationServiceOption {
+	scopes, err := delivery.NewVariableScopeChecks(s, s, s, s)
+	if err != nil {
+		panic(err)
+	}
 	return []ApplicationServiceOption{
 		WithApplicationRepo(s), WithLifecycleLookup(s), WithRegistryLookup(s), WithTargetLookup(s),
-		WithEnvironmentLookup(s), WithVariableUsage(s), WithProjectLookup(s), WithWorkspaces(s), WithSettingResolver(s), WithTeamDirectory(s), WithAuthorizer(authz),
+		WithEnvironmentLookup(s), WithVariableUsage(s), WithVariableSet(s), WithVariableScopes(scopes),
+		WithProjectLookup(s), WithWorkspaces(s), WithSettingResolver(s), WithTeamDirectory(s), WithLocker(s), WithAuthorizer(authz),
 		WithTransactor(s), WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
 	}
 }

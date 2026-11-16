@@ -58,6 +58,14 @@ type VariableUsage interface {
 	CountActiveVariablesWithChannel(ctx context.Context, organizationID, channelID string) (int, error)
 }
 
+// VariableSet reads the variables a Project and its Applications deploy
+// with, for the checks a restore runs before an Application's variables come
+// back. delivery.VariableRepository provides it.
+type VariableSet interface {
+	ListVariables(ctx context.Context, organizationID string, owner delivery.VariableOwner) ([]*delivery.Variable, error)
+	ListVariablesInProject(ctx context.Context, organizationID, projectID string) ([]*delivery.Variable, map[string][]*delivery.Variable, error)
+}
+
 // ProjectLookup reads the Projects Applications belong to, for labelling a
 // "what runs where" read with Project names. workspace.NewLookups provides
 // it.
@@ -75,9 +83,12 @@ type options struct {
 	environments EnvironmentLookup
 	projects     ProjectLookup
 	variables    VariableUsage
+	variableSet  VariableSet
+	scopes       *delivery.VariableScopeChecks
 	workspaces   delivery.Workspaces
 	settings     workspace.SettingResolver
 	teams        team.Directory
+	locker       transaction.Locker
 	authz        authorization.Authorizer
 	writer       change.Writer
 }
@@ -101,6 +112,24 @@ func WithEnvironmentLookup(e EnvironmentLookup) ApplicationServiceOption {
 // WithProjectLookup labels a "what runs where" read with Project names.
 func WithVariableUsage(v VariableUsage) ApplicationServiceOption {
 	return func(o *options) { o.variables = v }
+}
+
+// WithVariableSet makes a restore check the variables the Application brings
+// back against its Project's, as a save does.
+func WithVariableSet(v VariableSet) ApplicationServiceOption {
+	return func(o *options) { o.variableSet = v }
+}
+
+// WithVariableScopes checks what a restored Application's variables are
+// scoped to, under the rows' locks, as a save does.
+func WithVariableScopes(c *delivery.VariableScopeChecks) ApplicationServiceOption {
+	return func(o *options) { o.scopes = c }
+}
+
+// WithLocker holds a Project's variables while a restore checks them, as a
+// save does.
+func WithLocker(l transaction.Locker) ApplicationServiceOption {
+	return func(o *options) { o.locker = l }
 }
 func WithProjectLookup(p ProjectLookup) ApplicationServiceOption {
 	return func(o *options) { o.projects = p }
@@ -155,9 +184,12 @@ func NewApplicationService(opts ...ApplicationServiceOption) (delivery.Applicati
 		{"EnvironmentLookup", o.environments != nil},
 		{"ProjectLookup", o.projects != nil},
 		{"VariableUsage", o.variables != nil},
+		{"VariableSet", o.variableSet != nil},
+		{"VariableScopes", o.scopes != nil},
 		{"Workspaces", o.workspaces != nil},
 		{"SettingResolver", o.settings != nil},
 		{"TeamDirectory", o.teams != nil},
+		{"Locker", o.locker != nil},
 		{"Authorizer", o.authz != nil},
 	}
 	for _, r := range required {
@@ -176,9 +208,12 @@ func NewApplicationService(opts ...ApplicationServiceOption) (delivery.Applicati
 		environments: o.environments,
 		projects:     o.projects,
 		variables:    o.variables,
+		variableSet:  o.variableSet,
+		scopes:       o.scopes,
 		workspaces:   o.workspaces,
 		settings:     o.settings,
 		teams:        o.teams,
+		locker:       o.locker,
 		w:            o.writer,
 	}
 	return &authorized{next: s, authz: o.authz, applications: o.applications}, nil
@@ -195,9 +230,12 @@ type service struct {
 	environments EnvironmentLookup
 	projects     ProjectLookup
 	variables    VariableUsage
+	variableSet  VariableSet
+	scopes       *delivery.VariableScopeChecks
 	workspaces   delivery.Workspaces
 	settings     workspace.SettingResolver
 	teams        team.Directory
+	locker       transaction.Locker
 	w            change.Writer
 }
 
@@ -369,11 +407,20 @@ func (s *service) ListApplications(ctx context.Context, _ identity.Actor, query 
 	return s.applications.ListApplications(ctx, query)
 }
 
-func (s *service) changeApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID, event string, apply func(context.Context, *delivery.Application) error) (*delivery.Application, error) {
+// changeApplication applies a change to an Application of an active Project.
+// prelock, when set, runs in the transaction before the Application is read:
+// a restore holds the Project's variables, whose name is known without
+// reading the Application, before it holds the Application itself.
+func (s *service) changeApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID, event string, prelock func(context.Context) error, apply func(context.Context, *delivery.Application) error) (*delivery.Application, error) {
 	return change.Run(ctx, s.w, actor, change.Spec[*delivery.Application]{
 		AggregateType: delivery.AggregateApplication,
 		AggregateID:   func(a *delivery.Application) string { return a.ID() },
 		Load: func(ctx context.Context) (*delivery.Application, error) {
+			if prelock != nil {
+				if err := prelock(ctx); err != nil {
+					return nil, err
+				}
+			}
 			return s.applications.GetApplicationForUpdate(ctx, organizationID, applicationID)
 		},
 		Apply:    apply,
@@ -387,14 +434,14 @@ func (s *service) changeApplication(ctx context.Context, actor identity.Actor, o
 
 // UpdateApplication changes an active Application's slug, name, or workload selector.
 func (s *service) UpdateApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID string, props delivery.UpdateApplicationProps) (*delivery.Application, error) {
-	return s.changeApplication(ctx, actor, organizationID, applicationID, delivery.EventApplicationUpdated,
+	return s.changeApplication(ctx, actor, organizationID, applicationID, delivery.EventApplicationUpdated, nil,
 		func(_ context.Context, a *delivery.Application) error { return a.Update(props) })
 }
 
 // LinkApplicationSource records the Source the Application is built from,
 // or removes it when sourceID is empty.
 func (s *service) LinkApplicationSource(ctx context.Context, actor identity.Actor, organizationID, applicationID, sourceID string) (*delivery.Application, error) {
-	return s.changeApplication(ctx, actor, organizationID, applicationID, delivery.EventApplicationUpdated,
+	return s.changeApplication(ctx, actor, organizationID, applicationID, delivery.EventApplicationUpdated, nil,
 		func(_ context.Context, a *delivery.Application) error {
 			if sourceID == "" {
 				return a.UnlinkSource()
@@ -405,7 +452,7 @@ func (s *service) LinkApplicationSource(ctx context.Context, actor identity.Acto
 
 // TransferApplication hands an Application to another active Team.
 func (s *service) TransferApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID, ownerTeamID string) (*delivery.Application, error) {
-	return s.changeApplication(ctx, actor, organizationID, applicationID, delivery.EventApplicationOwnerChanged,
+	return s.changeApplication(ctx, actor, organizationID, applicationID, delivery.EventApplicationOwnerChanged, nil,
 		func(ctx context.Context, a *delivery.Application) error {
 			if err := s.checkTeam(ctx, organizationID, ownerTeamID); err != nil {
 				return err
@@ -418,7 +465,7 @@ func (s *service) TransferApplication(ctx context.Context, actor identity.Actor,
 // placements stay as they are, so restoring it brings them back; until then
 // they cannot be changed. Archiving an archived one does nothing.
 func (s *service) ArchiveApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID string) (*delivery.Application, error) {
-	return s.changeApplication(ctx, actor, organizationID, applicationID, delivery.EventApplicationArchived,
+	return s.changeApplication(ctx, actor, organizationID, applicationID, delivery.EventApplicationArchived, nil,
 		func(_ context.Context, a *delivery.Application) error {
 			if a.Archived() {
 				return change.ErrUnchanged
@@ -429,9 +476,24 @@ func (s *service) ArchiveApplication(ctx context.Context, actor identity.Actor, 
 }
 
 // RestoreApplication restores an archived Application in an active Project
-// whose active Channels' Lifecycles are all active.
+// whose active Channels' Lifecycles are all active and whose variables can
+// still deploy. Its variables go with it while it is archived, so they are
+// checked again here, under the Project's variables lock and as a save would
+// check them: a shadow or an overlapping values path that the Project stopped
+// allowing, or a scope whose record was archived meanwhile, refuses the
+// restore rather than surfacing when a Release is created.
 func (s *service) RestoreApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID string) (*delivery.Application, error) {
+	// Read to name the Project whose variables are held before the
+	// Application's own row: a stored Application's Project never changes.
+	found, err := s.applications.GetApplication(ctx, organizationID, applicationID)
+	if err != nil {
+		return nil, err
+	}
+	projectID := found.ProjectID()
 	return s.changeApplication(ctx, actor, organizationID, applicationID, delivery.EventApplicationRestored,
+		func(ctx context.Context) error {
+			return s.locker.Lock(ctx, delivery.VariablesLock(projectID))
+		},
 		func(ctx context.Context, a *delivery.Application) error {
 			if !a.Archived() {
 				return change.ErrUnchanged
@@ -450,7 +512,32 @@ func (s *service) RestoreApplication(ctx context.Context, actor identity.Actor, 
 					return fmt.Errorf("channel %s: %w", c.ID(), err)
 				}
 			}
+			if err := s.checkVariableSet(ctx, a); err != nil {
+				return err
+			}
 			a.Restore()
 			return nil
 		})
+}
+
+// checkVariableSet checks the variables an archived Application brings back
+// against its Project's: each may still be deployed with them, and what they
+// are scoped to, and the Secret Stores they are kept in, may still be used.
+// The caller holds the Project's variables lock.
+func (s *service) checkVariableSet(ctx context.Context, a *delivery.Application) error {
+	project, _, err := s.variableSet.ListVariablesInProject(ctx, a.OrganizationID(), a.ProjectID())
+	if err != nil {
+		return fmt.Errorf("list the project's variables: %w", err)
+	}
+	own, err := s.variableSet.ListVariables(ctx, a.OrganizationID(), delivery.VariableOwner{ApplicationID: a.ID()})
+	if err != nil {
+		return fmt.Errorf("list the application's variables: %w", err)
+	}
+	if len(own) > delivery.MaxVariablesPerOwner {
+		return delivery.NewErrInvalidInput(fmt.Sprintf("an application can have at most %d variables", delivery.MaxVariablesPerOwner))
+	}
+	if err := delivery.CheckDeployable(project, own); err != nil {
+		return err
+	}
+	return s.scopes.Check(ctx, a.WorkspaceID(), own...)
 }

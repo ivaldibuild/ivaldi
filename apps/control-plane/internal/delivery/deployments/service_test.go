@@ -447,12 +447,12 @@ type world struct {
 // fakeHistory is the commit history the version-control capability would
 // provide.
 type fakeHistory struct {
-	commits []vcs.Commit
-	err     error
+	comparison vcs.Comparison
+	err        error
 }
 
-func (f *fakeHistory) CommitsBetween(context.Context, string, string, string, string) ([]vcs.Commit, error) {
-	return f.commits, f.err
+func (f *fakeHistory) Compare(context.Context, string, string, string, string) (vcs.Comparison, error) {
+	return f.comparison, f.err
 }
 
 // fakeChanges is what the provenance capability recorded.
@@ -765,10 +765,10 @@ func TestReleaseChangesListsCommitsBetweenBuilds(t *testing.T) {
 	w.placements[placementKey(w.app.ID(), targetID)] = placement
 
 	committedAt := t0.Add(-time.Hour)
-	w.history.commits = []vcs.Commit{{
+	w.history.comparison = vcs.Comparison{Added: []vcs.Commit{{
 		SHA: "bbbbbbbb", Message: "Add checkout\n\nDetails", AuthorName: "Ada",
 		AuthorEmail: "ada@example.com", CommittedAt: committedAt,
-	}}
+	}}}
 	sessionID := "ses_01ARZ3NDEKTSV4RRFFQ69G5FAV"
 	workItemID := "wki_01ARZ3NDEKTSV4RRFFQ69G5FAV"
 	recorded := must(provenance.NewChange(provenance.NewChangeProps{
@@ -785,7 +785,9 @@ func TestReleaseChangesListsCommitsBetweenBuilds(t *testing.T) {
 	require.NotNil(t, item.Previous)
 	assert.Equal(t, previousBuild.Digest(), item.Previous.Digest)
 	assert.Equal(t, []string{"bbbbbbbb"}, item.CommitSHAs)
+	assert.Empty(t, item.RemovedCommitSHAs)
 	assert.Empty(t, item.Unresolved)
+	assert.Empty(t, changes.RemovedChanges)
 	require.Len(t, changes.Changes, 1)
 	assert.Equal(t, "bbbbbbbb", changes.Changes[0].CommitSHA)
 	assert.Equal(t, "Add checkout", changes.Changes[0].Title)
@@ -804,6 +806,47 @@ func TestReleaseChangesListsCommitsBetweenBuilds(t *testing.T) {
 	require.Len(t, changes.Artifacts, 1)
 	assert.Contains(t, changes.Artifacts[0].Unresolved, "the Build has no commit")
 	assert.Empty(t, changes.Changes)
+}
+
+// Rolling back takes commits away; the deploy sheet lists them, with what
+// Ivaldi recorded about them, rather than showing nothing changing.
+func TestReleaseChangesListsTheCommitsARollbackRemoves(t *testing.T) {
+	w := newWorld(t)
+	artifact := w.artifacts[mustOneID(w.artifacts)]
+	olderBuild := ciBuild(artifact, "a", "aaaaaaaa")
+	currentBuild := ciBuild(artifact, "b", "bbbbbbbb")
+	w.builds[olderBuild.ID()] = olderBuild
+	w.builds[currentBuild.ID()] = currentBuild
+	olderRelease := releaseOf(w.rel, artifact, olderBuild, "0.9.0")
+	currentRelease := releaseOf(w.rel, artifact, currentBuild, "1.0.0")
+	w.releases[olderRelease.ID()] = olderRelease
+	w.releases[currentRelease.ID()] = currentRelease
+
+	deployment := mustDeployment(org, currentRelease.ID(), w.app.ID(), envID, targetID, release.DeploymentHealthy)
+	placement := w.placements[placementKey(w.app.ID(), targetID)]
+	require.NoError(t, placement.SetCurrent(deployment.ID(), currentRelease.ID()))
+	w.placements[placementKey(w.app.ID(), targetID)] = placement
+
+	w.history.comparison = vcs.Comparison{Added: []vcs.Commit{}, Removed: []vcs.Commit{{
+		SHA: "bbbbbbbb", Message: "Add checkout", CommittedAt: t0.Add(-time.Hour),
+	}}}
+	workItemID := "wki_01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	recorded := must(provenance.NewChange(provenance.NewChangeProps{
+		OrganizationID: org, SourceID: "src_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+		WorkItemID: &workItemID, Title: "Add checkout", CommitSHAs: []string{"bbbbbbbb"},
+	}, nil))
+	w.changes.changes = []*provenance.Change{recorded}
+
+	changes, err := w.svc.ReleaseChanges(ctx, ada, org, olderRelease.ID(), targetID)
+	require.NoError(t, err)
+	require.Len(t, changes.Artifacts, 1)
+	assert.Empty(t, changes.Artifacts[0].CommitSHAs)
+	assert.Equal(t, []string{"bbbbbbbb"}, changes.Artifacts[0].RemovedCommitSHAs)
+	assert.Empty(t, changes.Changes)
+	require.Len(t, changes.RemovedChanges, 1)
+	assert.Equal(t, "Add checkout", changes.RemovedChanges[0].Title)
+	assert.Equal(t, recorded.ID(), *changes.RemovedChanges[0].ChangeID)
+	assert.Equal(t, workItemID, *changes.RemovedChanges[0].WorkItemID)
 }
 
 // ciBuild returns a CI-reported Build from source src at commit.

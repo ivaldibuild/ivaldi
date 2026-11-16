@@ -2643,6 +2643,7 @@ export interface components {
       commit_shas: string[];
       next: components['schemas']['BuildSnapshot'];
       previous: components['schemas']['BuildSnapshot'];
+      removed_commit_shas: string[];
       unresolved: string[];
     };
     ArtifactSnapshot: {
@@ -3992,6 +3993,7 @@ export interface components {
       /** @enum {string} */
       reason: 'rollout' | 'rollback' | 'redeploy';
       release_id: string;
+      removed_changes: components['schemas']['ReleaseChange'][];
       restores_deployment_id: string | null;
       target_id: string;
     };

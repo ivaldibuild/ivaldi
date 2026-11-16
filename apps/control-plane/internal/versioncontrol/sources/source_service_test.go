@@ -127,8 +127,8 @@ func (p provider) Repository(context.Context, vcs.Endpoint, string) (vcs.Reposit
 func (p provider) Repositories(context.Context, vcs.Endpoint) ([]vcs.Repository, error) {
 	return []vcs.Repository{p.repository}, nil
 }
-func (p provider) CommitsBetween(context.Context, vcs.Endpoint, vcs.Repository, string, string) ([]vcs.Commit, error) {
-	return nil, nil
+func (p provider) Compare(context.Context, vcs.Endpoint, vcs.Repository, string, string) (vcs.Comparison, error) {
+	return vcs.Comparison{}, nil
 }
 
 type fixture struct {

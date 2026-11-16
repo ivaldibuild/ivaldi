@@ -62,7 +62,7 @@ type Provider interface {
 	// Repositories lists the repositories the account's installation can
 	// read. It returns ErrTooManyRepositories rather than a partial list.
 	Repositories(ctx context.Context, at Endpoint) ([]Repository, error)
-	// CommitsBetween returns the commits reachable from to but not from,
-	// oldest first.
-	CommitsBetween(ctx context.Context, at Endpoint, repo Repository, from, to string) ([]Commit, error)
+	// Compare returns the commits moving from one commit to another adds
+	// and removes. It returns ErrRangeTooLarge rather than a partial list.
+	Compare(ctx context.Context, at Endpoint, repo Repository, from, to string) (Comparison, error)
 }

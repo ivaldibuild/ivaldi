@@ -611,6 +611,7 @@ func (s *service) ReleaseChanges(ctx context.Context, _ identity.Actor, organiza
 	changes := &delivery.ReleaseChanges{
 		ReleaseID: rel.ID(), TargetID: targetID, Reason: plan.reason,
 		Artifacts: []delivery.ArtifactChange{}, Changes: []delivery.ReleaseChange{},
+		RemovedChanges: []delivery.ReleaseChange{},
 	}
 	if plan.restores != nil {
 		changes.RestoresDeploymentID = new(plan.restores.ID())
@@ -626,7 +627,7 @@ func (s *service) ReleaseChanges(ctx context.Context, _ identity.Actor, organiza
 			return nil, err
 		}
 	}
-	seen := map[string]bool{}
+	added, removed := commitList{}, commitList{}
 	for _, rb := range rel.Builds() {
 		artifact := byArtifact[rb.ArtifactID]
 		if artifact == nil {
@@ -637,11 +638,12 @@ func (s *service) ReleaseChanges(ctx context.Context, _ identity.Actor, organiza
 			continue
 		}
 		item := delivery.ArtifactChange{
-			ArtifactID:   rb.ArtifactID,
-			ArtifactName: artifact.Name(),
-			Next:         b.Snapshot(),
-			CommitSHAs:   []string{},
-			Unresolved:   []string{},
+			ArtifactID:        rb.ArtifactID,
+			ArtifactName:      artifact.Name(),
+			Next:              b.Snapshot(),
+			CommitSHAs:        []string{},
+			RemovedCommitSHAs: []string{},
+			Unresolved:        []string{},
 		}
 		prev := previous[rb.ArtifactID]
 		if prev != nil {
@@ -651,45 +653,37 @@ func (s *service) ReleaseChanges(ctx context.Context, _ identity.Actor, organiza
 		if prev == nil {
 			item.Unresolved = append(item.Unresolved, "the artifact is new on this Target")
 		} else if prev.Digest() != b.Digest() {
-			commits, reason := s.commitRange(ctx, organizationID, prev, b)
+			comparison, reason := s.commitRange(ctx, organizationID, prev, b)
 			if reason != "" {
 				item.Unresolved = append(item.Unresolved, reason)
 			}
 			sourceID := sourceOf(b)
-			for _, commit := range commits {
-				item.CommitSHAs = append(item.CommitSHAs, commit.SHA)
-				key := sourceID + "\x00" + commit.SHA
-				if seen[key] {
-					continue
-				}
-				seen[key] = true
-				changes.Changes = append(changes.Changes, changeOf(sourceID, commit))
-			}
+			item.CommitSHAs = added.add(sourceID, comparison.Added)
+			item.RemovedCommitSHAs = removed.add(sourceID, comparison.Removed)
 		}
 		changes.Artifacts = append(changes.Artifacts, item)
 	}
-	slices.SortFunc(changes.Changes, func(a, b delivery.ReleaseChange) int {
-		if !a.CommittedAt.Equal(b.CommittedAt) {
-			return a.CommittedAt.Compare(b.CommittedAt)
-		}
-		return strings.Compare(a.CommitSHA, b.CommitSHA)
-	})
-	if err := s.attributeChanges(ctx, organizationID, changes.Changes); err != nil {
+	changes.Changes = added.sorted()
+	changes.RemovedChanges = removed.sorted()
+	if err := s.attributeChanges(ctx, organizationID, changes.Changes, changes.RemovedChanges); err != nil {
 		return nil, err
 	}
 	changes.Checks = plan.checks
 	return changes, nil
 }
 
-// attributeChanges fills each commit's recorded Change, Session, and Work
-// Item. Without a provenance lookup, commits stay unattributed.
-func (s *service) attributeChanges(ctx context.Context, organizationID string, changes []delivery.ReleaseChange) error {
-	if s.changes == nil || len(changes) == 0 {
+// attributeChanges fills, in place, each listed commit's recorded Change,
+// Session, and Work Item. Without a provenance lookup, commits stay
+// unattributed.
+func (s *service) attributeChanges(ctx context.Context, organizationID string, lists ...[]delivery.ReleaseChange) error {
+	if s.changes == nil {
 		return nil
 	}
 	bySource := map[string][]string{}
-	for _, c := range changes {
-		bySource[c.SourceID] = append(bySource[c.SourceID], c.CommitSHA)
+	for _, changes := range lists {
+		for _, c := range changes {
+			bySource[c.SourceID] = append(bySource[c.SourceID], c.CommitSHA)
+		}
 	}
 	attributed := map[string]*provenance.Change{}
 	for sourceID, commitSHAs := range bySource {
@@ -703,41 +697,80 @@ func (s *service) attributeChanges(ctx context.Context, organizationID string, c
 			}
 		}
 	}
-	for i := range changes {
-		change := attributed[changes[i].SourceID+"\x00"+changes[i].CommitSHA]
-		if change == nil {
-			continue
+	for _, changes := range lists {
+		for i := range changes {
+			change := attributed[changes[i].SourceID+"\x00"+changes[i].CommitSHA]
+			if change == nil {
+				continue
+			}
+			id := change.ID()
+			changes[i].ChangeID = &id
+			changes[i].SessionID = change.SessionID()
+			changes[i].WorkItemID = change.WorkItemID()
 		}
-		id := change.ID()
-		changes[i].ChangeID = &id
-		changes[i].SessionID = change.SessionID()
-		changes[i].WorkItemID = change.WorkItemID()
 	}
 	return nil
 }
 
-// commitRange reads the commits between two Builds of one Source. It
-// returns why the range could not be listed, rather than an error, so one
-// artifact never fails the whole read.
-func (s *service) commitRange(ctx context.Context, organizationID string, previous, next *delivery.Build) ([]vcs.Commit, string) {
+// commitList gathers the commits several artifacts add or remove, once
+// each, in the order release notes list them.
+type commitList struct {
+	seen    map[string]bool
+	changes []delivery.ReleaseChange
+}
+
+// add records commits from a Source and returns their SHAs, oldest first.
+func (l *commitList) add(sourceID string, commits []vcs.Commit) []string {
+	if l.seen == nil {
+		l.seen = map[string]bool{}
+	}
+	shas := make([]string, 0, len(commits))
+	for _, commit := range commits {
+		shas = append(shas, commit.SHA)
+		key := sourceID + "\x00" + commit.SHA
+		if l.seen[key] {
+			continue
+		}
+		l.seen[key] = true
+		l.changes = append(l.changes, changeOf(sourceID, commit))
+	}
+	return shas
+}
+
+// sorted returns the commits by commit time, the SHA breaking ties.
+func (l *commitList) sorted() []delivery.ReleaseChange {
+	out := append([]delivery.ReleaseChange{}, l.changes...)
+	slices.SortFunc(out, func(a, b delivery.ReleaseChange) int {
+		if !a.CommittedAt.Equal(b.CommittedAt) {
+			return a.CommittedAt.Compare(b.CommittedAt)
+		}
+		return strings.Compare(a.CommitSHA, b.CommitSHA)
+	})
+	return out
+}
+
+// commitRange compares two Builds of one Source. It returns why they could
+// not be compared, rather than an error, so one artifact never fails the
+// whole read.
+func (s *service) commitRange(ctx context.Context, organizationID string, previous, next *delivery.Build) (vcs.Comparison, string) {
 	p, n := previous.Snapshot(), next.Snapshot()
 	switch {
 	case n.SourceID == nil:
-		return nil, "the Build has no Source"
+		return vcs.Comparison{}, "the Build has no Source"
 	case p.SourceID == nil:
-		return nil, "the previous Build has no Source"
+		return vcs.Comparison{}, "the previous Build has no Source"
 	case *n.SourceID != *p.SourceID:
-		return nil, "the Builds come from different Sources"
+		return vcs.Comparison{}, "the Builds come from different Sources"
 	case n.CommitSHA == nil:
-		return nil, "the Build has no commit"
+		return vcs.Comparison{}, "the Build has no commit"
 	case p.CommitSHA == nil:
-		return nil, "the previous Build has no commit"
+		return vcs.Comparison{}, "the previous Build has no commit"
 	}
-	commits, err := s.history.CommitsBetween(ctx, organizationID, *n.SourceID, *p.CommitSHA, *n.CommitSHA)
+	comparison, err := s.history.Compare(ctx, organizationID, *n.SourceID, *p.CommitSHA, *n.CommitSHA)
 	if err != nil {
-		return nil, rangeUnavailable(err)
+		return vcs.Comparison{}, rangeUnavailable(err)
 	}
-	return commits, ""
+	return comparison, ""
 }
 
 // rangeUnavailable says why a range could not be read, without exposing
@@ -754,6 +787,8 @@ func rangeUnavailable(err error) string {
 		return "no version-control provider is configured for the Source"
 	case errors.Is(err, vcs.ErrNotFound):
 		return "the commit range could not be found"
+	case errors.Is(err, vcs.ErrRangeTooLarge):
+		return "the Builds are too many commits apart to list"
 	case errors.Is(err, vcs.ErrUnauthorized), errors.Is(err, vcs.ErrUnavailable):
 		return "the version-control provider could not be reached"
 	}

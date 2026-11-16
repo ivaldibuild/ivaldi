@@ -192,29 +192,23 @@
                       </tbody>
                     </table>
                     @if (item.preview.changes.changes.length > 0) {
-                      <ul class="flex flex-col gap-1.5 text-sm" aria-label="Commits">
-                        @for (change of item.preview.changes.changes; track change.commit_sha) {
-                          <li class="flex items-start gap-2">
-                            <code class="text-muted-foreground shrink-0">{{
-                              shortCommit(change.commit_sha)
-                            }}</code>
-                            <span>
-                              {{ change.title || 'No commit message' }}
-                              <span class="text-muted-foreground"> · {{ change.author_name }}</span>
-                              @if (change.work_item_id) {
-                                <span class="text-muted-foreground">
-                                  · Work item {{ change.work_item_id }}</span
-                                >
-                              }
-                              @if (change.session_id) {
-                                <span class="text-muted-foreground">
-                                  · Session {{ change.session_id }}</span
-                                >
-                              }
-                            </span>
-                          </li>
-                        }
-                      </ul>
+                      <ng-container
+                        [ngTemplateOutlet]="commitList"
+                        [ngTemplateOutletContext]="{
+                          $implicit: item.preview.changes.changes,
+                          label: 'Commits',
+                        }"
+                      />
+                    }
+                    @if (item.preview.changes.removed_changes.length > 0) {
+                      <h4 class="text-sm font-semibold">Commits this removes</h4>
+                      <ng-container
+                        [ngTemplateOutlet]="commitList"
+                        [ngTemplateOutletContext]="{
+                          $implicit: item.preview.changes.removed_changes,
+                          label: 'Commits this removes',
+                        }"
+                      />
                     }
                     @for (change of item.preview.changes.artifacts; track change.artifact_id) {
                       @for (reason of change.unresolved; track reason) {
@@ -321,3 +315,23 @@
     }
   </div>
 }
+
+<ng-template #commitList let-commits let-label="label">
+  <ul class="flex flex-col gap-1.5 text-sm" [attr.aria-label]="label">
+    @for (change of commits; track change.commit_sha) {
+      <li class="flex items-start gap-2">
+        <code class="text-muted-foreground shrink-0">{{ shortCommit(change.commit_sha) }}</code>
+        <span>
+          {{ change.title || 'No commit message' }}
+          <span class="text-muted-foreground"> · {{ change.author_name }}</span>
+          @if (change.work_item_id) {
+            <span class="text-muted-foreground"> · Work item {{ change.work_item_id }}</span>
+          }
+          @if (change.session_id) {
+            <span class="text-muted-foreground"> · Session {{ change.session_id }}</span>
+          }
+        </span>
+      </li>
+    }
+  </ul>
+</ng-template>

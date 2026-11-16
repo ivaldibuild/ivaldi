@@ -2,9 +2,9 @@ package delivery
 
 import "time"
 
-// ReleaseChange is one commit between a Target's current Release and the
-// Release being compared, with the Session and Work Item it belongs to when
-// Ivaldi knows them.
+// ReleaseChange is one commit a Release would add to or remove from a
+// Target, compared with the Target's current Release, with the Session and
+// Work Item it belongs to when Ivaldi knows them.
 type ReleaseChange struct {
 	CommitSHA   string    `json:"commit_sha"`
 	SourceID    string    `json:"source_id"`

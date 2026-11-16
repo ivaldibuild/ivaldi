@@ -1,3 +1,4 @@
+import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, input, resource, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { NgIcon, provideIcons } from '@ng-icons/core';
@@ -30,6 +31,7 @@ type Preview =
   selector: 'app-deploy-page',
   imports: [
     NgIcon,
+    NgTemplateOutlet,
     RouterLink,
     PageHeader,
     DeploymentStatusBadge,

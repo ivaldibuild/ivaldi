@@ -12,3 +12,14 @@ type Commit struct {
 	CommittedAt time.Time `json:"committed_at"`
 	URL         *string   `json:"url"`
 }
+
+// Comparison is what moving from one commit to another changes.
+type Comparison struct {
+	// Added are the commits reachable from the new commit but not the old
+	// one, oldest first.
+	Added []Commit
+	// Removed are the commits reachable from the old commit but not the new
+	// one, oldest first. They are what a rollback, or a move to a branch that
+	// diverged, takes away.
+	Removed []Commit
+}

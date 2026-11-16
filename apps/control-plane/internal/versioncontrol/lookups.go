@@ -37,36 +37,36 @@ func NewLookups(sources SourceRepository, connections ConnectionRepository, prov
 
 var _ vcs.History = (*Lookups)(nil)
 
-// CommitsBetween returns the commits reachable from to but not from, oldest
-// first.
-func (l *Lookups) CommitsBetween(ctx context.Context, organizationID, sourceID, from, to string) ([]vcs.Commit, error) {
+// Compare returns what moving the Source from one commit to another adds
+// and removes.
+func (l *Lookups) Compare(ctx context.Context, organizationID, sourceID, from, to string) (vcs.Comparison, error) {
 	if from == "" || to == "" {
-		return nil, vcs.ErrInvalidRange
+		return vcs.Comparison{}, vcs.ErrInvalidRange
 	}
 	source, err := l.sources.GetSource(ctx, organizationID, sourceID)
 	if err != nil {
-		return nil, translateLookupError(err)
+		return vcs.Comparison{}, translateLookupError(err)
 	}
 	if source.Archived() {
-		return nil, vcs.ErrSourceArchived
+		return vcs.Comparison{}, vcs.ErrSourceArchived
 	}
 	connection, err := l.connections.GetConnection(ctx, organizationID, source.ConnectionID())
 	if err != nil {
-		return nil, translateLookupError(err)
+		return vcs.Comparison{}, translateLookupError(err)
 	}
 	if !connection.Usable() {
-		return nil, vcs.ErrConnectionInactive
+		return vcs.Comparison{}, vcs.ErrConnectionInactive
 	}
 	if connection.LookupFrom() == vcs.LookupFromDataPlane {
-		return nil, vcs.ErrLookupInDataPlane
+		return vcs.Comparison{}, vcs.ErrLookupInDataPlane
 	}
 	if l.provider == nil {
-		return nil, vcs.ErrUnsupportedProvider
+		return vcs.Comparison{}, vcs.ErrUnsupportedProvider
 	}
 	if connection.AuthKind() != AuthKindAppInstallation {
-		return nil, vcs.ErrUnsupportedProvider
+		return vcs.Comparison{}, vcs.ErrUnsupportedProvider
 	}
-	return l.provider.CommitsBetween(ctx, connection.Endpoint(), source.repository(connection), from, to)
+	return l.provider.Compare(ctx, connection.Endpoint(), source.repository(connection), from, to)
 }
 
 // repository returns the provider's view of the stored Source.

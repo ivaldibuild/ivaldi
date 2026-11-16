@@ -48,8 +48,8 @@ func (p *repositoryProvider) Repositories(context.Context, vcs.Endpoint) ([]vcs.
 	p.asked++
 	return p.repositories, nil
 }
-func (p *repositoryProvider) CommitsBetween(context.Context, vcs.Endpoint, vcs.Repository, string, string) ([]vcs.Commit, error) {
-	return nil, nil
+func (p *repositoryProvider) Compare(context.Context, vcs.Endpoint, vcs.Repository, string, string) (vcs.Comparison, error) {
+	return vcs.Comparison{}, nil
 }
 
 func listService(t *testing.T, lookupFrom vcs.LookupFrom, provider *repositoryProvider) versioncontrol.ConnectionService {

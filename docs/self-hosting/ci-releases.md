@@ -101,3 +101,14 @@ release:
 ```
 
 Set `IVALDI_API_TOKEN` as a masked CI/CD variable.
+
+## Recording which work produced a commit
+
+The deploy sheet lists the commits a Release adds to a Target, and those it takes away, with the Work Item and Session behind each when Ivaldi knows them. CI tells it with a **Change**:
+
+```sh
+ivaldictl change record --source <source ID> --title "Add checkout" \
+  --work-item <work item ID> --external-ref https://github.com/acme/api/pull/42
+```
+
+The commit defaults to the one the pipeline runs on; give `--commit` (repeatable) for others. Run it where that commit is the one that lands, such as a push to `main`, not on a pull request, whose `GITHUB_SHA` is a merge preview that never lands. A commit already recorded in the Source is refused. The service account needs `change.record` on the Source, which admin holds. See [Recording Changes](version-control.md#recording-changes).

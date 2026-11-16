@@ -64,6 +64,13 @@ func newControlPlane(t *testing.T) *controlPlane {
 		_, _ = io.WriteString(w, `{"status":"success","data":{"id":"rel_1","application_id":"app_1","channel_id":"chn_main",
 			"version":"1.4.0","status":"published","builds":[{"artifact_id":"art_api","build":{"artifact_name":"ghcr.io/acme/api","digest":"sha256:aa"}}]}}`)
 	})
+	mux.HandleFunc("POST /v1/sources/{id}/changes", func(w http.ResponseWriter, r *http.Request) {
+		record(r)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, `{"status":"success","data":{"id":"chg_1","organization_id":"org_1","source_id":"src_1",
+			"title":"Add checkout","commit_shas":["`+strings.Repeat("a", 40)+`"],"created_at":"2026-11-06T12:00:00Z","updated_at":"2026-11-06T12:00:00Z"}}`)
+	})
 	mux.HandleFunc("GET /v1/me", func(w http.ResponseWriter, r *http.Request) {
 		record(r)
 		w.Header().Set("Content-Type", "application/json")
@@ -168,6 +175,36 @@ func TestReleaseCreateTriggeredByFlagsWinOverCI(t *testing.T) {
 	}
 	if _, ok := body["triggered_by"]; ok {
 		t.Errorf("a flag replaces both of CI's values, so CI's name is not paired with another email: %v", body["triggered_by"])
+	}
+}
+
+func TestChangeRecordTakesTheCommitFromCI(t *testing.T) {
+	cp := newControlPlane(t)
+	out, err := run(t, cp, githubTag(), memoryStore{}, "change", "record", "--source", "src_1", "--title", " Add checkout ",
+		"--work-item", "wki_1", "--external-ref", "https://github.com/acme/api/pull/42", "-o", "text")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cp.requests[0].URL.Path != "/v1/sources/src_1/changes" {
+		t.Errorf("path %s", cp.requests[0].URL.Path)
+	}
+	body := cp.bodies[0]
+	if commits := body["commit_shas"].([]any); len(commits) != 1 || commits[0] != strings.Repeat("a", 40) {
+		t.Errorf("the commit comes from CI: %v", commits)
+	}
+	if body["title"] != "Add checkout" || body["work_item_id"] != "wki_1" || body["external_ref"] != "https://github.com/acme/api/pull/42" {
+		t.Errorf("body %v", body)
+	}
+	if _, ok := body["session_id"]; ok {
+		t.Errorf("no Session was given, so none is sent: %v", body["session_id"])
+	}
+	if !strings.Contains(out, "Change Add checkout (chg_1) holds 1 commit(s)") {
+		t.Errorf("text output %q", out)
+	}
+
+	_, err = run(t, cp, map[string]string{"IVALDI_API_TOKEN": "ivt_x"}, memoryStore{}, "change", "record", "--source", "src_1", "--title", "Fix")
+	if err == nil || !strings.Contains(err.Error(), "give --commit") {
+		t.Errorf("outside CI a commit is required: %v", err)
 	}
 }
 

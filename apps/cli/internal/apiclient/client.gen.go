@@ -232,6 +232,21 @@ type BuildSnapshotArtifactKind string
 // BuildSnapshotProvenance defines model for BuildSnapshot.Provenance.
 type BuildSnapshotProvenance string
 
+// ChangeSnapshot defines model for ChangeSnapshot.
+type ChangeSnapshot struct {
+	CommitShas           []string  `json:"commit_shas"`
+	CreatedAt            time.Time `json:"created_at"`
+	CreatedByPrincipalId *string   `json:"created_by_principal_id"`
+	ExternalRef          *string   `json:"external_ref"`
+	Id                   string    `json:"id"`
+	OrganizationId       string    `json:"organization_id"`
+	SessionId            *string   `json:"session_id"`
+	SourceId             string    `json:"source_id"`
+	Title                string    `json:"title"`
+	UpdatedAt            time.Time `json:"updated_at"`
+	WorkItemId           *string   `json:"work_item_id"`
+}
+
 // CreateReleaseRequestBody defines model for CreateReleaseRequestBody.
 type CreateReleaseRequestBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -371,6 +386,29 @@ type MeRole struct {
 	RoleId     string `json:"role_id"`
 }
 
+// RecordChangeRequestBody defines model for RecordChangeRequestBody.
+type RecordChangeRequestBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: https://example.com/schemas/RecordChangeRequestBody.json
+	Schema *string `json:"$schema,omitempty"`
+
+	// CommitShas Commits the Change contains, as full SHAs
+	CommitShas []string `json:"commit_shas"`
+
+	// ExternalRef Provider reference such as a pull request URL
+	ExternalRef *string `json:"external_ref,omitempty"`
+
+	// SessionId The Session that produced the change
+	SessionId *string `json:"session_id,omitempty"`
+
+	// Title Short description of the change
+	Title string `json:"title"`
+
+	// WorkItemId The Work Item the change serves
+	WorkItemId *string `json:"work_item_id,omitempty"`
+}
+
 // Release defines model for Release.
 type Release struct {
 	ApplicationId        string         `json:"application_id"`
@@ -410,6 +448,21 @@ type ResponseAPITokenSnapshot struct {
 	// Example: https://example.com/schemas/ResponseAPITokenSnapshot.json
 	Schema *string          `json:"$schema,omitempty"`
 	Data   APITokenSnapshot `json:"data"`
+
+	// Message Human-readable message
+	Message *string `json:"message,omitempty"`
+
+	// Status Request status
+	Status string `json:"status"`
+}
+
+// ResponseChangeSnapshot defines model for ResponseChangeSnapshot.
+type ResponseChangeSnapshot struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: https://example.com/schemas/ResponseChangeSnapshot.json
+	Schema *string        `json:"$schema,omitempty"`
+	Data   ChangeSnapshot `json:"data"`
 
 	// Message Human-readable message
 	Message *string `json:"message,omitempty"`
@@ -596,6 +649,9 @@ type CreateServiceAccountJSONRequestBody = CreateRequestBody
 // CreateApiTokenJSONRequestBody defines body for CreateApiToken for application/json ContentType.
 type CreateApiTokenJSONRequestBody = CreateTokenRequestBody
 
+// RecordChangeJSONRequestBody defines body for RecordChange for application/json ContentType.
+type RecordChangeJSONRequestBody = RecordChangeRequestBody
+
 // RequestEditorFn is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
 
@@ -766,6 +822,20 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /v1/service-accounts/{service_account_id}/tokens (the `CreateApiToken` operationId).
 	CreateApiToken(ctx context.Context, serviceAccountId string, body CreateApiTokenJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RecordChangeWithBody Record a Change that ties commits to a Session or Work Item
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /v1/sources/{source_id}/changes (the `RecordChange` operationId).
+	RecordChangeWithBody(ctx context.Context, sourceId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RecordChange Record a Change that ties commits to a Session or Work Item
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /v1/sources/{source_id}/changes (the `RecordChange` operationId).
+	RecordChange(ctx context.Context, sourceId string, body RecordChangeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 // RevokeApiToken Revoke an API token for good
@@ -1025,6 +1095,40 @@ func (c *Client) CreateApiTokenWithBody(ctx context.Context, serviceAccountId st
 // Corresponds with POST /v1/service-accounts/{service_account_id}/tokens (the `CreateApiToken` operationId).
 func (c *Client) CreateApiToken(ctx context.Context, serviceAccountId string, body CreateApiTokenJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateApiTokenRequest(c.Server, serviceAccountId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RecordChangeWithBody Record a Change that ties commits to a Session or Work Item
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /v1/sources/{source_id}/changes (the `RecordChange` operationId).
+func (c *Client) RecordChangeWithBody(ctx context.Context, sourceId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRecordChangeRequestWithBody(c.Server, sourceId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RecordChange Record a Change that ties commits to a Session or Work Item
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /v1/sources/{source_id}/changes (the `RecordChange` operationId).
+func (c *Client) RecordChange(ctx context.Context, sourceId string, body RecordChangeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRecordChangeRequest(c.Server, sourceId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1655,6 +1759,53 @@ func NewCreateApiTokenRequestWithBody(server string, serviceAccountId string, co
 	return req, nil
 }
 
+// NewRecordChangeRequest calls the generic RecordChange builder with application/json body
+func NewRecordChangeRequest(server string, sourceId string, body RecordChangeJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRecordChangeRequestWithBody(server, sourceId, "application/json", bodyReader)
+}
+
+// NewRecordChangeRequestWithBody constructs an http.Request for the RecordChange method, with any body, and a specified content type
+func NewRecordChangeRequestWithBody(server string, sourceId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "source_id", sourceId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/sources/%s/changes", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -1817,6 +1968,20 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /v1/service-accounts/{service_account_id}/tokens (the `CreateApiToken` operationId).
 	CreateApiTokenWithResponse(ctx context.Context, serviceAccountId string, body CreateApiTokenJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateApiTokenResponse, error)
+
+	// RecordChangeWithBodyWithResponse Record a Change that ties commits to a Session or Work Item
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/sources/{source_id}/changes (the `RecordChange` operationId).
+	RecordChangeWithBodyWithResponse(ctx context.Context, sourceId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RecordChangeResponse, error)
+
+	// RecordChangeWithResponse Record a Change that ties commits to a Session or Work Item
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/sources/{source_id}/changes (the `RecordChange` operationId).
+	RecordChangeWithResponse(ctx context.Context, sourceId string, body RecordChangeJSONRequestBody, reqEditors ...RequestEditorFn) (*RecordChangeResponse, error)
 }
 
 type RevokeApiTokenResponse struct {
@@ -2491,6 +2656,54 @@ func (r CreateApiTokenResponse) ContentType() string {
 	return ""
 }
 
+type RecordChangeResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *ResponseChangeSnapshot
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r RecordChangeResponse) GetJSON201() *ResponseChangeSnapshot {
+	return r.JSON201
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r RecordChangeResponse) GetApplicationproblemJSONDefault() *ErrorModel {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r RecordChangeResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RecordChangeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RecordChangeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RecordChangeResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // RevokeApiTokenWithResponse Revoke an API token for good
 //
 // Returns a wrapper object for the known response body format(s).
@@ -2710,6 +2923,32 @@ func (c *ClientWithResponses) CreateApiTokenWithResponse(ctx context.Context, se
 		return nil, err
 	}
 	return ParseCreateApiTokenResponse(rsp)
+}
+
+// RecordChangeWithBodyWithResponse Record a Change that ties commits to a Session or Work Item
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/sources/{source_id}/changes (the `RecordChange` operationId).
+func (c *ClientWithResponses) RecordChangeWithBodyWithResponse(ctx context.Context, sourceId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RecordChangeResponse, error) {
+	rsp, err := c.RecordChangeWithBody(ctx, sourceId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRecordChangeResponse(rsp)
+}
+
+// RecordChangeWithResponse Record a Change that ties commits to a Session or Work Item
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/sources/{source_id}/changes (the `RecordChange` operationId).
+func (c *ClientWithResponses) RecordChangeWithResponse(ctx context.Context, sourceId string, body RecordChangeJSONRequestBody, reqEditors ...RequestEditorFn) (*RecordChangeResponse, error) {
+	rsp, err := c.RecordChange(ctx, sourceId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRecordChangeResponse(rsp)
 }
 
 // ParseRevokeApiTokenResponse parses an HTTP response from a RevokeApiTokenWithResponse call
@@ -3157,6 +3396,39 @@ func ParseCreateApiTokenResponse(rsp *http.Response) (*CreateApiTokenResponse, e
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
 		var dest ResponseIssuedToken
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRecordChangeResponse parses an HTTP response from a RecordChangeWithResponse call
+func ParseRecordChangeResponse(rsp *http.Response) (*RecordChangeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RecordChangeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest ResponseChangeSnapshot
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

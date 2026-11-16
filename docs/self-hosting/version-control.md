@@ -101,4 +101,4 @@ Release notes map commits to work through **Changes**. A Session, a CI job, or a
 
 `commit_shas` must be the full SHAs as the provider reports them. `session_id`, `work_item_id`, and `external_ref` are optional. Recording needs `change.record` on the Source, and reading needs `change.read`. A commit belongs to one Change in its Source; recording it again returns `409`. The deploy sheet then shows the Change, Session, and Work Item next to the commit.
 
-Until the Session capability records Changes itself, this endpoint is how CI or an automation supplies the link.
+Until the Session capability records Changes itself, this endpoint is how CI or an automation supplies the link. From CI, `ivaldictl change record` calls it, taking the commit from the pipeline ([Creating Releases from CI](ci-releases.md#recording-which-work-produced-a-commit)).

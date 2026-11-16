@@ -582,6 +582,12 @@
           "previous": {
             "$ref": "#/components/schemas/BuildSnapshot"
           },
+          "removed_commit_shas": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "unresolved": {
             "items": {
               "type": "string"
@@ -595,6 +601,7 @@
           "previous",
           "next",
           "commit_shas",
+          "removed_commit_shas",
           "unresolved"
         ],
         "type": "object"
@@ -4377,6 +4384,12 @@
           "release_id": {
             "type": "string"
           },
+          "removed_changes": {
+            "items": {
+              "$ref": "#/components/schemas/ReleaseChange"
+            },
+            "type": "array"
+          },
           "restores_deployment_id": {
             "nullable": true,
             "type": "string"
@@ -4393,7 +4406,8 @@
           "restores_deployment_id",
           "artifacts",
           "checks",
-          "changes"
+          "changes",
+          "removed_changes"
         ],
         "type": "object"
       },

@@ -23,6 +23,7 @@ output-options:
     - list-api-tokens
     - create-api-token
     - revoke-api-token
+    - record-change
 compatibility:
   # Name enum values after their type, such as ListReleasesParamsSortOrderDesc,
   # so values of different enums never collide.

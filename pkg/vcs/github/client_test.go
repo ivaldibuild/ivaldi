@@ -44,7 +44,7 @@ func writeToken(w http.ResponseWriter) {
 	_, _ = w.Write([]byte(`{"token":"test-token","expires_at":"2099-01-01T00:00:00Z"}`))
 }
 
-func TestRepositoryAndCommitsBetween(t *testing.T) {
+func TestRepositoryAndCompare(t *testing.T) {
 	var tokenCalls int
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -90,14 +90,46 @@ func TestRepositoryAndCommitsBetween(t *testing.T) {
 	assert.Equal(t, "99", repo.ExternalID)
 	assert.Equal(t, time.Date(2026, 11, 8, 7, 30, 0, 0, time.UTC), repo.UpdatedAt, "in UTC")
 
-	commits, err := client.CommitsBetween(ctx, endpoint(server), repo, "aaa", "bbb")
+	comparison, err := client.Compare(ctx, endpoint(server), repo, "aaa", "bbb")
 	require.NoError(t, err)
+	assert.Empty(t, comparison.Removed, "bbb is ahead of aaa, so nothing is compared the other way")
+	commits := comparison.Added
 	require.Len(t, commits, 2, "both pages are read")
 	assert.Equal(t, "abc", commits[0].SHA)
 	assert.Equal(t, "bbb", commits[1].SHA)
 	assert.Equal(t, "Add checkout", commits[1].Message)
 	assert.Equal(t, time.Date(2026, 11, 8, 10, 0, 0, 0, time.UTC), commits[1].CommittedAt)
 	assert.Equal(t, 1, tokenCalls, "the installation token is cached")
+}
+
+// A rollback, or a move to a branch that diverged, loses commits, which
+// GitHub lists only when compared the other way.
+func TestCompareListsTheCommitsAMoveRemoves(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case tokenPath:
+			writeToken(w)
+		case "/repositories/99/compare/new...old":
+			_, _ = w.Write([]byte(`{"behind_by": 1, "commits": [
+				{"sha":"fix","commit":{"message":"Hotfix","author":{"name":"Ada","date":"2026-11-08T09:00:00Z"}}}
+			]}`))
+		case "/repositories/99/compare/old...new":
+			_, _ = w.Write([]byte(`{"behind_by": 1, "commits": [
+				{"sha":"new","commit":{"message":"Add checkout","author":{"name":"Ada","date":"2026-11-08T10:00:00Z"}}}
+			]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	comparison, err := testClient(t, server).Compare(context.Background(), endpoint(server),
+		vcs.Repository{ExternalID: "99"}, "new", "old")
+	require.NoError(t, err)
+	require.Len(t, comparison.Added, 1)
+	assert.Equal(t, "fix", comparison.Added[0].SHA)
+	require.Len(t, comparison.Removed, 1)
+	assert.Equal(t, "new", comparison.Removed[0].SHA)
 }
 
 func TestRepositoryReportsANotFound(t *testing.T) {

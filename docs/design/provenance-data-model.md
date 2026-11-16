@@ -31,9 +31,9 @@ erDiagram
 
 ## How the main flows work
 
-**Recording a Change.** A Session, a CI job, or another automation calls `POST /v1/sources/{source_id}/changes` with the full commit SHAs, a title, and optionally its Session and Work Item. The capability validates the SHAs and writes the Change, its commits, its outbox event, and its audit record in one transaction. A commit already recorded for the Source is refused with `409`.
+**Recording a Change.** A Session, a CI job (`ivaldictl change record`), or another automation calls `POST /v1/sources/{source_id}/changes` with the full commit SHAs, a title, and optionally its Session and Work Item. The capability validates the SHAs and writes the Change, its commits, its outbox event, and its audit record in one transaction. A commit already recorded for the Source is refused with `409`.
 
-**Release notes.** Delivery asks for the Changes holding the commits between two Builds, through `provenance.Lookup`. For each commit it finds, the release change carries the Change ID, Session ID, and Work Item ID. Commits with no recorded Change remain listed, with those fields null.
+**Release notes.** Delivery asks for the Changes holding the commits a Release would add to a Target and those it would remove, through `provenance.Lookup`. For each commit it finds, the release change carries the Change ID, Session ID, and Work Item ID. Commits with no recorded Change remain listed, with those fields null.
 
 ## Invariants
 

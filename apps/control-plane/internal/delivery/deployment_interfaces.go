@@ -101,10 +101,14 @@ type ArtifactChange struct {
 	ArtifactName string         `json:"artifact_name"`
 	Previous     *BuildSnapshot `json:"previous"`
 	Next         BuildSnapshot  `json:"next"`
-	// CommitSHAs are the commits between the previous and next Build,
-	// oldest first. It is empty when the Builds are the same or the range
-	// could not be resolved.
+	// CommitSHAs are the commits the next Build has and the previous one
+	// does not, oldest first. It is empty when the Builds are the same or
+	// the range could not be resolved.
 	CommitSHAs []string `json:"commit_shas"`
+	// RemovedCommitSHAs are the commits the previous Build has and the next
+	// one does not, oldest first: what a rollback, or a move to a branch
+	// that diverged, takes away.
+	RemovedCommitSHAs []string `json:"removed_commit_shas"`
 	// Unresolved says why no commit range was listed for this artifact.
 	Unresolved []string `json:"unresolved"`
 }
@@ -117,8 +121,8 @@ type DeploymentCheck struct {
 }
 
 // ReleaseChanges is what a Release would change on a Target, with the
-// checks the deploy sheet needs. Changes lists the commits between the
-// Target's current Release and this one, once each.
+// checks the deploy sheet needs. Changes lists the commits the Target would
+// gain and RemovedChanges the commits it would lose, once each.
 type ReleaseChanges struct {
 	ReleaseID        string  `json:"release_id"`
 	TargetID         string  `json:"target_id"`
@@ -135,6 +139,7 @@ type ReleaseChanges struct {
 	Artifacts            []ArtifactChange  `json:"artifacts"`
 	Checks               []DeploymentCheck `json:"checks"`
 	Changes              []ReleaseChange   `json:"changes"`
+	RemovedChanges       []ReleaseChange   `json:"removed_changes"`
 }
 
 // ReportDeploymentInput is one agent report about a Deployment.

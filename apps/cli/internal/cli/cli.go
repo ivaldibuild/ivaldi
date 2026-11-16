@@ -8,6 +8,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-cli/internal/apitoken"
 	"github.com/ivaldibuild/ivaldi-cli/internal/app"
 	"github.com/ivaldibuild/ivaldi-cli/internal/auth"
+	"github.com/ivaldibuild/ivaldi-cli/internal/change"
 	"github.com/ivaldibuild/ivaldi-cli/internal/helpers"
 	"github.com/ivaldibuild/ivaldi-cli/internal/release"
 	"github.com/ivaldibuild/ivaldi-cli/internal/serviceaccount"
@@ -58,6 +59,7 @@ func New(a *app.App) *cobra.Command {
 	cmd.AddCommand(
 		auth.New(a),
 		release.New(a),
+		change.New(a),
 		serviceaccount.New(a),
 		apitoken.New(a),
 	)

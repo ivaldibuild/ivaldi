@@ -184,7 +184,27 @@ describe('deployments', () => {
       await settle(fixture);
     }
 
-    function changes(targetId: string, failing?: { name: string; reason: string }) {
+    function commit(sha: string, title: string) {
+      return {
+        commit_sha: sha,
+        source_id: 'src_1',
+        title,
+        message: title,
+        author_name: 'Ada',
+        author_email: 'ada@example.com',
+        committed_at: '2026-11-08T10:00:00Z',
+        url: null,
+        change_id: 'chg_1',
+        session_id: 'ses_1',
+        work_item_id: 'wki_1',
+      };
+    }
+
+    function changes(
+      targetId: string,
+      failing?: { name: string; reason: string },
+      removed: ReturnType<typeof commit>[] = [],
+    ) {
       return ok({
         release_id: 'rel_2',
         target_id: targetId,
@@ -196,25 +216,13 @@ describe('deployments', () => {
             previous: build('1.4.0', 'sha256:aaa'),
             next: build('1.5.0', 'sha256:bbb'),
             commit_shas: ['bbbbbbbb'],
+            removed_commit_shas: removed.map((c) => c.commit_sha),
             unresolved: [],
           },
         ],
         checks: checks(failing),
-        changes: [
-          {
-            commit_sha: 'bbbbbbbb',
-            source_id: 'src_1',
-            title: 'Add checkout',
-            message: 'Add checkout',
-            author_name: 'Ada',
-            author_email: 'ada@example.com',
-            committed_at: '2026-11-08T10:00:00Z',
-            url: null,
-            change_id: 'chg_1',
-            session_id: 'ses_1',
-            work_item_id: 'wki_1',
-          },
-        ],
+        changes: [commit('bbbbbbbb', 'Add checkout')],
+        removed_changes: removed,
       });
     }
 
@@ -254,6 +262,24 @@ describe('deployments', () => {
       post.flush(ok([deployment()]));
       await settle(fixture);
       expect(navigate).toHaveBeenCalledWith(['/deployments', 'dep_1']);
+    });
+
+    it('lists the commits a Release would take away from a Target', async () => {
+      const { fixture, el } = await renderDeploy();
+
+      await choose(fixture, el, 'staging-eu-1');
+      http
+        .expectOne(`${v1}/releases/rel_2/changes?target_id=tgt_stg`)
+        .flush(changes('tgt_stg', undefined, [commit('cccccccc', 'Hotfix the cart')]));
+      await settle(fixture);
+
+      const preview = el.querySelector('article[aria-label="staging-eu-1"]')!;
+      const added = preview.querySelector('ul[aria-label="Commits"]')!;
+      const removed = preview.querySelector('ul[aria-label="Commits this removes"]')!;
+      expect(added.textContent).toContain('Add checkout');
+      expect(added.textContent).not.toContain('Hotfix the cart');
+      expect(removed.textContent).toContain('Hotfix the cart');
+      expect(removed.textContent).toContain('Work item wki_1');
     });
 
     it('holds back while a chosen Target fails a check, and says why', async () => {

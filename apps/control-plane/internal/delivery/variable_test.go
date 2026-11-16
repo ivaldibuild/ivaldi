@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
+	"github.com/ivaldibuild/ivaldi/pkg/binding"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
 )
 
@@ -206,35 +207,42 @@ func TestBindingNames(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalid)
 }
 
-func TestCheckSecretPath(t *testing.T) {
-	tests := []struct {
-		name     string
-		template string
-		reported string
-		ok       bool
-	}{
-		{name: "a path with no bindings is the path read", template: "payments/db", reported: "payments/db", ok: true},
-		{name: "another path is not", template: "payments/db", reported: "payments/other", ok: false},
-		{name: "a binding is filled in", template: "payments/#{Ivaldi.Environment.Slug}/db", reported: "payments/production/db", ok: true},
-		{name: "the template is not filled in", template: "payments/#{Ivaldi.Environment.Slug}/db", reported: "payments/#{Ivaldi.Environment.Slug}/db", ok: false},
-		{name: "the literal parts must match", template: "payments/#{Ivaldi.Environment.Slug}/db", reported: "other/production/db", ok: false},
-		{name: "a missing part is refused", template: "payments/#{Ivaldi.Environment.Slug}/db", reported: "payments/db", ok: false},
-		{name: "a later part must still come after", template: "#{A}/db/#{B}/key", reported: "x/db/y/key", ok: true},
-		{name: "the later parts are ordered", template: "#{A}/db/#{B}/key", reported: "x/key/y/db", ok: false},
-		{name: "two bindings may sit side by side", template: "#{A}#{B}/db", reported: "xy/db", ok: true},
-		{name: "an escaped binding is read literally", template: "payments/##{literal}/db", reported: "payments/#{literal}/db", ok: true},
-		{name: "an empty path was not read", template: "payments/#{A}/db", reported: "", ok: false},
+// A secret's path is filled in with the Deployment's own values, as the agent
+// would, and a rollback reads again the path the Deployment it restores read.
+func TestSecretPaths(t *testing.T) {
+	secret := func(name, path string) ResolvedVariable {
+		return ResolvedVariable{Name: name, Kind: VariableKindSecret, Winner: &ResolvedValue{Secret: &SecretReference{StoreID: "sst_1", Path: path}}}
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := CheckSecretPath(tt.template, tt.reported)
-			if tt.ok {
-				assert.NoError(t, err)
-				return
-			}
-			assert.ErrorIs(t, err, ErrInvalid)
-		})
+	text := func(name, value string) ResolvedVariable {
+		return ResolvedVariable{Name: name, Kind: VariableKindText, Winner: &ResolvedValue{Value: value}}
 	}
+	resolved := []ResolvedVariable{
+		text("Prefix", "a##{b}"),
+		text("Region", "#{Ivaldi.Target.Slug}-1"),
+		secret("Db.Password", "payments/#{Ivaldi.Environment.Slug}/#{Region}/db"),
+		secret("Api.Key", "#{Prefix}/api"),
+		secret("Plain", "payments/plain"),
+		secret("Legacy", "payments/#{Ivaldi.Environment.Slug}/legacy"),
+	}
+	system := binding.System{EnvironmentSlug: "production", TargetSlug: "eu"}
+
+	paths, err := SecretPaths(resolved, system, nil)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{
+		"Db.Password": "payments/production/eu-1/db",
+		"Api.Key":     "a#{b}/api",
+		"Plain":       "payments/plain",
+		"Legacy":      "payments/production/legacy",
+	}, paths, "a text variable may hold a literal #{, which is part of the path")
+
+	renamed := binding.System{EnvironmentSlug: "prod", TargetSlug: "eu"}
+	paths, err = SecretPaths(resolved, renamed, []SecretVersion{
+		{Name: "Db.Password", Path: "payments/production/eu-1/db"},
+		{Name: "Legacy", Path: "payments/#{Ivaldi.Environment.Slug}/legacy"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "payments/production/eu-1/db", paths["Db.Password"], "a rollback reads the path that was read")
+	assert.Equal(t, "payments/prod/legacy", paths["Legacy"], "a pin that kept the template is filled in again")
 }
 
 func TestCheckDeployable(t *testing.T) {

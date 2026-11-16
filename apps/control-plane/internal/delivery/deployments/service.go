@@ -20,6 +20,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/outbox"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/provenance"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
+	"github.com/ivaldibuild/ivaldi/pkg/binding"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
 	"github.com/ivaldibuild/ivaldi/pkg/optional"
@@ -230,6 +231,9 @@ func (s *service) RequestDeployments(ctx context.Context, actor identity.Actor, 
 			}
 			d, err := delivery.NewDeployment(props, nil)
 			if err != nil {
+				return err
+			}
+			if err := s.fixSecretPaths(ctx, d, rel, plan); err != nil {
 				return err
 			}
 			if err := s.deployments.CreateDeployment(ctx, d); err != nil {
@@ -490,6 +494,7 @@ func (s *service) recordSecrets(ctx context.Context, d *delivery.Deployment, det
 		return nil
 	}
 	references := map[string]delivery.SecretReference{}
+	paths := map[string]string{}
 	if snapshotID := d.VariableSnapshotID(); snapshotID != nil {
 		revision, err := s.variables.GetReleaseVariables(ctx, d.OrganizationID(), *snapshotID)
 		if err != nil {
@@ -499,13 +504,22 @@ func (s *service) recordSecrets(ctx context.Context, d *delivery.Deployment, det
 		if err != nil {
 			return err
 		}
-		resolved := delivery.ResolveVariables(revision.Variables(), delivery.DeploymentScope{
-			TargetID: d.TargetID(), EnvironmentID: d.EnvironmentID(), ChannelID: rel.ChannelID(),
-		})
+		target, err := s.targets.GetTarget(ctx, d.OrganizationID(), d.TargetID())
+		if err != nil {
+			return err
+		}
+		env, err := s.environments.GetEnvironment(ctx, d.OrganizationID(), d.EnvironmentID())
+		if err != nil {
+			return err
+		}
+		resolved := s.resolve(revision, rel, target)
 		for _, r := range resolved {
 			if r.Winner != nil && r.Winner.Secret != nil {
 				references[r.Name] = *r.Winner.Secret
 			}
+		}
+		if paths, err = s.pathsOf(ctx, d, rel, target, env, resolved); err != nil {
+			return err
 		}
 	}
 	versions := make([]delivery.SecretVersion, 0, len(reported.Secrets))
@@ -514,15 +528,13 @@ func (s *service) recordSecrets(ctx context.Context, d *delivery.Deployment, det
 		if !sent {
 			return delivery.NewErrInvalidInput(fmt.Sprintf("the report names secret %q, which the deployment was not sent", secret.Name))
 		}
-		// The path the agent read is the reference with its bindings filled
-		// in; the snapshot keeps the template. An agent of an earlier
-		// version names none, and its pin says where the template points.
-		path := ref.Path
-		if secret.Path != "" {
-			if err := delivery.CheckSecretPath(ref.Path, secret.Path); err != nil {
-				return err
-			}
-			path = secret.Path
+		// The agent reads the path its assignment gives, which the control
+		// plane filled in; one that read another is refused rather than
+		// recorded. An agent of an earlier version names none.
+		path := paths[secret.Name]
+		if secret.Path != "" && secret.Path != path {
+			return delivery.NewErrInvalidInput(fmt.Sprintf(
+				"the agent read secret %s from %q, not from %q, the path the deployment was sent", secret.Name, secret.Path, path))
 		}
 		deliveredAs := delivery.VariableDeliverAsSecret
 		if secret.DeliveredAs == string(delivery.VariableDeliverAsValue) || slices.Contains(reported.SecretsInValues, secret.Name) {
@@ -1087,6 +1099,10 @@ func (s *service) assignment(ctx context.Context, d *delivery.Deployment) (*deli
 	if config == nil {
 		return nil, delivery.NewErrInvalidInput("the target has no apply config; deployments there are tracked only")
 	}
+	restored, err := s.restoredPins(ctx, d)
+	if err != nil {
+		return nil, err
+	}
 	variables, secrets := []delivery.AssignmentVariable{}, []delivery.AssignmentSecret{}
 	if snapshotID := d.VariableSnapshotID(); snapshotID != nil {
 		revision, err := s.variables.GetReleaseVariables(ctx, d.OrganizationID(), *snapshotID)
@@ -1108,25 +1124,29 @@ func (s *service) assignment(ctx context.Context, d *delivery.Deployment) (*deli
 			}
 		}
 		secrets = delivery.AssignmentSecrets(resolved, stores)
-	}
-	// A rollback reads the versions the Deployment it restores read, and
-	// the agent refuses a secret whose value is no longer that one.
-	if restoresID := d.RestoresDeploymentID(); restoresID != nil && !d.SecretsLatest() {
-		restored, err := s.deployments.GetDeployment(ctx, d.OrganizationID(), *restoresID)
+		// The agent reads the path given, filled in here so the control
+		// plane knows exactly what it reads, and escaped so the agent's own
+		// filling in leaves it as it is.
+		paths, err := s.pathsOf(ctx, d, rel, target, env, resolved)
 		if err != nil {
 			return nil, err
 		}
-		pins := map[string]delivery.SecretVersion{}
-		for _, pin := range restored.SecretVersions() {
-			pins[pin.Name] = pin
-		}
 		for i := range secrets {
-			if pin, ok := pins[secrets[i].Name]; ok {
-				if pin.Version != "" {
-					secrets[i].Ref.Version = pin.Version
-				}
-				secrets[i].Fingerprint = pin.Fingerprint
+			secrets[i].Ref.Path = binding.Escape(paths[secrets[i].Name])
+		}
+	}
+	// A rollback reads the versions the Deployment it restores read, and
+	// the agent refuses a secret whose value is no longer that one.
+	pins := map[string]delivery.SecretVersion{}
+	for _, pin := range restored {
+		pins[pin.Name] = pin
+	}
+	for i := range secrets {
+		if pin, ok := pins[secrets[i].Name]; ok {
+			if pin.Version != "" {
+				secrets[i].Ref.Version = pin.Version
 			}
+			secrets[i].Fingerprint = pin.Fingerprint
 		}
 	}
 	// A rollback asked to use the latest secrets reads the latest of each,
@@ -1182,6 +1202,68 @@ func (s *service) assignment(ctx context.Context, d *delivery.Deployment) (*deli
 		Deployment: d.Snapshot(), Release: rel.Snapshot(), Target: target.Snapshot(),
 		Environment: env.Snapshot(), Apply: apply,
 	}, nil
+}
+
+// restoredPins returns what the Deployment a rollback restores read, which the
+// rollback reads again: nil for any other Deployment, and for a rollback asked
+// to use the latest secrets.
+func (s *service) restoredPins(ctx context.Context, d *delivery.Deployment) ([]delivery.SecretVersion, error) {
+	restoresID := d.RestoresDeploymentID()
+	if restoresID == nil || d.SecretsLatest() {
+		return nil, nil
+	}
+	restored, err := s.deployments.GetDeployment(ctx, d.OrganizationID(), *restoresID)
+	if err != nil {
+		return nil, err
+	}
+	return restored.SecretVersions(), nil
+}
+
+// fixSecretPaths fixes where a Deployment being requested reads its secrets
+// from: each path filled in with its own values, or for a rollback the path
+// the Deployment it restores read. Fixed now, the agent's report is checked
+// against what was requested, whatever is renamed before it arrives.
+func (s *service) fixSecretPaths(ctx context.Context, d *delivery.Deployment, rel *delivery.Release, p *plan) error {
+	if p.variables == nil {
+		return nil
+	}
+	var restored []delivery.SecretVersion
+	if p.restores != nil && !d.SecretsLatest() {
+		restored = p.restores.SecretVersions()
+	}
+	paths, err := s.secretPaths(ctx, d, rel, p.target, p.environment, s.resolve(p.variables, rel, p.target), restored)
+	if err != nil {
+		return err
+	}
+	return d.ReadSecretsFrom(paths)
+}
+
+// pathsOf returns where d reads its secrets from: the paths fixed when it was
+// requested, or, for a Deployment requested before they were fixed, the
+// paths filled in now.
+func (s *service) pathsOf(ctx context.Context, d *delivery.Deployment, rel *delivery.Release, target *delivery.Target, env *delivery.Environment, resolved []delivery.ResolvedVariable) (map[string]string, error) {
+	if paths := d.SecretPaths(); paths != nil {
+		return paths, nil
+	}
+	restored, err := s.restoredPins(ctx, d)
+	if err != nil {
+		return nil, err
+	}
+	return s.secretPaths(ctx, d, rel, target, env, resolved, restored)
+}
+
+// secretPaths returns the paths d's secrets are read from, filled in with
+// d's system variables and text variables, or replayed from restored.
+func (s *service) secretPaths(ctx context.Context, d *delivery.Deployment, rel *delivery.Release, target *delivery.Target, env *delivery.Environment, resolved []delivery.ResolvedVariable, restored []delivery.SecretVersion) (map[string]string, error) {
+	cluster, err := s.clusters.GetCluster(ctx, d.OrganizationID(), target.ClusterID())
+	if err != nil {
+		return nil, err
+	}
+	paths, err := delivery.SecretPaths(resolved, delivery.DeploymentSystem(d, rel, target, env, cluster.Slug()), restored)
+	if err != nil {
+		return nil, fmt.Errorf("fill in the secrets' paths: %w", err)
+	}
+	return paths, nil
 }
 
 func helmReleaseName(applicationID string) string {

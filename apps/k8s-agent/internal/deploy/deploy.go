@@ -9,6 +9,7 @@ import (
 
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/apiclient"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/values"
+	"github.com/ivaldibuild/ivaldi/pkg/binding"
 )
 
 // The labels and annotations a deployer puts on what it applies.
@@ -120,8 +121,8 @@ type Applied struct {
 	// deployer's values, and so into its own records.
 	SecretsInValues []string
 	// SecretPins are the pins the apply that committed used, which a
-	// deployer returns when Skipped so the retry reports them. Nil when it
-	// kept none.
+	// deployer returns when Skipped so the retry reports them, with that
+	// apply's SecretsInValues. Nil when it kept none.
 	SecretPins []SecretPin
 }
 
@@ -129,11 +130,15 @@ type Applied struct {
 type Deployer interface {
 	// Name is the deployer's name in assignments and heartbeats.
 	Name() string
+	// Committed reports whether an earlier attempt already applied a, and
+	// if so what it kept, as a Skipped Applied. It changes nothing, so the
+	// agent asks before it reads any secret: a retry reports what committed,
+	// and is not failed by a secret that rotated or a store that is down
+	// since.
+	Committed(ctx context.Context, a Assignment) (Applied, bool, error)
 	// Apply applies a, reporting progress as it goes. It is idempotent: an
-	// assignment already applied is skipped, and its Applied carries the
-	// pins that apply kept, so a retry reports what committed rather than
-	// what it resolved again. A failure the person must act on is a
-	// *Failure.
+	// assignment already applied is skipped, as Committed reports it. A
+	// failure the person must act on is a *Failure.
 	Apply(ctx context.Context, a Assignment, progress Progress) (Applied, error)
 }
 
@@ -202,18 +207,18 @@ func FromAPI(a apiclient.DeploymentAssignment, clusterSlug string) Assignment {
 		Overlays:   a.Apply.Overlays,
 		Images:     images,
 		Variables:  variables,
-		System: map[string]string{
-			"Ivaldi.Application.Id":   a.Deployment.ApplicationId,
-			"Ivaldi.Cluster.Slug":     clusterSlug,
-			"Ivaldi.Deployment.Id":    a.Deployment.Id,
-			"Ivaldi.Environment.Id":   a.Environment.Id,
-			"Ivaldi.Environment.Slug": a.Environment.Slug,
-			"Ivaldi.Release.Id":       a.Release.Id,
-			"Ivaldi.Release.Version":  a.Release.Version,
-			"Ivaldi.Target.Id":        a.Target.Id,
-			"Ivaldi.Target.Namespace": a.Apply.Namespace,
-			"Ivaldi.Target.Slug":      a.Target.Slug,
-		},
+		System: binding.System{
+			ApplicationID:   a.Deployment.ApplicationId,
+			ClusterSlug:     clusterSlug,
+			DeploymentID:    a.Deployment.Id,
+			EnvironmentID:   a.Environment.Id,
+			EnvironmentSlug: a.Environment.Slug,
+			ReleaseID:       a.Release.Id,
+			ReleaseVersion:  a.Release.Version,
+			TargetID:        a.Target.Id,
+			TargetNamespace: a.Apply.Namespace,
+			TargetSlug:      a.Target.Slug,
+		}.Map(),
 	}
 	if a.Apply.Helm != nil {
 		out.HelmReleaseName = a.Apply.Helm.ReleaseName

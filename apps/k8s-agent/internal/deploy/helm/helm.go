@@ -17,6 +17,7 @@ import (
 	"helm.sh/helm/v4/pkg/action"
 	chart "helm.sh/helm/v4/pkg/chart/v2"
 	"helm.sh/helm/v4/pkg/kube"
+	"helm.sh/helm/v4/pkg/release"
 	releasecommon "helm.sh/helm/v4/pkg/release/common"
 	releasev1 "helm.sh/helm/v4/pkg/release/v1"
 	"helm.sh/helm/v4/pkg/storage"
@@ -43,6 +44,11 @@ const releaseLabel = "ivaldi.build/deployment"
 // apply that made it read. Helm keeps one revision per Secret and rebuilds a
 // revision only when it supersedes it, so the annotation outlives reporting.
 const pinsAnnotation = "ivaldi.build/secrets"
+
+// keepTimeout bounds keeping the pins once Helm has committed, which runs
+// even when the apply's context has just ended: the revision is live either
+// way, and a retry needs what it read.
+const keepTimeout = 15 * time.Second
 
 // maxPinsSize bounds what is kept in the annotation, which Kubernetes bounds
 // at 256 KiB with everything else on the object. A Deployment whose secrets
@@ -106,26 +112,63 @@ type deployer struct {
 
 func (d *deployer) Name() string { return Name }
 
-func (d *deployer) Apply(ctx context.Context, a deploy.Assignment, progress deploy.Progress) (deploy.Applied, error) {
+// configuration returns the Helm configuration for one apply. Every
+// Kubernetes request it makes, Helm's writes, hook waits, and release
+// storage, is cancelled when ctx ends, so nothing keeps changing the cluster
+// after the agent has given the apply up.
+func (d *deployer) configuration(ctx context.Context, a deploy.Assignment) (*action.Configuration, error) {
 	if a.HelmReleaseName == "" {
-		return deploy.Applied{}, deploy.Failf("the assignment names no Helm release")
+		return nil, deploy.Failf("the assignment names no Helm release")
 	}
-	// Every Kubernetes request of this apply, Helm's writes, hook waits,
-	// and release storage, is cancelled when ctx ends, so nothing keeps
-	// changing the cluster after the agent has given the apply up.
 	bound := rest.CopyConfig(d.cfg.RESTConfig)
 	bound.Wrap(func(rt http.RoundTripper) http.RoundTripper { return bind(ctx, rt) })
 	cfg, err := d.configure(a.Namespace, bound)
 	if err != nil {
-		return deploy.Applied{}, fmt.Errorf("helm configuration: %w", err)
+		return nil, fmt.Errorf("helm configuration: %w", err)
+	}
+	return cfg, nil
+}
+
+// Committed reports whether the release's latest revision is this
+// Deployment's, deployed: an earlier attempt applied it and died before
+// reporting. It changes nothing, so the agent can ask before it reads any
+// secret.
+func (d *deployer) Committed(ctx context.Context, a deploy.Assignment) (deploy.Applied, bool, error) {
+	cfg, err := d.configuration(ctx, a)
+	if err != nil {
+		return deploy.Applied{}, false, err
+	}
+	last, err := latest(cfg.Releases, a.HelmReleaseName)
+	if errors.Is(err, driver.ErrReleaseNotFound) {
+		return deploy.Applied{}, false, nil
+	}
+	if err != nil {
+		return deploy.Applied{}, false, fmt.Errorf("read helm release %s: %w", a.HelmReleaseName, err)
+	}
+	if !appliedBy(last, a) {
+		return deploy.Applied{}, false, nil
+	}
+	applied, err := d.alreadyApplied(ctx, a, last)
+	return applied, err == nil, err
+}
+
+// appliedBy reports whether rel is a's apply, committed.
+func appliedBy(rel *releasev1.Release, a deploy.Assignment) bool {
+	return rel.Labels[releaseLabel] == a.DeploymentID && rel.Info.Status == releasecommon.StatusDeployed
+}
+
+func (d *deployer) Apply(ctx context.Context, a deploy.Assignment, progress deploy.Progress) (deploy.Applied, error) {
+	cfg, err := d.configuration(ctx, a)
+	if err != nil {
+		return deploy.Applied{}, err
 	}
 
-	install, err := d.prepare(cfg.Releases, a, progress)
+	install, last, err := d.prepare(cfg.Releases, a, progress)
 	if err != nil {
 		return deploy.Applied{}, err
 	}
 	if install == nil {
-		return d.alreadyApplied(ctx, cfg.Releases, a)
+		return d.alreadyApplied(ctx, a, last)
 	}
 
 	progress(deploy.StepFetching, "pulling chart "+a.Definition.Ref())
@@ -157,6 +200,7 @@ func (d *deployer) Apply(ctx context.Context, a deploy.Assignment, progress depl
 		namespace: a.Namespace, mapper: d.mapper,
 	}
 	labels := map[string]string{releaseLabel: a.DeploymentID}
+	var applied release.Releaser
 	if *install {
 		act := action.NewInstall(cfg)
 		act.ReleaseName = a.HelmReleaseName
@@ -170,7 +214,7 @@ func (d *deployer) Apply(ctx context.Context, a deploy.Assignment, progress depl
 		// Not ctx: Helm returns on cancellation while its install goroutine
 		// carries on. The bound requests stop the operation instead, and
 		// waiting for it means it has stopped when Apply returns.
-		_, err = act.RunWithContext(context.WithoutCancel(ctx), c, built.Values)
+		applied, err = act.RunWithContext(context.WithoutCancel(ctx), c, built.Values)
 	} else {
 		act := action.NewUpgrade(cfg)
 		act.Namespace = a.Namespace
@@ -181,7 +225,7 @@ func (d *deployer) Apply(ctx context.Context, a deploy.Assignment, progress depl
 		act.Labels = labels
 		act.PostRenderer = renderer
 		act.SkipCRDs = true
-		_, err = act.RunWithContext(context.WithoutCancel(ctx), a.HelmReleaseName, c, built.Values)
+		applied, err = act.RunWithContext(context.WithoutCancel(ctx), a.HelmReleaseName, c, built.Values)
 	}
 	if err != nil {
 		if ctx.Err() != nil {
@@ -189,45 +233,58 @@ func (d *deployer) Apply(ctx context.Context, a deploy.Assignment, progress depl
 		}
 		return deploy.Applied{}, &deploy.Failure{Reason: "helm could not apply release " + a.HelmReleaseName, Err: err}
 	}
-	d.keepPins(ctx, cfg.Releases, a)
-	return deploy.Applied{Ref: d.ref(cfg.Releases, a.HelmReleaseName), SecretsInValues: built.SecretsInValues}, nil
+	// Helm has committed: nothing after this fails the apply.
+	rel, ok := applied.(*releasev1.Release)
+	if !ok {
+		if rel, err = latest(cfg.Releases, a.HelmReleaseName); err != nil {
+			d.cfg.Logger.Warn("could not read the applied revision", "deployment_id", a.DeploymentID, "error", err)
+			return deploy.Applied{Ref: map[string]any{"type": Name, "name": a.HelmReleaseName}, SecretsInValues: built.SecretsInValues}, nil
+		}
+	}
+	d.keep(ctx, a, rel, kept{Secrets: a.SecretPins, SecretsInValues: built.SecretsInValues})
+	return deploy.Applied{Ref: ref(a.HelmReleaseName, rel), SecretsInValues: built.SecretsInValues}, nil
 }
 
-// alreadyApplied reports a Deployment an earlier attempt applied: its revision
-// is the one that committed, so its pins are what the Deployment records. An
-// earlier attempt may have died before keeping them, in which case the report
-// carries none and the caller refuses rather than report this attempt's.
-func (d *deployer) alreadyApplied(ctx context.Context, store *storage.Storage, a deploy.Assignment) (deploy.Applied, error) {
-	out := deploy.Applied{Skipped: true, Ref: d.ref(store, a.HelmReleaseName)}
-	last, err := latest(store, a.HelmReleaseName)
-	if err != nil {
-		return deploy.Applied{}, fmt.Errorf("read helm release %s: %w", a.HelmReleaseName, err)
-	}
-	pins, err := d.readPins(ctx, a.Namespace, a.HelmReleaseName, last.Version)
+// kept is what an apply keeps on its revision for a retry that finds it
+// already applied: the secrets it read, and those whose values went into
+// Helm's values.
+type kept struct {
+	Secrets         []deploy.SecretPin `json:"secrets"`
+	SecretsInValues []string           `json:"secrets_in_values,omitempty"`
+}
+
+// alreadyApplied reports a Deployment an earlier attempt applied: its
+// revision, last, is the one that committed, so what it kept is what the
+// Deployment records. An earlier attempt may have died before keeping it, in
+// which case the report carries no pins and the caller refuses rather than
+// report its own.
+func (d *deployer) alreadyApplied(ctx context.Context, a deploy.Assignment, last *releasev1.Release) (deploy.Applied, error) {
+	k, err := d.readKept(ctx, a.Namespace, a.HelmReleaseName, last.Version)
 	if err != nil {
 		return deploy.Applied{}, &deploy.Failure{
 			Reason: fmt.Sprintf("could not read the versions of the secrets Deployment %s applied", a.DeploymentID),
 			Err:    err,
 		}
 	}
-	out.SecretPins = pins
+	out := deploy.Applied{Skipped: true, Ref: ref(a.HelmReleaseName, last)}
+	if k != nil {
+		out.SecretPins, out.SecretsInValues = k.Secrets, k.SecretsInValues
+	}
 	return out, nil
 }
 
-// keepPins keeps what this apply resolved on its revision, so a retry that
-// finds the Deployment already applied reports the truth. Failing to keep them
-// does not fail the apply: this attempt's own report is right either way, and
-// a later attempt is refused rather than guessing.
-func (d *deployer) keepPins(ctx context.Context, store *storage.Storage, a deploy.Assignment) {
-	if len(a.SecretPins) == 0 {
+// keep keeps what this apply read on its revision, so a retry that finds the
+// Deployment already applied reports the truth. Helm has committed by now, so
+// it is not cut short by ctx ending: the revision is live either way. Failing
+// does not fail the apply: this attempt's own report is right, and a later
+// attempt is refused rather than guessing.
+func (d *deployer) keep(ctx context.Context, a deploy.Assignment, rel *releasev1.Release, k kept) {
+	if len(k.Secrets) == 0 {
 		return
 	}
-	last, err := latest(store, a.HelmReleaseName)
-	if err != nil {
-		d.cfg.Logger.Warn("could not keep the deployment's secret versions", "deployment_id", a.DeploymentID, "error", err)
-		return
-	}
-	if err := d.writePins(ctx, a.Namespace, a.HelmReleaseName, last, a.SecretPins); err != nil {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), keepTimeout)
+	defer cancel()
+	if err := d.writeKept(ctx, a.Namespace, a.HelmReleaseName, rel.Version, k); err != nil {
 		d.cfg.Logger.Warn("could not keep the deployment's secret versions", "deployment_id", a.DeploymentID, "error", err)
 	}
 }
@@ -238,8 +295,8 @@ func revisionSecret(release string, version int) string {
 	return fmt.Sprintf("%s.%s.v%d", storage.HelmStorageType, release, version)
 }
 
-// readPins returns the pins kept on a revision, or nil when it kept none.
-func (d *deployer) readPins(ctx context.Context, namespace, release string, version int) ([]deploy.SecretPin, error) {
+// readKept returns what a revision kept, or nil when it kept nothing.
+func (d *deployer) readKept(ctx context.Context, namespace, release string, version int) (*kept, error) {
 	secret, err := d.cfg.Kube.CoreV1().Secrets(namespace).Get(ctx, revisionSecret(release, version), metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("read the release revision: %w", err)
@@ -248,22 +305,25 @@ func (d *deployer) readPins(ctx context.Context, namespace, release string, vers
 	if raw == "" {
 		return nil, nil
 	}
-	var pins []deploy.SecretPin
-	if err := json.Unmarshal([]byte(raw), &pins); err != nil {
+	var k kept
+	if err := json.Unmarshal([]byte(raw), &k); err != nil {
 		return nil, fmt.Errorf("read the release revision's pins: %w", err)
 	}
-	return pins, nil
+	if k.Secrets == nil {
+		return nil, nil
+	}
+	return &k, nil
 }
 
-// writePins adds the pins to a revision's annotations, without disturbing
-// anything else on the object.
-func (d *deployer) writePins(ctx context.Context, namespace, release string, rel *releasev1.Release, pins []deploy.SecretPin) error {
-	raw, err := json.Marshal(pins)
+// writeKept adds what an apply kept to its revision's annotations, without
+// disturbing anything else on the object.
+func (d *deployer) writeKept(ctx context.Context, namespace, release string, version int, k kept) error {
+	raw, err := json.Marshal(k)
 	if err != nil {
 		return err
 	}
 	if len(raw) > maxPinsSize {
-		return fmt.Errorf("%d secrets are too many to keep with the release", len(pins))
+		return fmt.Errorf("%d secrets are too many to keep with the release", len(k.Secrets))
 	}
 	patch, err := json.Marshal(map[string]any{
 		"metadata": map[string]any{"annotations": map[string]string{pinsAnnotation: string(raw)}},
@@ -271,7 +331,7 @@ func (d *deployer) writePins(ctx context.Context, namespace, release string, rel
 	if err != nil {
 		return err
 	}
-	_, err = d.cfg.Kube.CoreV1().Secrets(namespace).Patch(ctx, revisionSecret(release, rel.Version), types.MergePatchType, patch, metav1.PatchOptions{})
+	_, err = d.cfg.Kube.CoreV1().Secrets(namespace).Patch(ctx, revisionSecret(release, version), types.MergePatchType, patch, metav1.PatchOptions{})
 	if err != nil {
 		return fmt.Errorf("keep the release revision's pins: %w", err)
 	}
@@ -279,30 +339,31 @@ func (d *deployer) writePins(ctx context.Context, namespace, release string, rel
 }
 
 // prepare reads the release's latest revision and decides what to do:
-// nothing (nil, the Deployment is already applied), install (true), or
-// upgrade (false). It clears a pending revision an earlier attempt left
-// behind, and refuses one another operation still holds.
-func (d *deployer) prepare(store *storage.Storage, a deploy.Assignment, progress deploy.Progress) (*bool, error) {
+// nothing (nil, the Deployment is already applied; the revision is
+// returned), install (true), or upgrade (false). It clears a pending
+// revision an earlier attempt left behind, and refuses one another operation
+// still holds.
+func (d *deployer) prepare(store *storage.Storage, a deploy.Assignment, progress deploy.Progress) (*bool, *releasev1.Release, error) {
 	last, err := latest(store, a.HelmReleaseName)
 	if errors.Is(err, driver.ErrReleaseNotFound) {
-		return new(true), nil
+		return new(true), nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("read helm release %s: %w", a.HelmReleaseName, err)
+		return nil, nil, fmt.Errorf("read helm release %s: %w", a.HelmReleaseName, err)
 	}
 	ours := last.Labels[releaseLabel] == a.DeploymentID
 	switch status := last.Info.Status; {
-	case status == releasecommon.StatusDeployed && ours:
-		return nil, nil
+	case appliedBy(last, a):
+		return nil, last, nil
 	case status.IsPending() && ours:
 		progress(deploy.StepInterrupted, fmt.Sprintf("an earlier attempt was interrupted at revision %d; applying again", last.Version))
 		if err := markFailed(store, last, "interrupted: the agent stopped mid-apply"); err != nil {
-			return nil, stuck(a, last, err)
+			return nil, nil, stuck(a, last, err)
 		}
 	case status.IsPending():
 		age := d.now().Sub(last.Info.LastDeployed)
 		if age < d.cfg.Timeout {
-			return nil, &deploy.Failure{
+			return nil, nil, &deploy.Failure{
 				Reason: fmt.Sprintf("helm release %s has another operation in progress (%s, revision %d, %s ago)",
 					a.HelmReleaseName, status, last.Version, age.Round(time.Second)),
 			}
@@ -310,24 +371,24 @@ func (d *deployer) prepare(store *storage.Storage, a deploy.Assignment, progress
 		progress(deploy.StepInterrupted, fmt.Sprintf("revision %d has been %s for %s; treating it as abandoned",
 			last.Version, status, age.Round(time.Second)))
 		if err := markFailed(store, last, "abandoned: pending longer than the agent's apply timeout"); err != nil {
-			return nil, stuck(a, last, err)
+			return nil, nil, stuck(a, last, err)
 		}
 	}
 	// A release whose only revision failed to install cannot be upgraded.
 	history, err := store.History(a.HelmReleaseName)
 	if err != nil {
-		return nil, fmt.Errorf("read helm history %s: %w", a.HelmReleaseName, err)
+		return nil, nil, fmt.Errorf("read helm history %s: %w", a.HelmReleaseName, err)
 	}
 	for _, h := range history {
 		r, ok := h.(*releasev1.Release)
 		if ok && (r.Info.Status == releasecommon.StatusDeployed || r.Info.Status == releasecommon.StatusSuperseded) {
-			return new(false), nil
+			return new(false), nil, nil
 		}
 	}
 	if _, err := store.Delete(a.HelmReleaseName, last.Version); err != nil {
-		return nil, fmt.Errorf("remove the failed first install of %s: %w", a.HelmReleaseName, err)
+		return nil, nil, fmt.Errorf("remove the failed first install of %s: %w", a.HelmReleaseName, err)
 	}
-	return new(true), nil
+	return new(true), nil, nil
 }
 
 // latest returns the release's newest revision.
@@ -365,14 +426,10 @@ func stuck(a deploy.Assignment, rel *releasev1.Release, err error) *deploy.Failu
 
 // revisionSecretCommand deletes the Secret Helm keeps one revision in.
 func revisionSecretCommand(namespace, release string, version int) string {
-	return fmt.Sprintf("kubectl -n %s delete secret sh.helm.release.v1.%s.v%d", namespace, release, version)
+	return fmt.Sprintf("kubectl -n %s delete secret %s", namespace, revisionSecret(release, version))
 }
 
-// ref names the release's current revision for the report.
-func (d *deployer) ref(store *storage.Storage, name string) map[string]any {
-	out := map[string]any{"type": Name, "name": name}
-	if rel, err := latest(store, name); err == nil {
-		out["revision"] = strconv.Itoa(rel.Version)
-	}
-	return out
+// ref names a revision of the release for the report.
+func ref(name string, rel *releasev1.Release) map[string]any {
+	return map[string]any{"type": Name, "name": name, "revision": strconv.Itoa(rel.Version)}
 }

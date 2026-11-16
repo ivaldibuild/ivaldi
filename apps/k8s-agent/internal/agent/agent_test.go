@@ -447,16 +447,26 @@ func TestWork_SkipsAHeartbeatItCannotFillIn(t *testing.T) {
 }
 
 // fakeDeployer applies by returning applied and err, or by blocking until ctx
-// ends.
+// ends. committed, when set, is what an earlier attempt applied.
 type fakeDeployer struct {
-	err     error
-	block   bool
-	applied deploy.Applied
+	err       error
+	block     bool
+	applied   deploy.Applied
+	committed *deploy.Applied
+	applies   int
 }
 
 func (f *fakeDeployer) Name() string { return "helm" }
 
+func (f *fakeDeployer) Committed(context.Context, deploy.Assignment) (deploy.Applied, bool, error) {
+	if f.committed != nil {
+		return *f.committed, true, nil
+	}
+	return deploy.Applied{}, false, nil
+}
+
 func (f *fakeDeployer) Apply(ctx context.Context, _ deploy.Assignment, progress deploy.Progress) (deploy.Applied, error) {
+	f.applies++
 	progress(deploy.StepFetching, "pulling")
 	if f.block {
 		<-ctx.Done()
@@ -465,15 +475,7 @@ func (f *fakeDeployer) Apply(ctx context.Context, _ deploy.Assignment, progress 
 	return f.applied, f.err
 }
 
-// fakeResolver resolves every secret to the same value, and fakeSecretWriter
-// writes nothing.
-type fakeResolver struct{}
-
-func (fakeResolver) Resolve(context.Context, string, []apiclient.AssignmentSecret) ([]secrets.Resolved, error) {
-	return []secrets.Resolved{{Name: "DB_PASSWORD", Path: "db", Value: "hunter22", Version: "41", Fingerprint: "hmac-sha256:v1:aa"}}, nil
-}
-func (fakeResolver) Release([]secrets.Resolved) {}
-
+// fakeSecretWriter writes nothing.
 type fakeSecretWriter struct{}
 
 func (fakeSecretWriter) Write(context.Context, string, string, string, []secrets.Resolved) (string, error) {
@@ -529,44 +531,60 @@ func secretAssignment(id string) apiclient.DeploymentAssignment {
 	return a
 }
 
-// A retry that finds its Deployment already applied reports the pins the apply
-// that committed kept. Without them it fails the Deployment, rather than record
-// versions that the chart may not hold.
-func TestExecutor_ASkippedApplyReportsThePinsThatCommitted(t *testing.T) {
-	kept := deploy.SecretPin{Name: "DB_PASSWORD", Path: "db", Version: "40", Fingerprint: "hmac-sha256:v1:kept", DeliveredAs: "value"}
+// failingResolver is a store that cannot be reached.
+type failingResolver struct{ calls *int }
+
+func (r failingResolver) Resolve(context.Context, string, []apiclient.AssignmentSecret) ([]secrets.Resolved, error) {
+	*r.calls++
+	return nil, deploy.Failf("the store is unreachable")
+}
+func (failingResolver) Release([]secrets.Resolved) {}
+
+// A retry that finds its Deployment already applied reports what the apply
+// that committed kept, without reading a secret: a secret that rotated or a
+// store that is down since cannot fail a Deployment Helm applied. Without
+// pins it fails the Deployment, rather than record versions the chart may
+// not hold.
+func TestExecutor_ARetryOfAnAppliedDeploymentReportsWhatCommitted(t *testing.T) {
+	kept := deploy.SecretPin{Name: "DB_PASSWORD", Path: "db", Version: "40", Fingerprint: "hmac-sha256:v1:kept", DeliveredAs: "secret"}
 	tests := []struct {
-		name    string
-		applied deploy.Applied
-		want    []string
-		pins    []deploy.SecretPin
+		name      string
+		committed deploy.Applied
+		want      []string
+		pins      []deploy.SecretPin
 	}{
 		{
-			name:    "the pins the revision kept",
-			applied: deploy.Applied{Skipped: true, SecretPins: []deploy.SecretPin{kept}},
-			want:    []string{"dep_1:resolving", "dep_1:fetching", "dep_1:applied"},
-			pins:    []deploy.SecretPin{kept},
+			name:      "the pins the revision kept",
+			committed: deploy.Applied{Skipped: true, SecretPins: []deploy.SecretPin{kept}, SecretsInValues: []string{"DB_PASSWORD"}},
+			want:      []string{"dep_1:applied"},
+			pins:      []deploy.SecretPin{kept},
 		},
 		{
-			name:    "no pins kept fails rather than guess",
-			applied: deploy.Applied{Skipped: true},
-			want:    []string{"dep_1:resolving", "dep_1:fetching", "dep_1:failed"},
+			name:      "no pins kept fails rather than guess",
+			committed: deploy.Applied{Skipped: true},
+			want:      []string{"dep_1:failed"},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cp := &fakeControlPlane{assignments: []apiclient.DeploymentAssignment{secretAssignment("dep_1")}}
 			log := slog.New(slog.DiscardHandler)
-			exec := newExecutor(cp, map[string]deploy.Deployer{"helm": &fakeDeployer{applied: tt.applied}}, report.New(cp, log), log, 1)
-			exec.withSecrets(fakeResolver{}, fakeSecretWriter{}, secrets.NewMasker())
+			deployer := &fakeDeployer{committed: &tt.committed}
+			exec := newExecutor(cp, map[string]deploy.Deployer{"helm": deployer}, report.New(cp, log), log, 1)
+			var resolves int
+			exec.withSecrets(failingResolver{calls: &resolves}, fakeSecretWriter{}, secrets.NewMasker())
 
 			_, err := exec.poll(t.Context(), "prod-eu")
 			require.NoError(t, err)
 			exec.wait()
 
 			assert.Equal(t, tt.want, cp.reportIDs())
+			assert.Zero(t, resolves, "no secret is read for a deployment already applied")
+			assert.Zero(t, deployer.applies)
 			last := cp.reports[len(cp.reports)-1].Detail.(map[string]any)
 			if tt.pins != nil {
 				assert.Equal(t, tt.pins, last["secrets"], "the versions the applied revision read")
+				assert.Equal(t, []string{"DB_PASSWORD"}, last["secrets_in_values"], "and how they reached the chart")
 				return
 			}
 			assert.Contains(t, last["reason"], "without keeping the versions of its secrets")

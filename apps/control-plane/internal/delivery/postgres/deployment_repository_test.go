@@ -150,10 +150,15 @@ func TestDeploymentRepositoryFindsTheDeploymentARollbackReplays(t *testing.T) {
 	first := healthy(time.Minute, delivery.NewDeploymentProps{})
 	second := healthy(2*time.Minute, delivery.NewDeploymentProps{
 		Reason: delivery.DeploymentRollback, RestoresDeploymentID: new(first.ID()), SecretsLatest: true,
+		SecretPaths: map[string]string{"Database.Password": "payments/production/db"},
 	})
 
 	last, err := deployments.GetLastSucceededDeployment(f.ctx, orgA, rel.ID(), target.ID())
 	require.NoError(t, err)
 	assert.Equal(t, second.Snapshot(), last.Snapshot(), "the latest one, with its secret versions and what it restored")
 	assert.Equal(t, "41", last.SecretVersions()[0].Version)
+	assert.Equal(t, map[string]string{"Database.Password": "payments/production/db"}, last.SecretPaths(), "where it reads its secrets, as requested")
+	stored, err := deployments.GetDeployment(f.ctx, orgA, first.ID())
+	require.NoError(t, err)
+	assert.Nil(t, stored.SecretPaths(), "a deployment whose paths were never fixed")
 }

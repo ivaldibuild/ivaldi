@@ -15,6 +15,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/provenance"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
+	"github.com/ivaldibuild/ivaldi/pkg/binding"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/events"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
@@ -1312,10 +1313,11 @@ func TestADeploymentRecordsTheSecretsItsAgentResolved(t *testing.T) {
 	assert.Equal(t, release.DeploymentProgressing, w.deployments[out[0].ID()].Status())
 }
 
-// The path a secret's value holds may bind what Ivaldi knows per Deployment,
-// so the snapshot keeps the template and the Deployment records the path the
-// agent read: a rollback replays the Secret that was read, not a template
-// expanded again.
+// The path a secret's value holds may bind what Ivaldi knows per Deployment.
+// The snapshot keeps the template; the control plane fills it in for each
+// Deployment, as the agent would, and sends it escaped so the agent reads
+// exactly that, even with a literal #{ from a text variable. The agent's
+// report must name that path, which is what the Deployment records.
 func TestADeploymentRecordsTheSecretPathItsAgentRead(t *testing.T) {
 	const storeID = "sst_01BX5ZZKBKACTAV9WEVGEMMVRZ"
 	w := newWorld(t)
@@ -1327,19 +1329,28 @@ func TestADeploymentRecordsTheSecretPathItsAgentRead(t *testing.T) {
 	w.withVariables(delivery.SnapshotVariable{
 		Name: "Database.Password", Source: delivery.VariableSourceApplication, Kind: delivery.VariableKindSecret,
 		Values: []delivery.SnapshotValue{{Secret: &delivery.SecretReference{
-			StoreID: storeID, Path: "payments/#{Ivaldi.Environment.Slug}/db", Field: "password",
+			StoreID: storeID, Path: "#{Prefix}/#{Ivaldi.Environment.Slug}/db", Field: "password",
 		}}},
-	})
+	}, textVariable("Prefix", "", delivery.SnapshotValue{Value: "pay##{x}"}))
 	out, err := w.svc.RequestDeployments(ctx, ada, delivery.RequestDeploymentsInput{
 		OrganizationID: org, ReleaseID: w.rel.ID(), TargetIDs: []string{targetID},
 	})
 	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"Database.Password": "pay#{x}/production/db"}, w.deployments[out[0].ID()].SecretPaths(),
+		"fixed when it is requested")
+
+	// The Environment is renamed while the Deployment applies: it still reads,
+	// and reports, the path it was requested with.
+	require.NoError(t, w.envs[envID].Update(delivery.UpdateEnvironmentProps{Slug: new("prod")}))
 
 	agent := identity.Actor{PrincipalID: agentID}
 	items, err := w.svc.ListClusterAssignments(ctx, agent, org, clusterID)
 	require.NoError(t, err)
 	require.Len(t, items, 1)
-	assert.Equal(t, "payments/#{Ivaldi.Environment.Slug}/db", items[0].Apply.Secrets[0].Ref.Path, "the assignment carries the template; the agent fills it in")
+	assert.Equal(t, "pay##{x}/production/db", items[0].Apply.Secrets[0].Ref.Path, "filled in, and escaped for the agent's own filling in")
+	read, err := binding.Bind(nil, nil, []string{items[0].Apply.Secrets[0].Ref.Path})
+	require.NoError(t, err)
+	assert.Equal(t, "pay#{x}/production/db", read[0], "what the agent reads")
 
 	report := func(reportID, detail string) error {
 		_, err := w.svc.ReportDeployment(ctx, agent, delivery.ReportDeploymentInput{
@@ -1348,13 +1359,13 @@ func TestADeploymentRecordsTheSecretPathItsAgentRead(t *testing.T) {
 		})
 		return err
 	}
-	require.ErrorIs(t, report("unfilled", `{"secrets":[{"name":"Database.Password","path":"payments/#{Ivaldi.Environment.Slug}/db","version":"1","fingerprint":"hmac-sha256:v1:aa"}]}`),
+	require.ErrorIs(t, report("staging", `{"secrets":[{"name":"Database.Password","path":"pay#{x}/staging/db","version":"1","fingerprint":"hmac-sha256:v1:aa"}]}`),
+		delivery.ErrInvalid, "another environment's secret, though it has the template's shape")
+	require.ErrorIs(t, report("unfilled", `{"secrets":[{"name":"Database.Password","path":"#{Prefix}/#{Ivaldi.Environment.Slug}/db","version":"1","fingerprint":"hmac-sha256:v1:aa"}]}`),
 		delivery.ErrInvalid, "the template, with its bindings still in it")
-	require.ErrorIs(t, report("other", `{"secrets":[{"name":"Database.Password","path":"other/production/db","version":"1","fingerprint":"hmac-sha256:v1:aa"}]}`),
-		delivery.ErrInvalid, "a path the deployment was not sent")
 
-	require.NoError(t, report("applied", `{"secrets":[{"name":"Database.Password","path":"payments/production/db","version":"4812","fingerprint":"hmac-sha256:v1:ab12"}]}`))
-	assert.Equal(t, "payments/production/db", w.deployments[out[0].ID()].SecretVersions()[0].Path)
+	require.NoError(t, report("applied", `{"secrets":[{"name":"Database.Password","path":"pay#{x}/production/db","version":"4812","fingerprint":"hmac-sha256:v1:ab12"}]}`))
+	assert.Equal(t, "pay#{x}/production/db", w.deployments[out[0].ID()].SecretVersions()[0].Path)
 }
 
 func TestRequestDeploymentsRefusesASecretItsTargetCannotUse(t *testing.T) {
@@ -1390,7 +1401,9 @@ func TestRollbackReplaysTheDeploymentItRestores(t *testing.T) {
 	password := delivery.SnapshotVariable{
 		Name: "Database.Password", Source: delivery.VariableSourceApplication, Kind: delivery.VariableKindSecret,
 		DeliverAs: new(delivery.VariableDeliverAsSecret),
-		Values:    []delivery.SnapshotValue{{Secret: &delivery.SecretReference{StoreID: storeID, Path: "db", Version: "40"}}},
+		Values: []delivery.SnapshotValue{{Secret: &delivery.SecretReference{
+			StoreID: storeID, Path: "db/#{Ivaldi.Deployment.Id}", Version: "40",
+		}}},
 	}
 	released := w.withVariables(password, textVariable("Log.Level", "log.level", delivery.SnapshotValue{Value: "info"}))
 
@@ -1474,6 +1487,7 @@ func TestRollbackReplaysTheDeploymentItRestores(t *testing.T) {
 	assert.Equal(t, "info", apply.Variables[0].Value)
 	require.Len(t, apply.Secrets, 1)
 	assert.Equal(t, "42", apply.Secrets[0].Ref.Version, "the version it read then")
+	assert.Equal(t, "db/"+again.ID(), apply.Secrets[0].Ref.Path, "from the path it read then, not the template filled in again")
 	assert.Equal(t, "hmac-sha256:v1:rotated", apply.Secrets[0].Fingerprint, "which the agent checks the value against")
 
 	// With the latest secrets it keeps the restored variables and pins
@@ -1485,4 +1499,5 @@ func TestRollbackReplaysTheDeploymentItRestores(t *testing.T) {
 	apply = assignment(latest)
 	assert.Empty(t, apply.Secrets[0].Ref.Version)
 	assert.Empty(t, apply.Secrets[0].Fingerprint)
+	assert.Equal(t, "db/"+latest.ID(), apply.Secrets[0].Ref.Path, "the latest of everything, the path included")
 }

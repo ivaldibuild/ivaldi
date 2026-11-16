@@ -174,43 +174,70 @@ func TestApply_InstallsUpgradesAndSkipsAnAppliedDeployment(t *testing.T) {
 	assert.Equal(t, "2", applied.Ref["revision"])
 }
 
-// A retry that finds its Deployment already applied reports the secret
-// versions the revision that committed kept, not what it resolved again.
-func TestApply_ASkippedDeploymentReportsThePinsItsRevisionKept(t *testing.T) {
+// A retry asks whether its Deployment is already applied before it reads a
+// secret, and reports what the apply that committed kept: the versions it
+// read, and which went into Helm's values.
+func TestCommitted_ReportsWhatTheAppliedRevisionKept(t *testing.T) {
 	f := newFixture(t)
+	ctx := t.Context()
 	first := assignment("dep_1")
 	first.SecretPins = []deploy.SecretPin{{
 		Name: "Database.Password", Path: "payments/production/db", Version: "41",
-		Fingerprint: "hmac-sha256:v1:first", DeliveredAs: "value",
+		Fingerprint: "hmac-sha256:v1:first", DeliveredAs: "secret",
 	}}
 
-	applied, err := f.deployer.Apply(t.Context(), first, f.progress)
+	_, done, err := f.deployer.Committed(ctx, first)
+	require.NoError(t, err)
+	assert.False(t, done, "nothing is applied yet")
+
+	applied, err := f.deployer.Apply(ctx, first, f.progress)
 	require.NoError(t, err)
 	require.False(t, applied.Skipped)
-	kept, err := f.kube.CoreV1().Secrets(namespace).Get(t.Context(), revisionSecret("payments", 1), metav1.GetOptions{})
+	assert.Equal(t, "1", applied.Ref["revision"])
+	revision, err := f.kube.CoreV1().Secrets(namespace).Get(ctx, revisionSecret("payments", 1), metav1.GetOptions{})
 	require.NoError(t, err)
-	assert.Contains(t, kept.Annotations[pinsAnnotation], "hmac-sha256:v1:first")
+	assert.Contains(t, revision.Annotations[pinsAnnotation], "hmac-sha256:v1:first")
 
-	// The agent stopped before reporting, and a secret rotated meanwhile.
-	retry := assignment("dep_1")
-	retry.SecretPins = []deploy.SecretPin{{
-		Name: "Database.Password", Path: "payments/production/db", Version: "42",
-		Fingerprint: "hmac-sha256:v1:second", DeliveredAs: "value",
-	}}
-	skipped, err := f.deployer.Apply(t.Context(), retry, f.progress)
+	// The agent stopped before reporting; the retry reads no secret.
+	committed, done, err := f.deployer.Committed(ctx, assignment("dep_1"))
 	require.NoError(t, err)
-	require.True(t, skipped.Skipped)
-	assert.Equal(t, first.SecretPins, skipped.SecretPins, "the pins of the apply that committed")
+	require.True(t, done)
+	assert.True(t, committed.Skipped)
+	assert.Equal(t, first.SecretPins, committed.SecretPins, "the pins of the apply that committed")
+	assert.Equal(t, "1", committed.Ref["revision"])
+
+	_, done, err = f.deployer.Committed(ctx, assignment("dep_2"))
+	require.NoError(t, err)
+	assert.False(t, done, "another Deployment's revision")
 
 	// A revision an earlier agent applied kept none, and the retry says so.
-	older := assignment("dep_3")
-	older.SecretPins = nil
-	_, err = f.deployer.Apply(t.Context(), older, f.progress)
+	_, err = f.deployer.Apply(ctx, assignment("dep_3"), f.progress)
 	require.NoError(t, err)
-	without, err := f.deployer.Apply(t.Context(), assignment("dep_3"), f.progress)
+	without, done, err := f.deployer.Committed(ctx, assignment("dep_3"))
 	require.NoError(t, err)
-	assert.True(t, without.Skipped)
+	require.True(t, done)
 	assert.Nil(t, without.SecretPins)
+}
+
+// A secret an overlay bound went into Helm's values, and a retry reports it
+// so, not as the variable's own delivery says.
+func TestCommitted_KeepsTheSecretsThatWentIntoTheValues(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	a := assignment("dep_1")
+	_, err := f.deployer.Apply(ctx, a, f.progress)
+	require.NoError(t, err)
+	rel, err := latest(f.store, "payments")
+	require.NoError(t, err)
+	pins := []deploy.SecretPin{{Name: "Api.Key", Path: "api", Fingerprint: "hmac-sha256:v1:k", DeliveredAs: "secret"}}
+
+	f.deployer.keep(ctx, a, rel, kept{Secrets: pins, SecretsInValues: []string{"Api.Key"}})
+
+	committed, done, err := f.deployer.Committed(ctx, a)
+	require.NoError(t, err)
+	require.True(t, done)
+	assert.Equal(t, pins, committed.SecretPins)
+	assert.Equal(t, []string{"Api.Key"}, committed.SecretsInValues)
 }
 
 func TestApply_FailsOnAMissingOverlay(t *testing.T) {
@@ -270,7 +297,7 @@ func TestPrepare_PendingRevisions(t *testing.T) {
 
 			d := &deployer{cfg: Config{Timeout: timeout}, now: func() time.Time { return now }}
 			var steps []deploy.Step
-			install, err := d.prepare(store, assignment("dep_1"), func(s deploy.Step, _ string) { steps = append(steps, s) })
+			install, _, err := d.prepare(store, assignment("dep_1"), func(s deploy.Step, _ string) { steps = append(steps, s) })
 			if tt.wantFailure != "" {
 				var failure *deploy.Failure
 				require.ErrorAs(t, err, &failure)

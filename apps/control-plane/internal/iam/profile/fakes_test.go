@@ -146,7 +146,19 @@ func (s *store) authorizer() authorization.Authorizer {
 	}
 	logger.On("Debug", denied...).Maybe()
 	return must(authorizer.New(authorizer.WithAccessRepo(access{s}),
-		authorizer.WithPlatformWorkloads(noPlatformWorkloads{}), authorizer.WithLogger(logger)))
+		authorizer.WithPlatformWorkloads(noPlatformWorkloads{}), authorizer.WithAgentSessions(noAgentSessions{}),
+		authorizer.WithResourceAncestry(noAgentSessions{}), authorizer.WithLogger(logger)))
+}
+
+// noAgentSessions is an Organization where no agent Session acts.
+type noAgentSessions struct{}
+
+func (noAgentSessions) Get(context.Context, string, string) (*iam.AgentSession, error) {
+	return nil, iam.ErrNotFound
+}
+
+func (noAgentSessions) ResourceAncestors(_ context.Context, _, resourceID string) ([]string, error) {
+	return []string{resourceID}, nil
 }
 
 // noPlatformWorkloads is a deployment with no platform workloads.

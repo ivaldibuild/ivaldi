@@ -30,11 +30,31 @@ func (a *authorizer) Authorize(ctx context.Context, req authorization.Request) (
 	if err != nil || d.Outcome == authorization.OutcomeDeny {
 		return d, err
 	}
-	switch req.Action {
-	case ActionApprovalApprove, ActionApprovalReject:
+	switch {
+	case req.Action == ActionApprovalApprove, req.Action == ActionApprovalReject:
 		return a.approver(ctx, req, d)
+	case req.Actor.IsAgent():
+		return agentSessionRules(req, d), nil
 	}
 	return d, nil
+}
+
+// agentSessionRules applies the built-in rules for agent Sessions, which
+// IAM allowed with their delegator's access narrowed to their scope. A
+// Session may not administer access, credentials, or the Organization, and
+// a Deployment it requests waits for a person (ADR 0007). The rule matches
+// the permission as well as the action: requesting a Deployment also checks
+// application.read under that action, and that check must not wait.
+func agentSessionRules(req authorization.Request, d authorization.Decision) authorization.Decision {
+	switch {
+	case agentSessionAdministration[req.Permission]:
+		d.Outcome, d.Rule = authorization.OutcomeDeny, RuleAgentSessionAdministration
+		d.Reason = "an agent session cannot manage access, credentials, or the organization"
+	case req.Permission == permissionDeploymentCreate && req.Action == actionDeploymentCreate:
+		d.Outcome, d.Rule = authorization.OutcomeRequiresApproval, RuleAgentSessionDeployment
+		d.Reason = "a deployment requested by an agent session waits for a person's approval"
+	}
+	return d
 }
 
 // approver applies RuleApprover to someone deciding an approval request,

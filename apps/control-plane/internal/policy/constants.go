@@ -31,7 +31,40 @@ const (
 	// RuleApprover refuses a decider who is not a human user, or who asked
 	// for the approval, directly or through an agent Session.
 	RuleApprover = "builtin.approver"
+	// RuleAgentSessionDeployment makes a Deployment an agent Session
+	// requests wait for a person's approval (ADR 0007).
+	RuleAgentSessionDeployment = "builtin.agent_session_deployment"
+	// RuleAgentSessionAdministration refuses agent Sessions the permissions
+	// in agentSessionAdministration, whatever their delegator holds.
+	RuleAgentSessionAdministration = "builtin.agent_session_administration"
 )
+
+// The built-in rules name other capabilities' permissions and actions as
+// strings: those capabilities import policy, so policy cannot import them.
+const (
+	permissionDeploymentCreate = "deployment.create"
+	actionDeploymentCreate     = "deployment.create"
+)
+
+// agentSessionAdministration holds the permissions no agent Session may
+// use: they change who holds access, mint credentials that outlive the
+// Session, govern credentials, or change the Organization itself.
+// cluster.manage mints a Cluster's enrolment token, which becomes an agent
+// credential that renews on its own.
+var agentSessionAdministration = map[string]bool{
+	"grant.manage":             true,
+	"owner.manage":             true,
+	"team.manage":              true,
+	"agent.manage":             true,
+	"service_account.manage":   true,
+	"identity_provider.manage": true,
+	"organization.manage":      true,
+	"organization.delete":      true,
+	"billing.manage":           true,
+	"secret_store.manage":      true,
+	"connection.manage":        true,
+	"cluster.manage":           true,
+}
 
 // Aggregate types name the domain objects that raise events.
 const (

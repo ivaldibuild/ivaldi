@@ -59,3 +59,34 @@ func TestAuthorizerApproverRule(t *testing.T) {
 	assert.Equal(t, authorization.OutcomeDeny, decide(authorization.OutcomeDeny, grace, ActionApprovalApprove).Outcome,
 		"IAM's denial stands")
 }
+
+func TestAuthorizerAgentSessionRules(t *testing.T) {
+	agent := identity.Actor{PrincipalID: "prn_agent", Kind: identity.ActorAgentSession, SessionID: "ses_1"}
+	ada := identity.Actor{PrincipalID: "prn_ada", Kind: identity.ActorUser}
+	cases := []struct {
+		name               string
+		actor              identity.Actor
+		permission, action string
+		outcome            authorization.Outcome
+		rule               string
+	}{
+		{"an agent session's deployment waits", agent, "deployment.create", "deployment.create", authorization.OutcomeRequiresApproval, RuleAgentSessionDeployment},
+		{"a person's deployment does not", ada, "deployment.create", "deployment.create", authorization.OutcomeAllow, ""},
+		{"reading the application for it does not", agent, "application.read", "deployment.create", authorization.OutcomeAllow, ""},
+		{"cancelling a deployment does not", agent, "deployment.create", "deployment.cancel", authorization.OutcomeAllow, ""},
+		{"an agent session cannot grant access", agent, "grant.manage", "grant.create", authorization.OutcomeDeny, RuleAgentSessionAdministration},
+		{"nor mint API tokens", agent, "service_account.manage", "api_token.create", authorization.OutcomeDeny, RuleAgentSessionAdministration},
+		{"nor enrol a Cluster's agent", agent, "cluster.manage", "cluster.create_enrolment", authorization.OutcomeDeny, RuleAgentSessionAdministration},
+		{"a person can", ada, "grant.manage", "grant.create", authorization.OutcomeAllow, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d, err := NewAuthorizer(iamAnswer(authorization.OutcomeAllow), requestReader{}).Authorize(context.Background(), authorization.Request{
+				Actor: tc.actor, Permission: tc.permission, Action: tc.action,
+			})
+			require.NoError(t, err)
+			assert.Equal(t, tc.outcome, d.Outcome)
+			assert.Equal(t, tc.rule, d.Rule)
+		})
+	}
+}

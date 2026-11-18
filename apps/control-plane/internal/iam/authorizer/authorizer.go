@@ -30,6 +30,8 @@ type Option func(*options)
 type options struct {
 	access    iam.AccessRepository
 	workloads PlatformWorkloads
+	sessions  AgentSessions
+	resources ResourceAncestry
 	logger    logging.Logger
 }
 
@@ -39,7 +41,23 @@ type PlatformWorkloads interface {
 	GetPlatform(ctx context.Context, principalID string) (*iam.Workload, error)
 }
 
+// AgentSessions reads the agent Sessions that act as actors.
+// iam.AgentSessionRepository implements it.
+type AgentSessions interface {
+	Get(ctx context.Context, organizationID, principalID string) (*iam.AgentSession, error)
+}
+
+// ResourceAncestry reads a resource's path up the hierarchy, to check it
+// against a Session's scope. iam.ResourceRepository implements it.
+type ResourceAncestry interface {
+	ResourceAncestors(ctx context.Context, organizationID, resourceID string) ([]string, error)
+}
+
 func WithAccessRepo(r iam.AccessRepository) Option { return func(o *options) { o.access = r } }
+
+func WithAgentSessions(r AgentSessions) Option { return func(o *options) { o.sessions = r } }
+
+func WithResourceAncestry(r ResourceAncestry) Option { return func(o *options) { o.resources = r } }
 
 // WithPlatformWorkloads reads the platform workloads that platform requests
 // come from.
@@ -59,16 +77,18 @@ func New(opts ...Option) (authorization.Authorizer, error) {
 		return nil, errors.New("authorizer: AccessRepo is required")
 	case o.workloads == nil:
 		return nil, errors.New("authorizer: PlatformWorkloads is required")
+	case o.sessions == nil:
+		return nil, errors.New("authorizer: AgentSessions is required")
+	case o.resources == nil:
+		return nil, errors.New("authorizer: ResourceAncestry is required")
 	case o.logger == nil:
 		return nil, errors.New("authorizer: Logger is required")
 	}
-	return &authorizer{access: o.access, workloads: o.workloads, logger: o.logger}, nil
+	return &authorizer{options: o}, nil
 }
 
 type authorizer struct {
-	access    iam.AccessRepository
-	workloads PlatformWorkloads
-	logger    logging.Logger
+	options
 }
 
 // Authorize decides req. It returns an error only for a malformed request or
@@ -102,20 +122,54 @@ func (a *authorizer) refusal(ctx context.Context, req authorization.Request) (st
 	if req.ResourceID == authorization.PlatformResource {
 		return a.platformRefusal(ctx, req)
 	}
+	// An agent Session acts with its delegator's access, narrowed to the
+	// Session's scope (ADR 0003).
+	holder, holderName := req.Actor.PrincipalID, "the actor"
+	var session *iam.AgentSession
 	switch req.Actor.Kind {
 	case identity.ActorUser, identity.ActorServiceAccount:
 	case identity.ActorAgentSession:
-		return "agent sessions cannot be authorized yet", nil
+		var reason string
+		var err error
+		if session, reason, err = a.usableSession(ctx, req); err != nil || reason != "" {
+			return reason, err
+		}
+		holder, holderName = session.DelegatorPrincipalID(), "the agent session's delegator"
 	default:
 		return fmt.Sprintf("a %q actor holds no grants", req.Actor.Kind), nil
 	}
 	if req.ApprovalID != "" {
 		return "approvals are not available yet", nil
 	}
+	reason, err := a.grantRefusal(ctx, req, holder, holderName)
+	if err != nil || reason != "" || session == nil {
+		return reason, err
+	}
+	return a.scopeRefusal(ctx, req, session)
+}
 
+// usableSession reads the acting agent Session, and refuses one that is
+// revoked, expired, or no longer active.
+func (a *authorizer) usableSession(ctx context.Context, req authorization.Request) (*iam.AgentSession, string, error) {
+	session, err := a.sessions.Get(ctx, req.OrganizationID, req.Actor.PrincipalID)
+	if errors.Is(err, iam.ErrNotFound) {
+		return nil, "the actor is not an agent session in the organization", nil
+	}
+	if err != nil {
+		return nil, "", fmt.Errorf("authorize %s: read agent session: %w", req.Action, err)
+	}
+	if err := session.CheckUsable(); err != nil {
+		return nil, err.Error(), nil
+	}
+	return session, "", nil
+}
+
+// grantRefusal checks that holder, a member of the Organization, holds the
+// permission through a role granted on the resource or above it.
+func (a *authorizer) grantRefusal(ctx context.Context, req authorization.Request, holder, holderName string) (string, error) {
 	access, err := a.access.Access(ctx, iam.AccessQuery{
 		OrganizationID: req.OrganizationID,
-		PrincipalID:    req.Actor.PrincipalID,
+		PrincipalID:    holder,
 		ResourceID:     req.ResourceID,
 		At:             clock.Now(),
 	})
@@ -126,9 +180,9 @@ func (a *authorizer) refusal(ctx context.Context, req authorization.Request) (st
 	case !access.OrganizationActive:
 		return "the organization is not active", nil
 	case access.PrincipalStatus == "":
-		return "the actor is not a member of the organization", nil
+		return holderName + " is not a member of the organization", nil
 	case access.PrincipalStatus != iam.PrincipalActive:
-		return fmt.Sprintf("the actor is %s", access.PrincipalStatus), nil
+		return fmt.Sprintf("%s is %s", holderName, access.PrincipalStatus), nil
 	case !access.ResourceFound:
 		return "the resource does not exist in the organization", nil
 	}
@@ -137,13 +191,22 @@ func (a *authorizer) refusal(ctx context.Context, req authorization.Request) (st
 			return "", nil
 		}
 	}
-	return fmt.Sprintf("no role granted on the resource or above it includes %s", req.Permission), nil
+	return fmt.Sprintf("no role granted to %s on the resource or above it includes %s", holderName, req.Permission), nil
 }
 
-// platformRefusal returns why a platform request is refused, or "" when it
-// is allowed: only an active platform workload whose component holds the
-// permission may make one. Platform workloads hold no grants, so nothing
-// else is consulted.
+// scopeRefusal refuses a resource outside the Session's scope: neither it
+// nor any resource above it is one the Session was limited to.
+func (a *authorizer) scopeRefusal(ctx context.Context, req authorization.Request, session *iam.AgentSession) (string, error) {
+	path, err := a.resources.ResourceAncestors(ctx, req.OrganizationID, req.ResourceID)
+	if err != nil {
+		return "", fmt.Errorf("authorize %s: read resource path: %w", req.Action, err)
+	}
+	if !session.Covers(path) {
+		return "the resource is outside the agent session's scope", nil
+	}
+	return "", nil
+}
+
 func (a *authorizer) platformRefusal(ctx context.Context, req authorization.Request) (string, error) {
 	if req.Actor.Kind != identity.ActorWorkload {
 		return fmt.Sprintf("a %q actor cannot make a platform request", req.Actor.Kind), nil

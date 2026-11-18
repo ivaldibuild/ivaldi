@@ -516,7 +516,8 @@ type world struct {
 	svc       delivery.DeploymentService
 	authz     *fakeAuthorizer
 	approvals *fakeApprovals
-	// handler and canceller are built from the same options as svc.
+	// opts built svc; handler and canceller are built from them too.
+	opts      []ServiceOption
 	handler   policy.SubjectHandler
 	canceller delivery.WaitingDeploymentCanceller
 	history   *fakeHistory
@@ -589,7 +590,7 @@ func newWorld(t *testing.T) *world {
 	require.NoError(t, err)
 	canceller, err := NewWaitingDeploymentCanceller(opts...)
 	require.NoError(t, err)
-	return &world{store: s, svc: svc, authz: authz, approvals: approvals, handler: handler, canceller: canceller,
+	return &world{store: s, svc: svc, authz: authz, approvals: approvals, opts: opts, handler: handler, canceller: canceller,
 		history: history, changes: recorded, rel: s.releases[mustOneID(s.releases)], app: app, env: env}
 }
 
@@ -643,6 +644,30 @@ func TestRequestDeploymentsWaitsForApproval(t *testing.T) {
 	_, err := w.svc.CancelDeployment(ctx, ada, org, d.ID())
 	require.NoError(t, err)
 	assert.Equal(t, []policy.Subject{subject}, w.approvals.cancelled, "cancelling the deployment cancels its request")
+}
+
+// A Deployment an agent Session requests waits for a person's approval,
+// while a person with the same grants deploys at once (ADR 0007).
+func TestAgentSessionDeploymentsWaitForApproval(t *testing.T) {
+	w := newWorld(t)
+	svc, err := NewService(append(w.opts, WithAuthorizer(policy.NewAuthorizer(w.authz, nil)))...)
+	require.NoError(t, err)
+	agent := identity.Actor{PrincipalID: "prn_01ARZ3NDEKTSV4RRFFQ69G5FAS", Kind: identity.ActorAgentSession, SessionID: "ses_1"}
+	in := delivery.RequestDeploymentsInput{OrganizationID: org, ReleaseID: w.rel.ID(), TargetIDs: []string{targetID}}
+
+	out, err := svc.RequestDeployments(ctx, agent, in)
+	require.NoError(t, err)
+	assert.Equal(t, release.DeploymentAwaitingApproval, out[0].Status())
+	require.Len(t, w.approvals.opened, 1)
+	assert.Equal(t, policy.RuleAgentSessionDeployment, w.approvals.opened[0].Decision.Rule)
+
+	_, err = svc.CancelDeployment(ctx, agent, org, out[0].ID())
+	require.NoError(t, err, "cancelling does not wait for approval")
+
+	out, err = svc.RequestDeployments(ctx, ada, in)
+	require.NoError(t, err)
+	assert.Equal(t, release.DeploymentApplying, out[0].Status())
+	assert.Len(t, w.approvals.opened, 1, "a person's deployment opens no request")
 }
 
 func TestApprovingADeployment(t *testing.T) {

@@ -2,7 +2,7 @@
 
 - Status: Built for Deployments ([#39](https://github.com/ivaldibuild/ivaldi/issues/39), [#40](https://github.com/ivaldibuild/ivaldi/issues/40)); matching an `ApprovalID` and replacing a pending request wait for a subject that needs them (see [Building it](#building-it))
 - Date: 2026-11-17
-- Related: [ADR 0003](../adr/0003-identity-access-and-policy.md), [ADR 0005](../adr/0005-data-model-ownership.md), [ADR 0007](../adr/0007-teams-and-agent-identity.md), [ADR 0011](../adr/0011-transactional-outbox.md), [delivery data model](delivery-data-model.md), [deployment variables](deployment-variables.md), [workspace data model](workspace-data-model.md)
+- Related: [notifications](notifications.md), [ADR 0003](../adr/0003-identity-access-and-policy.md), [ADR 0005](../adr/0005-data-model-ownership.md), [ADR 0007](../adr/0007-teams-and-agent-identity.md), [ADR 0011](../adr/0011-transactional-outbox.md), [delivery data model](delivery-data-model.md), [deployment variables](deployment-variables.md), [workspace data model](workspace-data-model.md)
 
 This document defines how the control plane records requests for a human's approval, lists them, and decides them. Approval requests belong to the policy capability (`apps/control-plane/internal/policy`): [ADR 0003](../adr/0003-identity-access-and-policy.md) puts approval workflows in the control plane's policy capability, and [ADR 0007](../adr/0007-teams-and-agent-identity.md) has policy hold what waits for approval.
 
@@ -53,7 +53,7 @@ The first thing that waits is a Deployment. When the single authorizer returns `
   - **Resubmit**: nothing is stored while it waits, like a setting change. The requester asks again with the decision as `ApprovalID`, and the authorizer allows it only when the request is approved and the requester, action, resource, and proposal digest all match.
 - **A request goes to the Team that owned the subject when it was asked.** The subject's capability gives the owning Team; for a Deployment, that is the Application's owning Team. The request keeps it, and a later handover does not move requests already waiting. Routing is not access: anyone who meets the requirements may decide, whether or not they are in the Team. So the Team only decides who is told and what the `owner_team_id` filter matches, and following a handover would buy little for a hook into delivery's `TransferTo`.
 - **Requests are never deleted.** A decided or cancelled request keeps its state, who closed it, when, and their note. It is the record behind the decision IDs on the subject.
-- **Every change is audited and emits an event.** Policy writes the audit record and the outbox event ([ADR 0011](../adr/0011-transactional-outbox.md)) in the subject's transaction. The created event carries `owner_team_id`, so the capability that notifies people can route it. Nothing consumes it yet.
+- **Every change is audited and emits an event.** Policy writes the audit record and the outbox event ([ADR 0011](../adr/0011-transactional-outbox.md)) in the subject's transaction. The created event carries `owner_team_id`, so the capability that notifies people can route it ([notifications](notifications.md)).
 - **Conventions match the other capabilities.** Tables live in the `policy` schema, every table has `organization_id`, and IDs are prefixed ULIDs stored as `varchar(30)`. References to other capabilities, here subjects, principals, Teams, and IAM resources, have no foreign key.
 
   | Table | Prefix |

@@ -50,6 +50,7 @@ type options struct {
 	history      vcs.History
 	changes      provenance.Lookup
 	approvals    policy.Approvals
+	locks        delivery.DeploymentLocks
 	authz        authorization.Authorizer
 	writer       change.Writer
 	// heartbeat is how often a Cluster's agent must report; capabilities go
@@ -122,6 +123,12 @@ func WithChanges(l provenance.Lookup) ServiceOption {
 func WithApprovals(a policy.Approvals) ServiceOption {
 	return func(o *options) { o.approvals = a }
 }
+
+// WithDeploymentLocks serializes requesting and approving Deployments with
+// withdrawing their Release or archiving their Target or Application.
+func WithDeploymentLocks(l delivery.DeploymentLocks) ServiceOption {
+	return func(o *options) { o.locks = l }
+}
 func WithAuthorizer(a authorization.Authorizer) ServiceOption {
 	return func(o *options) { o.authz = a }
 }
@@ -187,6 +194,7 @@ func newService(opts []ServiceOption) (*service, error) {
 		{"HeartbeatInterval", o.heartbeat > 0},
 		{"CommitHistory", o.history != nil},
 		{"Approvals", o.approvals != nil},
+		{"DeploymentLocks", o.locks != nil},
 		{"Authorizer", o.authz != nil},
 	}
 	for _, r := range required {
@@ -221,6 +229,11 @@ func (s *service) RequestDeployments(ctx context.Context, actor identity.Actor, 
 
 	var out []*delivery.Deployment
 	err := s.writer.Tx.WithinTx(ctx, func(ctx context.Context) error {
+		// Withdrawing the Release or archiving a Target or the Application
+		// waits for this request, or this request sees it in the plan.
+		if err := s.locks.LockForDeployment(ctx, in.OrganizationID, in.ReleaseID, in.TargetIDs); err != nil {
+			return err
+		}
 		rel, err := s.releases.GetRelease(ctx, in.OrganizationID, in.ReleaseID)
 		if err != nil {
 			return err

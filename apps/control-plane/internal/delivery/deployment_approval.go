@@ -57,3 +57,17 @@ func (w WaitingDeployments) Cause() string {
 type WaitingDeploymentCanceller interface {
 	CancelWaitingDeployments(ctx context.Context, actor identity.Actor, w WaitingDeployments, note string) error
 }
+
+// DeploymentLocks serializes deploying with what stops a Deployment from
+// ever being applied. Withdrawing a Release and archiving a Target or an
+// Application lock their row for update; requesting or approving a
+// Deployment takes shared locks on the same rows before checking the deploy
+// plan, so either the plan sees the change, or the change sees the
+// Deployment and cancels it if it waits for approval.
+type DeploymentLocks interface {
+	// LockForDeployment takes shared locks, until the transaction ends, on
+	// the Release, its Application, and the Targets, in that order and the
+	// Targets by ID, so that callers always lock in one order. It must be
+	// called inside a transaction.
+	LockForDeployment(ctx context.Context, organizationID, releaseID string, targetIDs []string) error
+}

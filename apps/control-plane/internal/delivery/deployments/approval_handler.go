@@ -23,8 +23,19 @@ type approvalHandler struct {
 
 var _ policy.SubjectHandler = (*approvalHandler)(nil)
 
+// Lock locks the Deployment, after the same shared locks a request takes,
+// so the plan's checks run again on a Release, Target, and Application that
+// cannot be withdrawn or archived until the decision commits. A Deployment's
+// Release and Target never change, so they are read before locking.
 func (h *approvalHandler) Lock(ctx context.Context, organizationID, deploymentID string) error {
-	_, err := h.deployments.GetDeploymentForUpdate(ctx, organizationID, deploymentID)
+	d, err := h.deployments.GetDeployment(ctx, organizationID, deploymentID)
+	if err != nil {
+		return err
+	}
+	if err := h.locks.LockForDeployment(ctx, organizationID, d.ReleaseID(), []string{d.TargetID()}); err != nil {
+		return err
+	}
+	_, err = h.deployments.GetDeploymentForUpdate(ctx, organizationID, deploymentID)
 	return err
 }
 

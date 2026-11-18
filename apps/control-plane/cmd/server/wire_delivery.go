@@ -160,6 +160,7 @@ func (a *app) wireDelivery(runners config.Runners) error {
 		deployments.WithCommitHistory(a.commitHistory),
 		deployments.WithChanges(a.changes),
 		deployments.WithApprovals(a.approvals),
+		deployments.WithDeploymentLocks(deliverypg.NewDeploymentLocks(a.db)),
 		deployments.WithAuthorizer(a.authz),
 		deployments.WithTransactor(a.tx),
 		deployments.WithOutboxRecorder(a.outbox),

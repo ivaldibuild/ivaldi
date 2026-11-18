@@ -173,6 +173,8 @@ Rejecting is the same as approving with `approval.reject`, except that a revoked
 
 Approving, rejecting, and cancelling all lock the subject before the request. Two of them on the same request cannot deadlock: the second waits, then finds the request no longer pending.
 
+Requesting a Deployment, and the handler's lock before approving or rejecting one, first take shared locks on its Release, its Application, and its Targets, in that order and the Targets by ID. Withdrawing a Release and archiving a Target or Application lock that row for update before cancelling the Deployments waiting there. So a withdrawal or archive either commits first, and the request's or approval's checks see it, or waits until the request has committed its waiting Deployment, which it then finds and cancels. Every path takes these rows before the Deployment, and the Deployment before its request, so none of them can deadlock.
+
 ## Other subjects
 
 These follow the same record and flows; each is built when its capability needs it.

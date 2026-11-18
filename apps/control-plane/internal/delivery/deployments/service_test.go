@@ -58,6 +58,9 @@ type store struct {
 	envelopes   []events.Envelope
 	// lockedTargets lists the Targets read for update, in order.
 	lockedTargets []string
+	// deploymentLocks lists what LockForDeployment locked, as
+	// "<release> <targets>", in order.
+	deploymentLocks []string
 	// revisions are the revisions of Releases' variables, by ID.
 	revisions map[string]*delivery.ReleaseVariables
 	// snapshotted lists the observed Releases whose variables were snapshotted.
@@ -78,6 +81,11 @@ func newStore() *store {
 }
 
 func placementKey(app, target string) string { return app + "/" + target }
+
+func (s *store) LockForDeployment(_ context.Context, _, releaseID string, targetIDs []string) error {
+	s.deploymentLocks = append(s.deploymentLocks, releaseID+" "+strings.Join(targetIDs, ","))
+	return nil
+}
 
 func (s *store) WithinTx(ctx context.Context, fn func(context.Context) error) error {
 	return fn(ctx)
@@ -572,7 +580,7 @@ func newWorld(t *testing.T) *world {
 	opts := []ServiceOption{
 		WithDeploymentRepo(fakeDeployments{s}), WithReleaseRepo(fakeReleases{s}), WithBuildRepo(fakeBuilds{s}),
 		WithApplications(fakeApplications{s}), WithEnvironments(fakeEnvironments{s}), WithTargets(fakeTargets{s}), WithClusters(fakeClusters{s}),
-		WithLifecycles(fakeLifecycles{s}), WithVariables(s), WithVariableSnapshots(s), WithSecretStores(s), WithHeartbeatInterval(30 * time.Second), WithCommitHistory(history), WithChanges(recorded), WithApprovals(approvals), WithAuthorizer(authz), WithTransactor(s),
+		WithLifecycles(fakeLifecycles{s}), WithVariables(s), WithVariableSnapshots(s), WithSecretStores(s), WithHeartbeatInterval(30 * time.Second), WithCommitHistory(history), WithChanges(recorded), WithApprovals(approvals), WithDeploymentLocks(s), WithAuthorizer(authz), WithTransactor(s),
 		WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
 	}
 	svc, err := NewService(opts...)
@@ -597,6 +605,8 @@ func TestRequestDeployments(t *testing.T) {
 	assert.NotNil(t, d.StartedAt())
 	assert.Equal(t, w.app.ID(), d.ApplicationID())
 	assert.Equal(t, delivery.EventDeploymentRequested, w.audit[0].Type)
+	assert.Equal(t, []string{w.rel.ID() + " " + targetID}, w.deploymentLocks,
+		"the request holds its Release, Application, and Targets, so they cannot be withdrawn or archived under it")
 	assert.Len(t, w.events, 1)
 	assert.Len(t, w.envelopes, 1)
 }
@@ -648,7 +658,10 @@ func TestApprovingADeployment(t *testing.T) {
 	assert.Equal(t, release.DeploymentAwaitingApproval, w.deployments[d.ID()].Status())
 
 	w.targets[targetID].Restore()
+	w.deploymentLocks = nil
 	require.NoError(t, w.handler.Lock(dctx, org, d.ID()))
+	assert.Equal(t, []string{w.rel.ID() + " " + targetID}, w.deploymentLocks,
+		"approving holds what the request held while the checks run again")
 	require.NoError(t, w.handler.Approve(dctx, grace, r), "the deployment does not count against its own target")
 	approved := w.deployments[d.ID()]
 	assert.Equal(t, release.DeploymentApplying, approved.Status())

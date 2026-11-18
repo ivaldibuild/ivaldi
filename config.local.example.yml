@@ -75,6 +75,13 @@ runners:
 # outbox:
 #   stream: ivaldi:control-plane:events
 
+# Notifications read the outbox stream with their own consumer group and tell
+# people about approval requests that wait for them.
+# notifications:
+#   consumer_group: notifications
+#   concurrency: 10
+#   dead_letter_stream: ivaldi:control-plane:events:notifications:dead
+
 auth:
   login_url: http://localhost:8660/login
   signing_key_files: [.local/signing.pem]

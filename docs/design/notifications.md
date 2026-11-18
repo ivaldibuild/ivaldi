@@ -107,9 +107,9 @@ Configuration, under `notifications.email`:
 
 Under [#82](https://github.com/ivaldibuild/ivaldi/issues/82), in this order:
 
-1. This design.
-2. `title` on approval requests, and delivery writing it.
-3. The capability: its migrations, the consumer and its handlers, the recipients, the inbox API, and `make openapi`.
+1. This design. Done.
+2. `title` on approval requests, and delivery writing it. Done.
+3. The capability: its migrations, the consumer and its handlers, the recipients, the inbox API, and `make openapi`. Done, except the `email_status` and `emailed_at` columns, which come with email.
 4. Email: the mailer, its configuration, and a page in `docs/self-hosting/`.
 5. The web app's bell, inbox, and approval page.
 

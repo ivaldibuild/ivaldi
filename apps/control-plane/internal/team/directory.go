@@ -73,3 +73,36 @@ func (d directory) LookupTeams(ctx context.Context, organizationID string, teamI
 	}
 	return out, nil
 }
+
+// MemberLookup lists the people in a Team, for capabilities that route work
+// to it, such as notifications. It does not authorize.
+type MemberLookup interface {
+	// ListTeamUsers returns the IDs of the users in an active Team. An
+	// archived or unknown Team has none.
+	ListTeamUsers(ctx context.Context, organizationID, teamID string) ([]string, error)
+}
+
+// NewMemberLookup returns a MemberLookup that reads through repo.
+func NewMemberLookup(repo TeamRepository) MemberLookup {
+	return directory{repo: repo}
+}
+
+func (d directory) ListTeamUsers(ctx context.Context, organizationID, teamID string) ([]string, error) {
+	t, err := d.repo.GetTeam(ctx, organizationID, teamID)
+	if errors.Is(err, ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if t.Archived() {
+		return nil, nil
+	}
+	var users []string
+	for _, m := range t.Members() {
+		if m.PrincipalKind == MemberUser {
+			users = append(users, m.PrincipalID)
+		}
+	}
+	return users, nil
+}

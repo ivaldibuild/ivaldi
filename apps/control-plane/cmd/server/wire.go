@@ -61,19 +61,21 @@ import (
 // concrete implementations are chosen; everything else depends on
 // interfaces.
 type app struct {
-	db         *gorm.DB
-	tx         transaction.Transactor
-	outbox     outbox.Store
-	redis      *redis.Client
-	relay      *outbox.Relay
-	events     events.Consumer
-	iam        iamRepositories
-	onboarding iam.Onboarding
-	auth       iam.Authentication
-	oauth      iam.AuthorizationServer
-	install    *bootstrap.Installation
-	authz      authorization.Authorizer
-	audit      audit.Recorder
+	db     *gorm.DB
+	tx     transaction.Transactor
+	outbox outbox.Store
+	redis  *redis.Client
+	relay  *outbox.Relay
+	events events.Consumer
+	// notificationEvents reads the outbox stream for notifications.
+	notificationEvents events.Consumer
+	iam                iamRepositories
+	onboarding         iam.Onboarding
+	auth               iam.Authentication
+	oauth              iam.AuthorizationServer
+	install            *bootstrap.Installation
+	authz              authorization.Authorizer
+	audit              audit.Recorder
 	// approvals opens and cancels approval requests for the capabilities
 	// whose subjects wait, which register in approvalSubjects.
 	approvals        policy.Approvals
@@ -290,6 +292,9 @@ func wire(ctx context.Context, cfg *config.Config, version string, logger loggin
 	if err := a.wireApprovals(); err != nil {
 		return nil, nil, err
 	}
+	if err := a.wireNotifications(cfg, logger); err != nil {
+		return nil, nil, err
+	}
 	if err := a.wireWorkspace(); err != nil {
 		return nil, nil, err
 	}
@@ -342,6 +347,20 @@ func (a *app) wireOutbox(cfg *config.Config, logger logging.Logger) error {
 	return nil
 }
 
+// consumerName names this replica in the consumer groups it reads with:
+// the configured name, or else the host name, which is the pod name on
+// Kubernetes.
+func consumerName(cfg *config.Config) (string, error) {
+	if cfg.Events.ConsumerName != "" {
+		return cfg.Events.ConsumerName, nil
+	}
+	name, err := os.Hostname()
+	if err != nil {
+		return "", fmt.Errorf("consumer name: %w", err)
+	}
+	return name, nil
+}
+
 // wireWebhooks applies the normalized provider events the gateway publishes.
 // Each delivery is handled in one transaction, so the delivery record and the
 // change commit together.
@@ -373,18 +392,15 @@ func (a *app) wireWebhooks(cfg *config.Config, logger logging.Logger) error {
 	}
 	a.handlers = append(a.handlers, lookup)
 
-	consumerName := cfg.Events.ConsumerName
-	if consumerName == "" {
-		consumerName, err = os.Hostname()
-		if err != nil {
-			return fmt.Errorf("consumer name: %w", err)
-		}
+	name, err := consumerName(cfg)
+	if err != nil {
+		return err
 	}
 	a.events, err = redisstream.NewConsumer(redisstream.ConsumerConfig{
 		Client:           a.redis,
 		Stream:           cfg.Events.Stream,
 		Group:            cfg.Events.ConsumerGroup,
-		Consumer:         consumerName,
+		Consumer:         name,
 		Handler:          &router,
 		ManualAck:        false,
 		Batch:            100,
@@ -401,7 +417,7 @@ func (a *app) wireWebhooks(cfg *config.Config, logger logging.Logger) error {
 	logger.Info("webhook consumer configured",
 		logging.F("stream", cfg.Events.Stream),
 		logging.F("group", cfg.Events.ConsumerGroup),
-		logging.F("consumer", consumerName),
+		logging.F("consumer", name),
 	)
 	return nil
 }

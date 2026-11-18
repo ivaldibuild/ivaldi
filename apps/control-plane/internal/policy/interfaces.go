@@ -131,6 +131,16 @@ type Approvals interface {
 	Cancel(ctx context.Context, actor identity.Actor, organizationID string, subject Subject, note string) error
 }
 
+// ApprovalLookup reads approval requests for other capabilities, such as
+// notifications, without authorizing.
+type ApprovalLookup interface {
+	LookupApprovalRequest(ctx context.Context, organizationID, requestID string) (*ApprovalRequest, error)
+	// Deciders returns those of the users who could decide the request: they
+	// hold every requirement, and neither asked for it nor have a Session
+	// that asked. The caller passes active users only.
+	Deciders(ctx context.Context, r *ApprovalRequest, userIDs []string) ([]string, error)
+}
+
 // OpenApprovalInput describes a subject that waits for approval.
 type OpenApprovalInput struct {
 	Subject Subject

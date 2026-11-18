@@ -36,7 +36,10 @@ type Config struct {
 	Events     Events     `yaml:"events"`
 	Platform   Platform   `yaml:"platform"`
 	Outbox     Outbox     `yaml:"outbox"`
-	Telemetry  Telemetry  `yaml:"telemetry"`
+	// Notifications configures how the control plane tells people about
+	// work that waits for them, such as approval requests.
+	Notifications Notifications `yaml:"notifications"`
+	Telemetry     Telemetry     `yaml:"telemetry"`
 
 	// VersionControl configures the version-control providers Ivaldi can
 	// read repositories and commit history from.
@@ -433,6 +436,20 @@ type Outbox struct {
 	// separate from the gateway's stream, which carries events into the
 	// control plane.
 	Stream string `yaml:"stream" env:"IVALDI_OUTBOX_STREAM" envDefault:"ivaldi:control-plane:events"`
+}
+
+// Notifications configures the consumer that reads the outbox stream and
+// tells people about work that waits for them (docs/design/notifications.md).
+// It reads with its own consumer group, so it sees every event whoever else
+// reads the stream; the rest of its tuning follows Events.
+type Notifications struct {
+	// ConsumerGroup is shared by every control-plane replica, so each event
+	// is handled by one of them.
+	ConsumerGroup string `yaml:"consumer_group" env:"IVALDI_NOTIFICATIONS_CONSUMER_GROUP" envDefault:"notifications"`
+	// Concurrency is how many events this replica handles at once.
+	Concurrency int `yaml:"concurrency" env:"IVALDI_NOTIFICATIONS_CONCURRENCY" envDefault:"10"`
+	// DeadLetterStream receives events the consumer gave up on.
+	DeadLetterStream string `yaml:"dead_letter_stream" env:"IVALDI_NOTIFICATIONS_DEAD_LETTER_STREAM" envDefault:"ivaldi:control-plane:events:notifications:dead"`
 }
 
 // Telemetry configures the control plane's own health, metrics, and traces.

@@ -80,14 +80,22 @@ type dependency struct {
 	ok   bool
 }
 
+// check reports a missing dependency of a service that writes.
 func (o options) check(service string, required ...dependency) error {
+	if err := requireAll(service, required...); err != nil {
+		return err
+	}
+	if err := o.writer.Check(); err != nil {
+		return fmt.Errorf("%s: %w", service, err)
+	}
+	return nil
+}
+
+func requireAll(service string, required ...dependency) error {
 	for _, d := range required {
 		if !d.ok {
 			return fmt.Errorf("%s: %s is required", service, d.name)
 		}
-	}
-	if err := o.writer.Check(); err != nil {
-		return fmt.Errorf("%s: %w", service, err)
 	}
 	return nil
 }

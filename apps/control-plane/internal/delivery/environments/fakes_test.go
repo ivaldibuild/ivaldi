@@ -14,6 +14,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/events"
+	"github.com/ivaldibuild/ivaldi/pkg/identity"
 	"github.com/ivaldibuild/ivaldi/pkg/pagination"
 )
 
@@ -46,6 +47,8 @@ func (s state) clone() state {
 // store fakes the repositories, the transactor, the resource registrar, and
 // the Workspaces lookup. Its auditLog and outboxLog fake the recorders.
 type store struct {
+	// waiting lists the Deployments awaiting approval asked to be cancelled.
+	waiting []delivery.WaitingDeployments
 	state
 	workspaces   map[string]*workspace.Workspace
 	lifecycleUse map[string]int
@@ -107,6 +110,11 @@ func must[T any](v T, err error) T {
 		panic(err)
 	}
 	return v
+}
+
+func (s *store) CancelWaitingDeployments(_ context.Context, _ identity.Actor, w delivery.WaitingDeployments, _ string) error {
+	s.waiting = append(s.waiting, w)
+	return nil
 }
 
 func (s *store) WithinTx(ctx context.Context, fn func(context.Context) error) error {
@@ -477,7 +485,7 @@ func newWorld(t *testing.T) *world {
 func (s *store) options(authz authorization.Authorizer) []EnvironmentServiceOption {
 	return []EnvironmentServiceOption{
 		WithEnvironmentRepo(s), WithTargetRepo(s), WithClusterRepo(s), WithLifecycleUsage(s), WithVariableUsage(s), WithWorkspaces(s),
-		WithResourceRegistrar(s), WithAuthorizer(authz), WithTransactor(s),
+		WithResourceRegistrar(s), WithWaitingDeployments(s), WithAuthorizer(authz), WithTransactor(s),
 		WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
 	}
 }

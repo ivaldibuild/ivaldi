@@ -27,6 +27,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/orchestration"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/orchestration/agents"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/policy"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/policy/approvals"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/policy/locks"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/provenance"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/provenance/changes"
@@ -62,6 +63,7 @@ type services struct {
 	teams           team.TeamService
 	agents          orchestration.AgentService
 	settingLocks    policy.SettingLockService
+	approvals       policy.ApprovalService
 	workspaces      workspace.WorkspaceService
 	projects        workspace.ProjectService
 	settings        workspace.SettingService
@@ -94,6 +96,9 @@ func (s services) routes(describe bool) []api.Routes {
 		teams.NewTeamController(s.teams),
 		agents.NewController(s.agents),
 		locks.NewSettingLockController(s.settingLocks),
+		// Each capability whose subjects wait for approval lists its
+		// summary here, so the API's description names its fields.
+		approvals.NewController(s.approvals, delivery.DeploymentApprovalSummary{}),
 		workspaces.NewWorkspaceController(s.workspaces),
 		projects.NewProjectController(s.projects),
 		settings.NewSettingController(s.settings),

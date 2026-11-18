@@ -54,7 +54,11 @@ type Request struct {
 type Decision struct {
 	ID      string
 	Outcome Outcome
-	Reason  string
+	// Rule names the rule that decided, such as builtin.agent_session_release,
+	// so a decision can be traced to it; Reason says why in words. Built-in
+	// rules start with "builtin.". It is empty when IAM's grants alone decided.
+	Rule   string
+	Reason string
 	// ApprovedByPrincipalID is the human who approved the action, if it needed approval.
 	ApprovedByPrincipalID string
 }

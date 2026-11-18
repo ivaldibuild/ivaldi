@@ -672,6 +672,7 @@ type DeploymentEventSnapshotKind string
 // DeploymentSnapshot defines model for DeploymentSnapshot.
 type DeploymentSnapshot struct {
 	ApplicationId          string                       `json:"application_id"`
+	ApprovalRequestId      *string                      `json:"approval_request_id"`
 	CreatedAt              time.Time                    `json:"created_at"`
 	EnvironmentId          string                       `json:"environment_id"`
 	ExternalRef            interface{}                  `json:"external_ref"`

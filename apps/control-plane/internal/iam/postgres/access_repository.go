@@ -85,3 +85,39 @@ func (r *accessRepository) Access(ctx context.Context, q iam.AccessQuery) (iam.A
 	}
 	return a, nil
 }
+
+// NewHeldResourceReader returns the PostgreSQL HeldResourceReader.
+func NewHeldResourceReader(db *gorm.DB) iam.HeldResourceReader {
+	return &accessRepository{db: db}
+}
+
+// heldResourcesQuery reads the active resources the principal, directly or
+// through a group, holds an unexpired grant of one of the roles on.
+const heldResourcesQuery = `
+SELECT DISTINCT g.resource_id
+FROM iam.grants g
+JOIN iam.resources r ON r.organization_id = g.organization_id AND r.id = g.resource_id
+WHERE g.organization_id = @org
+  AND g.role_id IN @roles
+  AND (g.expires_at IS NULL OR g.expires_at > @at)
+  AND r.deleted_at IS NULL
+  AND (g.principal_id = @principal OR g.group_id IN (
+    SELECT gm.group_id FROM iam.group_members gm
+    WHERE gm.organization_id = @org AND gm.principal_id = @principal))
+ORDER BY g.resource_id
+`
+
+func (r *accessRepository) HeldResources(ctx context.Context, q iam.HeldResourcesQuery) ([]string, error) {
+	roles := iam.BuiltInRoleIDsAllowing(q.Permission)
+	if len(roles) == 0 {
+		return nil, nil
+	}
+	var ids []string
+	err := database.Conn(ctx, r.db).Raw(heldResourcesQuery, map[string]any{
+		"org":       q.OrganizationID,
+		"principal": q.PrincipalID,
+		"roles":     roles,
+		"at":        q.At,
+	}).Scan(&ids).Error
+	return ids, translate(err)
+}

@@ -137,3 +137,27 @@ func TestAccessUnknowns(t *testing.T) {
 	assert.False(t, a.ResourceFound)
 	assert.Empty(t, a.RoleIDs)
 }
+
+func TestHeldResources(t *testing.T) {
+	w := newAccessWorld(t)
+	held := func(permission string) []string {
+		t.Helper()
+		ids, err := NewHeldResourceReader(w.db).HeldResources(w.ctx, iam.HeldResourcesQuery{
+			OrganizationID: w.org, PrincipalID: w.ada, Permission: permission, At: t0,
+		})
+		require.NoError(t, err)
+		return ids
+	}
+	past := t0.Add(-time.Minute)
+	w.grant(t, iam.RoleViewer, w.org, &w.ada, nil, nil)
+	w.grant(t, iam.RoleAdmin, w.org, &w.ada, nil, &past)
+	team := w.group(t, "deployers", w.ada)
+	w.grant(t, iam.RoleAdmin, w.ws, nil, &team, nil)
+	w.grant(t, iam.RoleAdmin, w.env, &w.ada, nil, nil)
+	require.NoError(t, w.resources.ArchiveResource(w.ctx, w.org, w.env))
+
+	assert.Equal(t, []string{w.ws}, held("deployment.create"),
+		"only the group's admin grant counts: the viewer role lacks it, one grant expired, and one is on an archived resource")
+	assert.ElementsMatch(t, []string{w.org, w.ws}, held("deployment.read"))
+	assert.Empty(t, held(iam.PermissionOwnerManage))
+}

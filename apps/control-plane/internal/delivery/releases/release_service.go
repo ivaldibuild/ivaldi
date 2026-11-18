@@ -98,6 +98,7 @@ type options struct {
 	deployments  DeploymentLookup
 	lifecycles   Lifecycles
 	environments Environments
+	waiting      delivery.WaitingDeploymentCanceller
 	authz        authorization.Authorizer
 	writer       change.Writer
 }
@@ -138,6 +139,12 @@ func WithDeploymentLookup(d DeploymentLookup) ReleaseServiceOption {
 func WithTagResolver(t delivery.TagResolver) ReleaseServiceOption {
 	return func(o *options) { o.tags = t }
 }
+
+// WithWaitingDeployments cancels the Deployments awaiting approval that
+// withdrawing a Release stops from ever being applied, with their approval requests.
+func WithWaitingDeployments(w delivery.WaitingDeploymentCanceller) ReleaseServiceOption {
+	return func(o *options) { o.waiting = w }
+}
 func WithAuthorizer(a authorization.Authorizer) ReleaseServiceOption {
 	return func(o *options) { o.authz = a }
 }
@@ -176,6 +183,7 @@ func NewReleaseService(opts ...ReleaseServiceOption) (delivery.ReleaseService, e
 		{"DeploymentLookup", o.deployments != nil},
 		{"Lifecycles", o.lifecycles != nil},
 		{"Environments", o.environments != nil},
+		{"WaitingDeployments", o.waiting != nil},
 		{"Authorizer", o.authz != nil},
 	}
 	for _, r := range required {
@@ -814,6 +822,10 @@ func (s *service) WithdrawRelease(ctx context.Context, actor identity.Actor, org
 			return err
 		}
 		if err := s.save(ctx, actor, rel, delivery.EventReleaseWithdrawn, before); err != nil {
+			return err
+		}
+		waiting := delivery.WaitingDeployments{OrganizationID: organizationID, ReleaseID: rel.ID()}
+		if err := s.waiting.CancelWaitingDeployments(ctx, actor, waiting, "the release was withdrawn"); err != nil {
 			return err
 		}
 		builds, err := s.buildsOf(ctx, rel)

@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
+	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/release"
 )
@@ -37,6 +38,20 @@ func TestNewDeployment(t *testing.T) {
 	assert.Equal(t, release.DeploymentPending, d.Status())
 	assert.Equal(t, deploymentStart, d.RequestedAt())
 	assert.Contains(t, d.PullEvents(), delivery.DeploymentCreated{d.Snapshot()})
+}
+
+func TestDeploymentWaitForUpdatesItsCreatedEvent(t *testing.T) {
+	clock.Fix(t, deploymentStart)
+	props := deploymentProps()
+	props.Status = release.DeploymentAwaitingApproval
+	d, err := delivery.NewDeployment(props, nil)
+	require.NoError(t, err)
+
+	require.NoError(t, d.WaitFor("apr_01ARZ3NDEKTSV4RRFFQ69G5FAV"))
+	events := d.PullEvents()
+	assert.Equal(t, []aggregate.Event{delivery.DeploymentCreated{d.Snapshot()}}, events,
+		"the created event names the approval request the stored deployment waits for")
+	assert.Equal(t, new("apr_01ARZ3NDEKTSV4RRFFQ69G5FAV"), d.Snapshot().ApprovalRequestID)
 }
 
 func TestDeploymentStatusChanges(t *testing.T) {

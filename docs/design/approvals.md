@@ -1,6 +1,6 @@
 # Approvals
 
-- Status: Draft for review
+- Status: Built for Deployments ([#39](https://github.com/ivaldibuild/ivaldi/issues/39), [#40](https://github.com/ivaldibuild/ivaldi/issues/40)); matching an `ApprovalID` and replacing a pending request wait for a subject that needs them (see [Building it](#building-it))
 - Date: 2026-11-17
 - Related: [ADR 0003](../adr/0003-identity-access-and-policy.md), [ADR 0005](../adr/0005-data-model-ownership.md), [ADR 0007](../adr/0007-teams-and-agent-identity.md), [ADR 0011](../adr/0011-transactional-outbox.md), [delivery data model](delivery-data-model.md), [deployment variables](deployment-variables.md), [workspace data model](workspace-data-model.md)
 
@@ -21,10 +21,8 @@ The first thing that waits is a Deployment. When the single authorizer returns `
   If the subject's capability later adds another way out of waiting, it must close the request there too.
 - **Anything that makes a waiting subject impossible to apply cancels it and its request.** Otherwise the request would stay pending until someone tried to approve it and the subject's checks refused. For Deployments, this happens when the Release is withdrawn, or when the Target or the Application is archived. An Environment cannot be archived while it has active Targets, and a Project cannot be archived while it has active Applications, so those two cases are already covered. Deployments that are already applying are left alone, as they are today.
 - **Requests do not expire, for now.** A request ends only when someone approves, rejects, or cancels it. Until then, a waiting Deployment holds its Target: the deploy plan's in-flight check counts it, so no other Deployment of the Application to that Target can be requested. Expiry needs a scheduled job, and is deferred until the worker runs them.
-- **A new request for a subject that has a pending one replaces it.** The earlier request is cancelled, with a note naming the new one, in the same transaction. Deployments never reach this case, because the in-flight check refuses a second Deployment to the same Target. A refreshed variable revision or a new setting change can, as [deployment variables](deployment-variables.md#refreshes-that-change-production-need-approval) already expects ("refreshing again replaces it").
-- **Capabilities register their subject types with policy.** Settings work the same way: each capability registers its definitions in `workspace.Definitions`. Here, each capability registers its subject types in a `policy.Subjects` registry at startup; delivery registers `delivery.deployment`. A registration provides:
-  - the handler policy calls when a request is approved or rejected, which changes the subject in the same transaction;
-  - the Go type of the subject's summary, so the API description lists its fields.
+- **A new request for a subject that has a pending one replaces it.** The earlier request is cancelled, with a note naming the new one, in the same transaction. Deployments never reach this case, because the in-flight check refuses a second Deployment to the same Target. A refreshed variable revision or a new setting change can, as [deployment variables](deployment-variables.md#refreshes-that-change-production-need-approval) already expects ("refreshing again replaces it"). Replacing is built with the first such subject; until then, opening a second pending request for a subject fails on the unique index.
+- **Capabilities register their subject types with policy.** Settings work the same way: each capability registers its definitions in `workspace.Definitions`. Here, each capability registers its subject types in a `policy.Subjects` registry at startup; delivery registers `delivery.deployment`. A registration provides the handler policy calls when a request is approved or rejected, which locks the subject and changes it in the same transaction. The Go type of each subject's summary is passed to the approvals controller where the routes are listed (`cmd/server/routes.go`), so the API description lists its fields as a `oneOf`: the description is built without wiring, so it cannot read a registry filled at startup.
 
   Policy imports no capability that registers subjects. Delivery imports policy, as it already imports `workspace` and `team`.
 - **A decision names the rule that required approval.** `authorization.Decision` gains `Rule`, a stable identifier such as `builtin.agent_session_release`, beside the human-readable `Reason`. The request copies both, so approvers see why it waits, and requests can later be filtered by rule. Built-in rules start with `builtin.`. Rules an Organization writes will get their own IDs once a policy engine exists.
@@ -175,6 +173,8 @@ Rejecting is the same as approving with `approval.reject`, except that a revoked
 
 Approving, rejecting, and cancelling all lock the subject before the request. Two of them on the same request cannot deadlock: the second waits, then finds the request no longer pending.
 
+Requesting a Deployment, and the handler's lock before approving or rejecting one, first take shared locks on its Release, its Application, and its Targets, in that order and the Targets by ID. Withdrawing a Release and archiving a Target or Application lock that row for update before cancelling the Deployments waiting there. So a withdrawal or archive either commits first, and the request's or approval's checks see it, or waits until the request has committed its waiting Deployment, which it then finds and cancels. Every path takes these rows before the Deployment, and the Deployment before its request, so none of them can deadlock.
+
 ## Other subjects
 
 These follow the same record and flows; each is built when its capability needs it.
@@ -208,7 +208,7 @@ The work is split across three issues:
   - delivery cancelling waiting Deployments and their requests when a Release is withdrawn, or a Target or Application archived;
   - `make openapi`.
 - **[#40](https://github.com/ivaldibuild/ivaldi/issues/40), approve and reject:**
-  - `policy.NewAuthorizer` with the approver rule and `ApprovalID` matching;
+  - `policy.NewAuthorizer` with the approver rule. `ApprovalID` matching is left for the first subject that is sent again rather than stored, such as a setting change: until then nothing could send one, and IAM's authorizer still refuses any request that carries one. The request already stores the proposal digest it will match;
   - the approve and reject endpoints, with a note required to reject;
   - the IAM lookup that refuses approving a revoked Session's request;
   - delivery's handler for `delivery.deployment`.

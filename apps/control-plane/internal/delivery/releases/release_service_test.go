@@ -355,6 +355,8 @@ func TestPublishAndWithdraw(t *testing.T) {
 	withdrawn, err := w.svc.WithdrawRelease(ctx, ada, org, id)
 	require.NoError(t, err)
 	assert.Equal(t, release.StatusWithdrawn, withdrawn.Release.Status())
+	assert.Equal(t, []delivery.WaitingDeployments{{OrganizationID: org, ReleaseID: id}}, w.waiting,
+		"its deployments awaiting approval are cancelled")
 	assert.Equal(t, delivery.PermissionReleaseManage, w.authz.asked[len(w.authz.asked)-1].Permission)
 	assert.Equal(t, []string{"delivery.v1.build.recorded", "delivery.v1.release.created", "delivery.v1.release.published", "delivery.v1.release.withdrawn"}, w.eventTypes())
 

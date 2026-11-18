@@ -421,6 +421,74 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/approvals': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List the approval requests you could decide */
+    get: operations['list-approvals'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/approvals/{approval_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get an approval request, and whether you could decide it */
+    get: operations['get-approval'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/approvals/{approval_id}/approve': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Approve a pending request, which applies what waits for it */
+    post: operations['approve-approval'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/approvals/{approval_id}/reject': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Reject a pending request, saying why */
+    post: operations['reject-approval'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/artifacts/{artifact_id}': {
     parameters: {
       query?: never;
@@ -2637,6 +2705,49 @@ export interface components {
       /** @description The chart's overlay values files, in order, such as values.production.yaml */
       values?: string[];
     };
+    ApprovalRequestView: {
+      action: string;
+      can_decide: boolean;
+      /** Format: date-time */
+      closed_at: string | null;
+      closed_by_principal_id: string | null;
+      closed_decision_id: string | null;
+      /** Format: date-time */
+      created_at: string;
+      decision_id: string;
+      id: string;
+      note: string | null;
+      on_behalf_of_principal_id: string | null;
+      organization_id: string;
+      owner_team_id: string | null;
+      permission: string;
+      proposal_digest: string;
+      read_resource_id: string;
+      reason: string;
+      requested_by_principal_id: string;
+      requirements: components['schemas']['Requirement'][];
+      resource_id: string;
+      rule: string;
+      session_id: string | null;
+      /** @enum {string} */
+      state: 'pending' | 'approved' | 'rejected' | 'cancelled';
+      subject_id: string;
+      subject_type: string;
+      /** @description What approvers are shown, as the subject's capability described it */
+      summary: components['schemas']['DeploymentApprovalSummary'];
+      /** Format: date-time */
+      updated_at: string;
+    };
+    ApproveRequestBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ApproveRequestBody.json
+       */
+      readonly $schema?: string;
+      /** @description Why it was approved */
+      note?: string;
+    };
     ArtifactChange: {
       artifact_id: string;
       artifact_name: string;
@@ -3316,6 +3427,19 @@ export interface components {
       application: components['schemas']['ApplicationSnapshot'];
       default_channel: components['schemas']['ChannelSnapshot'];
     };
+    DeploymentApprovalSummary: {
+      application_id: string;
+      environment_id: string;
+      /** @enum {string} */
+      environment_tier: 'development' | 'staging' | 'production' | 'other';
+      /** @enum {string} */
+      reason: 'rollout' | 'rollback' | 'redeploy';
+      release_id: string;
+      release_version: string;
+      restores_deployment_id: string | null;
+      secrets_latest: boolean;
+      target_id: string;
+    };
     DeploymentAssignment: {
       apply: components['schemas']['ApplyAssignment'];
       deployment: components['schemas']['DeploymentSnapshot'];
@@ -3349,6 +3473,7 @@ export interface components {
     };
     DeploymentSnapshot: {
       application_id: string;
+      approval_request_id: string | null;
       /** Format: date-time */
       created_at: string;
       environment_id: string;
@@ -3939,6 +4064,16 @@ export interface components {
       url: string;
       workspace_id: string;
     };
+    RejectRequestBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/RejectRequestBody.json
+       */
+      readonly $schema?: string;
+      /** @description Why it was rejected, for the requester */
+      note: string;
+    };
     Release: {
       application_id: string;
       builds: components['schemas']['ReleaseBuild'][];
@@ -4120,6 +4255,11 @@ export interface components {
       /** @description The Targets to deploy the Release to */
       target_ids: string[];
     };
+    Requirement: {
+      permission: string;
+      resource_id: string;
+      resource_path: string[];
+    };
     Resolved: {
       /** @description Whether the value is the setting's default */
       from_default: boolean;
@@ -4217,6 +4357,20 @@ export interface components {
       readonly $schema?: string;
       /** @description Response payload, always present: an empty list is [], not omitted */
       data: components['schemas']['ApplicationSnapshot'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
+    ResponseApprovalRequestView: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseApprovalRequestView.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['ApprovalRequestView'];
       /** @description Human-readable message */
       message?: string;
       /** @description Request status */
@@ -4866,6 +5020,20 @@ export interface components {
       /** @description Request status */
       status: string;
     };
+    ResponseResultApprovalRequestView: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseResultApprovalRequestView.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['ResultApprovalRequestView'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
     ResponseResultChangeSnapshot: {
       /**
        * Format: uri
@@ -5215,6 +5383,15 @@ export interface components {
       has_next: boolean;
       has_previous: boolean;
       items: components['schemas']['ApplicationSnapshot'][];
+      next_cursor: string | null;
+      previous_cursor: string | null;
+      /** Format: int64 */
+      total_count: number;
+    };
+    ResultApprovalRequestView: {
+      has_next: boolean;
+      has_previous: boolean;
+      items: components['schemas']['ApprovalRequestView'][];
       next_cursor: string | null;
       previous_cursor: string | null;
       /** Format: int64 */
@@ -7220,6 +7397,154 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ResponseVariableSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'list-approvals': {
+    parameters: {
+      query?: {
+        /** @description Only requests in this state; pending by default */
+        state?: 'pending' | 'approved' | 'rejected' | 'cancelled';
+        /** @description Only requests for this kind of subject, such as delivery.deployment */
+        subject_type?: string;
+        /** @description Only requests routed to this Team */
+        owner_team_id?: string;
+        /** @description Most items to return */
+        limit?: number;
+        /** @description Sort direction by when the request was opened; newest first by default */
+        sort_order?: 'asc' | 'desc';
+        /** @description Cursor from a previous page's next_cursor */
+        next_cursor?: string;
+        /** @description Cursor from a previous page's previous_cursor */
+        previous_cursor?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseResultApprovalRequestView'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'get-approval': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The approval request */
+        approval_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseApprovalRequestView'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'approve-approval': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The approval request */
+        approval_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ApproveRequestBody'];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseApprovalRequestView'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'reject-approval': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The approval request */
+        approval_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RejectRequestBody'];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseApprovalRequestView'];
         };
       };
       /** @description Error */

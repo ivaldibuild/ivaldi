@@ -57,6 +57,7 @@ type options struct {
 	variables    VariableUsage
 	workspaces   delivery.Workspaces
 	resources    iam.ResourceRegistrar
+	waiting      delivery.WaitingDeploymentCanceller
 	authz        authorization.Authorizer
 	writer       change.Writer
 }
@@ -84,6 +85,12 @@ func WithWorkspaces(w delivery.Workspaces) EnvironmentServiceOption {
 // Environment is a resource under its Workspace.
 func WithResourceRegistrar(r iam.ResourceRegistrar) EnvironmentServiceOption {
 	return func(o *options) { o.resources = r }
+}
+
+// WithWaitingDeployments cancels the Deployments awaiting approval that
+// archiving a Target stops from ever being applied, with their approval requests.
+func WithWaitingDeployments(w delivery.WaitingDeploymentCanceller) EnvironmentServiceOption {
+	return func(o *options) { o.waiting = w }
 }
 func WithAuthorizer(a authorization.Authorizer) EnvironmentServiceOption {
 	return func(o *options) { o.authz = a }
@@ -120,6 +127,7 @@ func NewEnvironmentService(opts ...EnvironmentServiceOption) (delivery.Environme
 		{"VariableUsage", o.variables != nil},
 		{"Workspaces", o.workspaces != nil},
 		{"ResourceRegistrar", o.resources != nil},
+		{"WaitingDeployments", o.waiting != nil},
 		{"Authorizer", o.authz != nil},
 	}
 	for _, r := range required {
@@ -138,6 +146,7 @@ func NewEnvironmentService(opts ...EnvironmentServiceOption) (delivery.Environme
 		variables:    o.variables,
 		workspaces:   o.workspaces,
 		resources:    o.resources,
+		waiting:      o.waiting,
 		w:            o.writer,
 	}
 	return &authorized{next: s, authz: o.authz, environments: o.environments, targets: o.targets}, nil
@@ -155,6 +164,7 @@ type service struct {
 	variables    VariableUsage
 	workspaces   delivery.Workspaces
 	resources    iam.ResourceRegistrar
+	waiting      delivery.WaitingDeploymentCanceller
 	w            change.Writer
 }
 
@@ -461,6 +471,10 @@ func (s *service) ArchiveTarget(ctx context.Context, actor identity.Actor, organ
 			}
 			if n > 0 {
 				return fmt.Errorf("%w: %d variables have a value scoped to target %s", delivery.ErrInUse, n, t.ID())
+			}
+			waiting := delivery.WaitingDeployments{OrganizationID: organizationID, TargetID: t.ID()}
+			if err := s.waiting.CancelWaitingDeployments(ctx, actor, waiting, "the target was archived"); err != nil {
+				return err
 			}
 			t.Archive()
 			return nil

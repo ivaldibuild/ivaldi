@@ -14,6 +14,7 @@ import (
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/audit"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/policy"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/provenance"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/binding"
@@ -57,6 +58,9 @@ type store struct {
 	envelopes   []events.Envelope
 	// lockedTargets lists the Targets read for update, in order.
 	lockedTargets []string
+	// deploymentLocks lists what LockForDeployment locked, as
+	// "<release> <targets>", in order.
+	deploymentLocks []string
 	// revisions are the revisions of Releases' variables, by ID.
 	revisions map[string]*delivery.ReleaseVariables
 	// snapshotted lists the observed Releases whose variables were snapshotted.
@@ -77,6 +81,11 @@ func newStore() *store {
 }
 
 func placementKey(app, target string) string { return app + "/" + target }
+
+func (s *store) LockForDeployment(_ context.Context, _, releaseID string, targetIDs []string) error {
+	s.deploymentLocks = append(s.deploymentLocks, releaseID+" "+strings.Join(targetIDs, ","))
+	return nil
+}
 
 func (s *store) WithinTx(ctx context.Context, fn func(context.Context) error) error {
 	return fn(ctx)
@@ -450,7 +459,42 @@ func (a *fakeAuthorizer) Authorize(_ context.Context, req authorization.Request)
 	if req.Permission == delivery.PermissionDeploymentCreate && a.onCreate != "" {
 		outcome = a.onCreate
 	}
-	return authorization.Decision{ID: "dcn_01ARZ3NDEKTSV4RRFFQ69G5FAV", Outcome: outcome}, nil
+	d := authorization.Decision{ID: "dcn_01ARZ3NDEKTSV4RRFFQ69G5FAV", Outcome: outcome}
+	if outcome == authorization.OutcomeRequiresApproval {
+		d.Rule, d.Reason = "builtin.test", "a test asked for approval"
+	}
+	return d, nil
+}
+
+// fakeApprovals is policy's approval requests: it records what was opened
+// and cancelled.
+type fakeApprovals struct {
+	opened    []policy.OpenApprovalInput
+	requests  []*policy.ApprovalRequest
+	cancelled []policy.Subject
+}
+
+func (f *fakeApprovals) Open(_ context.Context, in policy.OpenApprovalInput) (*policy.ApprovalRequest, error) {
+	f.opened = append(f.opened, in)
+	requirements := make([]policy.Requirement, len(in.Requirements))
+	for i, r := range in.Requirements {
+		requirements[i] = policy.Requirement{Permission: r.Permission, ResourceID: r.ResourceID, ResourcePath: []string{r.ResourceID}}
+	}
+	r, err := policy.NewApprovalRequest(policy.NewApprovalRequestProps{
+		OrganizationID: in.Request.OrganizationID, Subject: in.Subject, Decision: in.Decision,
+		Action: in.Request.Action, Permission: in.Request.Permission, ResourceID: in.Request.ResourceID,
+		ProposalDigest: strings.Repeat("0", 64), Summary: json.RawMessage(`{}`), ReadResourceID: in.ReadResourceID,
+		RequestedByPrincipalID: in.Request.Actor.PrincipalID, Requirements: requirements,
+	}, nil)
+	if err == nil {
+		f.requests = append(f.requests, r)
+	}
+	return r, err
+}
+
+func (f *fakeApprovals) Cancel(_ context.Context, _ identity.Actor, _ string, subject policy.Subject, _ string) error {
+	f.cancelled = append(f.cancelled, subject)
+	return nil
 }
 
 type auditLog struct{ *store }
@@ -469,13 +513,17 @@ func (o outboxLog) Record(_ context.Context, envs ...events.Envelope) error {
 
 type world struct {
 	*store
-	svc     delivery.DeploymentService
-	authz   *fakeAuthorizer
-	history *fakeHistory
-	changes *fakeChanges
-	rel     *delivery.Release
-	app     *delivery.Application
-	env     *delivery.Environment
+	svc       delivery.DeploymentService
+	authz     *fakeAuthorizer
+	approvals *fakeApprovals
+	// handler and canceller are built from the same options as svc.
+	handler   policy.SubjectHandler
+	canceller delivery.WaitingDeploymentCanceller
+	history   *fakeHistory
+	changes   *fakeChanges
+	rel       *delivery.Release
+	app       *delivery.Application
+	env       *delivery.Environment
 }
 
 // fakeHistory is the commit history the version-control capability would
@@ -528,14 +576,21 @@ func newWorld(t *testing.T) *world {
 	authz := &fakeAuthorizer{}
 	history := &fakeHistory{}
 	recorded := &fakeChanges{}
-	svc, err := NewService(
+	approvals := &fakeApprovals{}
+	opts := []ServiceOption{
 		WithDeploymentRepo(fakeDeployments{s}), WithReleaseRepo(fakeReleases{s}), WithBuildRepo(fakeBuilds{s}),
 		WithApplications(fakeApplications{s}), WithEnvironments(fakeEnvironments{s}), WithTargets(fakeTargets{s}), WithClusters(fakeClusters{s}),
-		WithLifecycles(fakeLifecycles{s}), WithVariables(s), WithVariableSnapshots(s), WithSecretStores(s), WithHeartbeatInterval(30*time.Second), WithCommitHistory(history), WithChanges(recorded), WithAuthorizer(authz), WithTransactor(s),
+		WithLifecycles(fakeLifecycles{s}), WithVariables(s), WithVariableSnapshots(s), WithSecretStores(s), WithHeartbeatInterval(30 * time.Second), WithCommitHistory(history), WithChanges(recorded), WithApprovals(approvals), WithDeploymentLocks(s), WithAuthorizer(authz), WithTransactor(s),
 		WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
-	)
+	}
+	svc, err := NewService(opts...)
 	require.NoError(t, err)
-	return &world{store: s, svc: svc, authz: authz, history: history, changes: recorded, rel: s.releases[mustOneID(s.releases)], app: app, env: env}
+	handler, err := NewApprovalHandler(opts...)
+	require.NoError(t, err)
+	canceller, err := NewWaitingDeploymentCanceller(opts...)
+	require.NoError(t, err)
+	return &world{store: s, svc: svc, authz: authz, approvals: approvals, handler: handler, canceller: canceller,
+		history: history, changes: recorded, rel: s.releases[mustOneID(s.releases)], app: app, env: env}
 }
 
 func TestRequestDeployments(t *testing.T) {
@@ -550,19 +605,97 @@ func TestRequestDeployments(t *testing.T) {
 	assert.NotNil(t, d.StartedAt())
 	assert.Equal(t, w.app.ID(), d.ApplicationID())
 	assert.Equal(t, delivery.EventDeploymentRequested, w.audit[0].Type)
+	assert.Equal(t, []string{w.rel.ID() + " " + targetID}, w.deploymentLocks,
+		"the request holds its Release, Application, and Targets, so they cannot be withdrawn or archived under it")
 	assert.Len(t, w.events, 1)
 	assert.Len(t, w.envelopes, 1)
 }
 
-func TestRequestDeploymentsWaitsForApproval(t *testing.T) {
-	w := newWorld(t)
+// requestWaiting requests a Deployment that waits for approval.
+func (w *world) requestWaiting(t *testing.T) *delivery.Deployment {
+	t.Helper()
 	w.authz.onCreate = authorization.OutcomeRequiresApproval
+	defer func() { w.authz.onCreate = "" }()
 	out, err := w.svc.RequestDeployments(ctx, ada, delivery.RequestDeploymentsInput{
 		OrganizationID: org, ReleaseID: w.rel.ID(), TargetIDs: []string{targetID},
 	})
 	require.NoError(t, err)
-	assert.Equal(t, release.DeploymentAwaitingApproval, out[0].Status())
-	assert.Nil(t, out[0].StartedAt())
+	return out[0]
+}
+
+func TestRequestDeploymentsWaitsForApproval(t *testing.T) {
+	w := newWorld(t)
+	d := w.requestWaiting(t)
+	assert.Equal(t, release.DeploymentAwaitingApproval, d.Status())
+	assert.Nil(t, d.StartedAt())
+
+	require.Len(t, w.approvals.opened, 1)
+	opened := w.approvals.opened[0]
+	subject := policy.Subject{Type: delivery.SubjectDeployment, ID: d.ID()}
+	assert.Equal(t, subject, opened.Subject)
+	assert.Equal(t, []policy.Requirement{
+		{Permission: delivery.PermissionDeploymentCreate, ResourceID: envID},
+		{Permission: delivery.PermissionApplicationRead, ResourceID: w.app.ProjectID()},
+	}, opened.Requirements, "deciding needs what requesting it did")
+	assert.Equal(t, w.app.ProjectID(), opened.ReadResourceID, "whoever can read the deployment can read its request")
+	assert.Equal(t, new(w.approvals.requests[0].ID()), d.ApprovalRequestID())
+
+	_, err := w.svc.CancelDeployment(ctx, ada, org, d.ID())
+	require.NoError(t, err)
+	assert.Equal(t, []policy.Subject{subject}, w.approvals.cancelled, "cancelling the deployment cancels its request")
+}
+
+func TestApprovingADeployment(t *testing.T) {
+	w := newWorld(t)
+	d := w.requestWaiting(t)
+	r := w.approvals.requests[0]
+	grace := identity.Actor{PrincipalID: "prn_01ARZ3NDEKTSV4RRFFQ69G5FAG", Kind: identity.ActorUser}
+	approval := authorization.Decision{ID: authorization.NewDecisionID(), Outcome: authorization.OutcomeAllow, ApprovedByPrincipalID: grace.PrincipalID}
+	dctx := authorization.WithDecision(ctx, d.ID(), approval)
+
+	w.targets[targetID].Archive()
+	assert.ErrorIs(t, w.handler.Approve(dctx, grace, r), policy.ErrCannotApply, "the deploy plan's checks run again")
+	assert.Equal(t, release.DeploymentAwaitingApproval, w.deployments[d.ID()].Status())
+
+	w.targets[targetID].Restore()
+	w.deploymentLocks = nil
+	require.NoError(t, w.handler.Lock(dctx, org, d.ID()))
+	assert.Equal(t, []string{w.rel.ID() + " " + targetID}, w.deploymentLocks,
+		"approving holds what the request held while the checks run again")
+	require.NoError(t, w.handler.Approve(dctx, grace, r), "the deployment does not count against its own target")
+	approved := w.deployments[d.ID()]
+	assert.Equal(t, release.DeploymentApplying, approved.Status())
+	assert.NotNil(t, approved.StartedAt())
+	assert.Equal(t, new(approval.ID), approved.PolicyDecisionID())
+	last := w.audit[len(w.audit)-1]
+	assert.Equal(t, delivery.EventDeploymentApproved, last.Type)
+	assert.Equal(t, grace.PrincipalID, last.ApprovedByPrincipalID)
+}
+
+func TestRejectingADeployment(t *testing.T) {
+	w := newWorld(t)
+	d := w.requestWaiting(t)
+	grace := identity.Actor{PrincipalID: "prn_01ARZ3NDEKTSV4RRFFQ69G5FAG", Kind: identity.ActorUser}
+	dctx := authorization.WithDecision(ctx, d.ID(), authorization.Decision{ID: authorization.NewDecisionID(), Outcome: authorization.OutcomeAllow})
+
+	require.NoError(t, w.handler.Reject(dctx, grace, w.approvals.requests[0]))
+	rejected := w.deployments[d.ID()]
+	assert.Equal(t, release.DeploymentRejected, rejected.Status())
+	assert.NotNil(t, rejected.FinishedAt(), "a rejected deployment frees its target")
+}
+
+func TestCancelWaitingDeployments(t *testing.T) {
+	w := newWorld(t)
+	waiting := w.requestWaiting(t)
+	applying := mustDeployment(org, w.rel.ID(), w.app.ID(), envID, targetID, release.DeploymentApplying)
+	w.deployments[applying.ID()] = applying
+	withdrawn := authorization.WithDecision(ctx, w.rel.ID(), authorization.Decision{ID: authorization.NewDecisionID(), Outcome: authorization.OutcomeAllow})
+
+	require.NoError(t, w.canceller.CancelWaitingDeployments(withdrawn, ada,
+		delivery.WaitingDeployments{OrganizationID: org, ReleaseID: w.rel.ID()}, "the release was withdrawn"))
+	assert.Equal(t, release.DeploymentCancelled, w.deployments[waiting.ID()].Status())
+	assert.Equal(t, []policy.Subject{{Type: delivery.SubjectDeployment, ID: waiting.ID()}}, w.approvals.cancelled)
+	assert.Equal(t, release.DeploymentApplying, w.deployments[applying.ID()].Status(), "a deployment already applying is left alone")
 }
 
 func TestRequestDeploymentsChecks(t *testing.T) {

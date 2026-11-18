@@ -664,6 +664,8 @@ func TestChangeApplication(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, got.Archived())
 		assert.Equal(t, delivery.EventApplicationArchived, w.lastAudit().Type)
+		assert.Equal(t, []delivery.WaitingDeployments{{OrganizationID: org, ApplicationID: app.ID()}}, w.waiting,
+			"its deployments awaiting approval are cancelled")
 
 		n := len(w.audit)
 		_, err = w.svc.ArchiveApplication(ctx, ada, org, app.ID())

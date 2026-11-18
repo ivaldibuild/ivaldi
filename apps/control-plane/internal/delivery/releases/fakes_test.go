@@ -64,6 +64,8 @@ func (s state) clone() state {
 // and the transactor. The recorders write into it through auditLog and
 // outboxLog.
 type store struct {
+	// waiting lists the Deployments awaiting approval asked to be cancelled.
+	waiting []delivery.WaitingDeployments
 	state
 	app       *delivery.Application
 	artifacts []*delivery.Artifact
@@ -88,6 +90,11 @@ type store struct {
 	lifecycle    *delivery.Lifecycle
 	environments []*delivery.Environment
 	placements   []*delivery.Placement
+}
+
+func (s *store) CancelWaitingDeployments(_ context.Context, _ identity.Actor, w delivery.WaitingDeployments, _ string) error {
+	s.waiting = append(s.waiting, w)
+	return nil
 }
 
 func (s *store) WithinTx(ctx context.Context, fn func(context.Context) error) error {
@@ -386,7 +393,7 @@ func (s *store) options(authz authorization.Authorizer) []ReleaseServiceOption {
 	return []ReleaseServiceOption{
 		WithBuildRepo(s), WithReleaseRepo(s), WithApplications(s), WithTagResolver(tagResolver{s}),
 		WithVariableSnapshots(s), WithCurrentVariables(s), WithTargetLookup(s), WithDeploymentLookup(s), WithLifecycles(s), WithEnvironments(s),
-		WithAuthorizer(authz), WithTransactor(s), WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
+		WithWaitingDeployments(s), WithAuthorizer(authz), WithTransactor(s), WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
 	}
 }
 

@@ -1,6 +1,9 @@
 package iam
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // Permissions are named "<resource>.<verb>", such as "environment.read" or
 // "grant.manage". Each capability declares the permissions it checks in its
@@ -73,4 +76,17 @@ func BuiltInRoleKey(roleID string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// BuiltInRoleIDsAllowing returns the IDs of the built-in roles that hold
+// permission, sorted.
+func BuiltInRoleIDsAllowing(permission string) []string {
+	var ids []string
+	for key, r := range builtInRoles {
+		if BuiltInRoleAllows(key, permission) {
+			ids = append(ids, r.id)
+		}
+	}
+	slices.Sort(ids)
+	return ids
 }

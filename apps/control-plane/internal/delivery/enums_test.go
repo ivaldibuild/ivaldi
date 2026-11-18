@@ -25,6 +25,9 @@ func enumTag(t *testing.T, v any, field string) []string {
 // or the clients generated from the API's description refuse real answers.
 func TestSnapshotEnumTagsMatchTheDomain(t *testing.T) {
 	assert.ElementsMatch(t, []Tier{TierDevelopment, TierStaging, TierProduction, TierOther}, toTier(enumTag(t, EnvironmentSnapshot{}, "Tier")))
+	assert.ElementsMatch(t, []Tier{TierDevelopment, TierStaging, TierProduction, TierOther}, toTier(enumTag(t, DeploymentApprovalSummary{}, "EnvironmentTier")))
+	assert.ElementsMatch(t, []string{string(DeploymentRollout), string(DeploymentRedeploy), string(DeploymentRollback)},
+		enumTag(t, DeploymentApprovalSummary{}, "Reason"))
 	kinds := []string{string(ArtifactContainerImage), string(ArtifactHelmChart), string(ArtifactArchive)}
 	assert.ElementsMatch(t, kinds, enumTag(t, ArtifactSnapshot{}, "ArtifactKind"))
 	assert.ElementsMatch(t, kinds, enumTag(t, BuildSnapshot{}, "ArtifactKind"))

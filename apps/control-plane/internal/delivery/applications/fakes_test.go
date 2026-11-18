@@ -60,6 +60,8 @@ func (s state) clone() state {
 // directory, and the Workspaces lookup, with the uniqueness rules the
 // migrations enforce. Its auditLog and outboxLog fake the recorders.
 type store struct {
+	// waiting lists the Deployments awaiting approval asked to be cancelled.
+	waiting []delivery.WaitingDeployments
 	state
 	workspaces map[string]*workspace.Workspace
 	projects   map[string]*workspace.Project
@@ -128,6 +130,11 @@ func must[T any](v T, err error) T {
 }
 
 type txKey struct{}
+
+func (s *store) CancelWaitingDeployments(_ context.Context, _ identity.Actor, w delivery.WaitingDeployments, _ string) error {
+	s.waiting = append(s.waiting, w)
+	return nil
+}
 
 func (s *store) WithinTx(ctx context.Context, fn func(context.Context) error) error {
 	saved := s.state.clone()
@@ -888,7 +895,7 @@ func (s *store) options(authz authorization.Authorizer) []ApplicationServiceOpti
 	return []ApplicationServiceOption{
 		WithApplicationRepo(s), WithLifecycleLookup(s), WithRegistryLookup(s), WithTargetLookup(s),
 		WithEnvironmentLookup(s), WithVariableUsage(s), WithVariableSet(s), WithVariableScopes(s),
-		WithProjectLookup(s), WithWorkspaces(s), WithSettingResolver(s), WithTeamDirectory(s), WithLocker(s), WithAuthorizer(authz),
+		WithProjectLookup(s), WithWorkspaces(s), WithSettingResolver(s), WithTeamDirectory(s), WithLocker(s), WithWaitingDeployments(s), WithAuthorizer(authz),
 		WithTransactor(s), WithOutboxRecorder(outboxLog{s}), WithAuditRecorder(auditLog{s}),
 	}
 }

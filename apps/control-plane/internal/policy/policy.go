@@ -29,6 +29,7 @@ import (
 // fails when the control plane starts.
 func init() {
 	id.MustRegister(SettingLock{}.Prefix(), "policy.SettingLock")
+	id.MustRegister(ApprovalRequest{}.Prefix(), "policy.ApprovalRequest")
 }
 
 // newRoot returns an aggregate's identity: storedID, a stored row's ID given

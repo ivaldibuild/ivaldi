@@ -93,6 +93,17 @@ func TestSnapshotJSONKeys(t *testing.T) {
 		{SettingLockSnapshot{}, []string{"id", "organization_id", "workspace_id", "level", "key", "locked_by_principal_id", "created_at"}},
 		{SettingLockAdded{}, []string{"setting_lock"}},
 		{SettingLockRemoved{}, []string{"setting_lock", "removed_by_principal_id"}},
+		{ApprovalRequestSnapshot{}, []string{
+			"id", "organization_id", "subject_type", "subject_id", "state", "decision_id", "rule", "reason",
+			"action", "permission", "resource_id", "proposal_digest", "summary", "read_resource_id", "owner_team_id",
+			"requested_by_principal_id", "session_id", "on_behalf_of_principal_id", "requirements",
+			"closed_by_principal_id", "closed_decision_id", "note", "closed_at", "created_at", "updated_at",
+		}},
+		{Requirement{}, []string{"permission", "resource_id", "resource_path"}},
+		{ApprovalRequestCreated{}, []string{"approval_request"}},
+		{ApprovalRequestApproved{}, []string{"approval_request"}},
+		{ApprovalRequestRejected{}, []string{"approval_request"}},
+		{ApprovalRequestCancelled{}, []string{"approval_request"}},
 	}
 	for _, tt := range tests {
 		b, err := json.Marshal(tt.value)

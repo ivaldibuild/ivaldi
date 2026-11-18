@@ -23,11 +23,8 @@ type authorized struct {
 
 var _ delivery.DeploymentService = (*authorized)(nil)
 
-func (a *authorized) decide(ctx context.Context, actor identity.Actor, permission, action, organizationID, resourceID string, proposal any) (authorization.Decision, error) {
-	d, err := a.authz.Authorize(ctx, authorization.Request{
-		Actor: actor, Permission: permission, OrganizationID: organizationID,
-		ResourceID: resourceID, Action: action, Proposal: proposal,
-	})
+func (a *authorized) decide(ctx context.Context, req authorization.Request) (authorization.Decision, error) {
+	d, err := a.authz.Authorize(ctx, req)
 	if err != nil {
 		return authorization.Decision{}, err
 	}
@@ -65,7 +62,7 @@ func (a *authorized) RequestDeployments(ctx context.Context, actor identity.Acto
 		if err != nil {
 			return nil, err
 		}
-		d, err := a.decide(ctx, actor, delivery.PermissionDeploymentCreate, delivery.ActionDeploymentCreate, in.OrganizationID, target.EnvironmentID(), in)
+		d, err := a.decide(ctx, deploymentCreateRequest(actor, in, target.EnvironmentID()))
 		if err != nil {
 			return nil, err
 		}

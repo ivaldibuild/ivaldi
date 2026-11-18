@@ -477,16 +477,23 @@ const approvalRequestPrefix = "apr"
 
 // WaitFor records the approval request a new Deployment awaiting approval
 // waits for. The request is opened for the Deployment's ID, so this comes
-// after the Deployment is built and before it is saved; it records no event
-// of its own, since the request's created event names the Deployment.
+// after the Deployment is built and before it is saved, and the created
+// event it already recorded is brought up to date rather than followed by
+// another.
 func (d *Deployment) WaitFor(approvalRequestID string) error {
-	if d.status != release.DeploymentAwaitingApproval || d.approvalRequestID != nil {
+	if !d.IsNew() || d.status != release.DeploymentAwaitingApproval || d.approvalRequestID != nil {
 		return fmt.Errorf("%w: deployment %s is %s and cannot wait for another approval", ErrDeploymentStatus, d.ID(), d.status)
 	}
 	if !id.Valid(approvalRequestPrefix, approvalRequestID) {
 		return NewErrInvalidInput(fmt.Sprintf("%q is not an approval request ID", approvalRequestID))
 	}
 	d.approvalRequestID = &approvalRequestID
+	for _, e := range d.PullEvents() {
+		if _, created := e.(DeploymentCreated); created {
+			e = DeploymentCreated{d.Snapshot()}
+		}
+		d.RecordEvent(e)
+	}
 	return nil
 }
 

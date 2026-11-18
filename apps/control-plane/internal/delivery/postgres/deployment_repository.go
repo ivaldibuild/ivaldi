@@ -30,6 +30,7 @@ type deploymentEntity struct {
 	WorkItemID           *string    `gorm:"column:work_item_id"`
 	ExternalRef          []byte     `gorm:"column:external_ref;type:jsonb"`
 	PolicyDecisionID     *string    `gorm:"column:policy_decision_id"`
+	ApprovalRequestID    *string    `gorm:"column:approval_request_id"`
 	VariableSnapshotID   *string    `gorm:"column:variable_snapshot_id"`
 	SecretVersions       []byte     `gorm:"column:secret_versions;type:jsonb"`
 	SecretPaths          []byte     `gorm:"column:secret_paths;type:jsonb"`
@@ -109,7 +110,7 @@ func deploymentToPersistence(d *delivery.Deployment) (*deploymentEntity, error) 
 		EnvironmentID: s.EnvironmentID, TargetID: s.TargetID, Source: string(s.Source), Reason: string(s.Reason),
 		Status: string(s.Status), PreviousDeploymentID: s.PreviousDeploymentID,
 		InitiatedBy: s.InitiatedByPrincipalID, SessionID: s.SessionID, WorkItemID: s.WorkItemID,
-		ExternalRef: s.ExternalRef, PolicyDecisionID: s.PolicyDecisionID, VariableSnapshotID: s.VariableSnapshotID, SecretVersions: secretVersions,
+		ExternalRef: s.ExternalRef, PolicyDecisionID: s.PolicyDecisionID, ApprovalRequestID: s.ApprovalRequestID, VariableSnapshotID: s.VariableSnapshotID, SecretVersions: secretVersions,
 		SecretPaths: secretPaths, RestoresDeploymentID: s.RestoresDeploymentID, SecretsLatest: s.SecretsLatest, Findings: findings,
 		RequestedAt: s.RequestedAt, StartedAt: s.StartedAt, FinishedAt: s.FinishedAt, SucceededAt: s.SucceededAt,
 		StatusChangedAt: s.StatusChangedAt, CreatedAt: s.CreatedAt, UpdatedAt: s.UpdatedAt,
@@ -141,7 +142,7 @@ func deploymentToDomain(e *deploymentEntity) (*delivery.Deployment, error) {
 		Reason: delivery.DeploymentReason(e.Reason), Status: release.DeploymentStatus(e.Status),
 		PreviousDeploymentID: e.PreviousDeploymentID, InitiatedByPrincipalID: e.InitiatedBy,
 		SessionID: e.SessionID, WorkItemID: e.WorkItemID, ExternalRef: e.ExternalRef,
-		PolicyDecisionID: e.PolicyDecisionID, VariableSnapshotID: e.VariableSnapshotID, SecretVersions: secretVersions, SecretPaths: secretPaths,
+		PolicyDecisionID: e.PolicyDecisionID, ApprovalRequestID: e.ApprovalRequestID, VariableSnapshotID: e.VariableSnapshotID, SecretVersions: secretVersions, SecretPaths: secretPaths,
 		RestoresDeploymentID: e.RestoresDeploymentID, SecretsLatest: e.SecretsLatest, Findings: findings, RequestedAt: utc(e.RequestedAt),
 		StartedAt: utcPtr(e.StartedAt), FinishedAt: utcPtr(e.FinishedAt), SucceededAt: utcPtr(e.SucceededAt),
 		StatusChangedAt: utc(e.StatusChangedAt), CreatedAt: utc(e.CreatedAt), UpdatedAt: utc(e.UpdatedAt),

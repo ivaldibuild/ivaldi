@@ -79,6 +79,7 @@ type Deployment struct {
 	workItemID           *string
 	externalRef          json.RawMessage
 	policyDecisionID     *string
+	approvalRequestID    *string
 	variableSnapshotID   *string
 	secretVersions       []SecretVersion
 	secretPaths          map[string]string
@@ -113,6 +114,9 @@ type DeploymentSnapshot struct {
 	WorkItemID             *string                  `json:"work_item_id"`
 	ExternalRef            json.RawMessage          `json:"external_ref"`
 	PolicyDecisionID       *string                  `json:"policy_decision_id"`
+	// ApprovalRequestID is the policy approval request the Deployment
+	// waited for, if it needed one.
+	ApprovalRequestID *string `json:"approval_request_id"`
 	// VariableSnapshotID is the revision of the Release's variables an
 	// executed Deployment was requested with.
 	VariableSnapshotID *string `json:"variable_snapshot_id"`
@@ -176,6 +180,7 @@ type NewDeploymentProps struct {
 	WorkItemID             *string
 	ExternalRef            json.RawMessage
 	PolicyDecisionID       *string
+	ApprovalRequestID      *string
 	VariableSnapshotID     *string
 	SecretVersions         []SecretVersion
 	SecretPaths            map[string]string
@@ -270,6 +275,9 @@ func NewDeployment(props NewDeploymentProps, deploymentID *string) (*Deployment,
 	if props.PolicyDecisionID != nil && !id.Valid(authorization.DecisionPrefix, *props.PolicyDecisionID) {
 		return nil, NewErrInvalidInput(fmt.Sprintf("%q is not a decision ID", *props.PolicyDecisionID))
 	}
+	if props.ApprovalRequestID != nil && !id.Valid(approvalRequestPrefix, *props.ApprovalRequestID) {
+		return nil, NewErrInvalidInput(fmt.Sprintf("%q is not an approval request ID", *props.ApprovalRequestID))
+	}
 	if len(props.ExternalRef) > 0 && !json.Valid(props.ExternalRef) {
 		return nil, NewErrInvalidInput("external reference must be valid JSON")
 	}
@@ -297,6 +305,7 @@ func NewDeployment(props NewDeploymentProps, deploymentID *string) (*Deployment,
 		workItemID:           optional.OfPtr(props.WorkItemID),
 		externalRef:          append(json.RawMessage(nil), props.ExternalRef...),
 		policyDecisionID:     optional.OfPtr(props.PolicyDecisionID),
+		approvalRequestID:    optional.OfPtr(props.ApprovalRequestID),
 		variableSnapshotID:   optional.OfPtr(props.VariableSnapshotID),
 		secretVersions:       slices.Clone(props.SecretVersions),
 		secretPaths:          maps.Clone(props.SecretPaths),
@@ -360,6 +369,7 @@ func (d *Deployment) Reason() DeploymentReason         { return d.reason }
 func (d *Deployment) Status() release.DeploymentStatus { return d.status }
 func (d *Deployment) PreviousDeploymentID() *string    { return copyString(d.previousDeploymentID) }
 func (d *Deployment) PolicyDecisionID() *string        { return copyString(d.policyDecisionID) }
+func (d *Deployment) ApprovalRequestID() *string       { return copyString(d.approvalRequestID) }
 func (d *Deployment) VariableSnapshotID() *string      { return copyString(d.variableSnapshotID) }
 
 func (d *Deployment) RestoresDeploymentID() *string { return copyString(d.restoresDeploymentID) }
@@ -425,7 +435,7 @@ func (d *Deployment) Snapshot() DeploymentSnapshot {
 		Status: d.status, PreviousDeploymentID: copyString(d.previousDeploymentID),
 		InitiatedByPrincipalID: copyString(d.initiatedBy), SessionID: copyString(d.sessionID),
 		WorkItemID: copyString(d.workItemID), ExternalRef: append(json.RawMessage(nil), d.externalRef...),
-		PolicyDecisionID: copyString(d.policyDecisionID), VariableSnapshotID: copyString(d.variableSnapshotID), SecretVersions: d.SecretVersions(),
+		PolicyDecisionID: copyString(d.policyDecisionID), ApprovalRequestID: copyString(d.approvalRequestID), VariableSnapshotID: copyString(d.variableSnapshotID), SecretVersions: d.SecretVersions(),
 		SecretPaths:          d.SecretPaths(),
 		RestoresDeploymentID: copyString(d.restoresDeploymentID), SecretsLatest: d.secretsLatest,
 		Findings:    slices.Clone(d.findings),
@@ -460,6 +470,37 @@ func (d *Deployment) MoveTo(status release.DeploymentStatus) error {
 	}
 	d.RecordEvent(DeploymentStatusChanged{Deployment: d.Snapshot(), PreviousStatus: previous})
 	return nil
+}
+
+// approvalRequestPrefix starts the IDs of policy's approval requests.
+const approvalRequestPrefix = "apr"
+
+// WaitFor records the approval request a new Deployment awaiting approval
+// waits for. The request is opened for the Deployment's ID, so this comes
+// after the Deployment is built and before it is saved; it records no event
+// of its own, since the request's created event names the Deployment.
+func (d *Deployment) WaitFor(approvalRequestID string) error {
+	if d.status != release.DeploymentAwaitingApproval || d.approvalRequestID != nil {
+		return fmt.Errorf("%w: deployment %s is %s and cannot wait for another approval", ErrDeploymentStatus, d.ID(), d.status)
+	}
+	if !id.Valid(approvalRequestPrefix, approvalRequestID) {
+		return NewErrInvalidInput(fmt.Sprintf("%q is not an approval request ID", approvalRequestID))
+	}
+	d.approvalRequestID = &approvalRequestID
+	return nil
+}
+
+// Approve moves a Deployment awaiting approval to applying, recording the
+// decision that approved it, which names the approver.
+func (d *Deployment) Approve(decisionID string) error {
+	if d.status != release.DeploymentAwaitingApproval {
+		return fmt.Errorf("%w: deployment %s is %s, not awaiting approval", ErrDeploymentStatus, d.ID(), d.status)
+	}
+	if !id.Valid(authorization.DecisionPrefix, decisionID) {
+		return NewErrInvalidInput(fmt.Sprintf("%q is not a decision ID", decisionID))
+	}
+	d.policyDecisionID = &decisionID
+	return d.MoveTo(release.DeploymentApplying)
 }
 
 func deploymentFinished(status release.DeploymentStatus) bool {

@@ -39,6 +39,7 @@ import (
 	orchestrationpg "github.com/ivaldibuild/ivaldi-control-plane/internal/orchestration/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/outbox"
 	outboxpg "github.com/ivaldibuild/ivaldi-control-plane/internal/outbox/postgres"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/policy"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/provenance"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/team"
 	teampg "github.com/ivaldibuild/ivaldi-control-plane/internal/team/postgres"
@@ -73,7 +74,11 @@ type app struct {
 	install    *bootstrap.Installation
 	authz      authorization.Authorizer
 	audit      audit.Recorder
-	teams      team.Directory
+	// approvals opens and cancels approval requests for the capabilities
+	// whose subjects wait, which register in approvalSubjects.
+	approvals        policy.Approvals
+	approvalSubjects *policy.Subjects
+	teams            team.Directory
 	// settingDefs, settingLocks, and settingResolver are shared by the
 	// capabilities that define, lock, and read settings.
 	settingDefs     *workspace.Definitions
@@ -280,6 +285,9 @@ func wire(ctx context.Context, cfg *config.Config, version string, logger loggin
 		return nil, nil, err
 	}
 	if err := a.wireDelivery(cfg.Runners); err != nil {
+		return nil, nil, err
+	}
+	if err := a.wireApprovals(); err != nil {
 		return nil, nil, err
 	}
 	if err := a.wireWorkspace(); err != nil {

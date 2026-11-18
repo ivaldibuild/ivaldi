@@ -390,6 +390,24 @@ type AccessRepository interface {
 	Access(ctx context.Context, q AccessQuery) (Access, error)
 }
 
+// HeldResourceReader finds where a principal holds a permission.
+type HeldResourceReader interface {
+	// HeldResources returns the resources on which the principal, or a
+	// group it is in, has an unexpired grant of a role that includes the
+	// permission, leaving out archived resources. The permission also
+	// applies beneath each one. It does not check that the principal or
+	// the Organization is active.
+	HeldResources(ctx context.Context, q HeldResourcesQuery) ([]string, error)
+}
+
+// AgentSessionRepository reads agent Sessions. Orchestration will create
+// them; nothing writes them yet.
+type AgentSessionRepository interface {
+	// Get returns the agent Session whose principal is principalID, revoked
+	// or not, or ErrNotFound.
+	Get(ctx context.Context, organizationID, principalID string) (*AgentSession, error)
+}
+
 type GrantRepository interface {
 	// ExistsForRole reports whether anyone holds the role on the resource,
 	// such as whether an Organization has an owner.

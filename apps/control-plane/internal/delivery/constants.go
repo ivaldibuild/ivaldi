@@ -280,6 +280,8 @@ const (
 	EventDeploymentRequested     = "deployment.requested"
 	EventDeploymentObserved      = "deployment.observed"
 	EventDeploymentCancelled     = "deployment.cancelled"
+	EventDeploymentApproved      = "deployment.approved"
+	EventDeploymentRejected      = "deployment.rejected"
 	EventDeploymentFinished      = "deployment.finished"
 	EventDeploymentFailed        = "deployment.failed"
 	EventDeploymentSuperseded    = "deployment.superseded"

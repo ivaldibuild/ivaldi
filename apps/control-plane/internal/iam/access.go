@@ -29,3 +29,14 @@ type Access struct {
 	// resource do not count, but grants on its active ancestors do.
 	RoleIDs []string
 }
+
+// HeldResourcesQuery asks on which resources a principal holds a
+// permission, such as to list what it may decide without checking each
+// item in turn.
+type HeldResourcesQuery struct {
+	OrganizationID string
+	PrincipalID    string
+	Permission     string
+	// At is the time grants must not have expired by.
+	At time.Time
+}

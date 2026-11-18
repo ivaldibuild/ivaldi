@@ -97,6 +97,7 @@ type options struct {
 	settings     workspace.SettingResolver
 	teams        team.Directory
 	locker       transaction.Locker
+	waiting      delivery.WaitingDeploymentCanceller
 	authz        authorization.Authorizer
 	writer       change.Writer
 }
@@ -157,6 +158,12 @@ func WithSettingResolver(r workspace.SettingResolver) ApplicationServiceOption {
 func WithTeamDirectory(t team.Directory) ApplicationServiceOption {
 	return func(o *options) { o.teams = t }
 }
+
+// WithWaitingDeployments cancels the Deployments awaiting approval that
+// archiving an Application stops from ever being applied, with their approval requests.
+func WithWaitingDeployments(w delivery.WaitingDeploymentCanceller) ApplicationServiceOption {
+	return func(o *options) { o.waiting = w }
+}
 func WithAuthorizer(a authorization.Authorizer) ApplicationServiceOption {
 	return func(o *options) { o.authz = a }
 }
@@ -198,6 +205,7 @@ func NewApplicationService(opts ...ApplicationServiceOption) (delivery.Applicati
 		{"SettingResolver", o.settings != nil},
 		{"TeamDirectory", o.teams != nil},
 		{"Locker", o.locker != nil},
+		{"WaitingDeployments", o.waiting != nil},
 		{"Authorizer", o.authz != nil},
 	}
 	for _, r := range required {
@@ -222,6 +230,7 @@ func NewApplicationService(opts ...ApplicationServiceOption) (delivery.Applicati
 		settings:     o.settings,
 		teams:        o.teams,
 		locker:       o.locker,
+		waiting:      o.waiting,
 		w:            o.writer,
 	}
 	return &authorized{next: s, authz: o.authz, applications: o.applications}, nil
@@ -244,6 +253,7 @@ type service struct {
 	settings     workspace.SettingResolver
 	teams        team.Directory
 	locker       transaction.Locker
+	waiting      delivery.WaitingDeploymentCanceller
 	w            change.Writer
 }
 
@@ -474,9 +484,13 @@ func (s *service) TransferApplication(ctx context.Context, actor identity.Actor,
 // they cannot be changed. Archiving an archived one does nothing.
 func (s *service) ArchiveApplication(ctx context.Context, actor identity.Actor, organizationID, applicationID string) (*delivery.Application, error) {
 	return s.changeApplication(ctx, actor, organizationID, applicationID, delivery.EventApplicationArchived, nil,
-		func(_ context.Context, a *delivery.Application) error {
+		func(ctx context.Context, a *delivery.Application) error {
 			if a.Archived() {
 				return change.ErrUnchanged
+			}
+			waiting := delivery.WaitingDeployments{OrganizationID: organizationID, ApplicationID: a.ID()}
+			if err := s.waiting.CancelWaitingDeployments(ctx, actor, waiting, "the application was archived"); err != nil {
+				return err
 			}
 			a.Archive()
 			return nil

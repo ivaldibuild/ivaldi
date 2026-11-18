@@ -3,7 +3,9 @@ package server
 import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
 	deliverypg "github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/postgres"
+	iampg "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/policy"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/policy/approvals"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/policy/locks"
 	policypg "github.com/ivaldibuild/ivaldi-control-plane/internal/policy/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/workspace"
@@ -43,5 +45,25 @@ func (a *app) wireSettings() error {
 		return err
 	}
 	a.services.settingLocks = lockSvc
+	return nil
+}
+
+// wireApprovals serves approval requests. It runs after the capabilities
+// whose subjects wait for approval have registered them.
+func (a *app) wireApprovals() error {
+	svc, err := approvals.NewService(
+		approvals.WithApprovalRequestRepo(policypg.NewApprovalRequestRepository(a.db)),
+		approvals.WithSubjects(a.approvalSubjects),
+		approvals.WithHeldResources(iampg.NewHeldResourceReader(a.db)),
+		approvals.WithAgentSessions(iampg.NewAgentSessionRepository(a.db)),
+		approvals.WithAuthorizer(a.authz),
+		approvals.WithTransactor(a.tx),
+		approvals.WithOutboxRecorder(a.outbox),
+		approvals.WithAuditRecorder(a.audit),
+	)
+	if err != nil {
+		return err
+	}
+	a.services.approvals = svc
 	return nil
 }

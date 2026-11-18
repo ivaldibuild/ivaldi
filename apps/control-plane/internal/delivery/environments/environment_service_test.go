@@ -432,6 +432,8 @@ func TestTargetChanges(t *testing.T) {
 			assert.True(t, got.Archived())
 		}
 		assert.Equal(t, []string{delivery.EventTargetArchived}, w.auditTypes())
+		assert.Equal(t, []delivery.WaitingDeployments{{OrganizationID: org, TargetID: tg.ID()}}, w.waiting,
+			"its deployments awaiting approval are cancelled once")
 	})
 
 	t.Run("archive reads the target locked, so a save cannot slip past it", func(t *testing.T) {

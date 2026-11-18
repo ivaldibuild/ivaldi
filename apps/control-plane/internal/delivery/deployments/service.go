@@ -18,6 +18,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/change"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/outbox"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/policy"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/provenance"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/binding"
@@ -48,6 +49,7 @@ type options struct {
 	stores       delivery.SecretStores
 	history      vcs.History
 	changes      provenance.Lookup
+	approvals    policy.Approvals
 	authz        authorization.Authorizer
 	writer       change.Writer
 	// heartbeat is how often a Cluster's agent must report; capabilities go
@@ -114,6 +116,12 @@ func WithCommitHistory(h vcs.History) ServiceOption {
 func WithChanges(l provenance.Lookup) ServiceOption {
 	return func(o *options) { o.changes = l }
 }
+
+// WithApprovals opens and cancels the approval requests Deployments that
+// need approval wait for.
+func WithApprovals(a policy.Approvals) ServiceOption {
+	return func(o *options) { o.approvals = a }
+}
 func WithAuthorizer(a authorization.Authorizer) ServiceOption {
 	return func(o *options) { o.authz = a }
 }
@@ -130,6 +138,33 @@ func WithAuditRecorder(r audit.Recorder) ServiceOption {
 // NewService returns the DeploymentService, authorizing every operation, or
 // an error naming a missing dependency.
 func NewService(opts ...ServiceOption) (delivery.DeploymentService, error) {
+	s, err := newService(opts)
+	if err != nil {
+		return nil, err
+	}
+	return &authorized{next: s, authz: s.authz, releases: s.releases,
+		targets: s.targets, applications: s.applications, deployments: s.deployments}, nil
+}
+
+// NewApprovalHandler returns the handler policy calls when a Deployment's
+// approval request is decided, built from the same options as NewService.
+// Register it as delivery.SubjectDeployment.
+func NewApprovalHandler(opts ...ServiceOption) (policy.SubjectHandler, error) {
+	s, err := newService(opts)
+	if err != nil {
+		return nil, err
+	}
+	return &approvalHandler{service: s}, nil
+}
+
+// NewWaitingDeploymentCanceller returns what cancels Deployments awaiting
+// approval that can no longer be applied, built from the same options as
+// NewService.
+func NewWaitingDeploymentCanceller(opts ...ServiceOption) (delivery.WaitingDeploymentCanceller, error) {
+	return newService(opts)
+}
+
+func newService(opts []ServiceOption) (*service, error) {
 	var o options
 	for _, opt := range opts {
 		opt(&o)
@@ -151,6 +186,7 @@ func NewService(opts ...ServiceOption) (delivery.DeploymentService, error) {
 		{"SecretStores", o.stores != nil},
 		{"HeartbeatInterval", o.heartbeat > 0},
 		{"CommitHistory", o.history != nil},
+		{"Approvals", o.approvals != nil},
 		{"Authorizer", o.authz != nil},
 	}
 	for _, r := range required {
@@ -161,8 +197,7 @@ func NewService(opts ...ServiceOption) (delivery.DeploymentService, error) {
 	if err := o.writer.Check(); err != nil {
 		return nil, fmt.Errorf("deployment service: %w", err)
 	}
-	return &authorized{next: &service{options: o}, authz: o.authz, releases: o.releases,
-		targets: o.targets, applications: o.applications, deployments: o.deployments}, nil
+	return &service{options: o}, nil
 }
 
 type service struct {
@@ -236,13 +271,18 @@ func (s *service) RequestDeployments(ctx context.Context, actor identity.Actor, 
 			if err := s.fixSecretPaths(ctx, d, rel, plan); err != nil {
 				return err
 			}
+			dctx := authorization.WithDecision(ctx, d.ID(), decision)
+			if status == release.DeploymentAwaitingApproval {
+				if err := s.awaitApproval(dctx, actor, in, rel, plan, d, decision); err != nil {
+					return err
+				}
+			}
 			if err := s.deployments.CreateDeployment(ctx, d); err != nil {
 				return err
 			}
 			if err := s.appendStatusEvent(ctx, d, nil, nil, nil); err != nil {
 				return err
 			}
-			dctx := authorization.WithDecision(ctx, d.ID(), decision)
 			if err := s.writer.Events(dctx, delivery.AggregateDeployment, d.ID(), d); err != nil {
 				return err
 			}
@@ -260,6 +300,48 @@ func (s *service) RequestDeployments(ctx context.Context, actor identity.Actor, 
 		return nil, err
 	}
 	return out, nil
+}
+
+// awaitApproval opens the approval request a new Deployment waits for and
+// records it on the Deployment. Deciding it needs the access requesting it
+// did: deployment.create on the Environment and application.read on the
+// Project, where the request is also read.
+func (s *service) awaitApproval(ctx context.Context, actor identity.Actor, in delivery.RequestDeploymentsInput,
+	rel *delivery.Release, p *plan, d *delivery.Deployment, decision authorization.Decision) error {
+	projectID := p.application.ProjectID()
+	r, err := s.approvals.Open(ctx, policy.OpenApprovalInput{
+		Subject:  deploymentSubject(d),
+		Request:  deploymentCreateRequest(actor, in, d.EnvironmentID()),
+		Decision: decision,
+		Requirements: []policy.Requirement{
+			{Permission: delivery.PermissionDeploymentCreate, ResourceID: d.EnvironmentID()},
+			{Permission: delivery.PermissionApplicationRead, ResourceID: projectID},
+		},
+		ReadResourceID: projectID,
+		OwnerTeamID:    optional.Of(p.application.OwnerTeamID()),
+		Summary: delivery.DeploymentApprovalSummary{
+			ApplicationID: d.ApplicationID(), ReleaseID: rel.ID(), ReleaseVersion: rel.Version(),
+			EnvironmentID: d.EnvironmentID(), EnvironmentTier: p.environment.Tier(), TargetID: d.TargetID(),
+			Reason: d.Reason(), RestoresDeploymentID: d.RestoresDeploymentID(), SecretsLatest: d.SecretsLatest(),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("open the approval request for deployment %s: %w", d.ID(), err)
+	}
+	return d.WaitFor(r.ID())
+}
+
+func deploymentSubject(d *delivery.Deployment) policy.Subject {
+	return policy.Subject{Type: delivery.SubjectDeployment, ID: d.ID()}
+}
+
+// deploymentCreateRequest is the authorization request for deploying to
+// an Environment. The approval request a Deployment waits for records it.
+func deploymentCreateRequest(actor identity.Actor, in delivery.RequestDeploymentsInput, environmentID string) authorization.Request {
+	return authorization.Request{
+		Actor: actor, Permission: delivery.PermissionDeploymentCreate, OrganizationID: in.OrganizationID,
+		ResourceID: environmentID, Action: delivery.ActionDeploymentCreate, Proposal: in,
+	}
 }
 
 func (s *service) GetDeployment(ctx context.Context, _ identity.Actor, organizationID, deploymentID string) (*delivery.DeploymentDetail, error) {
@@ -289,32 +371,99 @@ func (s *service) CancelDeployment(ctx context.Context, actor identity.Actor, or
 	var d *delivery.Deployment
 	err := s.writer.Tx.WithinTx(ctx, func(ctx context.Context) error {
 		var err error
-		d, err = s.deployments.GetDeploymentForUpdate(ctx, organizationID, deploymentID)
-		if err != nil {
+		if d, err = s.deployments.GetDeploymentForUpdate(ctx, organizationID, deploymentID); err != nil {
 			return err
 		}
-		before := d.Snapshot()
-		if err := d.MoveTo(release.DeploymentCancelled); err != nil {
-			return err
-		}
-		if err := s.deployments.UpdateDeployment(ctx, d); err != nil {
-			return err
-		}
-		if err := s.appendStatusEvent(ctx, d, nil, nil, nil); err != nil {
-			return err
-		}
-		if err := s.writer.Events(ctx, delivery.AggregateDeployment, d.ID(), d); err != nil {
-			return err
-		}
-		return s.writer.AuditRecord(ctx, audit.Event{
-			Type: delivery.EventDeploymentCancelled, OrganizationID: organizationID, ResourceID: d.ID(),
-			Actor: actor, Before: before, After: d.Snapshot(),
-		})
+		return s.cancel(ctx, actor, d, "the deployment was cancelled")
 	})
 	if err != nil {
 		return nil, err
 	}
 	return s.detail(ctx, d)
+}
+
+// CancelWaitingDeployments cancels the Deployments awaiting approval that
+// w names, with their approval requests, under the decision the context
+// carries for what stopped them. One decided meanwhile is left alone.
+func (s *service) CancelWaitingDeployments(ctx context.Context, actor identity.Actor, w delivery.WaitingDeployments, note string) error {
+	decision, ok := authorization.DecisionFor(ctx, w.Cause())
+	if !ok {
+		return change.ErrUnauthorized
+	}
+	return s.writer.Tx.WithinTx(ctx, func(ctx context.Context) error {
+		ids, err := s.waitingDeploymentIDs(ctx, w)
+		if err != nil {
+			return err
+		}
+		for _, id := range ids {
+			d, err := s.deployments.GetDeploymentForUpdate(ctx, w.OrganizationID, id)
+			if err != nil {
+				return err
+			}
+			if d.Status() != release.DeploymentAwaitingApproval {
+				continue
+			}
+			if err := s.cancel(authorization.WithDecision(ctx, d.ID(), decision), actor, d, note); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (s *service) waitingDeploymentIDs(ctx context.Context, w delivery.WaitingDeployments) ([]string, error) {
+	q := delivery.ListDeploymentsQuery{
+		OrganizationID: w.OrganizationID, ApplicationID: w.ApplicationID, ReleaseID: w.ReleaseID, TargetID: w.TargetID,
+		Statuses: []release.DeploymentStatus{release.DeploymentAwaitingApproval},
+		Page:     pagination.Query{Limit: 100},
+	}
+	var ids []string
+	for {
+		page, err := s.deployments.ListDeployments(ctx, q)
+		if err != nil {
+			return nil, err
+		}
+		for _, d := range page.Items {
+			ids = append(ids, d.ID())
+		}
+		if !page.HasNext {
+			return ids, nil
+		}
+		q.Page.NextCursor = page.NextCursor
+	}
+}
+
+// cancel moves a locked Deployment to cancelled, with the approval request
+// it waits for, if any.
+func (s *service) cancel(ctx context.Context, actor identity.Actor, d *delivery.Deployment, note string) error {
+	before := d.Snapshot()
+	if err := d.MoveTo(release.DeploymentCancelled); err != nil {
+		return err
+	}
+	if before.Status == release.DeploymentAwaitingApproval && d.ApprovalRequestID() != nil {
+		if err := s.approvals.Cancel(ctx, actor, d.OrganizationID(), deploymentSubject(d), note); err != nil {
+			return err
+		}
+	}
+	return s.saveStatus(ctx, actor, d, before, delivery.EventDeploymentCancelled)
+}
+
+// saveStatus writes a Deployment whose status changed, with its timeline
+// entry, events, and audit record.
+func (s *service) saveStatus(ctx context.Context, actor identity.Actor, d *delivery.Deployment, before delivery.DeploymentSnapshot, eventType string) error {
+	if err := s.deployments.UpdateDeployment(ctx, d); err != nil {
+		return err
+	}
+	if err := s.appendStatusEvent(ctx, d, nil, nil, nil); err != nil {
+		return err
+	}
+	if err := s.writer.Events(ctx, delivery.AggregateDeployment, d.ID(), d); err != nil {
+		return err
+	}
+	return s.writer.AuditRecord(ctx, audit.Event{
+		Type: eventType, OrganizationID: d.OrganizationID(), ResourceID: d.ID(),
+		Actor: actor, Before: before, After: d.Snapshot(),
+	})
 }
 
 // ListClusterAssignments returns the active Deployments on any of the
@@ -820,6 +969,8 @@ func changeOf(sourceID string, commit vcs.Commit) delivery.ReleaseChange {
 type plan struct {
 	target      *delivery.Target
 	environment *delivery.Environment
+	application *delivery.Application
+	cluster     *delivery.Cluster
 	placement   *delivery.Placement
 	// variables is the revision of the Release's variables a Deployment
 	// would use; nil for a Release that has none.
@@ -832,6 +983,48 @@ type plan struct {
 }
 
 func (s *service) plan(ctx context.Context, organizationID string, rel *delivery.Release, targetID string) (*plan, error) {
+	p, err := s.preflight(ctx, organizationID, rel, targetID, nil)
+	if err != nil {
+		return nil, err
+	}
+	p.reason, p.restores, err = s.reasonFor(ctx, rel, p.placement, targetID)
+	if err != nil {
+		return nil, err
+	}
+	p.variables, err = s.variablesFor(ctx, rel, p.restores)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.checkVariables(ctx, p, rel); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+// recheck runs the deploy plan's checks again for a Deployment that waited
+// for approval. It checks the revision of variables the Deployment was
+// requested with, since that is what the approver was shown, and does not
+// count the Deployment itself as in flight.
+func (s *service) recheck(ctx context.Context, rel *delivery.Release, waiting *delivery.Deployment) (*plan, error) {
+	p, err := s.preflight(ctx, waiting.OrganizationID(), rel, waiting.TargetID(), waiting)
+	if err != nil {
+		return nil, err
+	}
+	if id := waiting.VariableSnapshotID(); id != nil {
+		if p.variables, err = s.variables.GetReleaseVariables(ctx, waiting.OrganizationID(), *id); err != nil {
+			return nil, err
+		}
+	}
+	if err := s.checkVariables(ctx, p, rel); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+// preflight loads the Target and checks everything about deploying the
+// Release there but its variables. A Deployment in flight on the Target
+// fails the plan, unless it is waiting, the one being checked again.
+func (s *service) preflight(ctx context.Context, organizationID string, rel *delivery.Release, targetID string, waiting *delivery.Deployment) (*plan, error) {
 	target, err := s.targets.GetTarget(ctx, organizationID, targetID)
 	if err != nil {
 		return nil, err
@@ -844,7 +1037,7 @@ func (s *service) plan(ctx context.Context, organizationID string, rel *delivery
 	if err != nil {
 		return nil, err
 	}
-	p := &plan{target: target, environment: environment}
+	p := &plan{target: target, environment: environment, application: app}
 	p.checks = append(p.checks,
 		check("release_published", rel.Status() == release.StatusPublished, "the release is not published"),
 		check("target_active", !target.Archived(), "the target is archived"),
@@ -867,18 +1060,18 @@ func (s *service) plan(ctx context.Context, organizationID string, rel *delivery
 			check("apply_config", placement.ApplyConfig() != nil, "the target has no apply config"),
 		)
 	}
-	cluster, err := s.clusters.GetCluster(ctx, organizationID, target.ClusterID())
+	p.cluster, err = s.clusters.GetCluster(ctx, organizationID, target.ClusterID())
 	if err != nil {
 		return nil, err
 	}
-	p.checks = append(p.checks, check("agent_assigned", cluster.AgentPrincipalID() != nil, "the target's cluster has no agent assigned"))
+	p.checks = append(p.checks, check("agent_assigned", p.cluster.AgentPrincipalID() != nil, "the target's cluster has no agent assigned"))
 	// Without an agent, agent_assigned already says why; agent_capable would
 	// only fail again for the same cause.
-	if cluster.AgentPrincipalID() != nil {
+	if p.cluster.AgentPrincipalID() != nil {
 		// Only a heartbeat refreshes capabilities, so a Cluster whose agent
 		// renews or reports but stops heartbeating is in contact yet stale.
 		capable, capableReason := false, "the cluster's agent has not reported recently"
-		if reported := cluster.LastReportedAt(); reported != nil && !clock.Now().After(reported.Add(3*s.heartbeat)) {
+		if reported := p.cluster.LastReportedAt(); reported != nil && !clock.Now().After(reported.Add(3*s.heartbeat)) {
 			capable = target.CanExecute()
 			if capable {
 				capableReason = ""
@@ -889,11 +1082,12 @@ func (s *service) plan(ctx context.Context, organizationID string, rel *delivery
 		p.checks = append(p.checks, check("agent_capable", capable, capableReason))
 	}
 	inFlight, err := s.deployments.GetInFlightDeployment(ctx, organizationID, rel.ApplicationID(), targetID)
-	if errors.Is(err, delivery.ErrNotFound) {
+	switch {
+	case errors.Is(err, delivery.ErrNotFound), err == nil && waiting != nil && inFlight.ID() == waiting.ID():
 		p.checks = append(p.checks, check("no_in_flight", true, ""))
-	} else if err != nil {
+	case err != nil:
 		return nil, err
-	} else {
+	default:
 		p.checks = append(p.checks, check("no_in_flight", false, "deployment "+inFlight.ID()+" is still in flight"))
 	}
 	position, err := s.lifecyclePosition(ctx, rel, target.EnvironmentID())
@@ -903,28 +1097,23 @@ func (s *service) plan(ctx context.Context, organizationID string, rel *delivery
 	p.checks = append(p.checks,
 		check("environment_in_lifecycle", position.inLifecycle, "the environment is not in the release channel's lifecycle"),
 		check("phase_open", position.open, position.reason))
-
-	p.reason, p.restores, err = s.reasonFor(ctx, rel, p.placement, targetID)
-	if err != nil {
-		return nil, err
-	}
-	p.variables, err = s.variablesFor(ctx, rel, p.restores)
-	if err != nil {
-		return nil, err
-	}
-	resolved := s.resolve(p.variables, rel, target)
-	if err := refusal(&p.checks, "variables_defined", delivery.CheckBindings(resolved)); err != nil {
-		return nil, err
-	}
-	stores, err := s.stores.LookupSecretStores(ctx, organizationID, delivery.SecretStoreIDs(resolved))
-	if err != nil {
-		return nil, fmt.Errorf("look up secret stores: %w", err)
-	}
-	allowed := delivery.CheckSecretStores(resolved, stores, target.EnvironmentID(), agentStoreKinds(cluster))
-	if err := refusal(&p.checks, "secret_stores_allowed", allowed); err != nil {
-		return nil, err
-	}
 	return p, nil
+}
+
+// checkVariables checks that the plan's revision of variables binds only
+// names with values, and reads secrets only from stores the Environment
+// and the cluster's agent may use.
+func (s *service) checkVariables(ctx context.Context, p *plan, rel *delivery.Release) error {
+	resolved := s.resolve(p.variables, rel, p.target)
+	if err := refusal(&p.checks, "variables_defined", delivery.CheckBindings(resolved)); err != nil {
+		return err
+	}
+	stores, err := s.stores.LookupSecretStores(ctx, rel.OrganizationID(), delivery.SecretStoreIDs(resolved))
+	if err != nil {
+		return fmt.Errorf("look up secret stores: %w", err)
+	}
+	allowed := delivery.CheckSecretStores(resolved, stores, p.target.EnvironmentID(), agentStoreKinds(p.cluster))
+	return refusal(&p.checks, "secret_stores_allowed", allowed)
 }
 
 // refusal adds a check that passes unless err says the input is invalid,

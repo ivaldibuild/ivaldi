@@ -561,6 +561,160 @@
         ],
         "type": "object"
       },
+      "ApprovalRequestView": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "can_decide": {
+            "type": "boolean"
+          },
+          "closed_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "closed_by_principal_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "closed_decision_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "decision_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "note": {
+            "nullable": true,
+            "type": "string"
+          },
+          "on_behalf_of_principal_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "organization_id": {
+            "type": "string"
+          },
+          "owner_team_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "permission": {
+            "type": "string"
+          },
+          "proposal_digest": {
+            "type": "string"
+          },
+          "read_resource_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "requested_by_principal_id": {
+            "type": "string"
+          },
+          "requirements": {
+            "items": {
+              "$ref": "#/components/schemas/Requirement"
+            },
+            "type": "array"
+          },
+          "resource_id": {
+            "type": "string"
+          },
+          "rule": {
+            "type": "string"
+          },
+          "session_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "approved",
+              "rejected",
+              "cancelled"
+            ],
+            "type": "string"
+          },
+          "subject_id": {
+            "type": "string"
+          },
+          "subject_type": {
+            "type": "string"
+          },
+          "summary": {
+            "description": "What approvers are shown, as the subject's capability described it",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DeploymentApprovalSummary"
+              }
+            ]
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "can_decide",
+          "id",
+          "organization_id",
+          "subject_type",
+          "subject_id",
+          "state",
+          "decision_id",
+          "rule",
+          "reason",
+          "action",
+          "permission",
+          "resource_id",
+          "proposal_digest",
+          "summary",
+          "read_resource_id",
+          "owner_team_id",
+          "requested_by_principal_id",
+          "session_id",
+          "on_behalf_of_principal_id",
+          "requirements",
+          "closed_by_principal_id",
+          "closed_decision_id",
+          "note",
+          "closed_at",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "ApproveRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ApproveRequestBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "note": {
+            "description": "Why it was approved",
+            "maxLength": 2000,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ArtifactChange": {
         "additionalProperties": false,
         "properties": {
@@ -2302,6 +2456,62 @@
         ],
         "type": "object"
       },
+      "DeploymentApprovalSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "application_id": {
+            "type": "string"
+          },
+          "environment_id": {
+            "type": "string"
+          },
+          "environment_tier": {
+            "enum": [
+              "development",
+              "staging",
+              "production",
+              "other"
+            ],
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "rollout",
+              "rollback",
+              "redeploy"
+            ],
+            "type": "string"
+          },
+          "release_id": {
+            "type": "string"
+          },
+          "release_version": {
+            "type": "string"
+          },
+          "restores_deployment_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "secrets_latest": {
+            "type": "boolean"
+          },
+          "target_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "application_id",
+          "release_id",
+          "release_version",
+          "environment_id",
+          "environment_tier",
+          "target_id",
+          "reason",
+          "restores_deployment_id",
+          "secrets_latest"
+        ],
+        "type": "object"
+      },
       "DeploymentAssignment": {
         "additionalProperties": false,
         "properties": {
@@ -2429,6 +2639,10 @@
         "additionalProperties": false,
         "properties": {
           "application_id": {
+            "type": "string"
+          },
+          "approval_request_id": {
+            "nullable": true,
             "type": "string"
           },
           "created_at": {
@@ -2574,6 +2788,7 @@
           "work_item_id",
           "external_ref",
           "policy_decision_id",
+          "approval_request_id",
           "variable_snapshot_id",
           "secret_versions",
           "restores_deployment_id",
@@ -4166,6 +4381,28 @@
         ],
         "type": "object"
       },
+      "RejectRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/RejectRequestBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "note": {
+            "description": "Why it was rejected, for the requester",
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "note"
+        ],
+        "type": "object"
+      },
       "Release": {
         "additionalProperties": false,
         "properties": {
@@ -4782,6 +5019,29 @@
         ],
         "type": "object"
       },
+      "Requirement": {
+        "additionalProperties": false,
+        "properties": {
+          "permission": {
+            "type": "string"
+          },
+          "resource_id": {
+            "type": "string"
+          },
+          "resource_path": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "permission",
+          "resource_id",
+          "resource_path"
+        ],
+        "type": "object"
+      },
       "Resolved": {
         "additionalProperties": false,
         "properties": {
@@ -5019,6 +5279,35 @@
           },
           "data": {
             "$ref": "#/components/schemas/ApplicationSnapshot",
+            "description": "Response payload, always present: an empty list is [], not omitted"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ResponseApprovalRequestView": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseApprovalRequestView.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ApprovalRequestView",
             "description": "Response payload, always present: an empty list is [], not omitted"
           },
           "message": {
@@ -6418,6 +6707,35 @@
         ],
         "type": "object"
       },
+      "ResponseResultApprovalRequestView": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ResponseResultApprovalRequestView.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ResultApprovalRequestView",
+            "description": "Response payload, always present: an empty list is [], not omitted"
+          },
+          "message": {
+            "description": "Human-readable message",
+            "type": "string"
+          },
+          "status": {
+            "description": "Request status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "type": "object"
+      },
       "ResponseResultChangeSnapshot": {
         "additionalProperties": false,
         "properties": {
@@ -7164,6 +7482,44 @@
           "items": {
             "items": {
               "$ref": "#/components/schemas/ApplicationSnapshot"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "nullable": true,
+            "type": "string"
+          },
+          "previous_cursor": {
+            "nullable": true,
+            "type": "string"
+          },
+          "total_count": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total_count",
+          "has_next",
+          "has_previous",
+          "next_cursor",
+          "previous_cursor"
+        ],
+        "type": "object"
+      },
+      "ResultApprovalRequestView": {
+        "additionalProperties": false,
+        "properties": {
+          "has_next": {
+            "type": "boolean"
+          },
+          "has_previous": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ApprovalRequestView"
             },
             "type": "array"
           },
@@ -11607,6 +11963,291 @@
         "summary": "Create a variable an Application deploys with",
         "tags": [
           "variables"
+        ]
+      }
+    },
+    "/v1/approvals": {
+      "get": {
+        "operationId": "list-approvals",
+        "parameters": [
+          {
+            "description": "Only requests in this state; pending by default",
+            "explode": false,
+            "in": "query",
+            "name": "state",
+            "schema": {
+              "description": "Only requests in this state; pending by default",
+              "enum": [
+                "pending",
+                "approved",
+                "rejected",
+                "cancelled"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only requests for this kind of subject, such as delivery.deployment",
+            "explode": false,
+            "in": "query",
+            "name": "subject_type",
+            "schema": {
+              "description": "Only requests for this kind of subject, such as delivery.deployment",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only requests routed to this Team",
+            "explode": false,
+            "in": "query",
+            "name": "owner_team_id",
+            "schema": {
+              "description": "Only requests routed to this Team",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Most items to return",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "Most items to return",
+              "format": "int64",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sort direction by when the request was opened; newest first by default",
+            "explode": false,
+            "in": "query",
+            "name": "sort_order",
+            "schema": {
+              "description": "Sort direction by when the request was opened; newest first by default",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Cursor from a previous page's next_cursor",
+            "explode": false,
+            "in": "query",
+            "name": "next_cursor",
+            "schema": {
+              "description": "Cursor from a previous page's next_cursor",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Cursor from a previous page's previous_cursor",
+            "explode": false,
+            "in": "query",
+            "name": "previous_cursor",
+            "schema": {
+              "description": "Cursor from a previous page's previous_cursor",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseResultApprovalRequestView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the approval requests you could decide",
+        "tags": [
+          "approvals"
+        ]
+      }
+    },
+    "/v1/approvals/{approval_id}": {
+      "get": {
+        "operationId": "get-approval",
+        "parameters": [
+          {
+            "description": "The approval request",
+            "in": "path",
+            "name": "approval_id",
+            "required": true,
+            "schema": {
+              "description": "The approval request",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseApprovalRequestView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get an approval request, and whether you could decide it",
+        "tags": [
+          "approvals"
+        ]
+      }
+    },
+    "/v1/approvals/{approval_id}/approve": {
+      "post": {
+        "operationId": "approve-approval",
+        "parameters": [
+          {
+            "description": "The approval request",
+            "in": "path",
+            "name": "approval_id",
+            "required": true,
+            "schema": {
+              "description": "The approval request",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseApprovalRequestView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Approve a pending request, which applies what waits for it",
+        "tags": [
+          "approvals"
+        ]
+      }
+    },
+    "/v1/approvals/{approval_id}/reject": {
+      "post": {
+        "operationId": "reject-approval",
+        "parameters": [
+          {
+            "description": "The approval request",
+            "in": "path",
+            "name": "approval_id",
+            "required": true,
+            "schema": {
+              "description": "The approval request",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseApprovalRequestView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Reject a pending request, saying why",
+        "tags": [
+          "approvals"
         ]
       }
     },

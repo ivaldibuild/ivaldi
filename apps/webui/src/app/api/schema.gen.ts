@@ -2735,6 +2735,7 @@ export interface components {
       subject_type: string;
       /** @description What approvers are shown, as the subject's capability described it */
       summary: components['schemas']['DeploymentApprovalSummary'];
+      title: string;
       /** Format: date-time */
       updated_at: string;
     };

@@ -481,7 +481,7 @@ func (f *fakeApprovals) Open(_ context.Context, in policy.OpenApprovalInput) (*p
 		requirements[i] = policy.Requirement{Permission: r.Permission, ResourceID: r.ResourceID, ResourcePath: []string{r.ResourceID}}
 	}
 	r, err := policy.NewApprovalRequest(policy.NewApprovalRequestProps{
-		OrganizationID: in.Request.OrganizationID, Subject: in.Subject, Decision: in.Decision,
+		OrganizationID: in.Request.OrganizationID, Subject: in.Subject, Title: in.Title, Decision: in.Decision,
 		Action: in.Request.Action, Permission: in.Request.Permission, ResourceID: in.Request.ResourceID,
 		ProposalDigest: strings.Repeat("0", 64), Summary: json.RawMessage(`{}`), ReadResourceID: in.ReadResourceID,
 		RequestedByPrincipalID: in.Request.Actor.PrincipalID, Requirements: requirements,
@@ -634,6 +634,7 @@ func TestRequestDeploymentsWaitsForApproval(t *testing.T) {
 	opened := w.approvals.opened[0]
 	subject := policy.Subject{Type: delivery.SubjectDeployment, ID: d.ID()}
 	assert.Equal(t, subject, opened.Subject)
+	assert.Equal(t, "Deploy API 1.0.0 to Production / Prod cluster", opened.Title)
 	assert.Equal(t, []policy.Requirement{
 		{Permission: delivery.PermissionDeploymentCreate, ResourceID: envID},
 		{Permission: delivery.PermissionApplicationRead, ResourceID: w.app.ProjectID()},
@@ -668,6 +669,18 @@ func TestAgentSessionDeploymentsWaitForApproval(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, release.DeploymentApplying, out[0].Status())
 	assert.Len(t, w.approvals.opened, 1, "a person's deployment opens no request")
+}
+
+// A title longer than an approval request allows is shortened, not refused:
+// display names alone can exceed it.
+func TestDeploymentTitleFitsAnApprovalRequest(t *testing.T) {
+	w := newWorld(t)
+	long := strings.Repeat("é", 255)
+	app := mustApplication(org, appID)
+	require.NoError(t, app.Update(delivery.UpdateApplicationProps{DisplayName: &long}))
+	title := []rune(deploymentTitle(app, w.rel, w.env, w.targets[targetID]))
+	assert.Len(t, title, policy.MaxTitleLength)
+	assert.Equal(t, '…', title[len(title)-1])
 }
 
 func TestApprovingADeployment(t *testing.T) {

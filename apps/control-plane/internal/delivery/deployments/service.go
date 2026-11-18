@@ -324,6 +324,7 @@ func (s *service) awaitApproval(ctx context.Context, actor identity.Actor, in de
 	projectID := p.application.ProjectID()
 	r, err := s.approvals.Open(ctx, policy.OpenApprovalInput{
 		Subject:  deploymentSubject(d),
+		Title:    deploymentTitle(p.application, rel, p.environment, p.target),
 		Request:  deploymentCreateRequest(actor, in, d.EnvironmentID()),
 		Decision: decision,
 		Requirements: []policy.Requirement{
@@ -342,6 +343,16 @@ func (s *service) awaitApproval(ctx context.Context, actor identity.Actor, in de
 		return fmt.Errorf("open the approval request for deployment %s: %w", d.ID(), err)
 	}
 	return d.WaitFor(r.ID())
+}
+
+// deploymentTitle names a Deployment in one line, such as "Deploy api 1.4.0
+// to Production / eu-west", shortened to fit an approval request's title.
+func deploymentTitle(app *delivery.Application, rel *delivery.Release, env *delivery.Environment, target *delivery.Target) string {
+	title := []rune(fmt.Sprintf("Deploy %s %s to %s / %s", app.DisplayName(), rel.Version(), env.DisplayName(), target.DisplayName()))
+	if len(title) > policy.MaxTitleLength {
+		title = append(title[:policy.MaxTitleLength-1], '…')
+	}
+	return string(title)
 }
 
 func deploymentSubject(d *delivery.Deployment) policy.Subject {

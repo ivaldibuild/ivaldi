@@ -134,6 +134,8 @@ type Approvals interface {
 // OpenApprovalInput describes a subject that waits for approval.
 type OpenApprovalInput struct {
 	Subject Subject
+	// Title names what waits in one line, at most MaxTitleLength characters.
+	Title string
 	// Request is the authorization request that waits, and Decision the
 	// authorizer's requires_approval answer to it.
 	Request  authorization.Request

@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"slices"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
@@ -29,6 +30,9 @@ const (
 func (s ApprovalState) Valid() bool {
 	return slices.Contains([]ApprovalState{ApprovalPending, ApprovalApproved, ApprovalRejected, ApprovalCancelled}, s)
 }
+
+// MaxTitleLength is the most characters a request's title may have.
+const MaxTitleLength = 255
 
 // Limits on what a request stores.
 const (
@@ -89,6 +93,7 @@ type ApprovalRequest struct {
 	aggregate.Root
 	organizationID         string
 	subject                Subject
+	title                  string
 	state                  ApprovalState
 	decisionID             string
 	rule                   string
@@ -115,11 +120,13 @@ type ApprovalRequest struct {
 // ApprovalRequestSnapshot is an ApprovalRequest's state as plain values,
 // for repositories, events, audit records, and the API.
 type ApprovalRequestSnapshot struct {
-	ID             string        `json:"id"`
-	OrganizationID string        `json:"organization_id"`
-	SubjectType    string        `json:"subject_type"`
-	SubjectID      string        `json:"subject_id"`
-	State          ApprovalState `json:"state" enum:"pending,approved,rejected,cancelled"`
+	ID             string `json:"id"`
+	OrganizationID string `json:"organization_id"`
+	SubjectType    string `json:"subject_type"`
+	SubjectID      string `json:"subject_id"`
+	// Title names what waits in one line, for lists and messages.
+	Title string        `json:"title"`
+	State ApprovalState `json:"state" enum:"pending,approved,rejected,cancelled"`
 	// DecisionID is the authorizer's requires_approval decision, and Rule
 	// and Reason are the rule behind it and why.
 	DecisionID string `json:"decision_id"`
@@ -157,6 +164,9 @@ type ApprovalRequestSnapshot struct {
 type NewApprovalRequestProps struct {
 	OrganizationID string
 	Subject        Subject
+	// Title names what waits in one line, such as "Deploy api 1.4.0 to
+	// Production / eu-west". The subject's capability writes it.
+	Title string
 	// Decision is the authorizer's requires_approval decision.
 	Decision authorization.Decision
 	// Action, Permission, ResourceID, and ProposalDigest describe the
@@ -199,6 +209,7 @@ func NewApprovalRequest(p NewApprovalRequestProps, requestID *string) (*Approval
 		Root:                   root,
 		organizationID:         p.OrganizationID,
 		subject:                p.Subject,
+		title:                  p.Title,
 		state:                  p.State,
 		decisionID:             p.Decision.ID,
 		rule:                   p.Decision.Rule,
@@ -236,6 +247,9 @@ func (p NewApprovalRequestProps) validate() error {
 	}
 	if err := p.Subject.validate(); err != nil {
 		return err
+	}
+	if p.Title == "" || utf8.RuneCountInString(p.Title) > MaxTitleLength {
+		return errorf("an approval request's title must be 1-%d characters", MaxTitleLength)
 	}
 	if p.State != "" && !p.State.Valid() {
 		return errorf("approval state %q must be pending, approved, rejected, or cancelled", p.State)
@@ -280,6 +294,7 @@ func (ApprovalRequest) Prefix() string { return "apr" }
 
 func (r *ApprovalRequest) OrganizationID() string         { return r.organizationID }
 func (r *ApprovalRequest) Subject() Subject               { return r.subject }
+func (r *ApprovalRequest) Title() string                  { return r.title }
 func (r *ApprovalRequest) State() ApprovalState           { return r.state }
 func (r *ApprovalRequest) DecisionID() string             { return r.decisionID }
 func (r *ApprovalRequest) Permission() string             { return r.permission }
@@ -306,6 +321,7 @@ func (r *ApprovalRequest) Snapshot() ApprovalRequestSnapshot {
 		OrganizationID:         r.organizationID,
 		SubjectType:            r.subject.Type,
 		SubjectID:              r.subject.ID,
+		Title:                  r.title,
 		State:                  r.state,
 		DecisionID:             r.decisionID,
 		Rule:                   r.rule,

@@ -41,6 +41,8 @@ func (a *app) wireAccess(logger logging.Logger) error {
 	grants, err := authorizer.New(
 		authorizer.WithAccessRepo(iampg.NewAccessRepository(a.db)),
 		authorizer.WithPlatformWorkloads(iampg.NewWorkloadRepository(a.db)),
+		authorizer.WithAgentSessions(iampg.NewAgentSessionRepository(a.db)),
+		authorizer.WithResourceAncestry(iampg.NewResourceRepository(a.db)),
 		authorizer.WithLogger(logger),
 	)
 	if err != nil {

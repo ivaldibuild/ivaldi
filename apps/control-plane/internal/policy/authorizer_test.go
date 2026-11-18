@@ -76,6 +76,7 @@ func TestAuthorizerAgentSessionRules(t *testing.T) {
 		{"cancelling a deployment does not", agent, "deployment.create", "deployment.cancel", authorization.OutcomeAllow, ""},
 		{"an agent session cannot grant access", agent, "grant.manage", "grant.create", authorization.OutcomeDeny, RuleAgentSessionAdministration},
 		{"nor mint API tokens", agent, "service_account.manage", "api_token.create", authorization.OutcomeDeny, RuleAgentSessionAdministration},
+		{"nor enrol a Cluster's agent", agent, "cluster.manage", "cluster.create_enrolment", authorization.OutcomeDeny, RuleAgentSessionAdministration},
 		{"a person can", ada, "grant.manage", "grant.create", authorization.OutcomeAllow, ""},
 	}
 	for _, tc := range cases {

@@ -49,6 +49,8 @@ const (
 // agentSessionAdministration holds the permissions no agent Session may
 // use: they change who holds access, mint credentials that outlive the
 // Session, govern credentials, or change the Organization itself.
+// cluster.manage mints a Cluster's enrolment token, which becomes an agent
+// credential that renews on its own.
 var agentSessionAdministration = map[string]bool{
 	"grant.manage":             true,
 	"owner.manage":             true,
@@ -61,6 +63,7 @@ var agentSessionAdministration = map[string]bool{
 	"billing.manage":           true,
 	"secret_store.manage":      true,
 	"connection.manage":        true,
+	"cluster.manage":           true,
 }
 
 // Aggregate types name the domain objects that raise events.

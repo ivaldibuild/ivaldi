@@ -72,18 +72,21 @@ func TestNotificationRepository(t *testing.T) {
 	require.NoError(t, repo.ResolveForSubject(ctx, org, notifications.KindApprovalRequested, notifications.SubjectApprovalRequest, "apr_1", t0))
 	assert.Equal(t, 1, unread(), "a resolved notification no longer counts")
 
+	// Loaded before they are read, as the email sender would have them.
+	owed, err := repo.ListPendingEmails(ctx, org, "evt_1")
+	require.NoError(t, err)
+	require.Len(t, owed, 2, "both of evt_1's notifications still owe an email")
+
 	got.MarkRead()
-	require.NoError(t, repo.UpdateNotification(ctx, got))
+	require.NoError(t, repo.SaveRead(ctx, got))
 	assert.Equal(t, 1, list(true))
 	require.NoError(t, repo.MarkAllRead(ctx, org, ada, t0))
 	assert.Equal(t, 0, list(true))
 	assert.Equal(t, 0, unread())
 
-	owed, err := repo.ListPendingEmails(ctx, org, "evt_1")
-	require.NoError(t, err)
-	require.Len(t, owed, 2, "both of evt_1's notifications still owe an email")
 	require.NoError(t, owed[0].EmailWasSent())
-	require.NoError(t, repo.UpdateNotification(ctx, owed[0]))
+	require.NoError(t, repo.SaveEmail(ctx, owed[0]))
+	assert.Equal(t, 0, list(true), "recording the email does not undo the read")
 	owed, err = repo.ListPendingEmails(ctx, org, "evt_1")
 	require.NoError(t, err)
 	assert.Len(t, owed, 1, "a sent email is no longer owed")

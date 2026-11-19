@@ -83,6 +83,35 @@ describe('InboxPage', () => {
     http.expectNone(`${v1}/notifications/ntf_2/read`);
   });
 
+  it('keeps the filter it shows when an earlier load answers late', async () => {
+    TestBed.configureTestingModule({
+      imports: [InboxPage],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: API_BASE_URL, useValue: 'https://cp.test' },
+      ],
+    });
+    http = TestBed.inject(HttpTestingController);
+    const fixture = TestBed.createComponent(InboxPage);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    http.expectOne(`${v1}/notifications/unread-count`).flush(ok({ count: 1 }));
+    const all = http.expectOne((r) => r.url.startsWith(`${v1}/notifications?`));
+
+    [...el.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Unread')!.click();
+    await settle(fixture);
+    http.expectOne((r) => r.urlWithParams.includes('unread=true')).flush(page([notification()]));
+    await settle(fixture);
+    all.flush(
+      page([notification(), notification({ id: 'ntf_2', read_at: '2026-11-19T08:00:00Z' })]),
+    );
+    await settle(fixture);
+
+    expect(el.querySelectorAll('ul[aria-label="Notifications"] li')).toHaveLength(1);
+  });
+
   it('marks them all read', async () => {
     const { fixture, el } = await render([notification()], 1);
 

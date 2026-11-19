@@ -113,9 +113,10 @@ func (w *world) GetNotification(context.Context, string, string) (*notifications
 	panic("unused")
 }
 
-// UpdateNotification has nothing to do: the stored notifications are the
-// ones the handler changed.
-func (w *world) UpdateNotification(context.Context, *notifications.Notification) error { return nil }
+// SaveRead and SaveEmail have nothing to do: the stored notifications are
+// the ones the handler changed.
+func (w *world) SaveRead(context.Context, *notifications.Notification) error  { return nil }
+func (w *world) SaveEmail(context.Context, *notifications.Notification) error { return nil }
 func (w *world) ListNotifications(context.Context, notifications.ListNotificationsQuery) (*pagination.Result[*notifications.Notification], error) {
 	panic("unused")
 }

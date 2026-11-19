@@ -8,7 +8,7 @@
         hlmBtn
         variant="outline"
         type="button"
-        [disabled]="markStatus.saving() || unread() === 0"
+        [disabled]="markStatus.saving() || !anyUnread()"
         (click)="markAllRead()"
       >
         @if (markStatus.saving()) {

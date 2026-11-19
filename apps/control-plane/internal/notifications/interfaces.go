@@ -20,9 +20,13 @@ type NotificationRepository interface {
 	CreateNotifications(ctx context.Context, ns []*Notification) error
 	// GetNotification returns a notification, or ErrNotFound.
 	GetNotification(ctx context.Context, organizationID, notificationID string) (*Notification, error)
-	// UpdateNotification writes when a notification was read, and whether
-	// its email was sent.
-	UpdateNotification(ctx context.Context, n *Notification) error
+	// SaveRead writes when a notification was read, unless it already was.
+	SaveRead(ctx context.Context, n *Notification) error
+	// SaveEmail writes whether a notification's email was sent, unless it
+	// no longer owes one. Each save writes only its own fields, so the
+	// recipient reading a notification and its email being sent never undo
+	// each other.
+	SaveEmail(ctx context.Context, n *Notification) error
 	// ListPendingEmails returns the event's notifications whose email is
 	// still owed.
 	ListPendingEmails(ctx context.Context, organizationID, eventID string) ([]*Notification, error)

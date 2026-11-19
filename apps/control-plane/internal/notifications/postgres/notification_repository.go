@@ -60,17 +60,18 @@ func (r *notificationRepository) GetNotification(ctx context.Context, organizati
 	return r.mapper.ToDomain(&e)
 }
 
-func (r *notificationRepository) UpdateNotification(ctx context.Context, n *notifications.Notification) error {
+func (r *notificationRepository) SaveRead(ctx context.Context, n *notifications.Notification) error {
 	e := r.mapper.ToPersistence(n)
-	res := r.conn(ctx).Model(&notificationEntity{}).Where("organization_id = ? AND id = ?", e.OrganizationID, e.ID).
-		Updates(map[string]any{"read_at": e.ReadAt, "email_status": e.EmailStatus, "emailed_at": e.EmailedAt})
-	if res.Error != nil {
-		return translate(res.Error)
-	}
-	if res.RowsAffected == 0 {
-		return notifications.ErrNotFound
-	}
-	return nil
+	return translate(r.conn(ctx).Model(&notificationEntity{}).
+		Where("organization_id = ? AND id = ? AND read_at IS NULL", e.OrganizationID, e.ID).
+		Update("read_at", e.ReadAt).Error)
+}
+
+func (r *notificationRepository) SaveEmail(ctx context.Context, n *notifications.Notification) error {
+	e := r.mapper.ToPersistence(n)
+	return translate(r.conn(ctx).Model(&notificationEntity{}).
+		Where("organization_id = ? AND id = ? AND email_status = ?", e.OrganizationID, e.ID, string(notifications.EmailPending)).
+		Updates(map[string]any{"email_status": e.EmailStatus, "emailed_at": e.EmailedAt}).Error)
 }
 
 func (r *notificationRepository) ListPendingEmails(ctx context.Context, organizationID, eventID string) ([]*notifications.Notification, error) {

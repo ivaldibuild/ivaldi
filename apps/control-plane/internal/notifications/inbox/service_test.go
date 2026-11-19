@@ -23,9 +23,13 @@ func (r *oneNotification) GetNotification(context.Context, string, string) (*not
 	return r.n, nil
 }
 
-func (r *oneNotification) UpdateNotification(context.Context, *notifications.Notification) error {
+func (r *oneNotification) SaveRead(context.Context, *notifications.Notification) error {
 	r.updated++
 	return nil
+}
+
+func (r *oneNotification) SaveEmail(context.Context, *notifications.Notification) error {
+	panic("unused")
 }
 
 func (r *oneNotification) CreateNotifications(context.Context, []*notifications.Notification) error {

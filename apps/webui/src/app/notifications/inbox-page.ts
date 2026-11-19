@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { HlmAlertImports } from '@spartan-ng/helm/alert';
 import { HlmButtonImports } from '@spartan-ng/helm/button';
@@ -34,6 +34,16 @@ export class InboxPage {
   protected readonly status = new RequestStatus();
   protected readonly markStatus = new RequestStatus();
   private nextCursor: string | null = null;
+  /** Bumped by each load, so a slower earlier one cannot overwrite it. */
+  private generation = 0;
+
+  /**
+   * Whether anything is left to mark read. The bell's count leaves out
+   * notifications whose request already closed, but they can still be unread.
+   */
+  protected readonly anyUnread = computed(
+    () => this.unread() > 0 || this.notifications().some((n) => !n.read_at),
+  );
 
   protected readonly kindLabel = (n: Notification) => kindLabels[n.kind];
   protected readonly at = (n: Notification) => formatDayAndTime(n.created_at);
@@ -60,12 +70,16 @@ export class InboxPage {
   }
 
   private async load(reset: boolean): Promise<void> {
+    const generation = ++this.generation;
     await this.status.run(
       async () => {
         const page = await this.api.page({
           unreadOnly: this.unreadOnly(),
           cursor: reset ? null : this.nextCursor,
         });
+        if (generation !== this.generation) {
+          return;
+        }
         this.notifications.update((shown) => (reset ? page.items : [...shown, ...page.items]));
         this.nextCursor = page.next_cursor;
         this.hasMore.set(page.has_next);

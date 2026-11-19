@@ -86,7 +86,7 @@ func (s *service) MarkRead(ctx context.Context, actor identity.Actor, organizati
 		return nil, notifications.ErrNotFound
 	}
 	if n.MarkRead() {
-		if err := s.repo.UpdateNotification(ctx, n); err != nil {
+		if err := s.repo.SaveRead(ctx, n); err != nil {
 			return nil, fmt.Errorf("mark notification %s read: %w", notificationID, err)
 		}
 	}

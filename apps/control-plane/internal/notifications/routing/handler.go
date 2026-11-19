@@ -4,7 +4,6 @@ package routing
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -237,9 +236,10 @@ func (h *Handler) emailStatus() notifications.EmailStatus {
 }
 
 // sendEmails sends the emails the event's notifications still owe, after
-// they are recorded, and records each one sent. If one fails, it returns an
-// error, so the consumer delivers the event again and only the unsent are
-// retried. A recipient with no address, or no longer active, gets none.
+// they are recorded, and records each one sent. If one fails, it stops and
+// returns an error, so the consumer delivers the event again and only the
+// unsent are retried. A recipient with no address, or no longer active, gets
+// none.
 func (h *Handler) sendEmails(ctx context.Context, organizationID, eventID string) error {
 	if h.mailer == nil {
 		return nil
@@ -260,29 +260,38 @@ func (h *Handler) sendEmails(ctx context.Context, organizationID, eventID string
 	for _, c := range contacts {
 		addresses[c.PrincipalID] = c.Email
 	}
-	var failed []error
+	// Those with no address are settled first, so a failing server leaves
+	// only real emails owed.
+	var sendable []*notifications.Notification
 	for _, n := range owed {
-		address := addresses[n.RecipientPrincipalID()]
-		if address == "" {
-			if err := n.EmailCannotBeSent(); err != nil {
-				return err
-			}
-		} else {
-			if err := h.mailer.Send(ctx, h.message(n, address)); err != nil {
-				h.logger.Warn("could not email a notification", logging.F("notification_id", n.ID()), logging.F("error", err.Error()))
-				failed = append(failed, fmt.Errorf("email notification %s: %w", n.ID(), err))
-				continue
-			}
-			h.logger.Info("emailed a notification", logging.F("notification_id", n.ID()))
-			if err := n.EmailWasSent(); err != nil {
-				return err
-			}
+		if addresses[n.RecipientPrincipalID()] != "" {
+			sendable = append(sendable, n)
+			continue
 		}
-		if err := h.repo.UpdateNotification(ctx, n); err != nil {
+		if err := n.EmailCannotBeSent(); err != nil {
+			return err
+		}
+		if err := h.repo.SaveEmail(ctx, n); err != nil {
 			return err
 		}
 	}
-	return errors.Join(failed...)
+	// The first failure stops the rest: the server is most likely down, and
+	// waiting out a timeout per recipient could keep the event past the
+	// consumer's claim timeout, when it would be handled twice at once.
+	for _, n := range sendable {
+		if err := h.mailer.Send(ctx, h.message(n, addresses[n.RecipientPrincipalID()])); err != nil {
+			h.logger.Warn("could not email a notification", logging.F("notification_id", n.ID()), logging.F("error", err.Error()))
+			return fmt.Errorf("email notification %s: %w", n.ID(), err)
+		}
+		h.logger.Info("emailed a notification", logging.F("notification_id", n.ID()))
+		if err := n.EmailWasSent(); err != nil {
+			return err
+		}
+		if err := h.repo.SaveEmail(ctx, n); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // message is a notification as an email: its title, with what it asks for,

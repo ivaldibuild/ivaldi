@@ -142,6 +142,15 @@ func TestValidateRefuses(t *testing.T) {
 		{"redis CA file without TLS", func(t *testing.T, c *Config) {
 			c.Redis.CAFile = writeFile(t, "ca")
 		}, "redis.ca_file needs redis.tls"},
+		{"email in plain text to another host", func(_ *testing.T, c *Config) {
+			c.Notifications.Email = NotificationEmail{SMTPAddress: "smtp.example.com:25", From: "ivaldi@example.com", TLS: "none"}
+		}, "only allowed for a server on this host"},
+		{"email without a sender", func(_ *testing.T, c *Config) {
+			c.Notifications.Email = NotificationEmail{SMTPAddress: "smtp.example.com:587", TLS: "starttls"}
+		}, "notifications.email.from"},
+		{"email password without a username", func(t *testing.T, c *Config) {
+			c.Notifications.Email = NotificationEmail{SMTPAddress: "smtp.example.com:587", From: "ivaldi@example.com", TLS: "starttls", PasswordFile: writeFile(t, "pw")}
+		}, "password_file needs notifications.email.username"},
 		{"platform workload without a name", func(t *testing.T, c *Config) {
 			c.Platform.Workloads = []PlatformWorkload{{Component: "gateway", PublicKeyFiles: []string{publicKeyFile(t)}}}
 		}, "platform.workloads[0].name is required"},

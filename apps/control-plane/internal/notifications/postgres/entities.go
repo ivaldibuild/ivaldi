@@ -18,6 +18,8 @@ type notificationEntity struct {
 	OwnerTeamID          *string    `gorm:"column:owner_team_id"`
 	ReadAt               *time.Time `gorm:"column:read_at"`
 	ResolvedAt           *time.Time `gorm:"column:resolved_at"`
+	EmailStatus          string     `gorm:"column:email_status"`
+	EmailedAt            *time.Time `gorm:"column:emailed_at"`
 	CreatedAt            time.Time  `gorm:"column:created_at;autoCreateTime:false"`
 }
 

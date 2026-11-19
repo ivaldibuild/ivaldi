@@ -81,6 +81,14 @@ runners:
 #   consumer_group: notifications
 #   concurrency: 10
 #   dead_letter_stream: ivaldi:control-plane:events:notifications:dead
+#   # Email each notification too (docs/self-hosting/notifications.md). Off
+#   # while smtp_address is empty. For a local catcher such as Mailpit:
+#   email:
+#     smtp_address: localhost:1025
+#     from: Ivaldi <ivaldi@localhost>
+#     tls: none   # only allowed for a server on this host
+#     # username: ivaldi
+#     # password_file: .local/smtp-password
 
 auth:
   login_url: http://localhost:8660/login

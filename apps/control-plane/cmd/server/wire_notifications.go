@@ -5,9 +5,11 @@ import (
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/config"
 	iampg "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/postgres"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/notifications"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/notifications/inbox"
 	notificationspg "github.com/ivaldibuild/ivaldi-control-plane/internal/notifications/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/notifications/routing"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/notifications/smtpmail"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/policy/approvals"
 	policypg "github.com/ivaldibuild/ivaldi-control-plane/internal/policy/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/team"
@@ -29,14 +31,22 @@ func (a *app) wireNotifications(cfg *config.Config, logger logging.Logger) error
 	if err != nil {
 		return err
 	}
-	handler, err := routing.NewHandler(
+	opts := []routing.Option{
 		routing.WithNotificationRepo(repo),
 		routing.WithApprovals(lookup),
 		routing.WithTeamMembers(team.NewMemberLookup(teampg.NewTeamRepository(a.db))),
 		routing.WithContacts(iampg.NewContactReader(a.db)),
 		routing.WithTransactor(a.tx),
 		routing.WithLogger(logger),
-	)
+	}
+	if email := cfg.Notifications.Email; email.Enabled() {
+		mailer, err := newMailer(email)
+		if err != nil {
+			return err
+		}
+		opts = append(opts, routing.WithEmail(mailer, cfg.IssuerURL()))
+	}
+	handler, err := routing.NewHandler(opts...)
 	if err != nil {
 		return err
 	}
@@ -67,4 +77,25 @@ func (a *app) wireNotifications(cfg *config.Config, logger logging.Logger) error
 
 	a.services.notifications, err = inbox.NewService(inbox.WithNotificationRepo(repo), inbox.WithAuthorizer(a.authz))
 	return err
+}
+
+// newMailer connects notifications to the configured SMTP server. Links in
+// its emails use the external URL, where the control plane serves the web
+// app.
+func newMailer(e config.NotificationEmail) (notifications.Mailer, error) {
+	password, err := e.Password()
+	if err != nil {
+		return nil, err
+	}
+	mailer, err := smtpmail.New(smtpmail.Config{
+		Address:  e.SMTPAddress,
+		Username: e.Username,
+		Password: password.Reveal(),
+		From:     e.From,
+		Security: smtpmail.Security(e.TLS),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("notifications email: %w", err)
+	}
+	return mailer, nil
 }

@@ -86,7 +86,7 @@ Configuration, under `notifications.email`:
 | `from` | The sender address, such as `Ivaldi <ivaldi@example.com>`. |
 | `tls` | `starttls` (the default), `tls`, or `none`, which is refused unless the address is a loopback one. |
 
-`notifications.consumer_group` (default `notifications`) and `notifications.concurrency` set how the consumer reads the outbox stream.
+`notifications.consumer_group` (default `notifications`) and `notifications.concurrency` set how the consumer reads the outbox stream. The mailer is `notifications/smtpmail`, which uses `net/smtp`: with `starttls` it refuses a server that does not offer STARTTLS rather than sending the password in plain text, and it folds line breaks out of the subject so a title cannot add a header.
 
 ## Changes to other capabilities
 
@@ -109,8 +109,8 @@ Under [#82](https://github.com/ivaldibuild/ivaldi/issues/82), in this order:
 
 1. This design. Done.
 2. `title` on approval requests, and delivery writing it. Done.
-3. The capability: its migrations, the consumer and its handlers, the recipients, the inbox API, and `make openapi`. Done, except the `email_status` and `emailed_at` columns, which come with email.
-4. Email: the mailer, its configuration, and a page in `docs/self-hosting/`.
+3. The capability: its migrations, the consumer and its handlers, the recipients, the inbox API, and `make openapi`. Done.
+4. Email: the `email_status` and `emailed_at` columns, the mailer, its configuration, and [a page in `docs/self-hosting/`](../self-hosting/notifications.md). Done.
 5. The web app's bell, inbox, and approval page.
 
 ## Deferred
@@ -133,4 +133,5 @@ The migrations will live in `apps/control-plane/internal/notifications/migration
 |---|---|---|---|
 | notifications | 000001 | the `notifications` schema | — |
 | notifications | 000002 | `notifications`, unique on `(organization_id, event_id, recipient_principal_id)`, with an `(organization_id, recipient_principal_id, created_at, id)` index for the inbox | tenant |
+| notifications | 000003 | `email_status` and `emailed_at` on `notifications`, with a partial index on `(organization_id, event_id)` for the emails still pending | tenant |
 | policy | next | `title` on `approval_requests`, `VARCHAR(255) NOT NULL` | tenant |

@@ -450,6 +450,34 @@ type Notifications struct {
 	Concurrency int `yaml:"concurrency" env:"IVALDI_NOTIFICATIONS_CONCURRENCY" envDefault:"10"`
 	// DeadLetterStream receives events the consumer gave up on.
 	DeadLetterStream string `yaml:"dead_letter_stream" env:"IVALDI_NOTIFICATIONS_DEAD_LETTER_STREAM" envDefault:"ivaldi:control-plane:events:notifications:dead"`
+	// Email sends each notification by email too. It is off while
+	// SMTPAddress is empty.
+	Email NotificationEmail `yaml:"email"`
+}
+
+// NotificationEmail is the SMTP server notifications are emailed through.
+// Links in emails use ExternalURL, where the control plane serves the web
+// app (ADR 0016).
+type NotificationEmail struct {
+	// SMTPAddress is the server's host:port, such as smtp.example.com:587.
+	SMTPAddress string `yaml:"smtp_address" env:"IVALDI_NOTIFICATIONS_EMAIL_SMTP_ADDRESS"`
+	// Username and PasswordFile authenticate with the server, when it needs it.
+	Username     string `yaml:"username" env:"IVALDI_NOTIFICATIONS_EMAIL_USERNAME"`
+	PasswordFile string `yaml:"password_file" env:"IVALDI_NOTIFICATIONS_EMAIL_PASSWORD_FILE"`
+	// From is the sender, such as "Ivaldi <ivaldi@example.com>".
+	From string `yaml:"from" env:"IVALDI_NOTIFICATIONS_EMAIL_FROM"`
+	// TLS is starttls (the default), tls, or none, which sends in plain
+	// text and is only allowed for a server on this host.
+	TLS string `yaml:"tls" env:"IVALDI_NOTIFICATIONS_EMAIL_TLS" envDefault:"starttls"`
+}
+
+// Enabled reports whether notifications are emailed.
+func (e NotificationEmail) Enabled() bool { return e.SMTPAddress != "" }
+
+// Password returns the SMTP password from its file, or "" when none is
+// configured.
+func (e NotificationEmail) Password() (Secret, error) {
+	return resolveSecret("notifications.email.password", "", e.PasswordFile)
 }
 
 // Telemetry configures the control plane's own health, metrics, and traces.

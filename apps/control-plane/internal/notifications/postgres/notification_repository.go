@@ -63,7 +63,7 @@ func (r *notificationRepository) GetNotification(ctx context.Context, organizati
 func (r *notificationRepository) UpdateNotification(ctx context.Context, n *notifications.Notification) error {
 	e := r.mapper.ToPersistence(n)
 	res := r.conn(ctx).Model(&notificationEntity{}).Where("organization_id = ? AND id = ?", e.OrganizationID, e.ID).
-		Update("read_at", e.ReadAt)
+		Updates(map[string]any{"read_at": e.ReadAt, "email_status": e.EmailStatus, "emailed_at": e.EmailedAt})
 	if res.Error != nil {
 		return translate(res.Error)
 	}
@@ -71,6 +71,22 @@ func (r *notificationRepository) UpdateNotification(ctx context.Context, n *noti
 		return notifications.ErrNotFound
 	}
 	return nil
+}
+
+func (r *notificationRepository) ListPendingEmails(ctx context.Context, organizationID, eventID string) ([]*notifications.Notification, error) {
+	var rows []notificationEntity
+	err := r.conn(ctx).Where("organization_id = ? AND event_id = ? AND email_status = ?",
+		organizationID, eventID, string(notifications.EmailPending)).Order("id").Find(&rows).Error
+	if err != nil {
+		return nil, translate(err)
+	}
+	out := make([]*notifications.Notification, len(rows))
+	for i := range rows {
+		if out[i], err = r.mapper.ToDomain(&rows[i]); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 func (r *notificationRepository) ListNotifications(ctx context.Context, q notifications.ListNotificationsQuery) (*pagination.Result[*notifications.Notification], error) {

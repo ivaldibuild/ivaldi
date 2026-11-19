@@ -14,7 +14,8 @@ func (notificationMapper) ToPersistence(n *notifications.Notification) *notifica
 		ID: s.ID, OrganizationID: s.OrganizationID, RecipientPrincipalID: s.RecipientPrincipalID,
 		Kind: string(s.Kind), SubjectType: s.SubjectType, SubjectID: s.SubjectID, EventID: s.EventID,
 		Title: s.Title, Body: s.Body, Link: s.Link, OwnerTeamID: s.OwnerTeamID,
-		ReadAt: s.ReadAt, ResolvedAt: s.ResolvedAt, CreatedAt: s.CreatedAt,
+		ReadAt: s.ReadAt, ResolvedAt: s.ResolvedAt, EmailStatus: string(s.EmailStatus), EmailedAt: s.EmailedAt,
+		CreatedAt: s.CreatedAt,
 	}
 }
 
@@ -24,7 +25,8 @@ func (notificationMapper) ToDomain(e *notificationEntity) (*notifications.Notifi
 		OrganizationID: e.OrganizationID, RecipientPrincipalID: e.RecipientPrincipalID,
 		Kind: notifications.Kind(e.Kind), SubjectType: e.SubjectType, SubjectID: e.SubjectID, EventID: e.EventID,
 		Title: e.Title, Body: e.Body, Link: e.Link, OwnerTeamID: e.OwnerTeamID,
-		ReadAt: utc(e.ReadAt), ResolvedAt: utc(e.ResolvedAt), CreatedAt: &created,
+		ReadAt: utc(e.ReadAt), ResolvedAt: utc(e.ResolvedAt),
+		EmailStatus: notifications.EmailStatus(e.EmailStatus), EmailedAt: utc(e.EmailedAt), CreatedAt: &created,
 	}, &e.ID)
 }
 

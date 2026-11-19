@@ -29,6 +29,7 @@ func newNotification(t *testing.T, recipient, eventID, requestID string) *notifi
 		OrganizationID: org, RecipientPrincipalID: recipient, Kind: notifications.KindApprovalRequested,
 		SubjectType: notifications.SubjectApprovalRequest, SubjectID: requestID, EventID: eventID,
 		Title: "Deploy api 1.4.0 to Production", Body: "Waiting for your approval", Link: "/approvals/" + requestID,
+		EmailStatus: notifications.EmailPending,
 	}, nil)
 	require.NoError(t, err)
 	return n
@@ -77,4 +78,13 @@ func TestNotificationRepository(t *testing.T) {
 	require.NoError(t, repo.MarkAllRead(ctx, org, ada, t0))
 	assert.Equal(t, 0, list(true))
 	assert.Equal(t, 0, unread())
+
+	owed, err := repo.ListPendingEmails(ctx, org, "evt_1")
+	require.NoError(t, err)
+	require.Len(t, owed, 2, "both of evt_1's notifications still owe an email")
+	require.NoError(t, owed[0].EmailWasSent())
+	require.NoError(t, repo.UpdateNotification(ctx, owed[0]))
+	owed, err = repo.ListPendingEmails(ctx, org, "evt_1")
+	require.NoError(t, err)
+	assert.Len(t, owed, 1, "a sent email is no longer owed")
 }

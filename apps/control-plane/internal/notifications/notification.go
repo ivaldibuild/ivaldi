@@ -23,6 +23,21 @@ const (
 
 func (k Kind) Valid() bool { return k == KindApprovalRequested || k == KindApprovalDecided }
 
+// EmailStatus is where a notification's email stands.
+type EmailStatus string
+
+const (
+	// EmailPending means an email is owed.
+	EmailPending EmailStatus = "pending"
+	// EmailSent means the SMTP server accepted it.
+	EmailSent EmailStatus = "sent"
+	// EmailNotSent means none was sent: email is off, or the recipient has
+	// no address.
+	EmailNotSent EmailStatus = "not_sent"
+)
+
+func (s EmailStatus) Valid() bool { return s == EmailPending || s == EmailSent || s == EmailNotSent }
+
 // Notification is one message to one person about something, which stays
 // the source of truth: the notification only points at it. It is unique per
 // event and recipient. Its recipient reads it, and it is resolved when what
@@ -41,6 +56,8 @@ type Notification struct {
 	ownerTeamID          *string
 	readAt               *time.Time
 	resolvedAt           *time.Time
+	emailStatus          EmailStatus
+	emailedAt            *time.Time
 	createdAt            time.Time
 }
 
@@ -62,7 +79,11 @@ type NotificationSnapshot struct {
 	OwnerTeamID *string    `json:"owner_team_id"`
 	ReadAt      *time.Time `json:"read_at"`
 	ResolvedAt  *time.Time `json:"resolved_at"`
-	CreatedAt   time.Time  `json:"created_at"`
+	// EmailStatus and EmailedAt say whether its email went out; they are
+	// the sender's bookkeeping, not the recipient's.
+	EmailStatus EmailStatus `json:"-"`
+	EmailedAt   *time.Time  `json:"-"`
+	CreatedAt   time.Time   `json:"created_at"`
 }
 
 // NewNotificationProps describes a Notification. A new one leaves ReadAt,
@@ -80,7 +101,11 @@ type NewNotificationProps struct {
 	OwnerTeamID          *string
 	ReadAt               *time.Time
 	ResolvedAt           *time.Time
-	CreatedAt            *time.Time
+	// EmailStatus is EmailPending when an email is owed, and defaults to
+	// EmailNotSent.
+	EmailStatus EmailStatus
+	EmailedAt   *time.Time
+	CreatedAt   *time.Time
 }
 
 // NewNotification returns a Notification, with a new ID unless
@@ -97,6 +122,9 @@ func NewNotification(p NewNotificationProps, notificationID *string) (*Notificat
 	if p.CreatedAt != nil {
 		created = *p.CreatedAt
 	}
+	if p.EmailStatus == "" {
+		p.EmailStatus = EmailNotSent
+	}
 	return &Notification{
 		Root:                 root,
 		organizationID:       p.OrganizationID,
@@ -111,6 +139,8 @@ func NewNotification(p NewNotificationProps, notificationID *string) (*Notificat
 		ownerTeamID:          optional.OfPtr(p.OwnerTeamID),
 		readAt:               clock.CopyTime(p.ReadAt),
 		resolvedAt:           clock.CopyTime(p.ResolvedAt),
+		emailStatus:          p.EmailStatus,
+		emailedAt:            clock.CopyTime(p.EmailedAt),
 		createdAt:            created,
 	}, nil
 }
@@ -127,6 +157,10 @@ func (p NewNotificationProps) validate() error {
 		return errorf("a notification's title must be 1-%d characters", MaxTitleLength)
 	case utf8.RuneCountInString(p.Body) > MaxBodyLength:
 		return errorf("a notification's body must be at most %d characters", MaxBodyLength)
+	case p.EmailStatus != "" && !p.EmailStatus.Valid():
+		return errorf("email status %q must be pending, sent, or not_sent", p.EmailStatus)
+	case (p.EmailStatus == EmailSent) != (p.EmailedAt != nil):
+		return NewErrInvalidInput("a notification's email has a sent time exactly when it was sent")
 	case !strings.HasPrefix(p.Link, "/") || utf8.RuneCountInString(p.Link) > maxLinkLength:
 		return errorf("a notification's link must be a path of at most %d characters", maxLinkLength)
 	}
@@ -139,6 +173,11 @@ func (Notification) Prefix() string { return "ntf" }
 func (n *Notification) OrganizationID() string       { return n.organizationID }
 func (n *Notification) RecipientPrincipalID() string { return n.recipientPrincipalID }
 func (n *Notification) Read() bool                   { return n.readAt != nil }
+func (n *Notification) Kind() Kind                   { return n.kind }
+func (n *Notification) Title() string                { return n.title }
+func (n *Notification) Body() string                 { return n.body }
+func (n *Notification) Link() string                 { return n.link }
+func (n *Notification) EmailStatus() EmailStatus     { return n.emailStatus }
 
 // MarkRead records that the recipient read it, and reports whether that
 // changed anything.
@@ -149,6 +188,26 @@ func (n *Notification) MarkRead() bool {
 	now := clock.Now()
 	n.readAt = &now
 	return true
+}
+
+// EmailWasSent records that the SMTP server accepted its email.
+func (n *Notification) EmailWasSent() error {
+	if n.emailStatus != EmailPending {
+		return errorf("notification %s owes no email: it is %s", n.ID(), n.emailStatus)
+	}
+	now := clock.Now()
+	n.emailStatus, n.emailedAt = EmailSent, &now
+	return nil
+}
+
+// EmailCannotBeSent records that its email will not be sent, because the
+// recipient has no address or is no longer active.
+func (n *Notification) EmailCannotBeSent() error {
+	if n.emailStatus != EmailPending {
+		return errorf("notification %s owes no email: it is %s", n.ID(), n.emailStatus)
+	}
+	n.emailStatus = EmailNotSent
+	return nil
 }
 
 // Snapshot returns the notification's state.
@@ -167,6 +226,8 @@ func (n *Notification) Snapshot() NotificationSnapshot {
 		OwnerTeamID:          optional.OfPtr(n.ownerTeamID),
 		ReadAt:               clock.CopyTime(n.readAt),
 		ResolvedAt:           clock.CopyTime(n.resolvedAt),
+		EmailStatus:          n.emailStatus,
+		EmailedAt:            clock.CopyTime(n.emailedAt),
 		CreatedAt:            n.createdAt,
 	}
 }

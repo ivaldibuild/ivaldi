@@ -20,8 +20,12 @@ type NotificationRepository interface {
 	CreateNotifications(ctx context.Context, ns []*Notification) error
 	// GetNotification returns a notification, or ErrNotFound.
 	GetNotification(ctx context.Context, organizationID, notificationID string) (*Notification, error)
-	// UpdateNotification writes when a notification was read.
+	// UpdateNotification writes when a notification was read, and whether
+	// its email was sent.
 	UpdateNotification(ctx context.Context, n *Notification) error
+	// ListPendingEmails returns the event's notifications whose email is
+	// still owed.
+	ListPendingEmails(ctx context.Context, organizationID, eventID string) ([]*Notification, error)
 	ListNotifications(ctx context.Context, q ListNotificationsQuery) (*pagination.Result[*Notification], error)
 	// CountUnread counts a recipient's notifications that are neither read
 	// nor resolved.
@@ -54,4 +58,17 @@ type InboxService interface {
 	// person's notification is ErrNotFound.
 	MarkRead(ctx context.Context, actor identity.Actor, organizationID, notificationID string) (*Notification, error)
 	MarkAllRead(ctx context.Context, actor identity.Actor, organizationID string) error
+}
+
+// Message is one plain-text email to one person.
+type Message struct {
+	To      string
+	Subject string
+	Body    string
+}
+
+// Mailer sends email. The smtpmail sub-package implements it over SMTP.
+type Mailer interface {
+	// Send returns once the mail server has accepted the message.
+	Send(ctx context.Context, m Message) error
 }

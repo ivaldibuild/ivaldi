@@ -34,6 +34,9 @@ func (r *oneNotification) CreateNotifications(context.Context, []*notifications.
 func (r *oneNotification) ListNotifications(context.Context, notifications.ListNotificationsQuery) (*pagination.Result[*notifications.Notification], error) {
 	panic("unused")
 }
+func (r *oneNotification) ListPendingEmails(context.Context, string, string) ([]*notifications.Notification, error) {
+	panic("unused")
+}
 func (r *oneNotification) CountUnread(context.Context, string, string) (int, error) { panic("unused") }
 func (r *oneNotification) MarkAllRead(context.Context, string, string, time.Time) error {
 	panic("unused")

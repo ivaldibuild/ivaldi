@@ -3,6 +3,7 @@ package routing
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -63,7 +64,12 @@ func (w *world) ActiveUsers(_ context.Context, _ string, ids []string) ([]iam.Co
 	var out []iam.Contact
 	for _, id := range ids {
 		if strings.HasPrefix(id, "prn_") && id != agent {
-			out = append(out, iam.Contact{PrincipalID: id, DisplayName: strings.TrimPrefix(id, "prn_")})
+			name := strings.TrimPrefix(id, "prn_")
+			c := iam.Contact{PrincipalID: id, DisplayName: name, Email: name + "@example.com"}
+			if id == bob {
+				c.Email = "" // bob has no address
+			}
+			out = append(out, c)
 		}
 	}
 	return out, nil
@@ -106,11 +112,21 @@ func (w *world) ResolveForSubject(_ context.Context, org string, kind notificati
 func (w *world) GetNotification(context.Context, string, string) (*notifications.Notification, error) {
 	panic("unused")
 }
-func (w *world) UpdateNotification(context.Context, *notifications.Notification) error {
-	panic("unused")
-}
+
+// UpdateNotification has nothing to do: the stored notifications are the
+// ones the handler changed.
+func (w *world) UpdateNotification(context.Context, *notifications.Notification) error { return nil }
 func (w *world) ListNotifications(context.Context, notifications.ListNotificationsQuery) (*pagination.Result[*notifications.Notification], error) {
 	panic("unused")
+}
+func (w *world) ListPendingEmails(_ context.Context, _, eventID string) ([]*notifications.Notification, error) {
+	var out []*notifications.Notification
+	for _, n := range w.stored {
+		if s := n.Snapshot(); s.EventID == eventID && s.EmailStatus == notifications.EmailPending {
+			out = append(out, n)
+		}
+	}
+	return out, nil
 }
 func (w *world) CountUnread(context.Context, string, string) (int, error) { panic("unused") }
 func (w *world) MarkAllRead(context.Context, string, string, time.Time) error {
@@ -126,7 +142,7 @@ func must[T any](v T, err error) T {
 
 // newWorld has an agent Session, acting for ada, ask for a Deployment owned
 // by squad.
-func newWorld(t *testing.T) (*world, *events.Router) {
+func newWorld(t *testing.T, opts ...Option) (*world, *events.Router) {
 	t.Helper()
 	request, err := policy.NewApprovalRequest(policy.NewApprovalRequestProps{
 		OrganizationID: org, Subject: policy.Subject{Type: "delivery.deployment", ID: "dep_1"},
@@ -141,8 +157,9 @@ func newWorld(t *testing.T) (*world, *events.Router) {
 	w := &world{request: request, teams: map[string][]string{squad: {ada, grace, bob}}, could: []string{ada, grace, zoe}}
 	logger := logging.NewMockLogger()
 	logger.On("Warn", mock.Anything, mock.Anything, mock.Anything).Maybe()
-	h, err := NewHandler(WithNotificationRepo(w), WithApprovals(w), WithTeamMembers(w), WithContacts(w),
-		WithTransactor(w), WithLogger(logger))
+	logger.On("Info", mock.Anything, mock.Anything).Maybe()
+	h, err := NewHandler(append([]Option{WithNotificationRepo(w), WithApprovals(w), WithTeamMembers(w), WithContacts(w),
+		WithTransactor(w), WithLogger(logger)}, opts...)...)
 	require.NoError(t, err)
 	var router events.Router
 	h.Register(&router)
@@ -205,4 +222,47 @@ func TestAWaitingRequestThatClosedIsNotAnnounced(t *testing.T) {
 	require.NoError(t, w.request.Cancel(ada, authorization.NewDecisionID(), "withdrawn"))
 	dispatch(t, router, policy.ApprovalRequestCreated{ApprovalRequest: w.request.Snapshot()})
 	assert.Empty(t, w.stored)
+}
+
+// mailer records what it sends, and refuses while failing is set.
+type mailer struct {
+	sent    []notifications.Message
+	failing bool
+}
+
+func (m *mailer) Send(_ context.Context, msg notifications.Message) error {
+	if m.failing {
+		return errors.New("smtp server unavailable")
+	}
+	m.sent = append(m.sent, msg)
+	return nil
+}
+
+func TestEmailsAreSentOnceEach(t *testing.T) {
+	mail := &mailer{failing: true}
+	w, router := newWorld(t, WithEmail(mail, "https://ivaldi.example.com/"))
+	w.could = append(w.could, bob)
+	envs, err := events.Wrap(context.Background(), events.Source{OrganizationID: org}, policy.ApprovalRequestCreated{ApprovalRequest: w.request.Snapshot()})
+	require.NoError(t, err)
+
+	assert.Error(t, router.Dispatch(context.Background(), envs[0]), "a failed email has the event delivered again")
+	status := func(recipient string) notifications.EmailStatus {
+		for _, n := range w.stored {
+			if n.RecipientPrincipalID() == recipient {
+				return n.EmailStatus()
+			}
+		}
+		return ""
+	}
+	assert.Equal(t, notifications.EmailPending, status(grace), "grace's email is still owed")
+	assert.Equal(t, notifications.EmailNotSent, status(bob), "bob has no address")
+
+	mail.failing = false
+	require.NoError(t, router.Dispatch(context.Background(), envs[0]))
+	require.NoError(t, router.Dispatch(context.Background(), envs[0]))
+	require.Len(t, mail.sent, 1, "only the email still owed is sent, and once")
+	assert.Equal(t, "grace@example.com", mail.sent[0].To)
+	assert.Equal(t, "Approval needed: Deploy api 1.4.0 to Production", mail.sent[0].Subject)
+	assert.Contains(t, mail.sent[0].Body, "https://ivaldi.example.com/approvals/"+w.request.ID())
+	assert.Equal(t, notifications.EmailSent, status(grace))
 }

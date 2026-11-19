@@ -233,7 +233,19 @@ export const routes: Routes = [
         path: 'lifecycles',
         title: 'Lifecycles · Ivaldi',
         loadComponent: () =>
-          import('./delivery/pages/lifecycles-page').then((m) => m.LifecyclesPage),
+          import('./delivery/lifecycles/lifecycles-page').then((m) => m.LifecyclesPage),
+      },
+      {
+        path: 'lifecycles/new',
+        title: 'New Lifecycle · Ivaldi',
+        loadComponent: () =>
+          import('./delivery/lifecycles/new-lifecycle-page').then((m) => m.NewLifecyclePage),
+      },
+      {
+        path: 'lifecycles/:id',
+        title: 'Lifecycle · Ivaldi',
+        loadComponent: () =>
+          import('./delivery/lifecycles/lifecycle-page').then((m) => m.LifecyclePage),
       },
     ],
   },

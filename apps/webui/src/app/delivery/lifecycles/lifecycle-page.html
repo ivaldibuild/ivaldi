@@ -1,0 +1,302 @@
+@if (failure(); as message) {
+  <div hlmAlert variant="destructive" role="alert">
+    <h2 hlmAlertTitle>The Lifecycle didn't load</h2>
+    <p hlmAlertDescription>{{ message }}</p>
+  </div>
+} @else if (!lifecycle()) {
+  <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+    <hlm-spinner aria-hidden="true" /> Loading the Lifecycle…
+  </p>
+} @else {
+  <div class="flex max-w-205 flex-col gap-10">
+    <app-page-header
+      [heading]="lifecycle()!.display_name"
+      [crumbs]="[
+        { label: 'Lifecycles', link: '/lifecycles' },
+        { label: lifecycle()!.display_name },
+      ]"
+    >
+      <p pageMeta class="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+        @if (archived()) {
+          <span hlmBadge variant="outline">Archived</span>
+        }
+        @if (isDefault()) {
+          <span hlmBadge>Default for new Applications</span>
+        }
+        @if (lifecycle()!.description) {
+          <span>{{ lifecycle()!.description }}</span>
+        }
+      </p>
+      <ng-container pageActions>
+        @if (canEdit() && !editingDetails()) {
+          <button hlmBtn variant="outline" type="button" (click)="editDetails()">Rename</button>
+        }
+        @if (canEdit() && !isDefault()) {
+          <button
+            hlmBtn
+            variant="outline"
+            type="button"
+            [disabled]="defaultStatus.saving()"
+            (click)="makeDefault()"
+          >
+            Make default
+          </button>
+        }
+        @if (canEdit() && !confirmingArchive()) {
+          <button
+            hlmBtn
+            variant="outline"
+            type="button"
+            (click)="archiveStatus.error.set(null); confirmingArchive.set(true)"
+          >
+            Archive
+          </button>
+        }
+        @if (canManage() && archived()) {
+          <button hlmBtn type="button" [disabled]="archiveStatus.saving()" (click)="restore()">
+            Restore
+          </button>
+        }
+      </ng-container>
+    </app-page-header>
+
+    @if (defaultStatus.error(); as message) {
+      <div hlmAlert variant="destructive" role="alert">
+        <h2 hlmAlertTitle>It wasn't made the default</h2>
+        <p hlmAlertDescription>{{ message }}</p>
+      </div>
+    }
+
+    @if (confirmingArchive()) {
+      <div hlmAlert role="alertdialog" aria-labelledby="archive-heading">
+        <h2 id="archive-heading" hlmAlertTitle>Archive {{ lifecycle()!.display_name }}?</h2>
+        <div hlmAlertDescription class="flex flex-col gap-3">
+          <p>
+            Channels can no longer follow it. It can't be archived while an active Channel still
+            does; move those Channels to another Lifecycle first.
+          </p>
+          <div class="flex flex-wrap gap-2">
+            <button hlmBtn type="button" [disabled]="archiveStatus.saving()" (click)="archive()">
+              Archive Lifecycle
+            </button>
+            <button hlmBtn variant="outline" type="button" (click)="confirmingArchive.set(false)">
+              Keep it
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
+    @if (archiveStatus.error(); as message) {
+      <div hlmAlert variant="destructive" role="alert">
+        <h2 hlmAlertTitle>{{ archived() ? "It wasn't restored" : "It wasn't archived" }}</h2>
+        <p hlmAlertDescription>{{ message }}</p>
+      </div>
+    }
+
+    @if (editingDetails()) {
+      <form
+        class="border-border grid gap-4 border p-5 md:grid-cols-2"
+        novalidate
+        aria-labelledby="details-heading"
+        (submit)="saveDetails($event)"
+      >
+        <h2 id="details-heading" class="text-heading font-semibold md:col-span-2">
+          Rename the Lifecycle
+        </h2>
+        @if (detailsStatus.error(); as message) {
+          <div hlmAlert variant="destructive" role="alert" class="md:col-span-2">
+            <p hlmAlertDescription>{{ message }}</p>
+          </div>
+        }
+        <div hlmField>
+          <label hlmFieldLabel for="lifecycle-name">Name</label>
+          <input
+            hlmInput
+            id="lifecycle-name"
+            [value]="nameField()"
+            (input)="nameField.set($any($event.target).value)"
+          />
+        </div>
+        <div hlmField>
+          <label hlmFieldLabel for="lifecycle-description">Description</label>
+          <input
+            hlmInput
+            id="lifecycle-description"
+            [value]="descriptionField()"
+            (input)="descriptionField.set($any($event.target).value)"
+          />
+        </div>
+        <div class="flex flex-wrap gap-2 md:col-span-2">
+          <button hlmBtn type="submit" [disabled]="detailsStatus.saving()">Save</button>
+          <button hlmBtn variant="outline" type="button" (click)="editingDetails.set(false)">
+            Cancel
+          </button>
+        </div>
+      </form>
+    }
+
+    <section aria-labelledby="phases-heading" class="flex flex-col gap-4">
+      <h2 id="phases-heading" class="text-heading text-lg font-semibold">Phases</h2>
+      <p class="text-muted-foreground text-sm">
+        A phase opens for a Release once every required phase before it has the healthy Deployments
+        it needs.
+      </p>
+
+      @if (!editing() && phaseStatus.error(); as message) {
+        <div hlmAlert variant="destructive" role="alert">
+          <p hlmAlertDescription>{{ message }}</p>
+        </div>
+      }
+
+      <ol class="flex flex-col gap-3">
+        @for (
+          phase of phases();
+          track phase.id;
+          let i = $index;
+          let first = $first;
+          let last = $last
+        ) {
+          <li class="border-border flex flex-col gap-3 border p-5">
+            @if (editing() === phase.id) {
+              <ng-container
+                [ngTemplateOutlet]="phaseEditor"
+                [ngTemplateOutletContext]="{ heading: 'Edit phase ' + (i + 1) }"
+              />
+            } @else {
+              <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+                <div class="flex flex-col gap-1">
+                  <span
+                    class="text-muted-foreground text-xs font-semibold tracking-[0.24em] uppercase"
+                    >Phase {{ i + 1 }}</span
+                  >
+                  <h3 class="text-heading flex flex-wrap items-center gap-2 font-semibold">
+                    {{ phase.name }}
+                    @if (phase.optional) {
+                      <span hlmBadge variant="outline">Optional</span>
+                    }
+                  </h3>
+                  <p class="text-sm">{{ environmentNames(phase) }}</p>
+                  <p class="text-muted-foreground text-[13px]">{{ needs(phase) }}</p>
+                </div>
+                @if (canEdit() && !editing() && removing() !== phase.id) {
+                  <div class="flex flex-wrap gap-2">
+                    <button
+                      hlmBtn
+                      variant="outline"
+                      size="sm"
+                      type="button"
+                      [disabled]="first || phaseStatus.saving()"
+                      [attr.aria-label]="'Move ' + phase.name + ' earlier'"
+                      (click)="movePhase(phase, -1)"
+                    >
+                      <ng-icon name="lucideArrowUp" aria-hidden="true" />
+                    </button>
+                    <button
+                      hlmBtn
+                      variant="outline"
+                      size="sm"
+                      type="button"
+                      [disabled]="last || phaseStatus.saving()"
+                      [attr.aria-label]="'Move ' + phase.name + ' later'"
+                      (click)="movePhase(phase, 1)"
+                    >
+                      <ng-icon name="lucideArrowDown" aria-hidden="true" />
+                    </button>
+                    <button
+                      hlmBtn
+                      variant="outline"
+                      size="sm"
+                      type="button"
+                      [attr.aria-label]="'Edit ' + phase.name"
+                      (click)="editPhase(phase)"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      hlmBtn
+                      variant="outline"
+                      size="sm"
+                      type="button"
+                      [disabled]="phases().length === 1"
+                      [attr.aria-label]="'Remove ' + phase.name"
+                      (click)="confirmRemove(phase)"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                }
+              </div>
+              @if (removing() === phase.id) {
+                <div hlmAlert role="alertdialog" [attr.aria-label]="'Remove ' + phase.name">
+                  <p hlmAlertDescription>
+                    Releases will no longer need {{ phase.name }} before the phases after it open.
+                  </p>
+                  <div class="mt-3 flex flex-wrap gap-2">
+                    <button
+                      hlmBtn
+                      type="button"
+                      [disabled]="phaseStatus.saving()"
+                      (click)="removePhase(phase)"
+                    >
+                      Remove phase
+                    </button>
+                    <button hlmBtn variant="outline" type="button" (click)="removing.set(null)">
+                      Keep it
+                    </button>
+                  </div>
+                </div>
+              }
+            }
+          </li>
+        }
+        @if (editing() === 'new') {
+          <li class="border-border flex flex-col gap-3 border p-5">
+            <ng-container
+              [ngTemplateOutlet]="phaseEditor"
+              [ngTemplateOutletContext]="{ heading: 'New phase ' + (phases().length + 1) }"
+            />
+          </li>
+        }
+      </ol>
+
+      @if (canEdit() && !editing()) {
+        <button hlmBtn variant="outline" type="button" class="self-start" (click)="addPhase()">
+          <ng-icon name="lucidePlus" aria-hidden="true" /> Add phase
+        </button>
+      }
+    </section>
+  </div>
+}
+
+<ng-template #phaseEditor let-heading="heading">
+  <form
+    class="flex flex-col gap-4"
+    novalidate
+    aria-labelledby="phase-editor-heading"
+    (submit)="savePhase($event)"
+  >
+    <h3 id="phase-editor-heading" class="text-heading font-semibold">{{ heading }}</h3>
+    @if (phaseStatus.error(); as message) {
+      <div hlmAlert variant="destructive" role="alert">
+        <p hlmAlertDescription>{{ message }}</p>
+      </div>
+    }
+    <app-phase-form
+      idPrefix="phase-editor"
+      [environments]="activeEnvironments()"
+      [taken]="taken()"
+      [(phase)]="draft"
+    />
+    <div class="flex flex-wrap gap-2">
+      <button hlmBtn type="submit" [disabled]="phaseStatus.saving()">
+        @if (phaseStatus.saving()) {
+          <hlm-spinner aria-hidden="true" /> Saving…
+        } @else {
+          Save phase
+        }
+      </button>
+      <button hlmBtn variant="outline" type="button" (click)="editing.set(null)">Cancel</button>
+    </div>
+  </form>
+</ng-template>

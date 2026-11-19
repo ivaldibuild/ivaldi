@@ -224,6 +224,22 @@ func TestAWaitingRequestThatClosedIsNotAnnounced(t *testing.T) {
 	assert.Empty(t, w.stored)
 }
 
+func TestEventsFromBeforeTitlesUseTheStoredRequestsTitle(t *testing.T) {
+	w, router := newWorld(t)
+	untitled := func(s policy.ApprovalRequestSnapshot) policy.ApprovalRequestSnapshot {
+		s.Title = ""
+		return s
+	}
+	dispatch(t, router, policy.ApprovalRequestCreated{ApprovalRequest: untitled(w.request.Snapshot())})
+	require.NoError(t, w.request.Approve(zoe, authorization.NewDecisionID(), ""))
+	dispatch(t, router, policy.ApprovalRequestApproved{ApprovalRequest: untitled(w.request.Snapshot())})
+
+	require.Len(t, w.stored, 2)
+	for _, n := range w.stored {
+		assert.Equal(t, "Deploy api 1.4.0 to Production", n.Title())
+	}
+}
+
 // mailer records what it sends, and refuses while failing is set.
 type mailer struct {
 	sent    []notifications.Message

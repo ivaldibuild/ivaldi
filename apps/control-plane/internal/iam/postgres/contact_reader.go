@@ -23,14 +23,14 @@ type contactRow struct {
 	Email       string `gorm:"column:email"`
 }
 
-// activeUsers selects the Organization's active users with their Account
-// emails; a query narrows it further.
+// activeUsers selects the Organization's active users whose Accounts can
+// sign in, with their emails; a query narrows it further.
 const activeUsers = `
 SELECT DISTINCT p.id AS principal_id, p.display_name, a.email
 FROM iam.principals p
 JOIN iam.users u ON u.organization_id = p.organization_id AND u.principal_id = p.id
 JOIN iam.accounts a ON a.id = u.account_id
-WHERE p.organization_id = @org AND p.kind = 'user' AND p.status = 'active'`
+WHERE p.organization_id = @org AND p.kind = 'user' AND p.status = 'active' AND a.status = 'active'`
 
 func (r *contactReader) ActiveUsers(ctx context.Context, organizationID string, principalIDs []string) ([]iam.Contact, error) {
 	if len(principalIDs) == 0 {

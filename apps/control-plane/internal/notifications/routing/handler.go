@@ -126,7 +126,9 @@ func (h *Handler) approvalRequested(ctx context.Context, e events.Envelope, ev p
 		n, err := notifications.NewNotification(notifications.NewNotificationProps{
 			OrganizationID: opened.OrganizationID, RecipientPrincipalID: recipient,
 			Kind: notifications.KindApprovalRequested, SubjectType: notifications.SubjectApprovalRequest,
-			SubjectID: opened.ID, EventID: e.ID, Title: notifications.Shorten(opened.Title, notifications.MaxTitleLength),
+			// The stored request's title: an event from before requests had
+			// titles carries none.
+			SubjectID: opened.ID, EventID: e.ID, Title: notifications.Shorten(r.Title(), notifications.MaxTitleLength),
 			Body:        notifications.Shorten("Waiting for your approval: "+opened.Reason, notifications.MaxBodyLength),
 			Link:        approvalLink(opened.ID),
 			OwnerTeamID: routedTo,
@@ -174,35 +176,56 @@ func (h *Handler) deciders(ctx context.Context, r *policy.ApprovalRequest) ([]st
 // request, and tells the person who asked how it was decided. A
 // cancellation tells no one: whoever caused it already knows.
 func (h *Handler) approvalClosed(ctx context.Context, e events.Envelope, closed policy.ApprovalRequestSnapshot) error {
+	// The outcome is worked out before the transaction, so a failed read,
+	// such as naming the decider, cannot abort the writes.
+	var decided *notifications.Notification
+	if closed.State != policy.ApprovalCancelled {
+		var err error
+		if decided, err = h.decided(ctx, e, closed); err != nil {
+			return err
+		}
+	}
 	err := h.tx.WithinTx(ctx, func(ctx context.Context) error {
 		if err := h.repo.ResolveForSubject(ctx, closed.OrganizationID, notifications.KindApprovalRequested,
 			notifications.SubjectApprovalRequest, closed.ID, clock.Now()); err != nil {
 			return err
 		}
-		if closed.State == policy.ApprovalCancelled {
+		if decided == nil {
 			return nil
 		}
-		asker, err := h.asker(ctx, closed)
-		if err != nil || asker == "" {
-			return err
-		}
-		n, err := notifications.NewNotification(notifications.NewNotificationProps{
-			OrganizationID: closed.OrganizationID, RecipientPrincipalID: asker,
-			Kind: notifications.KindApprovalDecided, SubjectType: notifications.SubjectApprovalRequest,
-			SubjectID: closed.ID, EventID: e.ID, Title: notifications.Shorten(closed.Title, notifications.MaxTitleLength),
-			Body:        notifications.Shorten(h.outcome(ctx, closed), notifications.MaxBodyLength),
-			Link:        approvalLink(closed.ID),
-			EmailStatus: h.emailStatus(),
-		}, nil)
-		if err != nil {
-			return err
-		}
-		return h.repo.CreateNotifications(ctx, []*notifications.Notification{n})
+		return h.repo.CreateNotifications(ctx, []*notifications.Notification{decided})
 	})
 	if err != nil {
 		return err
 	}
 	return h.sendEmails(ctx, closed.OrganizationID, e.ID)
+}
+
+// decided is the notification telling the person who asked how their request
+// was decided, or nil when they can no longer be told.
+func (h *Handler) decided(ctx context.Context, e events.Envelope, closed policy.ApprovalRequestSnapshot) (*notifications.Notification, error) {
+	asker, err := h.asker(ctx, closed)
+	if err != nil || asker == "" {
+		return nil, err
+	}
+	title := closed.Title
+	if title == "" {
+		// An event from before requests had titles carries none; the stored
+		// request has one.
+		r, err := h.approvals.LookupApprovalRequest(ctx, closed.OrganizationID, closed.ID)
+		if err != nil {
+			return nil, fmt.Errorf("read approval request %s: %w", closed.ID, err)
+		}
+		title = r.Title()
+	}
+	return notifications.NewNotification(notifications.NewNotificationProps{
+		OrganizationID: closed.OrganizationID, RecipientPrincipalID: asker,
+		Kind: notifications.KindApprovalDecided, SubjectType: notifications.SubjectApprovalRequest,
+		SubjectID: closed.ID, EventID: e.ID, Title: notifications.Shorten(title, notifications.MaxTitleLength),
+		Body:        notifications.Shorten(h.outcome(ctx, closed), notifications.MaxBodyLength),
+		Link:        approvalLink(closed.ID),
+		EmailStatus: h.emailStatus(),
+	}, nil)
 }
 
 // emailStatus is what a new notification owes: an email when email is on.

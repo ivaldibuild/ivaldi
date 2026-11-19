@@ -1,29 +1,58 @@
-import { Component, computed, inject, resource } from '@angular/core';
+import { Component, computed, inject, resource, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { NgIcon, provideIcons } from '@ng-icons/core';
-import { lucideArrowRight } from '@ng-icons/lucide';
+import { lucideArrowRight, lucidePlus } from '@ng-icons/lucide';
 import { HlmAlertImports } from '@spartan-ng/helm/alert';
 import { HlmBadgeImports } from '@spartan-ng/helm/badge';
+import { HlmButtonImports } from '@spartan-ng/helm/button';
 import { HlmSpinnerImports } from '@spartan-ng/helm/spinner';
 import { ApiError } from '../../api/api-client';
+import { PermissionsApi } from '../../api/permissions-api';
 import { DeliveryApi } from '../delivery-api';
 import { PageHeader } from '../page-header';
 import { WorkspaceContext } from '../workspace-context';
+import { LifecyclesApi } from './lifecycles-api';
 
 /** The Workspace's Lifecycles: the ordered phases Releases move through. */
 @Component({
   selector: 'app-lifecycles-page',
-  imports: [NgIcon, PageHeader, HlmAlertImports, HlmBadgeImports, HlmSpinnerImports],
-  providers: [provideIcons({ lucideArrowRight })],
+  imports: [
+    NgIcon,
+    RouterLink,
+    PageHeader,
+    HlmAlertImports,
+    HlmBadgeImports,
+    HlmButtonImports,
+    HlmSpinnerImports,
+  ],
+  providers: [provideIcons({ lucideArrowRight, lucidePlus })],
   template: `
     <div class="flex flex-col gap-8">
       <app-page-header
         heading="Lifecycles"
         [trail]="(context.current()?.display_name ?? 'Workspace') + ' / Delivery'"
-      />
+      >
+        @if (canManage()) {
+          <ng-container pageActions>
+            <a hlmBtn size="lg" routerLink="/lifecycles/new">
+              <ng-icon name="lucidePlus" aria-hidden="true" /> New Lifecycle
+            </a>
+          </ng-container>
+        }
+      </app-page-header>
       <p class="text-foreground max-w-205 text-base leading-relaxed">
         A phase opens for a Release once every required phase before it has a healthy Deployment.
         Channels choose which Lifecycle their Releases follow.
       </p>
+      <label class="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          class="accent-primary size-4"
+          [checked]="includeArchived()"
+          (change)="includeArchived.set($any($event.target).checked)"
+        />
+        Show archived Lifecycles
+      </label>
 
       @if (failure(); as message) {
         <div hlmAlert variant="destructive" role="alert">
@@ -41,7 +70,17 @@ import { WorkspaceContext } from '../workspace-context';
           @for (lifecycle of lifecycles(); track lifecycle.id) {
             <li class="border-border flex flex-col gap-4 border p-5">
               <div class="flex flex-col gap-1">
-                <h2 class="text-heading text-lg font-semibold">{{ lifecycle.name }}</h2>
+                <h2 class="text-heading flex flex-wrap items-center gap-2 text-lg font-semibold">
+                  <a class="text-heading" [routerLink]="['/lifecycles', lifecycle.id]">{{
+                    lifecycle.name
+                  }}</a>
+                  @if (lifecycle.isDefault) {
+                    <span hlmBadge>Default</span>
+                  }
+                  @if (lifecycle.archived) {
+                    <span hlmBadge variant="outline">Archived</span>
+                  }
+                </h2>
                 @if (lifecycle.description) {
                   <p class="text-muted-foreground text-sm">{{ lifecycle.description }}</p>
                 }
@@ -82,35 +121,51 @@ import { WorkspaceContext } from '../workspace-context';
   `,
 })
 export class LifecyclesPage {
-  private readonly api = inject(DeliveryApi);
+  private readonly api = inject(LifecyclesApi);
+  private readonly delivery = inject(DeliveryApi);
+  private readonly permissions = inject(PermissionsApi);
   protected readonly context = inject(WorkspaceContext);
 
+  protected readonly includeArchived = signal(false);
+
   protected readonly data = resource({
-    params: () => this.context.current()?.id,
-    loader: async ({ params: workspaceId }) => {
-      const [lifecycles, environments] = await Promise.all([
-        this.api.lifecycles(workspaceId),
-        this.api.environments(workspaceId),
+    params: () => {
+      const workspaceId = this.context.current()?.id;
+      return workspaceId ? { workspaceId, includeArchived: this.includeArchived() } : undefined;
+    },
+    loader: async ({ params: { workspaceId, includeArchived } }) => {
+      const [lifecycles, environments, granted, setting] = await Promise.all([
+        this.api.list(workspaceId, includeArchived),
+        this.delivery.environments(workspaceId, true),
+        this.permissions.granted(workspaceId, ['lifecycle.manage']).catch(() => new Set<string>()),
+        this.api.workspaceDefault(workspaceId).catch(() => null),
       ]);
-      return lifecycles.map((lifecycle) => ({
-        id: lifecycle.id,
-        name: lifecycle.display_name,
-        description: lifecycle.description,
-        phases: [...lifecycle.phases]
-          .sort((a, b) => a.position - b.position)
-          .map((phase) => ({
-            name: phase.name,
-            optional: phase.optional ?? false,
-            environments: phase.environment_ids
-              .map((id) => environments.find((e) => e.id === id)?.display_name)
-              .filter(Boolean)
-              .join(', '),
-          })),
-      }));
+      return {
+        canManage: granted.has('lifecycle.manage'),
+        lifecycles: lifecycles.map((lifecycle) => ({
+          id: lifecycle.id,
+          name: lifecycle.display_name,
+          description: lifecycle.description,
+          archived: !!lifecycle.deleted_at,
+          isDefault: setting?.value === lifecycle.id,
+          phases: [...lifecycle.phases]
+            .sort((a, b) => a.position - b.position)
+            .map((phase) => ({
+              name: phase.name,
+              optional: phase.optional ?? false,
+              environments: phase.environment_ids
+                .map((id) => environments.find((e) => e.id === id)?.display_name)
+                .filter(Boolean)
+                .join(', '),
+            })),
+        })),
+      };
     },
   });
 
-  protected readonly lifecycles = computed(() => this.data.value() ?? []);
+  private readonly loaded = computed(() => (this.data.hasValue() ? this.data.value() : undefined));
+  protected readonly lifecycles = computed(() => this.loaded()?.lifecycles ?? []);
+  protected readonly canManage = computed(() => this.loaded()?.canManage ?? false);
   protected readonly failure = computed(() => {
     const error = this.data.error();
     return error ? (error instanceof ApiError ? error.message : 'Something went wrong.') : null;

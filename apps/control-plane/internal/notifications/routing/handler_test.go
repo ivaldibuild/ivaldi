@@ -40,6 +40,8 @@ type world struct {
 	teams   map[string][]string
 	could   []string
 	stored  []*notifications.Notification
+	// onCreate runs after notifications are stored.
+	onCreate func()
 }
 
 func (w *world) LookupApprovalRequest(context.Context, string, string) (*policy.ApprovalRequest, error) {
@@ -90,6 +92,9 @@ func (w *world) CreateNotifications(_ context.Context, ns []*notifications.Notif
 		}) {
 			w.stored = append(w.stored, n)
 		}
+	}
+	if w.onCreate != nil {
+		w.onCreate()
 	}
 	return nil
 }
@@ -239,6 +244,17 @@ func TestEventsFromBeforeTitlesUseTheStoredRequestsTitle(t *testing.T) {
 	for _, n := range w.stored {
 		assert.Equal(t, "Deploy api 1.4.0 to Production", n.Title())
 	}
+}
+
+func TestARequestThatClosesWhileItIsAnnouncedIsResolved(t *testing.T) {
+	w, router := newWorld(t)
+	w.onCreate = func() {
+		require.NoError(t, w.request.Cancel(ada, authorization.NewDecisionID(), "withdrawn"))
+	}
+	dispatch(t, router, policy.ApprovalRequestCreated{ApprovalRequest: w.request.Snapshot()})
+
+	require.Len(t, w.stored, 1)
+	assert.NotNil(t, w.stored[0].Snapshot().ResolvedAt, "the cancellation's handler may have run before it existed")
 }
 
 // mailer records what it sends, and refuses while failing is set.

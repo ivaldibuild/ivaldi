@@ -141,6 +141,18 @@ func (h *Handler) approvalRequested(ctx context.Context, e events.Envelope, ev p
 	if err := h.repo.CreateNotifications(ctx, ns); err != nil {
 		return err
 	}
+	// The request may have closed while these were made, and its closed
+	// event, handled concurrently, may have resolved before they existed.
+	// Reading it again settles that: either this read sees it closed, or it
+	// closed after the insert, and that event's handler resolves them.
+	r, err = h.approvals.LookupApprovalRequest(ctx, opened.OrganizationID, opened.ID)
+	if err != nil {
+		return fmt.Errorf("read approval request %s: %w", opened.ID, err)
+	}
+	if !r.Pending() {
+		return h.repo.ResolveForSubject(ctx, opened.OrganizationID, notifications.KindApprovalRequested,
+			notifications.SubjectApprovalRequest, opened.ID, clock.Now())
+	}
 	return h.sendEmails(ctx, opened.OrganizationID, e.ID)
 }
 

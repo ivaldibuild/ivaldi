@@ -52,7 +52,7 @@ On `policy.v1.approval_request.created`:
    - the owning Team's members who are users, through `team.Directory`;
    - of those, the ones who could decide the request, through a policy lookup that applies `can_decide` to a list of principals;
    - if that leaves no one, the Organization's owners and admins, from IAM, filtered the same way.
-3. In one transaction, it inserts an `approval_requested` notification for each recipient, skipping any that exist for this event and recipient.
+3. In one transaction, it inserts an `approval_requested` notification for each recipient, skipping any that exist for this event and recipient. It then reads the request again: if it closed meanwhile, it resolves them and stops.
 4. If email is on, it reads the recipients' addresses from IAM and sends one email to each notification of this event whose `email_status` is `pending`, marking each `sent` once the SMTP server accepts it. Recipients without an address are marked `not_sent`.
 
 If an email fails to send, the handler stops sending, since the server is most likely down, and returns an error so the consumer delivers the event again later. Stopping at the first failure also keeps a down server from holding the event past the consumer's claim timeout, when it would be handled twice at once. Step 3 then adds nothing, and step 4 retries only the emails that were not sent. After the consumer's last attempt the event goes to the dead-letter stream, and those emails stay `pending`; their notifications are still in the inbox.
@@ -100,7 +100,7 @@ Configuration, under `notifications.email`:
 
 - **A person is told about a waiting request only if they could decide it** when the event was handled.
 - **One notification per event and recipient.** Its email is sent once, and again only if sending was interrupted after the SMTP server accepted it but before that was recorded.
-- **A notification for a closed request is resolved**, unless the request closed between the handler reading it as pending and inserting its notifications. That window is milliseconds wide, and the notification's link shows the request's real state; closing it would need a lock across capabilities, which is not worth it.
+- **A notification for a closed request is resolved.** Handlers run concurrently, so a request can close while its created event is being handled, and the closed event's handler can resolve before the new notifications exist. After inserting them, the created handler reads the request again and, if it is no longer pending, resolves them itself and sends no email. Either that read sees the close, or the close committed after the insert and its handler resolves them, so no lock across capabilities is needed.
 - **Only its recipient reads a notification.**
 
 ## Building it

@@ -189,6 +189,7 @@ func TestApprovalsAgainstPostgreSQL(t *testing.T) {
 
 	opened, err := recorder.Open(ctx, policy.OpenApprovalInput{
 		Subject: policy.Subject{Type: "delivery.deployment", ID: "dep_1"},
+		Title:   "Deploy api 1.4.0 to Production",
 		Request: authorization.Request{Actor: agent, Permission: "deployment.create", OrganizationID: org,
 			ResourceID: "env_prod", Action: "deployment.create", Proposal: map[string]string{"target": "tgt_1"}},
 		Decision:       authorization.Decision{ID: authorization.NewDecisionID(), Rule: "builtin.test", Reason: "an agent asked"},

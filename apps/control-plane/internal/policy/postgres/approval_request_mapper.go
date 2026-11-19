@@ -13,7 +13,7 @@ type approvalRequestMapper struct{}
 func (approvalRequestMapper) ToPersistence(r *policy.ApprovalRequest) (*approvalRequestEntity, []approvalRequirementEntity) {
 	s := r.Snapshot()
 	e := &approvalRequestEntity{
-		ID: s.ID, OrganizationID: s.OrganizationID, SubjectType: s.SubjectType, SubjectID: s.SubjectID,
+		ID: s.ID, OrganizationID: s.OrganizationID, SubjectType: s.SubjectType, SubjectID: s.SubjectID, Title: s.Title,
 		State: string(s.State), DecisionID: s.DecisionID, Rule: s.Rule, Reason: s.Reason,
 		Action: s.Action, Permission: s.Permission, ResourceID: s.ResourceID, ProposalDigest: s.ProposalDigest,
 		Summary: s.Summary, ReadResourceID: s.ReadResourceID, OwnerTeamID: s.OwnerTeamID,
@@ -44,6 +44,7 @@ func (approvalRequestMapper) ToDomain(e *approvalRequestEntity, requirements []a
 	return policy.NewApprovalRequest(policy.NewApprovalRequestProps{
 		OrganizationID: e.OrganizationID,
 		Subject:        policy.Subject{Type: e.SubjectType, ID: e.SubjectID},
+		Title:          e.Title,
 		Decision:       authorization.Decision{ID: e.DecisionID, Rule: e.Rule, Reason: e.Reason},
 		Action:         e.Action, Permission: e.Permission, ResourceID: e.ResourceID, ProposalDigest: e.ProposalDigest,
 		Summary: e.Summary, ReadResourceID: e.ReadResourceID, OwnerTeamID: e.OwnerTeamID,

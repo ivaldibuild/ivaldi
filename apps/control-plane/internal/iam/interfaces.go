@@ -400,6 +400,18 @@ type HeldResourceReader interface {
 	HeldResources(ctx context.Context, q HeldResourcesQuery) ([]string, error)
 }
 
+// ContactReader finds the people other capabilities tell about work, such
+// as notifications. It does not authorize: the caller decides who is told.
+type ContactReader interface {
+	// ActiveUsers returns the active users among the principals, with
+	// their emails, ordered by principal ID. Other principals are left out.
+	ActiveUsers(ctx context.Context, organizationID string, principalIDs []string) ([]Contact, error)
+	// Administrators returns the active users holding the owner or admin
+	// role on the Organization itself, directly or through a group,
+	// unexpired, ordered by principal ID.
+	Administrators(ctx context.Context, organizationID string) ([]Contact, error)
+}
+
 // AgentSessionRepository reads agent Sessions. Orchestration will create
 // them; nothing writes them yet.
 type AgentSessionRepository interface {

@@ -19,6 +19,7 @@ func newTestRequest(t *testing.T) *ApprovalRequest {
 	r, err := NewApprovalRequest(NewApprovalRequestProps{
 		OrganizationID: testOrg,
 		Subject:        Subject{Type: "delivery.deployment", ID: "dpl_1"},
+		Title:          "Deploy api 1.4.0 to Production / eu-west",
 		Decision:       authorization.Decision{ID: authorization.NewDecisionID(), Rule: "builtin.test", Reason: "an agent asked"},
 		Action:         "deployment.create", Permission: "deployment.create", ResourceID: "env_1",
 		ProposalDigest: strings.Repeat("0", 64), Summary: json.RawMessage(`{}`), ReadResourceID: "prj_1",

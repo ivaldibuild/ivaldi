@@ -39,6 +39,7 @@ func newRequest(t *testing.T, subject policy.Subject, env, requestedBy string, o
 	props := policy.NewApprovalRequestProps{
 		OrganizationID: orgA,
 		Subject:        subject,
+		Title:          "Deploy api 1.4.0 to " + env,
 		Decision:       authorization.Decision{ID: authorization.NewDecisionID(), Rule: "builtin.test", Reason: "an agent asked"},
 		Action:         "deployment.create", Permission: "deployment.create", ResourceID: env, ProposalDigest: digest,
 		Summary: json.RawMessage(`{"environment_id":"` + env + `"}`), ReadResourceID: project,

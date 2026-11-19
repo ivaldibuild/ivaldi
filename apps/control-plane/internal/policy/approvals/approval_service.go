@@ -43,7 +43,7 @@ func (s *service) ListApprovalRequests(ctx context.Context, actor identity.Actor
 	}
 	held := make(map[string][]string, len(permissions))
 	for _, permission := range permissions {
-		if held[permission], err = s.heldResources(ctx, actor, in.OrganizationID, permission); err != nil {
+		if held[permission], err = s.heldResources(ctx, actor.PrincipalID, in.OrganizationID, permission); err != nil {
 			return nil, err
 		}
 	}
@@ -79,11 +79,21 @@ func (s *service) GetApprovalRequest(ctx context.Context, actor identity.Actor, 
 // actor is a user who did not ask for it, and holds every requirement on
 // its resource or above.
 func (s *service) canDecide(ctx context.Context, actor identity.Actor, r *policy.ApprovalRequest) (bool, error) {
-	if !r.Pending() || !actor.IsUser() || r.RequestedBy(actor.PrincipalID) {
+	if !r.Pending() || !actor.IsUser() {
+		return false, nil
+	}
+	return s.userCouldDecide(ctx, actor.PrincipalID, r)
+}
+
+// userCouldDecide reports whether a user could decide r: they did not ask
+// for it, directly or through a Session acting for them, and hold every
+// requirement on its resource or above it.
+func (o options) userCouldDecide(ctx context.Context, userID string, r *policy.ApprovalRequest) (bool, error) {
+	if r.RequestedBy(userID) {
 		return false, nil
 	}
 	for _, req := range r.Requirements() {
-		held, err := s.heldResources(ctx, actor, r.OrganizationID(), req.Permission)
+		held, err := o.heldResources(ctx, userID, r.OrganizationID(), req.Permission)
 		if err != nil {
 			return false, err
 		}
@@ -94,12 +104,12 @@ func (s *service) canDecide(ctx context.Context, actor identity.Actor, r *policy
 	return true, nil
 }
 
-func (s *service) heldResources(ctx context.Context, actor identity.Actor, organizationID, permission string) ([]string, error) {
-	ids, err := s.held.HeldResources(ctx, iam.HeldResourcesQuery{
-		OrganizationID: organizationID, PrincipalID: actor.PrincipalID, Permission: permission, At: clock.Now(),
+func (o options) heldResources(ctx context.Context, principalID, organizationID, permission string) ([]string, error) {
+	ids, err := o.held.HeldResources(ctx, iam.HeldResourcesQuery{
+		OrganizationID: organizationID, PrincipalID: principalID, Permission: permission, At: clock.Now(),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("read where %s holds %s: %w", actor.PrincipalID, permission, err)
+		return nil, fmt.Errorf("read where %s holds %s: %w", principalID, permission, err)
 	}
 	return ids, nil
 }

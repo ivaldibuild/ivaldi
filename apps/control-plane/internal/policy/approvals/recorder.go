@@ -34,7 +34,7 @@ func (a *recorder) Open(ctx context.Context, in policy.OpenApprovalInput) (*poli
 		return nil, err
 	}
 	props := policy.NewApprovalRequestProps{
-		OrganizationID: organizationID, Subject: in.Subject, Decision: in.Decision,
+		OrganizationID: organizationID, Subject: in.Subject, Title: in.Title, Decision: in.Decision,
 		Action: in.Request.Action, Permission: in.Request.Permission, ResourceID: in.Request.ResourceID,
 		ProposalDigest: digest, Summary: summary, ReadResourceID: in.ReadResourceID, OwnerTeamID: in.OwnerTeamID,
 		RequestedByPrincipalID: actor.PrincipalID, Requirements: requirements,

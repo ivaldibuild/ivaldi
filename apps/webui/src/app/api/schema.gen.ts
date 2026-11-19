@@ -1364,6 +1364,74 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/notifications': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List your notifications */
+    get: operations['list-notifications'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/notifications/read': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Mark all your notifications read */
+    post: operations['mark-notifications-read'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/notifications/unread-count': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Count your notifications that are neither read nor resolved */
+    get: operations['count-unread-notifications'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v1/notifications/{notification_id}/read': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Mark one of your notifications read */
+    post: operations['mark-notification-read'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/onboarding': {
     parameters: {
       query?: never;
@@ -2735,6 +2803,7 @@ export interface components {
       subject_type: string;
       /** @description What approvers are shown, as the subject's capability described it */
       summary: components['schemas']['DeploymentApprovalSummary'];
+      title: string;
       /** Format: date-time */
       updated_at: string;
     };
@@ -3797,6 +3866,25 @@ export interface components {
       /** @description The Teams an Agent belongs to, archived ones included with their archived_at; empty for every other kind */
       teams: components['schemas']['PrincipalTeam'][];
     };
+    NotificationSnapshot: {
+      body: string;
+      /** Format: date-time */
+      created_at: string;
+      id: string;
+      /** @enum {string} */
+      kind: 'approval_requested' | 'approval_decided';
+      link: string;
+      organization_id: string;
+      owner_team_id: string | null;
+      /** Format: date-time */
+      read_at: string | null;
+      recipient_principal_id: string;
+      /** Format: date-time */
+      resolved_at: string | null;
+      subject_id: string;
+      subject_type: string;
+      title: string;
+    };
     ObservationRequestBody: {
       /**
        * Format: uri
@@ -4838,6 +4926,20 @@ export interface components {
       /** @description Request status */
       status: string;
     };
+    ResponseNotificationSnapshot: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseNotificationSnapshot.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['NotificationSnapshot'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
     ResponseOrganization: {
       /**
        * Format: uri
@@ -5118,6 +5220,20 @@ export interface components {
       /** @description Request status */
       status: string;
     };
+    ResponseResultNotificationSnapshot: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseResultNotificationSnapshot.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['ResultNotificationSnapshot'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
     ResponseResultPerson: {
       /**
        * Format: uri
@@ -5328,6 +5444,20 @@ export interface components {
       /** @description Request status */
       status: string;
     };
+    ResponseUnreadCount: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseUnreadCount.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['UnreadCount'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
     ResponseVariableSnapshot: {
       /**
        * Format: uri
@@ -5446,6 +5576,15 @@ export interface components {
       has_next: boolean;
       has_previous: boolean;
       items: components['schemas']['LifecycleSnapshot'][];
+      next_cursor: string | null;
+      previous_cursor: string | null;
+      /** Format: int64 */
+      total_count: number;
+    };
+    ResultNotificationSnapshot: {
+      has_next: boolean;
+      has_previous: boolean;
+      items: components['schemas']['NotificationSnapshot'][];
       next_cursor: string | null;
       previous_cursor: string | null;
       /** Format: int64 */
@@ -5907,6 +6046,10 @@ export interface components {
       readonly $schema?: string;
       /** @description The Team to hand the Project to */
       owner_team_id: string;
+    };
+    UnreadCount: {
+      /** Format: int64 */
+      count: number;
     };
     UpdateAgentRequestBody: {
       /**
@@ -9576,6 +9719,134 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ResponseMyPermissions'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'list-notifications': {
+    parameters: {
+      query?: {
+        /** @description Only notifications not yet read */
+        unread?: boolean;
+        /** @description Most items to return */
+        limit?: number;
+        /** @description Sort direction by when it was made; newest first by default */
+        sort_order?: 'asc' | 'desc';
+        /** @description Cursor from a previous page's next_cursor */
+        next_cursor?: string;
+        /** @description Cursor from a previous page's previous_cursor */
+        previous_cursor?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseResultNotificationSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'mark-notifications-read': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description No Content */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'count-unread-notifications': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseUnreadCount'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'mark-notification-read': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The notification */
+        notification_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseNotificationSnapshot'];
         };
       };
       /** @description Error */

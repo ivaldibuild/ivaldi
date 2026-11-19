@@ -59,6 +59,16 @@ export const routes: Routes = [
     children: [
       { path: '', pathMatch: 'full', redirectTo: 'projects' },
       {
+        path: 'inbox',
+        title: 'Inbox · Ivaldi',
+        loadComponent: () => import('./notifications/inbox-page').then((m) => m.InboxPage),
+      },
+      {
+        path: 'approvals/:id',
+        title: 'Approval · Ivaldi',
+        loadComponent: () => import('./approvals/approval-page').then((m) => m.ApprovalPage),
+      },
+      {
         path: 'applications',
         title: 'Applications · Ivaldi',
         loadComponent: () =>
@@ -123,8 +133,7 @@ export const routes: Routes = [
       {
         path: 'clusters',
         title: 'Clusters · Ivaldi',
-        loadComponent: () =>
-          import('./delivery/pages/clusters-page').then((m) => m.ClustersPage),
+        loadComponent: () => import('./delivery/pages/clusters-page').then((m) => m.ClustersPage),
       },
       {
         path: 'clusters/:id',

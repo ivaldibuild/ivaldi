@@ -44,6 +44,7 @@ func (c *Config) Validate() error {
 	c.validateVersionControl(v)
 	c.validateRedis(v)
 	c.validatePlatform(v)
+	c.validateNotificationEmail(v)
 
 	if len(v.problems) > 0 {
 		return &ValidationError{Problems: v.problems}
@@ -170,6 +171,37 @@ func (c *Config) validateRedis(v *validator) {
 		if _, err := os.Stat(f.path); err != nil {
 			v.addf("%s: %v", f.name, err)
 		}
+	}
+}
+
+// validateNotificationEmail checks the SMTP server notifications are
+// emailed through, when email is on.
+func (c *Config) validateNotificationEmail(v *validator) {
+	e := c.Notifications.Email
+	if !e.Enabled() {
+		return
+	}
+	host, _, err := net.SplitHostPort(e.SMTPAddress)
+	if err != nil {
+		v.addf("notifications.email.smtp_address %q must be host:port", e.SMTPAddress)
+	}
+	if _, err := mail.ParseAddress(e.From); err != nil {
+		v.addf("notifications.email.from %q must be an email address, such as Ivaldi <ivaldi@example.com>", e.From)
+	}
+	switch e.TLS {
+	case "starttls", "tls":
+	case "none":
+		if host != "localhost" && !net.ParseIP(host).IsLoopback() {
+			v.addf("notifications.email.tls none sends in plain text, so it is only allowed for a server on this host")
+		}
+	default:
+		v.addf("notifications.email.tls %q must be starttls, tls, or none", e.TLS)
+	}
+	if e.PasswordFile != "" && e.Username == "" {
+		v.addf("notifications.email.password_file needs notifications.email.username")
+	}
+	if _, err := e.Password(); err != nil {
+		v.addf("%v", err)
 	}
 }
 

@@ -24,6 +24,8 @@ import (
 	principalsapi "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/principals"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/profile"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/serviceaccounts"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/notifications"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/notifications/inbox"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/orchestration"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/orchestration/agents"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/policy"
@@ -64,6 +66,7 @@ type services struct {
 	agents          orchestration.AgentService
 	settingLocks    policy.SettingLockService
 	approvals       policy.ApprovalService
+	notifications   notifications.InboxService
 	workspaces      workspace.WorkspaceService
 	projects        workspace.ProjectService
 	settings        workspace.SettingService
@@ -99,6 +102,7 @@ func (s services) routes(describe bool) []api.Routes {
 		// Each capability whose subjects wait for approval lists its
 		// summary here, so the API's description names its fields.
 		approvals.NewController(s.approvals, delivery.DeploymentApprovalSummary{}),
+		inbox.NewController(s.notifications),
 		workspaces.NewWorkspaceController(s.workspaces),
 		projects.NewProjectController(s.projects),
 		settings.NewSettingController(s.settings),

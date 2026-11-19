@@ -24,6 +24,7 @@ type approvalRequestEntity struct {
 	OrganizationID         string     `gorm:"column:organization_id"`
 	SubjectType            string     `gorm:"column:subject_type"`
 	SubjectID              string     `gorm:"column:subject_id"`
+	Title                  string     `gorm:"column:title"`
 	State                  string     `gorm:"column:state"`
 	DecisionID             string     `gorm:"column:decision_id"`
 	Rule                   string     `gorm:"column:rule"`

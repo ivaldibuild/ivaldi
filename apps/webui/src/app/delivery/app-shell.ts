@@ -23,6 +23,7 @@ import { HlmSidebarImports, HlmSidebarService } from '@spartan-ng/helm/sidebar';
 import { CurrentUser } from '../api/current-user';
 import { Project } from '../api/models';
 import { Session } from '../auth/session';
+import { NotificationBell } from '../notifications/notification-bell';
 import { UserBadge } from '../shared/identity';
 import { Theme } from '../shared/theme';
 import { ProjectsApi } from './projects-api';
@@ -49,6 +50,7 @@ interface NavItem {
     HlmCollapsibleImports,
     HlmDropdownMenuImports,
     HlmSidebarImports,
+    NotificationBell,
     UserBadge,
   ],
   providers: [

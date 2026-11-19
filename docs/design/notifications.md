@@ -52,10 +52,10 @@ On `policy.v1.approval_request.created`:
    - the owning Team's members who are users, through `team.Directory`;
    - of those, the ones who could decide the request, through a policy lookup that applies `can_decide` to a list of principals;
    - if that leaves no one, the Organization's owners and admins, from IAM, filtered the same way.
-3. In one transaction, it inserts an `approval_requested` notification for each recipient, skipping any that exist for this event and recipient.
+3. In one transaction, it inserts an `approval_requested` notification for each recipient, skipping any that exist for this event and recipient. It then reads the request again: if it closed meanwhile, it resolves them and stops.
 4. If email is on, it reads the recipients' addresses from IAM and sends one email to each notification of this event whose `email_status` is `pending`, marking each `sent` once the SMTP server accepts it. Recipients without an address are marked `not_sent`.
 
-If an email fails to send, the handler returns an error and the consumer delivers the event again later. Step 3 then adds nothing, and step 4 retries only the emails that were not sent. After the consumer's last attempt the event goes to the dead-letter stream, and those emails stay `pending`; their notifications are still in the inbox.
+If an email fails to send, the handler stops sending, since the server is most likely down, and returns an error so the consumer delivers the event again later. Stopping at the first failure also keeps a down server from holding the event past the consumer's claim timeout, when it would be handled twice at once. For a server that is slow rather than down, one event's emails get half the claim timeout in all; those left when it runs out wait for the next delivery. Step 3 then adds nothing, and step 4 retries only the emails that were not sent. After the consumer's last attempt the event goes to the dead-letter stream, and those emails stay `pending`; their notifications are still in the inbox.
 
 ### An approval request is decided or cancelled
 
@@ -86,7 +86,7 @@ Configuration, under `notifications.email`:
 | `from` | The sender address, such as `Ivaldi <ivaldi@example.com>`. |
 | `tls` | `starttls` (the default), `tls`, or `none`, which is refused unless the address is a loopback one. |
 
-`notifications.consumer_group` (default `notifications`) and `notifications.concurrency` set how the consumer reads the outbox stream.
+`notifications.consumer_group` (default `notifications`) and `notifications.concurrency` set how the consumer reads the outbox stream. The mailer is `notifications/smtpmail`, which uses `net/smtp`: with `starttls` it refuses a server that does not offer STARTTLS rather than sending the password in plain text, and it folds line breaks out of the subject so a title cannot add a header.
 
 ## Changes to other capabilities
 
@@ -100,18 +100,18 @@ Configuration, under `notifications.email`:
 
 - **A person is told about a waiting request only if they could decide it** when the event was handled.
 - **One notification per event and recipient.** Its email is sent once, and again only if sending was interrupted after the SMTP server accepted it but before that was recorded.
-- **A notification for a closed request is resolved**, unless the request closed between the handler reading it as pending and inserting its notifications. That window is milliseconds wide, and the notification's link shows the request's real state; closing it would need a lock across capabilities, which is not worth it.
+- **A notification for a closed request is resolved.** Handlers run concurrently, so a request can close while its created event is being handled, and the closed event's handler can resolve before the new notifications exist. After inserting them, the created handler reads the request again and, if it is no longer pending, resolves them itself and sends no email. Either that read sees the close, or the close committed after the insert and its handler resolves them, so no lock across capabilities is needed.
 - **Only its recipient reads a notification.**
 
 ## Building it
 
 Under [#82](https://github.com/ivaldibuild/ivaldi/issues/82), in this order:
 
-1. This design.
-2. `title` on approval requests, and delivery writing it.
-3. The capability: its migrations, the consumer and its handlers, the recipients, the inbox API, and `make openapi`.
-4. Email: the mailer, its configuration, and a page in `docs/self-hosting/`.
-5. The web app's bell, inbox, and approval page.
+1. This design. Done.
+2. `title` on approval requests, and delivery writing it. Done.
+3. The capability: its migrations, the consumer and its handlers, the recipients, the inbox API, and `make openapi`. Done.
+4. Email: the `email_status` and `emailed_at` columns, the mailer, its configuration, and [a page in `docs/self-hosting/`](../self-hosting/notifications.md). Done.
+5. The web app's bell, inbox, and approval page. Done: the bell sits in the top bar and asks for the unread count every minute and on each navigation; `/inbox` lists notifications and marks one read as it opens; `/approvals/{id}` shows what waits and who asked, and lets someone who could decide it approve or reject it, with a note that rejecting requires. A waiting Deployment's page links to its request.
 
 ## Deferred
 
@@ -133,4 +133,5 @@ The migrations will live in `apps/control-plane/internal/notifications/migration
 |---|---|---|---|
 | notifications | 000001 | the `notifications` schema | — |
 | notifications | 000002 | `notifications`, unique on `(organization_id, event_id, recipient_principal_id)`, with an `(organization_id, recipient_principal_id, created_at, id)` index for the inbox | tenant |
+| notifications | 000003 | `email_status` and `emailed_at` on `notifications`, with a partial index on `(organization_id, event_id)` for the emails still pending | tenant |
 | policy | next | `title` on `approval_requests`, `VARCHAR(255) NOT NULL` | tenant |

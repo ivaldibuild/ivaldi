@@ -163,3 +163,15 @@ export interface CursorPage<T> {
   has_next: boolean;
   next_cursor: string | null;
 }
+
+/** One message to the signed-in person, from `GET /v1/notifications`. */
+export type Notification = Schemas['NotificationSnapshot'];
+
+/** A request for a person's approval, with whether the caller could decide it. */
+export type ApprovalRequest = Schemas['ApprovalRequestView'];
+export type ApprovalState = ApprovalRequest['state'];
+/** What a Deployment's approval request shows its approvers. */
+export type DeploymentApprovalSummary = Schemas['DeploymentApprovalSummary'];
+
+/** Any of the Organisation's principals by name, from `GET /v1/principals`. */
+export type NamedPrincipal = Schemas['NamedPrincipal'];

@@ -87,8 +87,13 @@
         <ng-icon name="lucideClock" aria-hidden="true" />
         <h2 hlmAlertTitle>Waiting for approval</h2>
         <p hlmAlertDescription>
-          Policy asked for a person to approve this Deployment before it applies. Approving from the
-          web app isn't available yet; until then it waits, or you can cancel it.
+          Policy asked for a person to approve this Deployment before it applies. Until someone
+          does, it waits, or you can cancel it.
+          @if (deployment()!.approval_request_id; as approvalId) {
+            <a class="underline underline-offset-4" [routerLink]="['/approvals', approvalId]"
+              >See the approval request</a
+            >
+          }
         </p>
       </div>
     }

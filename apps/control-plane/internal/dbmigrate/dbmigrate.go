@@ -21,6 +21,7 @@ import (
 	credentialsmigrations "github.com/ivaldibuild/ivaldi-control-plane/internal/credentials/migrations"
 	deliverymigrations "github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/migrations"
 	iammigrations "github.com/ivaldibuild/ivaldi-control-plane/internal/iam/migrations"
+	notificationsmigrations "github.com/ivaldibuild/ivaldi-control-plane/internal/notifications/migrations"
 	orchestrationmigrations "github.com/ivaldibuild/ivaldi-control-plane/internal/orchestration/migrations"
 	outboxmigrations "github.com/ivaldibuild/ivaldi-control-plane/internal/outbox/migrations"
 	policymigrations "github.com/ivaldibuild/ivaldi-control-plane/internal/policy/migrations"
@@ -54,6 +55,7 @@ func Capabilities() []Capability {
 		{Name: "policy", FS: policymigrations.FS},
 		{Name: "orchestration", FS: orchestrationmigrations.FS},
 		{Name: "credentials", FS: credentialsmigrations.FS},
+		{Name: "notifications", FS: notificationsmigrations.FS},
 	}
 }
 

@@ -26,3 +26,10 @@ type ListPeopleQuery struct {
 	// principal ID breaking ties.
 	Page pagination.Query
 }
+
+// Contact is how to reach an active user.
+type Contact struct {
+	PrincipalID string
+	DisplayName string
+	Email       string
+}

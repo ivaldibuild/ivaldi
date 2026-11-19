@@ -48,6 +48,7 @@ An email carries the notification's title and text and a link to the request. It
 ### Delivery
 
 - Each person gets an email only if their account has an email address. One without is skipped and still sees the notification in the inbox.
-- If the server refuses or cannot be reached, the event is handled again later and only the emails not yet sent are retried. After the consumer's last attempt the event moves to the dead-letter stream and those emails are not sent; the notifications stay in the inbox.
+- If the server refuses or cannot be reached, sending stops; the event is handled again later and only the emails not yet sent are retried.
+- One event's emails get half of `events.claim_idle_timeout` (default 5 minutes, so 2.5 minutes). Emails left when that runs out wait for the event's next delivery, so a slow server never keeps an event long enough for another consumer to take it over and send the same emails at once. After the consumer's last attempt the event moves to the dead-letter stream and those emails are not sent; the notifications stay in the inbox.
 - Rarely, an email can arrive twice: if `serve` stops after the server accepted a message but before Ivaldi recorded it. SMTP has no way to send a message idempotently, so a duplicate is preferred to a missed email.
 - Every send failure is logged with the notification's ID.

@@ -257,23 +257,44 @@ func TestARequestThatClosesWhileItIsAnnouncedIsResolved(t *testing.T) {
 	assert.NotNil(t, w.stored[0].Snapshot().ResolvedAt, "the cancellation's handler may have run before it existed")
 }
 
-// mailer records what it sends, and refuses while failing is set.
+// mailer records what it sends, refuses while failing is set, and takes
+// delay to answer.
 type mailer struct {
 	sent    []notifications.Message
 	failing bool
+	delay   time.Duration
 }
 
 func (m *mailer) Send(_ context.Context, msg notifications.Message) error {
 	if m.failing {
 		return errors.New("smtp server unavailable")
 	}
+	time.Sleep(m.delay)
 	m.sent = append(m.sent, msg)
 	return nil
 }
 
+func TestEmailsStopWhenTheirTimeRunsOut(t *testing.T) {
+	mail := &mailer{delay: 20 * time.Millisecond}
+	w, router := newWorld(t, WithEmail(mail, "https://ivaldi.example.com", 10*time.Millisecond))
+	w.teams[squad] = append(w.teams[squad], zoe)
+	envs, err := events.Wrap(context.Background(), events.Source{OrganizationID: org}, policy.ApprovalRequestCreated{ApprovalRequest: w.request.Snapshot()})
+	require.NoError(t, err)
+
+	assert.ErrorContains(t, router.Dispatch(context.Background(), envs[0]), "ran out of time")
+	require.Len(t, mail.sent, 1, "the first email took the whole budget")
+	owed := 0
+	for _, n := range w.stored {
+		if n.EmailStatus() == notifications.EmailPending {
+			owed++
+		}
+	}
+	assert.Equal(t, 1, owed, "the other is left for the next delivery")
+}
+
 func TestEmailsAreSentOnceEach(t *testing.T) {
 	mail := &mailer{failing: true}
-	w, router := newWorld(t, WithEmail(mail, "https://ivaldi.example.com/"))
+	w, router := newWorld(t, WithEmail(mail, "https://ivaldi.example.com/", time.Minute))
 	w.could = append(w.could, bob)
 	envs, err := events.Wrap(context.Background(), events.Source{OrganizationID: org}, policy.ApprovalRequestCreated{ApprovalRequest: w.request.Snapshot()})
 	require.NoError(t, err)

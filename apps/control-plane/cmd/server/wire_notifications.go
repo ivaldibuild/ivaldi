@@ -44,7 +44,9 @@ func (a *app) wireNotifications(cfg *config.Config, logger logging.Logger) error
 		if err != nil {
 			return err
 		}
-		opts = append(opts, routing.WithEmail(mailer, cfg.IssuerURL()))
+		// Half the claim timeout leaves the rest of the handler's work, and
+		// a margin, inside it.
+		opts = append(opts, routing.WithEmail(mailer, cfg.IssuerURL(), cfg.Events.ClaimIdleTimeout/2))
 	}
 	handler, err := routing.NewHandler(opts...)
 	if err != nil {

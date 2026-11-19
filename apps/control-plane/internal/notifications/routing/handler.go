@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/notifications"
@@ -39,11 +40,16 @@ func WithTransactor(tx transaction.Transactor) Option { return func(h *Handler) 
 
 func WithLogger(l logging.Logger) Option { return func(h *Handler) { h.logger = l } }
 
-// WithEmail sends each notification by email too, through mailer, with its
-// link made a full address on webBase, the address people reach the web app
-// at. Without it, notifications go to the inbox only.
-func WithEmail(mailer notifications.Mailer, webBase string) Option {
-	return func(h *Handler) { h.mailer, h.webBase = mailer, strings.TrimRight(webBase, "/") }
+// WithEmail emails each notification through mailer too, with its link made
+// a full address on webBase, the address people reach the web app at.
+// Without it, notifications go to the inbox only. Sending one event's emails
+// stops at budget, leaving the rest for the event's next delivery, so the
+// handler finishes before the consumer would give the event to another
+// handler while this one still sends.
+func WithEmail(mailer notifications.Mailer, webBase string, budget time.Duration) Option {
+	return func(h *Handler) {
+		h.mailer, h.webBase, h.emailBudget = mailer, strings.TrimRight(webBase, "/"), budget
+	}
 }
 
 // Handler records the notifications domain events call for. Each handler
@@ -58,6 +64,8 @@ type Handler struct {
 	logger    logging.Logger
 	mailer    notifications.Mailer
 	webBase   string
+	// emailBudget bounds the time one event's emails may take.
+	emailBudget time.Duration
 }
 
 // NewHandler returns a Handler, or an error naming a missing dependency.
@@ -77,6 +85,7 @@ func NewHandler(opts ...Option) (*Handler, error) {
 		{"Transactor", h.tx != nil},
 		{"Logger", h.logger != nil},
 		{"the web app's address for email links", h.mailer == nil || h.webBase != ""},
+		{"a time budget for email", h.mailer == nil || h.emailBudget > 0},
 	} {
 		if !d.ok {
 			return nil, fmt.Errorf("notification routing: %s is required", d.name)
@@ -290,8 +299,15 @@ func (h *Handler) sendEmails(ctx context.Context, organizationID, eventID string
 	// The first failure stops the rest: the server is most likely down, and
 	// waiting out a timeout per recipient could keep the event past the
 	// consumer's claim timeout, when it would be handled twice at once.
-	for _, n := range sendable {
-		if err := h.mailer.Send(ctx, h.message(n, addresses[n.RecipientPrincipalID()])); err != nil {
+	deadline := time.Now().Add(h.emailBudget)
+	for i, n := range sendable {
+		if !time.Now().Before(deadline) {
+			return fmt.Errorf("%d emails are left for the event's next delivery: sending ran out of time", len(sendable)-i)
+		}
+		sendCtx, cancel := context.WithDeadline(ctx, deadline)
+		err := h.mailer.Send(sendCtx, h.message(n, addresses[n.RecipientPrincipalID()]))
+		cancel()
+		if err != nil {
 			h.logger.Warn("could not email a notification", logging.F("notification_id", n.ID()), logging.F("error", err.Error()))
 			return fmt.Errorf("email notification %s: %w", n.ID(), err)
 		}

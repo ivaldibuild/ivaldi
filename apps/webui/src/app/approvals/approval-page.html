@@ -1,0 +1,117 @@
+@if (failure(); as message) {
+  <div hlmAlert variant="destructive" role="alert">
+    <h2 hlmAlertTitle>The approval request didn't load</h2>
+    <p hlmAlertDescription>{{ message }}</p>
+  </div>
+} @else if (!request()) {
+  <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+    <hlm-spinner aria-hidden="true" /> Loading the approval request…
+  </p>
+} @else {
+  <div class="flex max-w-3xl flex-col gap-10">
+    <app-page-header
+      [heading]="request()!.title"
+      [crumbs]="[{ label: 'Inbox', link: '/inbox' }, { label: 'Approval' }]"
+    >
+      <p pageMeta class="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+        <span role="status" aria-live="polite">
+          <span class="sr-only">Status: </span>
+          <span hlmBadge [variant]="pending() ? 'default' : 'outline'">{{ stateLabel() }}</span>
+        </span>
+        <span
+          >Asked by <span class="text-foreground">{{ askedBy() }}</span></span
+        >
+        <span>{{ requestedAt() }}</span>
+      </p>
+      <ng-container pageActions>
+        @if (subjectLink(); as link) {
+          <a hlmBtn variant="outline" [routerLink]="link">View the Deployment</a>
+        }
+      </ng-container>
+    </app-page-header>
+
+    @if (outcome(); as o) {
+      <div hlmAlert role="note">
+        <h2 hlmAlertTitle>{{ o.heading }}</h2>
+        @if (o.note) {
+          <p hlmAlertDescription>{{ o.note }}</p>
+        }
+      </div>
+    }
+
+    <section aria-labelledby="waiting-heading" class="flex flex-col gap-4">
+      <h2 id="waiting-heading" class="text-heading text-lg font-semibold">What waits</h2>
+      <dl class="border-border grid grid-cols-[max-content_1fr] border text-sm">
+        @for (fact of facts(); track fact.label) {
+          <dt
+            class="border-border text-muted-foreground border-b px-4 py-3 last-of-type:border-b-0"
+          >
+            {{ fact.label }}
+          </dt>
+          <dd class="border-border border-b px-4 py-3 last-of-type:border-b-0">
+            @if (fact.link) {
+              <a class="underline underline-offset-4" [routerLink]="fact.link">{{ fact.value }}</a>
+            } @else {
+              {{ fact.value }}
+            }
+          </dd>
+        }
+      </dl>
+      <p class="text-muted-foreground text-sm">Why it waits: {{ request()!.reason }}</p>
+    </section>
+
+    @if (canDecide()) {
+      <section aria-labelledby="decide-heading" class="flex flex-col gap-4">
+        <h2 id="decide-heading" class="text-heading text-lg font-semibold">Your decision</h2>
+        <div hlmField>
+          <label hlmFieldLabel for="decision-note">Note</label>
+          <textarea
+            id="decision-note"
+            rows="4"
+            class="border-input bg-background text-foreground w-full border px-3 py-2 text-sm"
+            aria-describedby="decision-note-help"
+            [attr.aria-invalid]="noteMissing() || decisionForm.note().invalid() ? 'true' : null"
+            [formField]="decisionForm.note"
+          ></textarea>
+          <p id="decision-note-help" class="text-muted-foreground text-sm">
+            Optional when approving. When rejecting, say why: the person who asked is told.
+          </p>
+          @if (noteMissing()) {
+            <p class="text-destructive text-sm" role="alert">Say why you're rejecting it.</p>
+          }
+          @for (error of decisionForm.note().errors(); track error.kind) {
+            <p class="text-destructive text-sm" role="alert">{{ error.message }}</p>
+          }
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button hlmBtn type="button" [disabled]="decideStatus.saving()" (click)="approve()">
+            @if (decideStatus.saving()) {
+              <hlm-spinner aria-hidden="true" />
+            }
+            Approve
+          </button>
+          <button
+            hlmBtn
+            variant="outline"
+            type="button"
+            [disabled]="decideStatus.saving()"
+            (click)="reject()"
+          >
+            Reject
+          </button>
+        </div>
+        @if (decideStatus.error(); as message) {
+          <div hlmAlert variant="destructive" role="alert">
+            <h3 hlmAlertTitle>Your decision wasn't recorded</h3>
+            <p hlmAlertDescription>{{ message }}</p>
+          </div>
+        }
+      </section>
+    } @else if (pending()) {
+      <p class="text-muted-foreground text-sm">
+        You can't decide this request. Only someone who holds every permission it needs, and didn't
+        ask for it, can approve or reject it.
+      </p>
+    }
+  </div>
+}

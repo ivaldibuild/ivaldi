@@ -1,0 +1,117 @@
+<div class="flex flex-col gap-8">
+  <app-page-header heading="Inbox">
+    <p pageMeta class="text-muted-foreground text-sm">
+      What waits for you to decide, and how what you asked for was decided.
+    </p>
+    <ng-container pageActions>
+      <button
+        hlmBtn
+        variant="outline"
+        type="button"
+        [disabled]="markStatus.saving() || unread() === 0"
+        (click)="markAllRead()"
+      >
+        @if (markStatus.saving()) {
+          <hlm-spinner aria-hidden="true" /> Marking…
+        } @else {
+          Mark all as read
+        }
+      </button>
+    </ng-container>
+  </app-page-header>
+
+  <div role="group" aria-label="Show" class="flex gap-2">
+    <button
+      hlmBtn
+      type="button"
+      size="sm"
+      [variant]="unreadOnly() ? 'outline' : 'default'"
+      [attr.aria-pressed]="!unreadOnly()"
+      (click)="show(false)"
+    >
+      All
+    </button>
+    <button
+      hlmBtn
+      type="button"
+      size="sm"
+      [variant]="unreadOnly() ? 'default' : 'outline'"
+      [attr.aria-pressed]="unreadOnly()"
+      (click)="show(true)"
+    >
+      Unread
+    </button>
+  </div>
+
+  @if (markStatus.error(); as message) {
+    <div hlmAlert variant="destructive" role="alert">
+      <h2 hlmAlertTitle>Your notifications weren't marked as read</h2>
+      <p hlmAlertDescription>{{ message }}</p>
+    </div>
+  }
+
+  @if (status.error(); as message) {
+    <div hlmAlert variant="destructive" role="alert">
+      <h2 hlmAlertTitle>Your notifications didn't load</h2>
+      <p hlmAlertDescription>{{ message }}</p>
+    </div>
+  } @else if (status.loading()) {
+    <p class="text-muted-foreground flex items-center gap-3 text-sm" role="status">
+      <hlm-spinner aria-hidden="true" /> Loading your notifications…
+    </p>
+  } @else if (notifications().length === 0) {
+    <p class="text-muted-foreground text-sm">
+      {{ unreadOnly() ? 'Nothing unread.' : 'No notifications yet.' }}
+    </p>
+  } @else {
+    <ul class="border-border flex flex-col border" aria-label="Notifications">
+      @for (n of notifications(); track n.id) {
+        <li class="border-border border-b last:border-b-0">
+          <a
+            class="hover:bg-muted/50 flex gap-3 px-4 py-3 no-underline"
+            [routerLink]="n.link"
+            (click)="open(n)"
+          >
+            <span class="mt-1.5 flex w-2 shrink-0 justify-center">
+              @if (!n.read_at) {
+                <span class="bg-primary size-2 rounded-full" aria-hidden="true"></span>
+                <span class="sr-only">Unread: </span>
+              }
+            </span>
+            <span class="flex min-w-0 flex-col gap-0.5">
+              <span class="text-muted-foreground text-xs">
+                {{ kindLabel(n) }}
+                @if (closed(n)) {
+                  · No longer waiting
+                }
+              </span>
+              <span class="text-heading truncate text-sm" [class.font-semibold]="!n.read_at">{{
+                n.title
+              }}</span>
+              @if (n.body) {
+                <span class="text-foreground text-sm">{{ n.body }}</span>
+              }
+              <span class="text-muted-foreground text-[13px]">{{ at(n) }}</span>
+            </span>
+          </a>
+        </li>
+      }
+    </ul>
+    @if (hasMore()) {
+      <button
+        hlmBtn
+        variant="outline"
+        type="button"
+        class="self-start"
+        [disabled]="loadingMore()"
+        (click)="loadMore()"
+      >
+        @if (loadingMore()) {
+          <hlm-spinner aria-hidden="true" /> Loading…
+        } @else {
+          Show more
+        }
+      </button>
+    }
+  }
+</div>

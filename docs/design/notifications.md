@@ -111,7 +111,7 @@ Under [#82](https://github.com/ivaldibuild/ivaldi/issues/82), in this order:
 2. `title` on approval requests, and delivery writing it. Done.
 3. The capability: its migrations, the consumer and its handlers, the recipients, the inbox API, and `make openapi`. Done.
 4. Email: the `email_status` and `emailed_at` columns, the mailer, its configuration, and [a page in `docs/self-hosting/`](../self-hosting/notifications.md). Done.
-5. The web app's bell, inbox, and approval page.
+5. The web app's bell, inbox, and approval page. Done: the bell sits in the top bar and asks for the unread count every minute and on each navigation; `/inbox` lists notifications and marks one read as it opens; `/approvals/{id}` shows what waits and who asked, and lets someone who could decide it approve or reject it, with a note that rejecting requires. A waiting Deployment's page links to its request.
 
 ## Deferred
 

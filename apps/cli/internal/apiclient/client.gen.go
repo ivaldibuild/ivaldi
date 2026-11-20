@@ -56,6 +56,24 @@ func (e BuildSnapshotProvenance) Valid() bool {
 	}
 }
 
+// Defines values for ChannelRuleSnapshotKind.
+const (
+	ChannelRuleSnapshotKindGitRef  ChannelRuleSnapshotKind = "git_ref"
+	ChannelRuleSnapshotKindVersion ChannelRuleSnapshotKind = "version"
+)
+
+// Valid indicates whether the value is a known member of the ChannelRuleSnapshotKind enum.
+func (e ChannelRuleSnapshotKind) Valid() bool {
+	switch e {
+	case ChannelRuleSnapshotKindGitRef:
+		return true
+	case ChannelRuleSnapshotKindVersion:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ReleaseSource.
 const (
 	ReleaseSourceCreated  ReleaseSource = "created"
@@ -152,6 +170,81 @@ func (e ListReleasesParamsSortOrder) Valid() bool {
 	}
 }
 
+// Defines values for ListApplicationsParamsSortOrder.
+const (
+	ListApplicationsParamsSortOrderAsc  ListApplicationsParamsSortOrder = "asc"
+	ListApplicationsParamsSortOrderDesc ListApplicationsParamsSortOrder = "desc"
+)
+
+// Valid indicates whether the value is a known member of the ListApplicationsParamsSortOrder enum.
+func (e ListApplicationsParamsSortOrder) Valid() bool {
+	switch e {
+	case ListApplicationsParamsSortOrderAsc:
+		return true
+	case ListApplicationsParamsSortOrderDesc:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListWorkspaceApplicationsParamsSortOrder.
+const (
+	ListWorkspaceApplicationsParamsSortOrderAsc  ListWorkspaceApplicationsParamsSortOrder = "asc"
+	ListWorkspaceApplicationsParamsSortOrderDesc ListWorkspaceApplicationsParamsSortOrder = "desc"
+)
+
+// Valid indicates whether the value is a known member of the ListWorkspaceApplicationsParamsSortOrder enum.
+func (e ListWorkspaceApplicationsParamsSortOrder) Valid() bool {
+	switch e {
+	case ListWorkspaceApplicationsParamsSortOrderAsc:
+		return true
+	case ListWorkspaceApplicationsParamsSortOrderDesc:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListProjectsParamsSortBy.
+const (
+	ListProjectsParamsSortByCreatedAt   ListProjectsParamsSortBy = "created_at"
+	ListProjectsParamsSortByDisplayName ListProjectsParamsSortBy = "display_name"
+	ListProjectsParamsSortBySlug        ListProjectsParamsSortBy = "slug"
+)
+
+// Valid indicates whether the value is a known member of the ListProjectsParamsSortBy enum.
+func (e ListProjectsParamsSortBy) Valid() bool {
+	switch e {
+	case ListProjectsParamsSortByCreatedAt:
+		return true
+	case ListProjectsParamsSortByDisplayName:
+		return true
+	case ListProjectsParamsSortBySlug:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListProjectsParamsSortOrder.
+const (
+	ListProjectsParamsSortOrderAsc  ListProjectsParamsSortOrder = "asc"
+	ListProjectsParamsSortOrderDesc ListProjectsParamsSortOrder = "desc"
+)
+
+// Valid indicates whether the value is a known member of the ListProjectsParamsSortOrder enum.
+func (e ListProjectsParamsSortOrder) Valid() bool {
+	switch e {
+	case ListProjectsParamsSortOrderAsc:
+		return true
+	case ListProjectsParamsSortOrderDesc:
+		return true
+	default:
+		return false
+	}
+}
+
 // APITokenSnapshot defines model for APITokenSnapshot.
 type APITokenSnapshot struct {
 	CreatedAt      time.Time  `json:"created_at"`
@@ -163,6 +256,22 @@ type APITokenSnapshot struct {
 	PrincipalId    string     `json:"principal_id"`
 	RevokedAt      *time.Time `json:"revoked_at"`
 	TokenPrefix    string     `json:"token_prefix"`
+}
+
+// ApplicationSnapshot defines model for ApplicationSnapshot.
+type ApplicationSnapshot struct {
+	ArchivedAt       *time.Time        `json:"archived_at"`
+	CreatedAt        time.Time         `json:"created_at"`
+	DisplayName      string            `json:"display_name"`
+	Id               string            `json:"id"`
+	OrganizationId   string            `json:"organization_id"`
+	OwnerTeamId      string            `json:"owner_team_id"`
+	ProjectId        string            `json:"project_id"`
+	Slug             string            `json:"slug"`
+	SourceId         *string           `json:"source_id"`
+	UpdatedAt        time.Time         `json:"updated_at"`
+	WorkloadSelector map[string]string `json:"workload_selector"`
+	WorkspaceId      string            `json:"workspace_id"`
 }
 
 // BuildBody defines model for BuildBody.
@@ -247,6 +356,81 @@ type ChangeSnapshot struct {
 	WorkItemId           *string   `json:"work_item_id"`
 }
 
+// ChannelRuleSnapshot defines model for ChannelRuleSnapshot.
+type ChannelRuleSnapshot struct {
+	ArtifactId *string                 `json:"artifact_id"`
+	Config     interface{}             `json:"config"`
+	CreatedAt  time.Time               `json:"created_at"`
+	Id         string                  `json:"id"`
+	Kind       ChannelRuleSnapshotKind `json:"kind"`
+	UpdatedAt  time.Time               `json:"updated_at"`
+}
+
+// ChannelRuleSnapshotKind defines model for ChannelRuleSnapshot.Kind.
+type ChannelRuleSnapshotKind string
+
+// ChannelSnapshot defines model for ChannelSnapshot.
+type ChannelSnapshot struct {
+	ApplicationId  string                `json:"application_id"`
+	ArchivedAt     *time.Time            `json:"archived_at"`
+	CreatedAt      time.Time             `json:"created_at"`
+	Description    *string               `json:"description"`
+	DisplayName    string                `json:"display_name"`
+	Id             string                `json:"id"`
+	IsDefault      bool                  `json:"is_default"`
+	LifecycleId    string                `json:"lifecycle_id"`
+	OrganizationId string                `json:"organization_id"`
+	Rules          []ChannelRuleSnapshot `json:"rules"`
+	Slug           string                `json:"slug"`
+	UpdatedAt      time.Time             `json:"updated_at"`
+}
+
+// CreateApplicationRequestBody defines model for CreateApplicationRequestBody.
+type CreateApplicationRequestBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: https://example.com/schemas/CreateApplicationRequestBody.json
+	Schema *string `json:"$schema,omitempty"`
+
+	// DefaultLifecycleId The Lifecycle the default Channel follows, in the Project's Workspace; the delivery.default_lifecycle setting for the Project when omitted
+	DefaultLifecycleId *string `json:"default_lifecycle_id,omitempty"`
+
+	// DisplayName The display name for the application
+	DisplayName string `json:"display_name"`
+
+	// OwnerTeamId The Team that owns the application; the Project's owning Team when omitted
+	OwnerTeamId *string `json:"owner_team_id,omitempty"`
+
+	// Slug Url slug for the application; derived from the display name when omitted
+	Slug *string `json:"slug,omitempty"`
+
+	// SourceId The Source the application is built from
+	SourceId *string `json:"source_id,omitempty"`
+
+	// WorkloadSelector Labels that pick out the application's workloads; a label with the application's ID when omitted
+	WorkloadSelector *map[string]string `json:"workload_selector,omitempty"`
+}
+
+// CreateProjectRequestBody defines model for CreateProjectRequestBody.
+type CreateProjectRequestBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: https://example.com/schemas/CreateProjectRequestBody.json
+	Schema *string `json:"$schema,omitempty"`
+
+	// Description What the Project is for
+	Description *string `json:"description,omitempty"`
+
+	// DisplayName The Project's display name
+	DisplayName string `json:"display_name"`
+
+	// OwnerTeamId The Team responsible for the Project
+	OwnerTeamId string `json:"owner_team_id"`
+
+	// Slug URL slug: lowercase letters, digits, and single hyphens
+	Slug string `json:"slug"`
+}
+
 // CreateReleaseRequestBody defines model for CreateReleaseRequestBody.
 type CreateReleaseRequestBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -299,6 +483,12 @@ type CreateTokenRequestBody struct {
 
 	// Name What the token is for, such as github-actions
 	Name string `json:"name"`
+}
+
+// CreatedApplication defines model for CreatedApplication.
+type CreatedApplication struct {
+	Application    ApplicationSnapshot `json:"application"`
+	DefaultChannel ChannelSnapshot     `json:"default_channel"`
 }
 
 // ErrorDetail defines model for ErrorDetail.
@@ -356,6 +546,17 @@ type IssuedToken struct {
 	Token  APITokenSnapshot `json:"token"`
 }
 
+// LinkApplicationSourceRequestBody defines model for LinkApplicationSourceRequestBody.
+type LinkApplicationSourceRequestBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: https://example.com/schemas/LinkApplicationSourceRequestBody.json
+	Schema *string `json:"$schema,omitempty"`
+
+	// SourceId The Source the application is built from; empty removes it
+	SourceId string `json:"source_id"`
+}
+
 // Me defines model for Me.
 type Me struct {
 	Organization MeOrganization `json:"organization"`
@@ -384,6 +585,21 @@ type MeRole struct {
 	ResourceId string `json:"resource_id"`
 	Role       string `json:"role"`
 	RoleId     string `json:"role_id"`
+}
+
+// ProjectSnapshot defines model for ProjectSnapshot.
+type ProjectSnapshot struct {
+	ArchivedAt           *time.Time `json:"archived_at"`
+	CreatedAt            time.Time  `json:"created_at"`
+	CreatedByPrincipalId string     `json:"created_by_principal_id"`
+	Description          string     `json:"description"`
+	DisplayName          string     `json:"display_name"`
+	Id                   string     `json:"id"`
+	OrganizationId       string     `json:"organization_id"`
+	OwnerTeamId          string     `json:"owner_team_id"`
+	Slug                 string     `json:"slug"`
+	UpdatedAt            time.Time  `json:"updated_at"`
+	WorkspaceId          string     `json:"workspace_id"`
 }
 
 // RecordChangeRequestBody defines model for RecordChangeRequestBody.
@@ -456,6 +672,21 @@ type ResponseAPITokenSnapshot struct {
 	Status string `json:"status"`
 }
 
+// ResponseApplicationSnapshot defines model for ResponseApplicationSnapshot.
+type ResponseApplicationSnapshot struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: https://example.com/schemas/ResponseApplicationSnapshot.json
+	Schema *string             `json:"$schema,omitempty"`
+	Data   ApplicationSnapshot `json:"data"`
+
+	// Message Human-readable message
+	Message *string `json:"message,omitempty"`
+
+	// Status Request status
+	Status string `json:"status"`
+}
+
 // ResponseChangeSnapshot defines model for ResponseChangeSnapshot.
 type ResponseChangeSnapshot struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -463,6 +694,21 @@ type ResponseChangeSnapshot struct {
 	// Example: https://example.com/schemas/ResponseChangeSnapshot.json
 	Schema *string        `json:"$schema,omitempty"`
 	Data   ChangeSnapshot `json:"data"`
+
+	// Message Human-readable message
+	Message *string `json:"message,omitempty"`
+
+	// Status Request status
+	Status string `json:"status"`
+}
+
+// ResponseCreatedApplication defines model for ResponseCreatedApplication.
+type ResponseCreatedApplication struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: https://example.com/schemas/ResponseCreatedApplication.json
+	Schema *string            `json:"$schema,omitempty"`
+	Data   CreatedApplication `json:"data"`
 
 	// Message Human-readable message
 	Message *string `json:"message,omitempty"`
@@ -535,6 +781,21 @@ type ResponseMe struct {
 	Status string `json:"status"`
 }
 
+// ResponseProjectSnapshot defines model for ResponseProjectSnapshot.
+type ResponseProjectSnapshot struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: https://example.com/schemas/ResponseProjectSnapshot.json
+	Schema *string         `json:"$schema,omitempty"`
+	Data   ProjectSnapshot `json:"data"`
+
+	// Message Human-readable message
+	Message *string `json:"message,omitempty"`
+
+	// Status Request status
+	Status string `json:"status"`
+}
+
 // ResponseRelease defines model for ResponseRelease.
 type ResponseRelease struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -542,6 +803,36 @@ type ResponseRelease struct {
 	// Example: https://example.com/schemas/ResponseRelease.json
 	Schema *string `json:"$schema,omitempty"`
 	Data   Release `json:"data"`
+
+	// Message Human-readable message
+	Message *string `json:"message,omitempty"`
+
+	// Status Request status
+	Status string `json:"status"`
+}
+
+// ResponseResultApplicationSnapshot defines model for ResponseResultApplicationSnapshot.
+type ResponseResultApplicationSnapshot struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: https://example.com/schemas/ResponseResultApplicationSnapshot.json
+	Schema *string                   `json:"$schema,omitempty"`
+	Data   ResultApplicationSnapshot `json:"data"`
+
+	// Message Human-readable message
+	Message *string `json:"message,omitempty"`
+
+	// Status Request status
+	Status string `json:"status"`
+}
+
+// ResponseResultProjectSnapshot defines model for ResponseResultProjectSnapshot.
+type ResponseResultProjectSnapshot struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: https://example.com/schemas/ResponseResultProjectSnapshot.json
+	Schema *string               `json:"$schema,omitempty"`
+	Data   ResultProjectSnapshot `json:"data"`
 
 	// Message Human-readable message
 	Message *string `json:"message,omitempty"`
@@ -580,6 +871,26 @@ type ResponseServiceAccount struct {
 	Status string `json:"status"`
 }
 
+// ResultApplicationSnapshot defines model for ResultApplicationSnapshot.
+type ResultApplicationSnapshot struct {
+	HasNext        bool                  `json:"has_next"`
+	HasPrevious    bool                  `json:"has_previous"`
+	Items          []ApplicationSnapshot `json:"items"`
+	NextCursor     *string               `json:"next_cursor"`
+	PreviousCursor *string               `json:"previous_cursor"`
+	TotalCount     int64                 `json:"total_count"`
+}
+
+// ResultProjectSnapshot defines model for ResultProjectSnapshot.
+type ResultProjectSnapshot struct {
+	HasNext        bool              `json:"has_next"`
+	HasPrevious    bool              `json:"has_previous"`
+	Items          []ProjectSnapshot `json:"items"`
+	NextCursor     *string           `json:"next_cursor"`
+	PreviousCursor *string           `json:"previous_cursor"`
+	TotalCount     int64             `json:"total_count"`
+}
+
 // ResultRelease defines model for ResultRelease.
 type ResultRelease struct {
 	HasNext        bool      `json:"has_next"`
@@ -599,6 +910,62 @@ type ServiceAccount struct {
 	Id                   string    `json:"id"`
 	Status               string    `json:"status"`
 	UpdatedAt            time.Time `json:"updated_at"`
+}
+
+// TransferApplicationRequestBody defines model for TransferApplicationRequestBody.
+type TransferApplicationRequestBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: https://example.com/schemas/TransferApplicationRequestBody.json
+	Schema *string `json:"$schema,omitempty"`
+
+	// OwnerTeamId The active Team to hand the application to
+	OwnerTeamId string `json:"owner_team_id"`
+}
+
+// TransferProjectRequestBody defines model for TransferProjectRequestBody.
+type TransferProjectRequestBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: https://example.com/schemas/TransferProjectRequestBody.json
+	Schema *string `json:"$schema,omitempty"`
+
+	// OwnerTeamId The Team to hand the Project to
+	OwnerTeamId string `json:"owner_team_id"`
+}
+
+// UpdateApplicationRequestBody defines model for UpdateApplicationRequestBody.
+type UpdateApplicationRequestBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: https://example.com/schemas/UpdateApplicationRequestBody.json
+	Schema *string `json:"$schema,omitempty"`
+
+	// DisplayName New display name
+	DisplayName *string `json:"display_name,omitempty"`
+
+	// Slug New slug
+	Slug *string `json:"slug,omitempty"`
+
+	// WorkloadSelector New workload selector, replacing the old one
+	WorkloadSelector *map[string]string `json:"workload_selector,omitempty"`
+}
+
+// UpdateProjectRequestBody defines model for UpdateProjectRequestBody.
+type UpdateProjectRequestBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: https://example.com/schemas/UpdateProjectRequestBody.json
+	Schema *string `json:"$schema,omitempty"`
+
+	// Description New description
+	Description *string `json:"description,omitempty"`
+
+	// DisplayName New display name
+	DisplayName *string `json:"display_name,omitempty"`
+
+	// Slug New slug
+	Slug *string `json:"slug,omitempty"`
 }
 
 // ListReleasesParams defines parameters for ListReleases.
@@ -634,14 +1001,119 @@ type ListReleasesParamsSortBy string
 // ListReleasesParamsSortOrder defines parameters for ListReleases.
 type ListReleasesParamsSortOrder string
 
+// ListApplicationsParams defines parameters for ListApplications.
+type ListApplicationsParams struct {
+	// OwnerTeamId Only the Applications this Team owns
+	OwnerTeamId *string `form:"owner_team_id,omitempty" json:"owner_team_id,omitempty"`
+
+	// IncludeArchived Include archived Applications
+	IncludeArchived *bool `form:"include_archived,omitempty" json:"include_archived,omitempty"`
+
+	// Limit Most items to return
+	Limit *int64 `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// SortBy Field to sort by
+	SortBy *string `form:"sort_by,omitempty" json:"sort_by,omitempty"`
+
+	// SortOrder Sort direction
+	SortOrder *ListApplicationsParamsSortOrder `form:"sort_order,omitempty" json:"sort_order,omitempty"`
+
+	// NextCursor Cursor from a previous page's next_cursor
+	NextCursor *string `form:"next_cursor,omitempty" json:"next_cursor,omitempty"`
+
+	// PreviousCursor Cursor from a previous page's previous_cursor
+	PreviousCursor *string `form:"previous_cursor,omitempty" json:"previous_cursor,omitempty"`
+}
+
+// ListApplicationsParamsSortOrder defines parameters for ListApplications.
+type ListApplicationsParamsSortOrder string
+
 // ListServiceAccountsParams defines parameters for ListServiceAccounts.
 type ListServiceAccountsParams struct {
 	// IncludeInactive Also list suspended service accounts
 	IncludeInactive *bool `form:"include_inactive,omitempty" json:"include_inactive,omitempty"`
 }
 
+// ListWorkspaceApplicationsParams defines parameters for ListWorkspaceApplications.
+type ListWorkspaceApplicationsParams struct {
+	// OwnerTeamId Only the Applications this Team owns
+	OwnerTeamId *string `form:"owner_team_id,omitempty" json:"owner_team_id,omitempty"`
+
+	// IncludeArchived Include archived Applications
+	IncludeArchived *bool `form:"include_archived,omitempty" json:"include_archived,omitempty"`
+
+	// Limit Most items to return
+	Limit *int64 `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// SortBy Field to sort by
+	SortBy *string `form:"sort_by,omitempty" json:"sort_by,omitempty"`
+
+	// SortOrder Sort direction
+	SortOrder *ListWorkspaceApplicationsParamsSortOrder `form:"sort_order,omitempty" json:"sort_order,omitempty"`
+
+	// NextCursor Cursor from a previous page's next_cursor
+	NextCursor *string `form:"next_cursor,omitempty" json:"next_cursor,omitempty"`
+
+	// PreviousCursor Cursor from a previous page's previous_cursor
+	PreviousCursor *string `form:"previous_cursor,omitempty" json:"previous_cursor,omitempty"`
+}
+
+// ListWorkspaceApplicationsParamsSortOrder defines parameters for ListWorkspaceApplications.
+type ListWorkspaceApplicationsParamsSortOrder string
+
+// ListProjectsParams defines parameters for ListProjects.
+type ListProjectsParams struct {
+	// Q Keep the Projects whose name or slug contains this, ignoring case
+	Q *string `form:"q,omitempty" json:"q,omitempty"`
+
+	// OwnerTeamId Keep the Projects this Team owns
+	OwnerTeamId *string `form:"owner_team_id,omitempty" json:"owner_team_id,omitempty"`
+
+	// IncludeArchived Include archived Projects
+	IncludeArchived *bool `form:"include_archived,omitempty" json:"include_archived,omitempty"`
+
+	// Limit Most items to return
+	Limit *int64 `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// SortBy Field to sort by: created_at (the default), slug, or display_name
+	SortBy *ListProjectsParamsSortBy `form:"sort_by,omitempty" json:"sort_by,omitempty"`
+
+	// SortOrder Sort direction
+	SortOrder *ListProjectsParamsSortOrder `form:"sort_order,omitempty" json:"sort_order,omitempty"`
+
+	// NextCursor Cursor from a previous page's next_cursor
+	NextCursor *string `form:"next_cursor,omitempty" json:"next_cursor,omitempty"`
+
+	// PreviousCursor Cursor from a previous page's previous_cursor
+	PreviousCursor *string `form:"previous_cursor,omitempty" json:"previous_cursor,omitempty"`
+}
+
+// ListProjectsParamsSortBy defines parameters for ListProjects.
+type ListProjectsParamsSortBy string
+
+// ListProjectsParamsSortOrder defines parameters for ListProjects.
+type ListProjectsParamsSortOrder string
+
+// UpdateApplicationJSONRequestBody defines body for UpdateApplication for application/json ContentType.
+type UpdateApplicationJSONRequestBody = UpdateApplicationRequestBody
+
 // CreateReleaseJSONRequestBody defines body for CreateRelease for application/json ContentType.
 type CreateReleaseJSONRequestBody = CreateReleaseRequestBody
+
+// LinkApplicationSourceJSONRequestBody defines body for LinkApplicationSource for application/json ContentType.
+type LinkApplicationSourceJSONRequestBody = LinkApplicationSourceRequestBody
+
+// TransferApplicationJSONRequestBody defines body for TransferApplication for application/json ContentType.
+type TransferApplicationJSONRequestBody = TransferApplicationRequestBody
+
+// UpdateProjectJSONRequestBody defines body for UpdateProject for application/json ContentType.
+type UpdateProjectJSONRequestBody = UpdateProjectRequestBody
+
+// CreateApplicationJSONRequestBody defines body for CreateApplication for application/json ContentType.
+type CreateApplicationJSONRequestBody = CreateApplicationRequestBody
+
+// TransferProjectJSONRequestBody defines body for TransferProject for application/json ContentType.
+type TransferProjectJSONRequestBody = TransferProjectRequestBody
 
 // CreateServiceAccountJSONRequestBody defines body for CreateServiceAccount for application/json ContentType.
 type CreateServiceAccountJSONRequestBody = CreateRequestBody
@@ -651,6 +1123,9 @@ type CreateApiTokenJSONRequestBody = CreateTokenRequestBody
 
 // RecordChangeJSONRequestBody defines body for RecordChange for application/json ContentType.
 type RecordChangeJSONRequestBody = RecordChangeRequestBody
+
+// CreateProjectJSONRequestBody defines body for CreateProject for application/json ContentType.
+type CreateProjectJSONRequestBody = CreateProjectRequestBody
 
 // RequestEditorFn is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -731,6 +1206,30 @@ type ClientInterface interface {
 	// Corresponds with POST /v1/api-tokens/{api_token_id}/revoke (the `RevokeApiToken` operationId).
 	RevokeApiToken(ctx context.Context, apiTokenId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetApplication Get an Application
+	//
+	// Corresponds with GET /v1/applications/{application} (the `GetApplication` operationId).
+	GetApplication(ctx context.Context, application string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateApplicationWithBody Change an Application
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PATCH /v1/applications/{application} (the `UpdateApplication` operationId).
+	UpdateApplicationWithBody(ctx context.Context, application string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateApplication Change an Application
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PATCH /v1/applications/{application} (the `UpdateApplication` operationId).
+	UpdateApplication(ctx context.Context, application string, body UpdateApplicationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ArchiveApplication Archive an Application
+	//
+	// Corresponds with POST /v1/applications/{application}/archive (the `ArchiveApplication` operationId).
+	ArchiveApplication(ctx context.Context, application string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListReleases List an Application's Releases
 	//
 	// Corresponds with GET /v1/applications/{application}/releases (the `ListReleases` operationId).
@@ -750,10 +1249,105 @@ type ClientInterface interface {
 	// Corresponds with POST /v1/applications/{application}/releases (the `CreateRelease` operationId).
 	CreateRelease(ctx context.Context, application string, body CreateReleaseJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// RestoreApplication Restore an archived Application
+	//
+	// Corresponds with POST /v1/applications/{application}/restore (the `RestoreApplication` operationId).
+	RestoreApplication(ctx context.Context, application string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// LinkApplicationSourceWithBody Link or unlink the Source an Application is built from
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /v1/applications/{application}/source (the `LinkApplicationSource` operationId).
+	LinkApplicationSourceWithBody(ctx context.Context, application string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// LinkApplicationSource Link or unlink the Source an Application is built from
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /v1/applications/{application}/source (the `LinkApplicationSource` operationId).
+	LinkApplicationSource(ctx context.Context, application string, body LinkApplicationSourceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// TransferApplicationWithBody Hand an Application to another Team
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /v1/applications/{application}/transfer (the `TransferApplication` operationId).
+	TransferApplicationWithBody(ctx context.Context, application string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// TransferApplication Hand an Application to another Team
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /v1/applications/{application}/transfer (the `TransferApplication` operationId).
+	TransferApplication(ctx context.Context, application string, body TransferApplicationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetMe Get the signed-in caller, their Organization, and their roles in it
 	//
 	// Corresponds with GET /v1/me (the `GetMe` operationId).
 	GetMe(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetProject Get a Project
+	//
+	// Corresponds with GET /v1/projects/{project_id} (the `GetProject` operationId).
+	GetProject(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateProjectWithBody Rename or redescribe a Project
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PATCH /v1/projects/{project_id} (the `UpdateProject` operationId).
+	UpdateProjectWithBody(ctx context.Context, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateProject Rename or redescribe a Project
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PATCH /v1/projects/{project_id} (the `UpdateProject` operationId).
+	UpdateProject(ctx context.Context, projectId string, body UpdateProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListApplications List a Project's Applications
+	//
+	// Corresponds with GET /v1/projects/{project_id}/applications (the `ListApplications` operationId).
+	ListApplications(ctx context.Context, projectId string, params *ListApplicationsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateApplicationWithBody Create an Application in a Project, with its default Channel
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /v1/projects/{project_id}/applications (the `CreateApplication` operationId).
+	CreateApplicationWithBody(ctx context.Context, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateApplication Create an Application in a Project, with its default Channel
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /v1/projects/{project_id}/applications (the `CreateApplication` operationId).
+	CreateApplication(ctx context.Context, projectId string, body CreateApplicationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ArchiveProject Archive a Project that has nothing active in it
+	//
+	// Corresponds with POST /v1/projects/{project_id}/archive (the `ArchiveProject` operationId).
+	ArchiveProject(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RestoreProject Restore an archived Project
+	//
+	// Corresponds with POST /v1/projects/{project_id}/restore (the `RestoreProject` operationId).
+	RestoreProject(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// TransferProjectWithBody Hand a Project to another Team
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /v1/projects/{project_id}/transfer (the `TransferProject` operationId).
+	TransferProjectWithBody(ctx context.Context, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// TransferProject Hand a Project to another Team
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /v1/projects/{project_id}/transfer (the `TransferProject` operationId).
+	TransferProject(ctx context.Context, projectId string, body TransferProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetRelease Get a Release with its Builds
 	//
@@ -836,6 +1430,30 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /v1/sources/{source_id}/changes (the `RecordChange` operationId).
 	RecordChange(ctx context.Context, sourceId string, body RecordChangeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListWorkspaceApplications List a Workspace's Applications
+	//
+	// Corresponds with GET /v1/workspaces/{workspace_id}/applications (the `ListWorkspaceApplications` operationId).
+	ListWorkspaceApplications(ctx context.Context, workspaceId string, params *ListWorkspaceApplicationsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListProjects List a Workspace's Projects
+	//
+	// Corresponds with GET /v1/workspaces/{workspace_id}/projects (the `ListProjects` operationId).
+	ListProjects(ctx context.Context, workspaceId string, params *ListProjectsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateProjectWithBody Create a Project in a Workspace
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /v1/workspaces/{workspace_id}/projects (the `CreateProject` operationId).
+	CreateProjectWithBody(ctx context.Context, workspaceId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateProject Create a Project in a Workspace
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /v1/workspaces/{workspace_id}/projects (the `CreateProject` operationId).
+	CreateProject(ctx context.Context, workspaceId string, body CreateProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 // RevokeApiToken Revoke an API token for good
@@ -843,6 +1461,70 @@ type ClientInterface interface {
 // Corresponds with POST /v1/api-tokens/{api_token_id}/revoke (the `RevokeApiToken` operationId).
 func (c *Client) RevokeApiToken(ctx context.Context, apiTokenId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewRevokeApiTokenRequest(c.Server, apiTokenId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetApplication Get an Application
+//
+// Corresponds with GET /v1/applications/{application} (the `GetApplication` operationId).
+func (c *Client) GetApplication(ctx context.Context, application string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApplicationRequest(c.Server, application)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateApplicationWithBody Change an Application
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PATCH /v1/applications/{application} (the `UpdateApplication` operationId).
+func (c *Client) UpdateApplicationWithBody(ctx context.Context, application string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateApplicationRequestWithBody(c.Server, application, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateApplication Change an Application
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PATCH /v1/applications/{application} (the `UpdateApplication` operationId).
+func (c *Client) UpdateApplication(ctx context.Context, application string, body UpdateApplicationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateApplicationRequest(c.Server, application, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ArchiveApplication Archive an Application
+//
+// Corresponds with POST /v1/applications/{application}/archive (the `ArchiveApplication` operationId).
+func (c *Client) ArchiveApplication(ctx context.Context, application string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewArchiveApplicationRequest(c.Server, application)
 	if err != nil {
 		return nil, err
 	}
@@ -902,11 +1584,256 @@ func (c *Client) CreateRelease(ctx context.Context, application string, body Cre
 	return c.Client.Do(req)
 }
 
+// RestoreApplication Restore an archived Application
+//
+// Corresponds with POST /v1/applications/{application}/restore (the `RestoreApplication` operationId).
+func (c *Client) RestoreApplication(ctx context.Context, application string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRestoreApplicationRequest(c.Server, application)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// LinkApplicationSourceWithBody Link or unlink the Source an Application is built from
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /v1/applications/{application}/source (the `LinkApplicationSource` operationId).
+func (c *Client) LinkApplicationSourceWithBody(ctx context.Context, application string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewLinkApplicationSourceRequestWithBody(c.Server, application, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// LinkApplicationSource Link or unlink the Source an Application is built from
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /v1/applications/{application}/source (the `LinkApplicationSource` operationId).
+func (c *Client) LinkApplicationSource(ctx context.Context, application string, body LinkApplicationSourceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewLinkApplicationSourceRequest(c.Server, application, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// TransferApplicationWithBody Hand an Application to another Team
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /v1/applications/{application}/transfer (the `TransferApplication` operationId).
+func (c *Client) TransferApplicationWithBody(ctx context.Context, application string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewTransferApplicationRequestWithBody(c.Server, application, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// TransferApplication Hand an Application to another Team
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /v1/applications/{application}/transfer (the `TransferApplication` operationId).
+func (c *Client) TransferApplication(ctx context.Context, application string, body TransferApplicationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewTransferApplicationRequest(c.Server, application, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetMe Get the signed-in caller, their Organization, and their roles in it
 //
 // Corresponds with GET /v1/me (the `GetMe` operationId).
 func (c *Client) GetMe(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetMeRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetProject Get a Project
+//
+// Corresponds with GET /v1/projects/{project_id} (the `GetProject` operationId).
+func (c *Client) GetProject(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetProjectRequest(c.Server, projectId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateProjectWithBody Rename or redescribe a Project
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PATCH /v1/projects/{project_id} (the `UpdateProject` operationId).
+func (c *Client) UpdateProjectWithBody(ctx context.Context, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateProjectRequestWithBody(c.Server, projectId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateProject Rename or redescribe a Project
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PATCH /v1/projects/{project_id} (the `UpdateProject` operationId).
+func (c *Client) UpdateProject(ctx context.Context, projectId string, body UpdateProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateProjectRequest(c.Server, projectId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListApplications List a Project's Applications
+//
+// Corresponds with GET /v1/projects/{project_id}/applications (the `ListApplications` operationId).
+func (c *Client) ListApplications(ctx context.Context, projectId string, params *ListApplicationsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListApplicationsRequest(c.Server, projectId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateApplicationWithBody Create an Application in a Project, with its default Channel
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /v1/projects/{project_id}/applications (the `CreateApplication` operationId).
+func (c *Client) CreateApplicationWithBody(ctx context.Context, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateApplicationRequestWithBody(c.Server, projectId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateApplication Create an Application in a Project, with its default Channel
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /v1/projects/{project_id}/applications (the `CreateApplication` operationId).
+func (c *Client) CreateApplication(ctx context.Context, projectId string, body CreateApplicationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateApplicationRequest(c.Server, projectId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ArchiveProject Archive a Project that has nothing active in it
+//
+// Corresponds with POST /v1/projects/{project_id}/archive (the `ArchiveProject` operationId).
+func (c *Client) ArchiveProject(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewArchiveProjectRequest(c.Server, projectId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RestoreProject Restore an archived Project
+//
+// Corresponds with POST /v1/projects/{project_id}/restore (the `RestoreProject` operationId).
+func (c *Client) RestoreProject(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRestoreProjectRequest(c.Server, projectId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// TransferProjectWithBody Hand a Project to another Team
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /v1/projects/{project_id}/transfer (the `TransferProject` operationId).
+func (c *Client) TransferProjectWithBody(ctx context.Context, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewTransferProjectRequestWithBody(c.Server, projectId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// TransferProject Hand a Project to another Team
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /v1/projects/{project_id}/transfer (the `TransferProject` operationId).
+func (c *Client) TransferProject(ctx context.Context, projectId string, body TransferProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewTransferProjectRequest(c.Server, projectId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1139,6 +2066,70 @@ func (c *Client) RecordChange(ctx context.Context, sourceId string, body RecordC
 	return c.Client.Do(req)
 }
 
+// ListWorkspaceApplications List a Workspace's Applications
+//
+// Corresponds with GET /v1/workspaces/{workspace_id}/applications (the `ListWorkspaceApplications` operationId).
+func (c *Client) ListWorkspaceApplications(ctx context.Context, workspaceId string, params *ListWorkspaceApplicationsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListWorkspaceApplicationsRequest(c.Server, workspaceId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListProjects List a Workspace's Projects
+//
+// Corresponds with GET /v1/workspaces/{workspace_id}/projects (the `ListProjects` operationId).
+func (c *Client) ListProjects(ctx context.Context, workspaceId string, params *ListProjectsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListProjectsRequest(c.Server, workspaceId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateProjectWithBody Create a Project in a Workspace
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /v1/workspaces/{workspace_id}/projects (the `CreateProject` operationId).
+func (c *Client) CreateProjectWithBody(ctx context.Context, workspaceId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateProjectRequestWithBody(c.Server, workspaceId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateProject Create a Project in a Workspace
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /v1/workspaces/{workspace_id}/projects (the `CreateProject` operationId).
+func (c *Client) CreateProject(ctx context.Context, workspaceId string, body CreateProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateProjectRequest(c.Server, workspaceId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // NewRevokeApiTokenRequest constructs an http.Request for the RevokeApiToken method
 func NewRevokeApiTokenRequest(server string, apiTokenId string) (*http.Request, error) {
 	var err error
@@ -1156,6 +2147,121 @@ func NewRevokeApiTokenRequest(server string, apiTokenId string) (*http.Request, 
 	}
 
 	operationPath := fmt.Sprintf("/v1/api-tokens/%s/revoke", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApplicationRequest constructs an http.Request for the GetApplication method
+func NewGetApplicationRequest(server string, application string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "application", application, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/applications/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateApplicationRequest calls the generic UpdateApplication builder with application/json body
+func NewUpdateApplicationRequest(server string, application string, body UpdateApplicationJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateApplicationRequestWithBody(server, application, "application/json", bodyReader)
+}
+
+// NewUpdateApplicationRequestWithBody constructs an http.Request for the UpdateApplication method, with any body, and a specified content type
+func NewUpdateApplicationRequestWithBody(server string, application string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "application", application, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/applications/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewArchiveApplicationRequest constructs an http.Request for the ArchiveApplication method
+func NewArchiveApplicationRequest(server string, application string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "application", application, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/applications/%s/archive", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -1353,6 +2459,134 @@ func NewCreateReleaseRequestWithBody(server string, application string, contentT
 	return req, nil
 }
 
+// NewRestoreApplicationRequest constructs an http.Request for the RestoreApplication method
+func NewRestoreApplicationRequest(server string, application string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "application", application, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/applications/%s/restore", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewLinkApplicationSourceRequest calls the generic LinkApplicationSource builder with application/json body
+func NewLinkApplicationSourceRequest(server string, application string, body LinkApplicationSourceJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewLinkApplicationSourceRequestWithBody(server, application, "application/json", bodyReader)
+}
+
+// NewLinkApplicationSourceRequestWithBody constructs an http.Request for the LinkApplicationSource method, with any body, and a specified content type
+func NewLinkApplicationSourceRequestWithBody(server string, application string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "application", application, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/applications/%s/source", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewTransferApplicationRequest calls the generic TransferApplication builder with application/json body
+func NewTransferApplicationRequest(server string, application string, body TransferApplicationJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewTransferApplicationRequestWithBody(server, application, "application/json", bodyReader)
+}
+
+// NewTransferApplicationRequestWithBody constructs an http.Request for the TransferApplication method, with any body, and a specified content type
+func NewTransferApplicationRequestWithBody(server string, application string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "application", application, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/applications/%s/transfer", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewGetMeRequest constructs an http.Request for the GetMe method
 func NewGetMeRequest(server string) (*http.Request, error) {
 	var err error
@@ -1376,6 +2610,382 @@ func NewGetMeRequest(server string) (*http.Request, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewGetProjectRequest constructs an http.Request for the GetProject method
+func NewGetProjectRequest(server string, projectId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/projects/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateProjectRequest calls the generic UpdateProject builder with application/json body
+func NewUpdateProjectRequest(server string, projectId string, body UpdateProjectJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateProjectRequestWithBody(server, projectId, "application/json", bodyReader)
+}
+
+// NewUpdateProjectRequestWithBody constructs an http.Request for the UpdateProject method, with any body, and a specified content type
+func NewUpdateProjectRequestWithBody(server string, projectId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/projects/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListApplicationsRequest constructs an http.Request for the ListApplications method
+func NewListApplicationsRequest(server string, projectId string, params *ListApplicationsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/projects/%s/applications", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.OwnerTeamId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "owner_team_id", *params.OwnerTeamId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.IncludeArchived != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "include_archived", *params.IncludeArchived, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.SortBy != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "sort_by", *params.SortBy, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.SortOrder != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "sort_order", *params.SortOrder, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.NextCursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "next_cursor", *params.NextCursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PreviousCursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "previous_cursor", *params.PreviousCursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateApplicationRequest calls the generic CreateApplication builder with application/json body
+func NewCreateApplicationRequest(server string, projectId string, body CreateApplicationJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateApplicationRequestWithBody(server, projectId, "application/json", bodyReader)
+}
+
+// NewCreateApplicationRequestWithBody constructs an http.Request for the CreateApplication method, with any body, and a specified content type
+func NewCreateApplicationRequestWithBody(server string, projectId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/projects/%s/applications", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewArchiveProjectRequest constructs an http.Request for the ArchiveProject method
+func NewArchiveProjectRequest(server string, projectId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/projects/%s/archive", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRestoreProjectRequest constructs an http.Request for the RestoreProject method
+func NewRestoreProjectRequest(server string, projectId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/projects/%s/restore", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewTransferProjectRequest calls the generic TransferProject builder with application/json body
+func NewTransferProjectRequest(server string, projectId string, body TransferProjectJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewTransferProjectRequestWithBody(server, projectId, "application/json", bodyReader)
+}
+
+// NewTransferProjectRequestWithBody constructs an http.Request for the TransferProject method, with any body, and a specified content type
+func NewTransferProjectRequestWithBody(server string, projectId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project_id", projectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/projects/%s/transfer", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -1806,6 +3416,331 @@ func NewRecordChangeRequestWithBody(server string, sourceId string, contentType 
 	return req, nil
 }
 
+// NewListWorkspaceApplicationsRequest constructs an http.Request for the ListWorkspaceApplications method
+func NewListWorkspaceApplicationsRequest(server string, workspaceId string, params *ListWorkspaceApplicationsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace_id", workspaceId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/workspaces/%s/applications", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.OwnerTeamId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "owner_team_id", *params.OwnerTeamId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.IncludeArchived != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "include_archived", *params.IncludeArchived, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.SortBy != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "sort_by", *params.SortBy, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.SortOrder != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "sort_order", *params.SortOrder, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.NextCursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "next_cursor", *params.NextCursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PreviousCursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "previous_cursor", *params.PreviousCursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListProjectsRequest constructs an http.Request for the ListProjects method
+func NewListProjectsRequest(server string, workspaceId string, params *ListProjectsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace_id", workspaceId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/workspaces/%s/projects", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Q != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "q", *params.Q, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.OwnerTeamId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "owner_team_id", *params.OwnerTeamId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.IncludeArchived != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "include_archived", *params.IncludeArchived, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.SortBy != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "sort_by", *params.SortBy, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.SortOrder != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "sort_order", *params.SortOrder, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.NextCursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "next_cursor", *params.NextCursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.PreviousCursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "previous_cursor", *params.PreviousCursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateProjectRequest calls the generic CreateProject builder with application/json body
+func NewCreateProjectRequest(server string, workspaceId string, body CreateProjectJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateProjectRequestWithBody(server, workspaceId, "application/json", bodyReader)
+}
+
+// NewCreateProjectRequestWithBody constructs an http.Request for the CreateProject method, with any body, and a specified content type
+func NewCreateProjectRequestWithBody(server string, workspaceId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace_id", workspaceId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/workspaces/%s/projects", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -1857,6 +3792,34 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /v1/api-tokens/{api_token_id}/revoke (the `RevokeApiToken` operationId).
 	RevokeApiTokenWithResponse(ctx context.Context, apiTokenId string, reqEditors ...RequestEditorFn) (*RevokeApiTokenResponse, error)
 
+	// GetApplicationWithResponse Get an Application
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/applications/{application} (the `GetApplication` operationId).
+	GetApplicationWithResponse(ctx context.Context, application string, reqEditors ...RequestEditorFn) (*GetApplicationResponse, error)
+
+	// UpdateApplicationWithBodyWithResponse Change an Application
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /v1/applications/{application} (the `UpdateApplication` operationId).
+	UpdateApplicationWithBodyWithResponse(ctx context.Context, application string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateApplicationResponse, error)
+
+	// UpdateApplicationWithResponse Change an Application
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /v1/applications/{application} (the `UpdateApplication` operationId).
+	UpdateApplicationWithResponse(ctx context.Context, application string, body UpdateApplicationJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateApplicationResponse, error)
+
+	// ArchiveApplicationWithResponse Archive an Application
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/applications/{application}/archive (the `ArchiveApplication` operationId).
+	ArchiveApplicationWithResponse(ctx context.Context, application string, reqEditors ...RequestEditorFn) (*ArchiveApplicationResponse, error)
+
 	// ListReleasesWithResponse List an Application's Releases
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -1878,12 +3841,117 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /v1/applications/{application}/releases (the `CreateRelease` operationId).
 	CreateReleaseWithResponse(ctx context.Context, application string, body CreateReleaseJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateReleaseResponse, error)
 
+	// RestoreApplicationWithResponse Restore an archived Application
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/applications/{application}/restore (the `RestoreApplication` operationId).
+	RestoreApplicationWithResponse(ctx context.Context, application string, reqEditors ...RequestEditorFn) (*RestoreApplicationResponse, error)
+
+	// LinkApplicationSourceWithBodyWithResponse Link or unlink the Source an Application is built from
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /v1/applications/{application}/source (the `LinkApplicationSource` operationId).
+	LinkApplicationSourceWithBodyWithResponse(ctx context.Context, application string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LinkApplicationSourceResponse, error)
+
+	// LinkApplicationSourceWithResponse Link or unlink the Source an Application is built from
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /v1/applications/{application}/source (the `LinkApplicationSource` operationId).
+	LinkApplicationSourceWithResponse(ctx context.Context, application string, body LinkApplicationSourceJSONRequestBody, reqEditors ...RequestEditorFn) (*LinkApplicationSourceResponse, error)
+
+	// TransferApplicationWithBodyWithResponse Hand an Application to another Team
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/applications/{application}/transfer (the `TransferApplication` operationId).
+	TransferApplicationWithBodyWithResponse(ctx context.Context, application string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*TransferApplicationResponse, error)
+
+	// TransferApplicationWithResponse Hand an Application to another Team
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/applications/{application}/transfer (the `TransferApplication` operationId).
+	TransferApplicationWithResponse(ctx context.Context, application string, body TransferApplicationJSONRequestBody, reqEditors ...RequestEditorFn) (*TransferApplicationResponse, error)
+
 	// GetMeWithResponse Get the signed-in caller, their Organization, and their roles in it
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with GET /v1/me (the `GetMe` operationId).
 	GetMeWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMeResponse, error)
+
+	// GetProjectWithResponse Get a Project
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/projects/{project_id} (the `GetProject` operationId).
+	GetProjectWithResponse(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*GetProjectResponse, error)
+
+	// UpdateProjectWithBodyWithResponse Rename or redescribe a Project
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /v1/projects/{project_id} (the `UpdateProject` operationId).
+	UpdateProjectWithBodyWithResponse(ctx context.Context, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateProjectResponse, error)
+
+	// UpdateProjectWithResponse Rename or redescribe a Project
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /v1/projects/{project_id} (the `UpdateProject` operationId).
+	UpdateProjectWithResponse(ctx context.Context, projectId string, body UpdateProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateProjectResponse, error)
+
+	// ListApplicationsWithResponse List a Project's Applications
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/projects/{project_id}/applications (the `ListApplications` operationId).
+	ListApplicationsWithResponse(ctx context.Context, projectId string, params *ListApplicationsParams, reqEditors ...RequestEditorFn) (*ListApplicationsResponse, error)
+
+	// CreateApplicationWithBodyWithResponse Create an Application in a Project, with its default Channel
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/projects/{project_id}/applications (the `CreateApplication` operationId).
+	CreateApplicationWithBodyWithResponse(ctx context.Context, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateApplicationResponse, error)
+
+	// CreateApplicationWithResponse Create an Application in a Project, with its default Channel
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/projects/{project_id}/applications (the `CreateApplication` operationId).
+	CreateApplicationWithResponse(ctx context.Context, projectId string, body CreateApplicationJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateApplicationResponse, error)
+
+	// ArchiveProjectWithResponse Archive a Project that has nothing active in it
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/projects/{project_id}/archive (the `ArchiveProject` operationId).
+	ArchiveProjectWithResponse(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*ArchiveProjectResponse, error)
+
+	// RestoreProjectWithResponse Restore an archived Project
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/projects/{project_id}/restore (the `RestoreProject` operationId).
+	RestoreProjectWithResponse(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*RestoreProjectResponse, error)
+
+	// TransferProjectWithBodyWithResponse Hand a Project to another Team
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/projects/{project_id}/transfer (the `TransferProject` operationId).
+	TransferProjectWithBodyWithResponse(ctx context.Context, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*TransferProjectResponse, error)
+
+	// TransferProjectWithResponse Hand a Project to another Team
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/projects/{project_id}/transfer (the `TransferProject` operationId).
+	TransferProjectWithResponse(ctx context.Context, projectId string, body TransferProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*TransferProjectResponse, error)
 
 	// GetReleaseWithResponse Get a Release with its Builds
 	//
@@ -1982,6 +4050,34 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /v1/sources/{source_id}/changes (the `RecordChange` operationId).
 	RecordChangeWithResponse(ctx context.Context, sourceId string, body RecordChangeJSONRequestBody, reqEditors ...RequestEditorFn) (*RecordChangeResponse, error)
+
+	// ListWorkspaceApplicationsWithResponse List a Workspace's Applications
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/workspaces/{workspace_id}/applications (the `ListWorkspaceApplications` operationId).
+	ListWorkspaceApplicationsWithResponse(ctx context.Context, workspaceId string, params *ListWorkspaceApplicationsParams, reqEditors ...RequestEditorFn) (*ListWorkspaceApplicationsResponse, error)
+
+	// ListProjectsWithResponse List a Workspace's Projects
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/workspaces/{workspace_id}/projects (the `ListProjects` operationId).
+	ListProjectsWithResponse(ctx context.Context, workspaceId string, params *ListProjectsParams, reqEditors ...RequestEditorFn) (*ListProjectsResponse, error)
+
+	// CreateProjectWithBodyWithResponse Create a Project in a Workspace
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/workspaces/{workspace_id}/projects (the `CreateProject` operationId).
+	CreateProjectWithBodyWithResponse(ctx context.Context, workspaceId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateProjectResponse, error)
+
+	// CreateProjectWithResponse Create a Project in a Workspace
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/workspaces/{workspace_id}/projects (the `CreateProject` operationId).
+	CreateProjectWithResponse(ctx context.Context, workspaceId string, body CreateProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateProjectResponse, error)
 }
 
 type RevokeApiTokenResponse struct {
@@ -2026,6 +4122,150 @@ func (r RevokeApiTokenResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r RevokeApiTokenResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetApplicationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ResponseApplicationSnapshot
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetApplicationResponse) GetJSON200() *ResponseApplicationSnapshot {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r GetApplicationResponse) GetApplicationproblemJSONDefault() *ErrorModel {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetApplicationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApplicationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApplicationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApplicationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateApplicationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ResponseApplicationSnapshot
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r UpdateApplicationResponse) GetJSON200() *ResponseApplicationSnapshot {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r UpdateApplicationResponse) GetApplicationproblemJSONDefault() *ErrorModel {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r UpdateApplicationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateApplicationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateApplicationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateApplicationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ArchiveApplicationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ResponseApplicationSnapshot
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ArchiveApplicationResponse) GetJSON200() *ResponseApplicationSnapshot {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ArchiveApplicationResponse) GetApplicationproblemJSONDefault() *ErrorModel {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ArchiveApplicationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ArchiveApplicationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ArchiveApplicationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ArchiveApplicationResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -2128,6 +4368,150 @@ func (r CreateReleaseResponse) ContentType() string {
 	return ""
 }
 
+type RestoreApplicationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ResponseApplicationSnapshot
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r RestoreApplicationResponse) GetJSON200() *ResponseApplicationSnapshot {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r RestoreApplicationResponse) GetApplicationproblemJSONDefault() *ErrorModel {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r RestoreApplicationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RestoreApplicationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RestoreApplicationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RestoreApplicationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type LinkApplicationSourceResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ResponseApplicationSnapshot
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r LinkApplicationSourceResponse) GetJSON200() *ResponseApplicationSnapshot {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r LinkApplicationSourceResponse) GetApplicationproblemJSONDefault() *ErrorModel {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r LinkApplicationSourceResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r LinkApplicationSourceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r LinkApplicationSourceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r LinkApplicationSourceResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type TransferApplicationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ResponseApplicationSnapshot
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r TransferApplicationResponse) GetJSON200() *ResponseApplicationSnapshot {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r TransferApplicationResponse) GetApplicationproblemJSONDefault() *ErrorModel {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r TransferApplicationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r TransferApplicationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r TransferApplicationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r TransferApplicationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetMeResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -2170,6 +4554,342 @@ func (r GetMeResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetMeResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetProjectResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ResponseProjectSnapshot
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetProjectResponse) GetJSON200() *ResponseProjectSnapshot {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r GetProjectResponse) GetApplicationproblemJSONDefault() *ErrorModel {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetProjectResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetProjectResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetProjectResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetProjectResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateProjectResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ResponseProjectSnapshot
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r UpdateProjectResponse) GetJSON200() *ResponseProjectSnapshot {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r UpdateProjectResponse) GetApplicationproblemJSONDefault() *ErrorModel {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r UpdateProjectResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateProjectResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateProjectResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateProjectResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListApplicationsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ResponseResultApplicationSnapshot
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListApplicationsResponse) GetJSON200() *ResponseResultApplicationSnapshot {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListApplicationsResponse) GetApplicationproblemJSONDefault() *ErrorModel {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListApplicationsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListApplicationsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListApplicationsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListApplicationsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateApplicationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *ResponseCreatedApplication
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateApplicationResponse) GetJSON201() *ResponseCreatedApplication {
+	return r.JSON201
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r CreateApplicationResponse) GetApplicationproblemJSONDefault() *ErrorModel {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateApplicationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateApplicationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateApplicationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateApplicationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ArchiveProjectResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ResponseProjectSnapshot
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ArchiveProjectResponse) GetJSON200() *ResponseProjectSnapshot {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ArchiveProjectResponse) GetApplicationproblemJSONDefault() *ErrorModel {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ArchiveProjectResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ArchiveProjectResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ArchiveProjectResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ArchiveProjectResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RestoreProjectResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ResponseProjectSnapshot
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r RestoreProjectResponse) GetJSON200() *ResponseProjectSnapshot {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r RestoreProjectResponse) GetApplicationproblemJSONDefault() *ErrorModel {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r RestoreProjectResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RestoreProjectResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RestoreProjectResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RestoreProjectResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type TransferProjectResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ResponseProjectSnapshot
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r TransferProjectResponse) GetJSON200() *ResponseProjectSnapshot {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r TransferProjectResponse) GetApplicationproblemJSONDefault() *ErrorModel {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r TransferProjectResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r TransferProjectResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r TransferProjectResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r TransferProjectResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -2704,6 +5424,150 @@ func (r RecordChangeResponse) ContentType() string {
 	return ""
 }
 
+type ListWorkspaceApplicationsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ResponseResultApplicationSnapshot
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListWorkspaceApplicationsResponse) GetJSON200() *ResponseResultApplicationSnapshot {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListWorkspaceApplicationsResponse) GetApplicationproblemJSONDefault() *ErrorModel {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListWorkspaceApplicationsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListWorkspaceApplicationsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListWorkspaceApplicationsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListWorkspaceApplicationsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListProjectsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ResponseResultProjectSnapshot
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListProjectsResponse) GetJSON200() *ResponseResultProjectSnapshot {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListProjectsResponse) GetApplicationproblemJSONDefault() *ErrorModel {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListProjectsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListProjectsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListProjectsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListProjectsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateProjectResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *ResponseProjectSnapshot
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateProjectResponse) GetJSON201() *ResponseProjectSnapshot {
+	return r.JSON201
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r CreateProjectResponse) GetApplicationproblemJSONDefault() *ErrorModel {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateProjectResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateProjectResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateProjectResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateProjectResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // RevokeApiTokenWithResponse Revoke an API token for good
 //
 // Returns a wrapper object for the known response body format(s).
@@ -2715,6 +5579,58 @@ func (c *ClientWithResponses) RevokeApiTokenWithResponse(ctx context.Context, ap
 		return nil, err
 	}
 	return ParseRevokeApiTokenResponse(rsp)
+}
+
+// GetApplicationWithResponse Get an Application
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/applications/{application} (the `GetApplication` operationId).
+func (c *ClientWithResponses) GetApplicationWithResponse(ctx context.Context, application string, reqEditors ...RequestEditorFn) (*GetApplicationResponse, error) {
+	rsp, err := c.GetApplication(ctx, application, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApplicationResponse(rsp)
+}
+
+// UpdateApplicationWithBodyWithResponse Change an Application
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /v1/applications/{application} (the `UpdateApplication` operationId).
+func (c *ClientWithResponses) UpdateApplicationWithBodyWithResponse(ctx context.Context, application string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateApplicationResponse, error) {
+	rsp, err := c.UpdateApplicationWithBody(ctx, application, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateApplicationResponse(rsp)
+}
+
+// UpdateApplicationWithResponse Change an Application
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /v1/applications/{application} (the `UpdateApplication` operationId).
+func (c *ClientWithResponses) UpdateApplicationWithResponse(ctx context.Context, application string, body UpdateApplicationJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateApplicationResponse, error) {
+	rsp, err := c.UpdateApplication(ctx, application, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateApplicationResponse(rsp)
+}
+
+// ArchiveApplicationWithResponse Archive an Application
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/applications/{application}/archive (the `ArchiveApplication` operationId).
+func (c *ClientWithResponses) ArchiveApplicationWithResponse(ctx context.Context, application string, reqEditors ...RequestEditorFn) (*ArchiveApplicationResponse, error) {
+	rsp, err := c.ArchiveApplication(ctx, application, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseArchiveApplicationResponse(rsp)
 }
 
 // ListReleasesWithResponse List an Application's Releases
@@ -2756,6 +5672,71 @@ func (c *ClientWithResponses) CreateReleaseWithResponse(ctx context.Context, app
 	return ParseCreateReleaseResponse(rsp)
 }
 
+// RestoreApplicationWithResponse Restore an archived Application
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/applications/{application}/restore (the `RestoreApplication` operationId).
+func (c *ClientWithResponses) RestoreApplicationWithResponse(ctx context.Context, application string, reqEditors ...RequestEditorFn) (*RestoreApplicationResponse, error) {
+	rsp, err := c.RestoreApplication(ctx, application, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRestoreApplicationResponse(rsp)
+}
+
+// LinkApplicationSourceWithBodyWithResponse Link or unlink the Source an Application is built from
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /v1/applications/{application}/source (the `LinkApplicationSource` operationId).
+func (c *ClientWithResponses) LinkApplicationSourceWithBodyWithResponse(ctx context.Context, application string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LinkApplicationSourceResponse, error) {
+	rsp, err := c.LinkApplicationSourceWithBody(ctx, application, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseLinkApplicationSourceResponse(rsp)
+}
+
+// LinkApplicationSourceWithResponse Link or unlink the Source an Application is built from
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /v1/applications/{application}/source (the `LinkApplicationSource` operationId).
+func (c *ClientWithResponses) LinkApplicationSourceWithResponse(ctx context.Context, application string, body LinkApplicationSourceJSONRequestBody, reqEditors ...RequestEditorFn) (*LinkApplicationSourceResponse, error) {
+	rsp, err := c.LinkApplicationSource(ctx, application, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseLinkApplicationSourceResponse(rsp)
+}
+
+// TransferApplicationWithBodyWithResponse Hand an Application to another Team
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/applications/{application}/transfer (the `TransferApplication` operationId).
+func (c *ClientWithResponses) TransferApplicationWithBodyWithResponse(ctx context.Context, application string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*TransferApplicationResponse, error) {
+	rsp, err := c.TransferApplicationWithBody(ctx, application, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseTransferApplicationResponse(rsp)
+}
+
+// TransferApplicationWithResponse Hand an Application to another Team
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/applications/{application}/transfer (the `TransferApplication` operationId).
+func (c *ClientWithResponses) TransferApplicationWithResponse(ctx context.Context, application string, body TransferApplicationJSONRequestBody, reqEditors ...RequestEditorFn) (*TransferApplicationResponse, error) {
+	rsp, err := c.TransferApplication(ctx, application, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseTransferApplicationResponse(rsp)
+}
+
 // GetMeWithResponse Get the signed-in caller, their Organization, and their roles in it
 //
 // Returns a wrapper object for the known response body format(s).
@@ -2767,6 +5748,136 @@ func (c *ClientWithResponses) GetMeWithResponse(ctx context.Context, reqEditors 
 		return nil, err
 	}
 	return ParseGetMeResponse(rsp)
+}
+
+// GetProjectWithResponse Get a Project
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/projects/{project_id} (the `GetProject` operationId).
+func (c *ClientWithResponses) GetProjectWithResponse(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*GetProjectResponse, error) {
+	rsp, err := c.GetProject(ctx, projectId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetProjectResponse(rsp)
+}
+
+// UpdateProjectWithBodyWithResponse Rename or redescribe a Project
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /v1/projects/{project_id} (the `UpdateProject` operationId).
+func (c *ClientWithResponses) UpdateProjectWithBodyWithResponse(ctx context.Context, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateProjectResponse, error) {
+	rsp, err := c.UpdateProjectWithBody(ctx, projectId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateProjectResponse(rsp)
+}
+
+// UpdateProjectWithResponse Rename or redescribe a Project
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /v1/projects/{project_id} (the `UpdateProject` operationId).
+func (c *ClientWithResponses) UpdateProjectWithResponse(ctx context.Context, projectId string, body UpdateProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateProjectResponse, error) {
+	rsp, err := c.UpdateProject(ctx, projectId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateProjectResponse(rsp)
+}
+
+// ListApplicationsWithResponse List a Project's Applications
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/projects/{project_id}/applications (the `ListApplications` operationId).
+func (c *ClientWithResponses) ListApplicationsWithResponse(ctx context.Context, projectId string, params *ListApplicationsParams, reqEditors ...RequestEditorFn) (*ListApplicationsResponse, error) {
+	rsp, err := c.ListApplications(ctx, projectId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListApplicationsResponse(rsp)
+}
+
+// CreateApplicationWithBodyWithResponse Create an Application in a Project, with its default Channel
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/projects/{project_id}/applications (the `CreateApplication` operationId).
+func (c *ClientWithResponses) CreateApplicationWithBodyWithResponse(ctx context.Context, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateApplicationResponse, error) {
+	rsp, err := c.CreateApplicationWithBody(ctx, projectId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateApplicationResponse(rsp)
+}
+
+// CreateApplicationWithResponse Create an Application in a Project, with its default Channel
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/projects/{project_id}/applications (the `CreateApplication` operationId).
+func (c *ClientWithResponses) CreateApplicationWithResponse(ctx context.Context, projectId string, body CreateApplicationJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateApplicationResponse, error) {
+	rsp, err := c.CreateApplication(ctx, projectId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateApplicationResponse(rsp)
+}
+
+// ArchiveProjectWithResponse Archive a Project that has nothing active in it
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/projects/{project_id}/archive (the `ArchiveProject` operationId).
+func (c *ClientWithResponses) ArchiveProjectWithResponse(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*ArchiveProjectResponse, error) {
+	rsp, err := c.ArchiveProject(ctx, projectId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseArchiveProjectResponse(rsp)
+}
+
+// RestoreProjectWithResponse Restore an archived Project
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/projects/{project_id}/restore (the `RestoreProject` operationId).
+func (c *ClientWithResponses) RestoreProjectWithResponse(ctx context.Context, projectId string, reqEditors ...RequestEditorFn) (*RestoreProjectResponse, error) {
+	rsp, err := c.RestoreProject(ctx, projectId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRestoreProjectResponse(rsp)
+}
+
+// TransferProjectWithBodyWithResponse Hand a Project to another Team
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/projects/{project_id}/transfer (the `TransferProject` operationId).
+func (c *ClientWithResponses) TransferProjectWithBodyWithResponse(ctx context.Context, projectId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*TransferProjectResponse, error) {
+	rsp, err := c.TransferProjectWithBody(ctx, projectId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseTransferProjectResponse(rsp)
+}
+
+// TransferProjectWithResponse Hand a Project to another Team
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/projects/{project_id}/transfer (the `TransferProject` operationId).
+func (c *ClientWithResponses) TransferProjectWithResponse(ctx context.Context, projectId string, body TransferProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*TransferProjectResponse, error) {
+	rsp, err := c.TransferProject(ctx, projectId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseTransferProjectResponse(rsp)
 }
 
 // GetReleaseWithResponse Get a Release with its Builds
@@ -2951,6 +6062,58 @@ func (c *ClientWithResponses) RecordChangeWithResponse(ctx context.Context, sour
 	return ParseRecordChangeResponse(rsp)
 }
 
+// ListWorkspaceApplicationsWithResponse List a Workspace's Applications
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/workspaces/{workspace_id}/applications (the `ListWorkspaceApplications` operationId).
+func (c *ClientWithResponses) ListWorkspaceApplicationsWithResponse(ctx context.Context, workspaceId string, params *ListWorkspaceApplicationsParams, reqEditors ...RequestEditorFn) (*ListWorkspaceApplicationsResponse, error) {
+	rsp, err := c.ListWorkspaceApplications(ctx, workspaceId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListWorkspaceApplicationsResponse(rsp)
+}
+
+// ListProjectsWithResponse List a Workspace's Projects
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/workspaces/{workspace_id}/projects (the `ListProjects` operationId).
+func (c *ClientWithResponses) ListProjectsWithResponse(ctx context.Context, workspaceId string, params *ListProjectsParams, reqEditors ...RequestEditorFn) (*ListProjectsResponse, error) {
+	rsp, err := c.ListProjects(ctx, workspaceId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListProjectsResponse(rsp)
+}
+
+// CreateProjectWithBodyWithResponse Create a Project in a Workspace
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/workspaces/{workspace_id}/projects (the `CreateProject` operationId).
+func (c *ClientWithResponses) CreateProjectWithBodyWithResponse(ctx context.Context, workspaceId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateProjectResponse, error) {
+	rsp, err := c.CreateProjectWithBody(ctx, workspaceId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateProjectResponse(rsp)
+}
+
+// CreateProjectWithResponse Create a Project in a Workspace
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/workspaces/{workspace_id}/projects (the `CreateProject` operationId).
+func (c *ClientWithResponses) CreateProjectWithResponse(ctx context.Context, workspaceId string, body CreateProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateProjectResponse, error) {
+	rsp, err := c.CreateProject(ctx, workspaceId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateProjectResponse(rsp)
+}
+
 // ParseRevokeApiTokenResponse parses an HTTP response from a RevokeApiTokenWithResponse call
 func ParseRevokeApiTokenResponse(rsp *http.Response) (*RevokeApiTokenResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -2967,6 +6130,105 @@ func ParseRevokeApiTokenResponse(rsp *http.Response) (*RevokeApiTokenResponse, e
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest ResponseAPITokenSnapshot
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApplicationResponse parses an HTTP response from a GetApplicationWithResponse call
+func ParseGetApplicationResponse(rsp *http.Response) (*GetApplicationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApplicationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ResponseApplicationSnapshot
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateApplicationResponse parses an HTTP response from a UpdateApplicationWithResponse call
+func ParseUpdateApplicationResponse(rsp *http.Response) (*UpdateApplicationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateApplicationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ResponseApplicationSnapshot
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseArchiveApplicationResponse parses an HTTP response from a ArchiveApplicationWithResponse call
+func ParseArchiveApplicationResponse(rsp *http.Response) (*ArchiveApplicationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ArchiveApplicationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ResponseApplicationSnapshot
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -3050,6 +6312,105 @@ func ParseCreateReleaseResponse(rsp *http.Response) (*CreateReleaseResponse, err
 	return response, nil
 }
 
+// ParseRestoreApplicationResponse parses an HTTP response from a RestoreApplicationWithResponse call
+func ParseRestoreApplicationResponse(rsp *http.Response) (*RestoreApplicationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RestoreApplicationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ResponseApplicationSnapshot
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseLinkApplicationSourceResponse parses an HTTP response from a LinkApplicationSourceWithResponse call
+func ParseLinkApplicationSourceResponse(rsp *http.Response) (*LinkApplicationSourceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &LinkApplicationSourceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ResponseApplicationSnapshot
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseTransferApplicationResponse parses an HTTP response from a TransferApplicationWithResponse call
+func ParseTransferApplicationResponse(rsp *http.Response) (*TransferApplicationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &TransferApplicationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ResponseApplicationSnapshot
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetMeResponse parses an HTTP response from a GetMeWithResponse call
 func ParseGetMeResponse(rsp *http.Response) (*GetMeResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -3066,6 +6427,237 @@ func ParseGetMeResponse(rsp *http.Response) (*GetMeResponse, error) {
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest ResponseMe
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetProjectResponse parses an HTTP response from a GetProjectWithResponse call
+func ParseGetProjectResponse(rsp *http.Response) (*GetProjectResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetProjectResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ResponseProjectSnapshot
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateProjectResponse parses an HTTP response from a UpdateProjectWithResponse call
+func ParseUpdateProjectResponse(rsp *http.Response) (*UpdateProjectResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateProjectResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ResponseProjectSnapshot
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListApplicationsResponse parses an HTTP response from a ListApplicationsWithResponse call
+func ParseListApplicationsResponse(rsp *http.Response) (*ListApplicationsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListApplicationsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ResponseResultApplicationSnapshot
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateApplicationResponse parses an HTTP response from a CreateApplicationWithResponse call
+func ParseCreateApplicationResponse(rsp *http.Response) (*CreateApplicationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateApplicationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest ResponseCreatedApplication
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseArchiveProjectResponse parses an HTTP response from a ArchiveProjectWithResponse call
+func ParseArchiveProjectResponse(rsp *http.Response) (*ArchiveProjectResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ArchiveProjectResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ResponseProjectSnapshot
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRestoreProjectResponse parses an HTTP response from a RestoreProjectWithResponse call
+func ParseRestoreProjectResponse(rsp *http.Response) (*RestoreProjectResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RestoreProjectResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ResponseProjectSnapshot
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseTransferProjectResponse parses an HTTP response from a TransferProjectWithResponse call
+func ParseTransferProjectResponse(rsp *http.Response) (*TransferProjectResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &TransferProjectResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ResponseProjectSnapshot
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -3429,6 +7021,105 @@ func ParseRecordChangeResponse(rsp *http.Response) (*RecordChangeResponse, error
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
 		var dest ResponseChangeSnapshot
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListWorkspaceApplicationsResponse parses an HTTP response from a ListWorkspaceApplicationsWithResponse call
+func ParseListWorkspaceApplicationsResponse(rsp *http.Response) (*ListWorkspaceApplicationsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListWorkspaceApplicationsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ResponseResultApplicationSnapshot
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListProjectsResponse parses an HTTP response from a ListProjectsWithResponse call
+func ParseListProjectsResponse(rsp *http.Response) (*ListProjectsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListProjectsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ResponseResultProjectSnapshot
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateProjectResponse parses an HTTP response from a CreateProjectWithResponse call
+func ParseCreateProjectResponse(rsp *http.Response) (*CreateProjectResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateProjectResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest ResponseProjectSnapshot
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

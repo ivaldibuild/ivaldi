@@ -1,6 +1,6 @@
 # ADR 0004: Credentials and customer-managed keys
 
-- Status: Proposed
+- Status: Proposed; where provider credentials live, and what the control plane can open, amended by [ADR 0017](0017-control-plane-grants-secret-store-access.md)
 - Date: 2026-10-01
 
 ## Context
@@ -25,7 +25,7 @@ Credentials are their own capability, separate from IAM and policy:
 ### Provider credentials
 
 - **A credential broker** in the control plane gives a Session only the credentials its IAM grants and policy allow, for a limited time.
-- **The control plane stores references, not secrets, when the customer runs the data plane.** It records which secret to use and where it lives. The data plane resolves the reference from the customer's own secret store (e.g. HashiCorp Vault, AWS Secrets Manager, or Kubernetes secrets), so the raw secret never reaches Ivaldi's cloud.
+- **The control plane stores references, not secrets, when the customer runs the data plane.** It records which secret to use and where it lives. The data plane resolves the reference from the customer's own secret store (e.g. HashiCorp Vault, AWS Secrets Manager, or Kubernetes secrets), so the raw secret never reaches Ivaldi's cloud. [ADR 0017](0017-control-plane-grants-secret-store-access.md) keeps this for values, but lets the control plane grant the data plane short-lived access to a store, so Ivaldi can open a store in `federated` or `brokered` mode.
 - **Secret stores sit behind an Ivaldi-owned interface.** Implementations for specific stores are providers, not domain code.
 - **Credentials are injected into a Session's execution environment** with the narrowest practical scope and lifetime. They are not written into agent conversations or logs.
 - **Every credential issuance is recorded as an audit event** linked to the Session.

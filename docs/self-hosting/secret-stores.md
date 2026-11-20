@@ -2,6 +2,8 @@
 
 A **Secret Store** tells a Cluster's agent where to read an Application's secret variables from. Ivaldi keeps only where a secret is: the store, a path, an optional field, and an optional version. It never holds a secret or a credential for the store. The agent reads the secret inside your cluster, with its own identity, when it deploys ([ADR 0004](../adr/0004-credentials-and-keys.md), [deployment variables](../design/deployment-variables.md)).
 
+> **Changing.** [ADR 0017](../adr/0017-control-plane-grants-secret-store-access.md) has the control plane grant agents access to stores, in `federated` or `brokered` mode, and adds Infisical. What follows describes today's behaviour, which becomes the `agent` mode; Doppler stores will name a credential the agent's operator configures instead of a Kubernetes Secret ([secret-store access](../design/secret-store-access.md#migration)).
+
 Add stores under **Secret Stores** in the web app, or with `POST /v1/workspaces/{workspace_id}/secret-stores`. A store belongs to a Workspace. Reading stores needs `secret_store.read` on the Workspace and changing them needs `secret_store.manage`.
 
 ## Which Environments may read a store

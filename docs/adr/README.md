@@ -20,5 +20,6 @@ Consequential architecture decisions, one per file. Each record states its conte
 | [0014](0014-agents-serve-clusters.md) | Runtime agents serve Clusters, not Targets | Proposed |
 | [0015](0015-platform-workloads.md) | Platform workloads | Proposed |
 | [0016](0016-control-plane-serves-the-web-app.md) | The control plane serves the web app | Proposed |
+| [0017](0017-control-plane-grants-secret-store-access.md) | The control plane grants access to Secret Stores | Proposed |
 
 New records take the next number and use the same section headings.

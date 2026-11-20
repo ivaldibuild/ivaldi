@@ -16,7 +16,7 @@ The control plane already serves part of what the agent needs: enrolment and ren
 - **Kubernetes identity first.** The default credential method is `kubernetes`: the agent presents a projected ServiceAccount token with audience `ivaldi`, which the kubelet rotates. `bearer` and `mtls` stay available for control planes that cannot reach the cluster's OIDC issuer.
 - **Execution is opt-in twice.** The control plane executes only on Environments with `execution_enabled`, and the agent executes only in namespaces its chart grants write access to.
 - **Helm first.** A Release's deployment definition is its `helm_chart` artifact, and the assignment carries the Helm release name in `apply.helm.release_name`. Plain manifests and image-only Releases come later, as other ways the same agent applies a Release.
-- **Variables are resolved in two halves.** An Application's [deployment variables](deployment-variables.md) hold plain values and references to secrets in the customer's secret manager. The control plane picks the winning value of each for the Target; the agent fetches secrets with its own cloud identity, fills in bindings, and renders the chart. It records which secret versions it used, never their values.
+- **Variables are resolved in two halves.** An Application's [deployment variables](deployment-variables.md) hold plain values and references to secrets in the customer's secret manager. The control plane picks the winning value of each for the Target; the agent fetches secrets, with access the control plane grants or its own cloud identity ([secret-store access](secret-store-access.md)), fills in bindings, and renders the chart. It records which secret versions it used, never their values.
 - **Digests, never tags.** The agent reports the digest each container is actually running, read from the Pod's status, and fetches charts by digest.
 - **The agent decides nothing about policy.** It applies what it is assigned and reports what it sees. Lifecycle checks, approvals, findings, and Release matching stay in the control plane ([ADR 0003](../adr/0003-identity-access-and-policy.md)).
 
@@ -154,10 +154,11 @@ What an Application's variables are, how scopes pick a value, and how a Release 
 
 ### Secret Stores
 
-A **Secret Store** is a secret manager the agent can reach. It belongs to the credentials capability ([ADR 0004](../adr/0004-credentials-and-keys.md)) and to a Workspace, like a Registry, and holds no credentials:
+A **Secret Store** is a secret manager the agent can reach. It belongs to the credentials capability ([ADR 0004](../adr/0004-credentials-and-keys.md)) and to a Workspace, like a Registry. How the agent gets access to it is in [secret-store access](secret-store-access.md) ([ADR 0017](../adr/0017-control-plane-grants-secret-store-access.md)):
 
-- `kind`: `kubernetes`, `aws_secrets_manager`, `vault`, or `doppler`.
-- Non-secret settings for the kind: nothing for `kubernetes`, which reads Secrets in the Target's namespace; the AWS region and an optional assume-role ARN; the Vault address, KV v2 mount, Kubernetes auth role, and optional Enterprise namespace; the Doppler project/config, and the name and key of the Kubernetes Secret in the agent's namespace that holds the token.
+- `kind`: `kubernetes`, `aws_secrets_manager`, `vault`, `doppler`, or `infisical`.
+- Location settings for the kind: nothing for `kubernetes`, which reads Secrets in the Target's namespace; the AWS region; the Vault address, KV v2 mount, and optional Enterprise namespace; the Doppler project and config; the Infisical site, project, environment, and secret path.
+- An access mode: `federated` (the agent exchanges a JWT the control plane signs), `brokered` (the control plane mints a short-lived credential), or `agent` (the agent's own identity, or a credential its operator configured under a name). `kubernetes` stores are always `agent`.
 - `environment_ids`: optional. When set, only Deployments to those Environments may use the store. This is what keeps a staging Deployment from naming a production store.
 - A Doppler service token is scoped to one config, so a Doppler store serves one config and names one or more Environments. The alternative is the Doppler Kubernetes operator writing a Secret, which Ivaldi reads through the `kubernetes` store.
 
@@ -166,7 +167,7 @@ Behind it sits the Ivaldi-owned secret-store interface ADR 0004 asks for, in `pk
 ### How the agent resolves them
 
 - **Bindings, then secrets.** Text values bind other text values and system variables; an undefined name or a cycle fails the Deployment. Text values do not bind secrets, so a secret never hides inside a text value; overlays may (below). A secret's path binds the same names, so one reference serves every Environment. The control plane fills a path in before sending it, with the same rules from `pkg/binding`, and escapes it (`#{` as `##{`) so the agent reads exactly that path; the agent still fills in a path an older control plane sends as a template.
-- **With its own identity.** The agent authenticates to the store as its Kubernetes ServiceAccount: EKS Pod Identity or IRSA for AWS, Vault's Kubernetes auth with the store's role, and its own RBAC for `kubernetes`. Ivaldi holds no secret-manager credentials anywhere. A Vault login sends a service-account token to the store's address, which comes from the control plane, so the agent logs in only to addresses its operator listed (`secrets.vault.addresses` in the chart), with a token projected for Vault's audience rather than the API token, and follows no redirect.
+- **With access the control plane grants, or its own identity.** For a `federated` or `brokered` store, the agent asks the control plane for grants for the Deployment before it reads (`POST /v1/agent/deployments/{id}/secret-grants`), and masks them like values ([secret-store access](secret-store-access.md#the-agent)). For an `agent`-mode store, it authenticates as its Kubernetes ServiceAccount: EKS Pod Identity or IRSA for AWS, Vault's Kubernetes auth with the store's role, its own RBAC for `kubernetes`, and named credentials mapped to Secrets in its namespace (`secrets.credentials`) for Doppler and Infisical. A login sends a token to the store's address, which comes from the control plane, so the agent logs in only to addresses its operator allowed (`secrets.addresses` in the chart; Doppler, Infisical Cloud, and AWS STS by default), with a service-account token projected for the store's audience rather than the API token, and follows no redirect.
 - **At render time, in memory.** Values are fetched for one apply, used, and dropped. They are never logged, never put in a report's `detail`, and never sent to the control plane.
 - **As a Kubernetes Secret by default.** For `deliver_as: secret`, the agent writes one immutable Secret per Deployment, `ivaldi-<application>-<deployment>`, labelled `ivaldi.build/application` and `ivaldi.build/deployment`, in the Target's namespace, with one key per secret variable (the variable's name, which is why names are limited to what a Secret key allows), and passes its name to the chart as `global.ivaldi.secrets.name`. Each Deployment's Secret has a new name, so the Pod template changes and the workloads roll. Once a Deployment is healthy, the agent deletes the Application's Secrets in the namespace except its own and the newest other one, whose Pods may still be draining. A rollback recreates its own Secret from its pinned references, so it never needs an old one.
 - **As values only when asked.** `deliver_as: value` puts the secret into the chart's values at `values_path`, for charts that cannot read a Secret. Helm stores values in its release records, so the secret then sits in every revision's history in the namespace and shows in `helm get values`. The web app says so where the option is chosen.
@@ -178,12 +179,14 @@ Behind it sits the Ivaldi-owned secret-store interface ADR 0004 asks for, in `pk
 
 ### Who can read what
 
-One cluster-wide agent with one cloud identity can read every secret that identity is granted, for every Target in the cluster. Two controls keep that from becoming a path from staging to production:
+For a `federated` or `brokered` store, access is granted per Deployment: the JWT names the Environment and Target, and a brokered credential covers that Deployment's secrets where the store allows, so the customer's policy can separate Environments ([secret-store access](secret-store-access.md)).
+
+For an `agent`-mode store, one cluster-wide agent with one cloud identity can read every secret that identity is granted, for every Target in the cluster. Two controls keep that from becoming a path from staging to production:
 
 - **In Ivaldi:** a store's `environment_ids`, checked when a value is saved and again when a Deployment is requested.
 - **In the customer's cloud:** the IAM policy or Vault role the agent's identity holds, which the customer scopes as they like.
 
-A stronger option is for the agent to resolve each Target's secrets as a ServiceAccount in that Target's namespace, using the TokenRequest API, so a cloud policy can be written per namespace. It needs `create` on `serviceaccounts/token` for one ServiceAccount in each execute namespace, and one more identity per namespace for the customer to set up. It is left as an open question rather than built in.
+A stronger option is for the agent to resolve each Target's secrets as a ServiceAccount in that Target's namespace, using the TokenRequest API, so a cloud policy can be written per namespace. It needs `create` on `serviceaccounts/token` for one ServiceAccount in each execute namespace, and one more identity per namespace for the customer to set up. It is left as an open question rather than built in; `federated` and `brokered` stores do not need it.
 
 ## Access in the cluster
 
@@ -248,7 +251,7 @@ apps/k8s-agent/
 pkg/secretstore/           the secret-store interface and its providers: Kubernetes, AWS Secrets Manager, Vault, Doppler
 ```
 
-The agent imports nothing from `apps/control-plane`. Its new dependencies are `client-go`, the Helm SDK, `cli-utils` for kstatus, and the AWS and Vault SDKs through `pkg/secretstore`. The providers live in `pkg/` because ADR 0004 says the broker and secret-store interfaces are shared by both planes; the control plane uses the kinds and settings to validate stores, never to fetch.
+The agent imports nothing from `apps/control-plane`. Its new dependencies are `client-go`, the Helm SDK, `cli-utils` for kstatus, and the AWS and Vault SDKs through `pkg/secretstore`. The providers live in `pkg/` because ADR 0004 says the broker and secret-store interfaces are shared by both planes; the control plane uses the kinds and settings to validate stores, and grants access to them, but never fetches a value.
 
 Tests use client-go's fake clientset, a fake Helm action configuration, a fake secret store, and `httptest` for the control plane. An end-to-end test against `kind` runs in CI later.
 
@@ -289,9 +292,9 @@ The separate runner listener (`runners.port`, 8661) is configured but not served
 
 ## Open questions
 
-- **GCP Secret Manager and Azure Key Vault.** The first stores are Kubernetes Secrets, AWS Secrets Manager, Vault, and Doppler; the other two depend on customers.
+- **GCP Secret Manager and Azure Key Vault.** The first stores are Kubernetes Secrets, AWS Secrets Manager, Vault, Doppler, and Infisical; the other two depend on customers.
 - **Doppler's history API.** Whether a past config version can be read through the secrets API. If it can, Doppler gets true per-secret pinning and the fingerprint becomes an extra check rather than the only one.
-- **Secret identity per namespace.** Whether the agent resolves secrets as a per-namespace ServiceAccount, so cloud policies can be scoped per Target, or keeps one identity with `environment_ids` and the customer's own policy as the controls.
+- **Secret identity per namespace.** For `agent`-mode stores only: whether the agent resolves secrets as a per-namespace ServiceAccount, so cloud policies can be scoped per Target, or keeps one identity with `environment_ids` and the customer's own policy as the controls. `federated` and `brokered` stores are scoped per Deployment already.
 - **Secrets that change between Deployments.** Today a rotated secret reaches workloads at the next Deployment. Re-resolving on a schedule and rolling the workloads when a version changes would be a new kind of Deployment, `reason: secret_rotation`, and needs its own design.
 - **Multi-arch digests.** CI usually reports an image index digest; whether `imageID` shows the index or a platform digest depends on the container runtime. If it is the platform digest, Builds need to record their platform digests too.
 - **Argo CD and Flux as deployers.** They are driven through their CRs, which also give a better `external_ref` and status than inferring from workloads. The deployer interface is ready for them; an ADR should record the choice before the first one is built.

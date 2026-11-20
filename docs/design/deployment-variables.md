@@ -6,7 +6,7 @@
 
 This document designs the configuration an Application is deployed with: plain values and secrets, which can differ by Environment, Target, and Channel. It follows Octopus Deploy's [project variables](https://octopus.com/docs/projects/variables), [variable sets](https://octopus.com/docs/projects/variables/library-variable-sets), [sensitive variables](https://octopus.com/docs/projects/variables/sensitive-variables), and [release snapshots](https://octopus.com/docs/releases/creating-a-release). Where it differs, the reason is noted.
 
-The main difference is secrets. Octopus stores sensitive values itself, encrypted. Ivaldi stores only a **reference** to a secret in the customer's secret manager, and the agent resolves it inside the cluster, so the value never reaches Ivaldi ([ADR 0004](../adr/0004-credentials-and-keys.md)).
+The main difference is secrets. Octopus stores sensitive values itself, encrypted. Ivaldi stores only a **reference** to a secret in the customer's secret manager, and the agent resolves it inside the cluster, so the value never reaches Ivaldi ([ADR 0004](../adr/0004-credentials-and-keys.md)). The control plane may grant the agent access to the store for the Deployment, but never reads the value ([ADR 0017](../adr/0017-control-plane-grants-secret-store-access.md)).
 
 ## Decisions this model is built on
 

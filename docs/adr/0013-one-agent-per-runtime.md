@@ -1,6 +1,6 @@
 # ADR 0013: One agent per runtime, Kubernetes first
 
-- Status: Proposed; agents serve Clusters rather than single Targets since [ADR 0014](0014-agents-serve-clusters.md)
+- Status: Proposed; agents serve Clusters rather than single Targets since [ADR 0014](0014-agents-serve-clusters.md); agents get access to Secret Stores from the control plane since [ADR 0017](0017-control-plane-grants-secret-store-access.md)
 - Date: 2026-11-08
 - Related: [ADR 0001](0001-deployment-topology.md), [ADR 0003](0003-identity-access-and-policy.md), [ADR 0006](0006-release-and-delivery-tracking.md), [ADR 0008](0008-reaching-customer-systems.md), [ADR 0010](0010-one-binary-for-the-components.md), [workload enrolment](../design/workload-enrolment.md)
 
@@ -20,7 +20,7 @@ This replaces ADR 0006's single agent with runtime providers, and ADR 0010's `ap
 
 - **The domain stays runtime-neutral.** A Target's `runtime` names its runtime and `locator` holds that runtime's address; `kubernetes` is the only runtime the control plane accepts for now. A VPS runtime adds a `Runtime` value and its locator keys, not a new model.
 - **Every agent is a `runtime_agent` workload.** All of them enrol for one Target, connect out to the control plane ([ADR 0008](0008-reaching-customer-systems.md)), and report only on their own Target. The Target's `runtime` says which agent serves it. The enrolment methods stay as they are: `kubernetes` for in-cluster agents, and `bearer` and `mtls` for agents without a cluster identity.
-- **The agents share one protocol.** Enrolment, renewal, heartbeats, assignments, and reports are the same for every runtime, and so are the contracts in `schemas/` and the status rules in `pkg/release`. Client code for that protocol goes in `pkg/` when a second agent needs it, so a runtime's agent holds only what differs: how it observes and applies.
+- **The agents share one protocol.** Enrolment, renewal, heartbeats, assignments, secret-store grants ([ADR 0017](0017-control-plane-grants-secret-store-access.md)), and reports are the same for every runtime, and so are the contracts in `schemas/` and the status rules in `pkg/release`. Client code for that protocol goes in `pkg/` when a second agent needs it, so a runtime's agent holds only what differs: how it observes and applies.
 - **Inside the Kubernetes agent, deploy tools are still not separate agents.** Helm, plain manifests, and observing external deployers such as Argo CD or Flux are ways the Kubernetes agent works, as ADR 0006 decided.
 
 ## Consequences

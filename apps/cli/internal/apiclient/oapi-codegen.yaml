@@ -24,6 +24,22 @@ output-options:
     - create-api-token
     - revoke-api-token
     - record-change
+    - create-project
+    - list-projects
+    - get-project
+    - update-project
+    - transfer-project
+    - archive-project
+    - restore-project
+    - create-application
+    - list-applications
+    - list-workspace-applications
+    - get-application
+    - update-application
+    - link-application-source
+    - transfer-application
+    - archive-application
+    - restore-application
 compatibility:
   # Name enum values after their type, such as ListReleasesParamsSortOrderDesc,
   # so values of different enums never collide.

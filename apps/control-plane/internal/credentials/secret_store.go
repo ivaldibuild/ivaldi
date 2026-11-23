@@ -120,7 +120,7 @@ func NewSecretStore(props NewSecretStoreProps, storeID *string) (*SecretStore, e
 	if err != nil {
 		return nil, err
 	}
-	access, err := props.Access.normalize(props.Kind)
+	access, err := props.Access.normalize(props.Kind, settings)
 	if err != nil {
 		return nil, err
 	}
@@ -326,8 +326,14 @@ func (s *SecretStore) Update(props UpdateSecretStoreProps) error {
 		}
 		next.settings = settings
 	}
-	if props.Access != nil {
-		access, err := props.Access.normalize(s.kind)
+	if props.Access != nil || props.Settings != nil {
+		access := next.access
+		if props.Access != nil {
+			access = *props.Access
+		}
+		// Checked against the settings it will have, which may decide what
+		// the access needs.
+		access, err := access.normalize(s.kind, next.settings)
 		if err != nil {
 			return err
 		}

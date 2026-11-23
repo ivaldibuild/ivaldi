@@ -123,24 +123,32 @@ type StoreSettings struct {
 // StoreAccessMode is how the agent opens a store.
 type StoreAccessMode string
 
-// StoreAccessAgent: with the agent's own identity, or a credential its
-// operator configured under the name the access gives.
-const StoreAccessAgent StoreAccessMode = "agent"
+const (
+	// StoreAccessAgent: with the agent's own identity, or a credential its
+	// operator configured under the name the access gives.
+	StoreAccessAgent StoreAccessMode = "agent"
+	// StoreAccessFederated: with a JWT the control plane grants for the
+	// Deployment, which the agent exchanges at the store.
+	StoreAccessFederated StoreAccessMode = "federated"
+)
 
 // StoreAccess is how the agent opens a store, and that mode's settings.
 type StoreAccess struct {
-	Mode StoreAccessMode `json:"mode" enum:"agent"`
+	Mode StoreAccessMode `json:"mode" enum:"agent,federated"`
 	// RoleARN is, for aws_secrets_manager, assumed on top of the agent's
-	// own AWS identity.
+	// own AWS identity, or with the federated JWT.
 	RoleARN string `json:"role_arn,omitempty"`
 	// Role is, for vault, the auth role the agent logs in as.
 	Role string `json:"role,omitempty"`
 	// AuthMount is, for vault, the auth method's mount; empty means
-	// "kubernetes".
+	// "kubernetes" in agent mode and "jwt" in federated mode.
 	AuthMount string `json:"auth_mount,omitempty"`
-	// Credential is, for doppler, the name of a credential the agent's
-	// operator configured.
+	// Credential is, for doppler in agent mode, the name of a credential
+	// the agent's operator configured.
 	Credential string `json:"credential,omitempty"`
+	// IdentityID is, for doppler in federated mode, the service account
+	// identity the agent exchanges the JWT with.
+	IdentityID string `json:"identity_id,omitempty"`
 }
 
 // KubernetesStore reads a Secret in the Target's namespace.

@@ -52,6 +52,7 @@ type options struct {
 	variables    VariableUsage
 	authz        authorization.Authorizer
 	writer       change.Writer
+	federation   bool
 }
 
 func WithSecretStoreRepo(r credentials.SecretStoreRepository) SecretStoreServiceOption {
@@ -68,6 +69,13 @@ func WithEnvironmentLookup(e EnvironmentLookup) SecretStoreServiceOption {
 
 func WithVariableUsage(v VariableUsage) SecretStoreServiceOption {
 	return func(o *options) { o.variables = v }
+}
+
+// WithFederation says this installation has federation signing keys, so a
+// store may be in federated mode. Without it, a store cannot be set to that
+// mode.
+func WithFederation(enabled bool) SecretStoreServiceOption {
+	return func(o *options) { o.federation = enabled }
 }
 
 func WithAuthorizer(a authorization.Authorizer) SecretStoreServiceOption {
@@ -118,7 +126,7 @@ func NewSecretStoreService(opts ...SecretStoreServiceOption) (credentials.Secret
 		return nil, fmt.Errorf("secret store service: %w", err)
 	}
 
-	s := &service{stores: o.stores, workspaces: o.workspaces, environments: o.environments, variables: o.variables, w: o.writer}
+	s := &service{stores: o.stores, workspaces: o.workspaces, environments: o.environments, variables: o.variables, w: o.writer, federation: o.federation}
 
 	return &authorized{next: s, authz: o.authz, stores: o.stores}, nil
 }
@@ -130,9 +138,20 @@ type service struct {
 	environments EnvironmentLookup
 	variables    VariableUsage
 	w            change.Writer
+	federation   bool
 }
 
 var _ credentials.SecretStoreService = (*service)(nil)
+
+// checkMode refuses federated mode on an installation that cannot sign the
+// JWTs it needs.
+func (s *service) checkMode(access credentials.Access) error {
+	if access.Mode == credentials.AccessFederated && !s.federation {
+		return credentials.NewErrInvalidInput("a store cannot be in federated mode: " + credentials.ErrNoFederation.Error() +
+			"; the installation's operator sets secret_stores.federation.signing_key_files")
+	}
+	return nil
+}
 
 // CreateSecretStore creates a Secret Store in an active Workspace. It may
 // name only that Workspace's active Environments.
@@ -142,6 +161,9 @@ func (s *service) CreateSecretStore(ctx context.Context, actor identity.Actor, i
 		Kind: in.Kind, Settings: in.Settings, Access: in.Access, EnvironmentIDs: in.EnvironmentIDs,
 	}, nil)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.checkMode(store.Access()); err != nil {
 		return nil, err
 	}
 	err = s.w.Tx.WithinTx(ctx, func(ctx context.Context) error {
@@ -242,6 +264,13 @@ func (s *service) UpdateSecretStore(ctx context.Context, actor identity.Actor, o
 		func(ctx context.Context, store *credentials.SecretStore) error {
 			if err := store.Update(props); err != nil {
 				return err
+			}
+			// A store saved in federated mode before its keys were removed
+			// can still be renamed; it cannot be moved into the mode.
+			if props.Access != nil {
+				if err := s.checkMode(store.Access()); err != nil {
+					return err
+				}
 			}
 			return s.checkEnvironments(ctx, store)
 		})

@@ -17,6 +17,9 @@ var (
 	ErrInUse = errors.New("in use")
 	// ErrWorkspaceMismatch means two records that must share a Workspace do not.
 	ErrWorkspaceMismatch = errors.New("belongs to another workspace")
+	// ErrNoFederation means a store is, or would be, in federated mode on an
+	// installation with no federation signing keys.
+	ErrNoFederation = errors.New("this installation has no federation signing keys")
 )
 
 // ErrInvalidInput describes why input failed validation. It matches ErrInvalid.

@@ -62,9 +62,9 @@ type Config struct {
 	MaxConcurrentApplies int
 	// FingerprintSecret holds the key secret fingerprints are made with.
 	FingerprintSecret string
-	// VaultAddresses are the Vault servers the agent may log in to for a
-	// vault Secret Store. None means it reads no vault store.
-	VaultAddresses []string
+	// SecretAddresses are the servers, such as a Vault, the agent may log
+	// in to for a Secret Store. None means it reads no vault store.
+	SecretAddresses []string
 	// VaultTokenFile is the service-account token, projected for Vault's
 	// audience, that the agent logs in to Vault with.
 	VaultTokenFile string
@@ -102,8 +102,8 @@ func (c *Config) bind(flags *pflag.FlagSet) {
 		"Registry hosts, such as registry:5000, to pull charts from over plain HTTP; for local development only")
 	flags.StringVar(&c.FingerprintSecret, "fingerprint-secret", "ivaldi-fingerprint-key",
 		"Secret in the agent's namespace holding the key secret fingerprints are made with")
-	flags.StringSliceVar(&c.VaultAddresses, "vault-addresses", nil,
-		"Vault servers, such as https://vault.example.com, the agent may log in to for a vault Secret Store; none means it reads no vault store")
+	flags.StringSliceVar(&c.SecretAddresses, "secret-addresses", nil,
+		"Servers, such as https://vault.example.com, the agent may send a token or federated JWT to for a Secret Store; Doppler's API and AWS STS are always allowed; none means it reads no vault store")
 	flags.StringVar(&c.VaultTokenFile, "vault-token-file", "/var/run/secrets/ivaldi-vault/token",
 		"Service-account token projected for Vault's audience, which the agent logs in to Vault with")
 	flags.StringToStringVar(&c.SecretCredentials, "secret-credentials", nil,

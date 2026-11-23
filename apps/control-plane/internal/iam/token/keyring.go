@@ -32,6 +32,9 @@ type KeyRing interface {
 	// Sign returns an access token carrying the claims, signed with the
 	// active key.
 	Sign(c identity.Claims) (string, error)
+	// SignJWT returns a JWT of the type typ (its "typ" header) carrying
+	// claims, which encode as a JSON object, signed with the active key.
+	SignJWT(typ string, claims any) (string, error)
 	// PublicKeys returns every key's public half, for verifying tokens.
 	PublicKeys() []identity.PublicKey
 	// JWKS returns the public keys as a JSON Web Key Set (RFC 7517), for
@@ -121,15 +124,19 @@ func NewKeyRing(signers ...crypto.Signer) (KeyRing, error) {
 }
 
 func (r *keyRing) Sign(c identity.Claims) (string, error) {
+	return r.SignJWT(identity.AccessTokenType, c)
+}
+
+func (r *keyRing) SignJWT(typ string, claims any) (string, error) {
 	active := r.keys[0]
 	signer, err := jose.NewSigner(
 		jose.SigningKey{Algorithm: active.alg, Key: jose.JSONWebKey{Key: active.private, KeyID: active.kid}},
-		(&jose.SignerOptions{}).WithType(identity.AccessTokenType),
+		(&jose.SignerOptions{}).WithType(jose.ContentType(typ)),
 	)
 	if err != nil {
 		return "", fmt.Errorf("token: signer: %w", err)
 	}
-	payload, err := json.Marshal(c)
+	payload, err := json.Marshal(claims)
 	if err != nil {
 		return "", fmt.Errorf("token: encode claims: %w", err)
 	}

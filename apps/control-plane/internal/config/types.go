@@ -44,6 +44,26 @@ type Config struct {
 	// VersionControl configures the version-control providers Ivaldi can
 	// read repositories and commit history from.
 	VersionControl VersionControl `yaml:"version_control"`
+
+	// SecretStores configures how the control plane grants runtime agents
+	// access to Secret Stores (ADR 0017).
+	SecretStores SecretStores `yaml:"secret_stores"`
+}
+
+// SecretStores configures the control plane's access to Secret Stores.
+type SecretStores struct {
+	Federation Federation `yaml:"federation"`
+}
+
+// Federation makes the control plane an OIDC issuer for Secret Stores in
+// federated mode, at ExternalURL + "/federation". Without signing keys, no
+// store can be in that mode.
+type Federation struct {
+	// SigningKeyFiles are PEM private keys, as for auth.signing_key_files,
+	// and never the same ones. The first signs; all are published, so a key
+	// is rotated by putting a new one first and removing the old one once
+	// the JWTs it signed, which last five minutes, have expired.
+	SigningKeyFiles []string `yaml:"signing_key_files" env:"IVALDI_SECRET_STORES_FEDERATION_SIGNING_KEY_FILES"`
 }
 
 // DeploymentMode is who operates the control plane (ADR 0001). A managed

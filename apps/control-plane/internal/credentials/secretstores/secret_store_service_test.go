@@ -164,6 +164,26 @@ func TestUpdateSecretStoreChecksItsEnvironments(t *testing.T) {
 	assert.True(t, updated.Allows(w.here))
 }
 
+func TestFederatedModeNeedsFederationKeys(t *testing.T) {
+	w := newWorld(t)
+	federated := credentials.CreateSecretStoreInput{
+		OrganizationID: org, WorkspaceID: w.workspace.ID(), DisplayName: "AWS",
+		Kind: secretstore.KindAWSSecretsManager, Settings: credentials.Settings{AWS: &credentials.AWSSettings{Region: "eu-west-1"}},
+		Access: credentials.Access{Mode: credentials.AccessFederated, RoleARN: "arn:aws:iam::1:role/ivaldi"},
+	}
+	_, err := w.svc.CreateSecretStore(ctx, ada, federated)
+	require.ErrorIs(t, err, credentials.ErrInvalid)
+	assert.Contains(t, err.Error(), "no federation signing keys")
+
+	federated.Access = credentials.Access{}
+	store, err := w.svc.CreateSecretStore(ctx, ada, federated)
+	require.NoError(t, err)
+	_, err = w.svc.UpdateSecretStore(ctx, ada, org, store.ID(), credentials.UpdateSecretStoreProps{
+		Access: &credentials.Access{Mode: credentials.AccessFederated, RoleARN: "arn:aws:iam::1:role/ivaldi"},
+	})
+	assert.ErrorIs(t, err, credentials.ErrInvalid, "nor moved into it")
+}
+
 func TestArchiveSecretStore(t *testing.T) {
 	w := newWorld(t)
 	store, err := w.create()

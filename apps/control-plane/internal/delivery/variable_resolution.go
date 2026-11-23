@@ -205,6 +205,10 @@ type SecretStoreRef struct {
 	// store; empty means every Environment in its Workspace.
 	EnvironmentIDs []string
 	Archived       bool
+	// Unusable says why no Deployment can read the store now, such as a
+	// federated store on an installation with no federation keys; empty
+	// when it can be read.
+	Unusable string
 }
 
 // Allows reports whether Deployments to an Environment may read the store.
@@ -247,6 +251,8 @@ func CheckSecretStores(resolved []ResolvedVariable, stores map[string]SecretStor
 			return NewErrInvalidInput(fmt.Sprintf("secret store %s, which holds %s, is archived", store.DisplayName, r.Name))
 		case !store.Allows(environmentID):
 			return NewErrInvalidInput(fmt.Sprintf("secret store %s, which holds %s, is not allowed for this environment", store.DisplayName, r.Name))
+		case store.Unusable != "":
+			return NewErrInvalidInput(fmt.Sprintf("secret store %s, which holds %s, cannot be read: %s", store.DisplayName, r.Name, store.Unusable))
 		case !slices.Contains(agent.Kinds, string(store.Settings.Kind)):
 			return NewErrInvalidInput(fmt.Sprintf("the cluster's agent cannot read %s secret stores, which %s needs", store.Settings.Kind, r.Name))
 		case store.Settings.Access.Credential != "" && !slices.Contains(agent.Credentials, store.Settings.Access.Credential):

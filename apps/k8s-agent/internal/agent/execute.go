@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -136,7 +137,7 @@ func (e *executor) resolveSecrets(ctx context.Context, a *deploy.Assignment, pro
 	if err != nil {
 		return nil, err
 	}
-	resolved, err := e.secrets.Resolve(ctx, a.Namespace, refs)
+	resolved, err := e.secrets.Resolve(ctx, a.DeploymentID, a.Namespace, refs)
 	if err != nil {
 		return nil, err
 	}
@@ -196,6 +197,12 @@ func (e *executor) apply(ctx context.Context, a deploy.Assignment) {
 	applied, err := e.run(applyCtx, &a, progress, &resolved)
 	if ctx.Err() != nil {
 		log.Info("stopped mid-apply; the deployment stays applying")
+		return
+	}
+	// Cancelled, or finished by another agent, while this one was about
+	// to read its secrets: there is nothing to report.
+	if errors.Is(err, secrets.ErrNotApplying) {
+		log.Info("the deployment is no longer applying; dropped it")
 		return
 	}
 	// An earlier attempt applied this Deployment and kept no pins, so what

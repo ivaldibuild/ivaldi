@@ -4,6 +4,12 @@
 // than finding it, so a runtime agent on any runtime can use it. The control
 // plane uses only the kinds, to validate store settings, and never fetches
 // (ADR 0004, ADR 0017).
+//
+// A store is opened in one of the access modes ADR 0017 describes. In agent
+// mode the reader uses its own identity or a credential its operator
+// configured. In federated mode it exchanges a JWT the control plane signed
+// for the store's own credential, through the exchanges in federation.go;
+// the control plane never makes the exchange.
 package secretstore
 
 import (

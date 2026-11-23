@@ -189,11 +189,11 @@ The heartbeat reports, besides `secret_store_kinds`, the credential names the ag
 Executing an assignment gains one step before resolving secrets:
 
 1. If any of the assignment's secrets is in a `federated` or `brokered` store, ask for grants.
-2. Add every JWT and credential to the `Masker` before using it, and remove them when the apply ends, with the values.
+2. Add every JWT, and every credential a store gives for one, to the `Masker` before using it, and remove them once the values are read: nothing uses them after.
 3. Build each store from its grant: exchange a JWT, or use a brokered credential as is. Build `agent`-mode stores as today.
 4. Resolve, fingerprint, and deliver as today.
 
-Grants are never written to the state Secret, logged, or reported. A grant that expires during the reads (a slow store, retries) is asked for again once.
+Grants are never written to the state Secret, logged, or reported. A JWT is exchanged when its store is first read, seconds after the grant, and the store's credential serves the retries, so a grant is not asked for again. The agent drops an apply whose grant is refused with 409, because its Deployment is no longer applying, and reports nothing.
 
 The assignment's `StoreSettings` carry the location and the mode, never a credential, so an assignment can still be logged after masking.
 
@@ -239,7 +239,7 @@ The chart's `secrets.dopplerTokenSecrets` becomes `secrets.credentials`, keyed b
 Each step is its own pull request:
 
 1. **Settings split.** Access modes on `SecretStore`, the migration, named credentials in the agent and chart, and Doppler's `project` and `config`. Every store is `agent`, so behaviour stays the same. Built: neither the control plane nor an agent had been released, so stored stores are not converted and the assignment's new `StoreSettings` shape is served to every agent.
-2. **Grants and federated mode.** The issuer, the grant operation and records, the agent's grant step and exchanges for AWS, Vault, and Doppler, and `secrets.addresses`.
+2. **Grants and federated mode.** The issuer, the grant operation and records, the agent's grant step and exchanges for AWS, Vault, and Doppler, and `secrets.addresses`. Built: a federated store on an installation without federation keys fails the plan's `secret_stores_allowed` check through `SecretStoreRef.Unusable`, so delivery never learns what federation is.
 3. **Infisical.** The kind, its reader, and its `agent` and `federated` exchanges.
 4. **Brokered mode.** `pkg/kms`, the credential API and table, the brokers, and revocation.
 5. **The web app.** Store forms for modes and credentials, and the self-hosting guide for each kind and mode.

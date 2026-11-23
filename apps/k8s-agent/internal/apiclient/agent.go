@@ -15,6 +15,9 @@ var (
 	// ErrInvalid matches a 422: the control plane refused what was sent,
 	// such as a heartbeat naming a Target that is no longer active.
 	ErrInvalid = errors.New("the control plane refused the request as invalid")
+	// ErrConflict matches a 409, such as a grant asked for a Deployment
+	// that is no longer applying.
+	ErrConflict = errors.New("the control plane refused the request in the current state")
 )
 
 // StatusError is a control-plane response other than success.
@@ -38,6 +41,8 @@ func (e *StatusError) Is(target error) bool {
 		return e.Status == http.StatusForbidden
 	case ErrInvalid:
 		return e.Status == http.StatusUnprocessableEntity
+	case ErrConflict:
+		return e.Status == http.StatusConflict
 	}
 	return false
 }
@@ -60,6 +65,10 @@ type ControlPlane interface {
 	// returns the Deployment the control plane answered with. An
 	// observation with a report ID already recorded is stored once.
 	Observe(ctx context.Context, body ObservationRequestBody) (*DeploymentSnapshot, error)
+	// SecretGrants asks for access to the Secret Stores an applying
+	// Deployment reads, in the modes that need a grant. What it returns
+	// holds credentials.
+	SecretGrants(ctx context.Context, deploymentID string) ([]GrantView, error)
 }
 
 // NewControlPlane returns the ControlPlane at serverURL. client must
@@ -129,6 +138,17 @@ func (c *controlPlane) Observe(ctx context.Context, body ObservationRequestBody)
 		return nil, statusError("agent observation", resp.StatusCode(), resp.ApplicationproblemJSONDefault)
 	}
 	return &resp.JSON200.Data, nil
+}
+
+func (c *controlPlane) SecretGrants(ctx context.Context, deploymentID string) ([]GrantView, error) {
+	resp, err := c.client.AgentSecretGrantsWithResponse(ctx, deploymentID)
+	if err != nil {
+		return nil, fmt.Errorf("secret grants for %s: %w", deploymentID, err)
+	}
+	if resp.JSON200 == nil {
+		return nil, statusError("secret grants for "+deploymentID, resp.StatusCode(), resp.ApplicationproblemJSONDefault)
+	}
+	return resp.JSON200.Data.Grants, nil
 }
 
 // Transient reports whether err is worth retrying: no response, or a

@@ -10,16 +10,19 @@ import (
 
 // NewStoreLookup returns delivery's view of Secret Stores: what it needs to
 // check a secret variable's value may use a store, and to tell an agent how
-// to read it. It does not authorize; delivery's own services do.
-func NewStoreLookup(stores SecretStoreRepository) (delivery.SecretStores, error) {
+// to read it. It does not authorize; delivery's own services do. federation
+// says whether this installation can sign federated JWTs: without it, a
+// federated store cannot be read.
+func NewStoreLookup(stores SecretStoreRepository, federation bool) (delivery.SecretStores, error) {
 	if stores == nil {
 		return nil, errors.New("secret store lookup: a SecretStoreRepository is required")
 	}
-	return storeLookup{stores: stores}, nil
+	return storeLookup{stores: stores, federation: federation}, nil
 }
 
 type storeLookup struct {
-	stores SecretStoreRepository
+	stores     SecretStoreRepository
+	federation bool
 }
 
 func (l storeLookup) LookupSecretStores(ctx context.Context, organizationID string, storeIDs []string) (map[string]delivery.SecretStoreRef, error) {
@@ -43,10 +46,14 @@ func (l storeLookup) lookup(ctx context.Context, organizationID string, storeIDs
 		return nil, err
 	}
 	for _, s := range stores {
-		out[s.ID()] = delivery.SecretStoreRef{
+		ref := delivery.SecretStoreRef{
 			ID: s.ID(), WorkspaceID: s.WorkspaceID(), DisplayName: s.DisplayName(),
 			Settings: assignmentSettings(s), EnvironmentIDs: s.EnvironmentIDs(), Archived: s.Archived(),
 		}
+		if s.Access().Mode == AccessFederated && !l.federation {
+			ref.Unusable = ErrNoFederation.Error()
+		}
+		out[s.ID()] = ref
 	}
 	return out, nil
 }
@@ -58,7 +65,7 @@ func assignmentSettings(s *SecretStore) delivery.StoreSettings {
 		ID: s.ID(), Kind: delivery.StoreKind(s.Kind()),
 		Access: delivery.StoreAccess{
 			Mode: delivery.StoreAccessMode(access.Mode), RoleARN: access.RoleARN, Role: access.Role,
-			AuthMount: access.AuthMount, Credential: access.Credential,
+			AuthMount: access.AuthMount, Credential: access.Credential, IdentityID: access.IdentityID,
 		},
 	}
 	settings := s.Settings()

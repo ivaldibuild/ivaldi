@@ -37,4 +37,7 @@ const (
 	EventSecretStoreCreated  = "secret_store.created"
 	EventSecretStoreUpdated  = "secret_store.updated"
 	EventSecretStoreArchived = "secret_store.archived"
+	// EventSecretStoreAccessGranted is recorded for each grant, by the
+	// agent it was made to, on the Deployment it is for.
+	EventSecretStoreAccessGranted = "secret_store.access_granted"
 )

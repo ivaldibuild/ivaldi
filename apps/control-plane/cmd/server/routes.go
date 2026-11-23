@@ -3,6 +3,7 @@ package server
 import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/api"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/credentials"
+	storegrants "github.com/ivaldibuild/ivaldi-control-plane/internal/credentials/grants"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/credentials/secretstores"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/agentapi"
@@ -80,6 +81,7 @@ type services struct {
 	deployments     delivery.DeploymentService
 	variables       delivery.VariableService
 	secretStores    credentials.SecretStoreService
+	secretGrants    storegrants.Service
 	enrollment      enrollment.Service
 	connections     versioncontrol.ConnectionService
 	sources         versioncontrol.SourceService
@@ -116,6 +118,7 @@ func (s services) routes(describe bool) []api.Routes {
 		deployments.NewController(s.deployments),
 		variables.NewVariableController(s.variables),
 		secretstores.NewSecretStoreController(s.secretStores),
+		storegrants.NewController(s.secretGrants),
 		enrollment.NewController(s.enrollment),
 		connections.NewController(s.connections),
 		sources.NewController(s.sources),

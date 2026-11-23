@@ -174,6 +174,8 @@ func TestSecretsForADeployment(t *testing.T) {
 		{"a credential the agent was not given", stores, doppler, []string{"doppler"}, []string{"doppler-dev"}, "has no credential named doppler-prd"},
 		{"an archived store", map[string]SecretStoreRef{kubernetes: {DisplayName: "In-cluster", Archived: true}}, kubernetes, []string{"kubernetes"}, nil, "is archived"},
 		{"a store that is gone", map[string]SecretStoreRef{}, kubernetes, []string{"kubernetes"}, nil, "no longer exists"},
+		{"a store the control plane cannot grant", map[string]SecretStoreRef{vault: {DisplayName: "Vault", Unusable: "this installation has no federation signing keys"}},
+			vault, []string{"vault"}, nil, "cannot be read: this installation has no federation signing keys"},
 	}
 	for _, tt := range refusals {
 		t.Run(tt.name, func(t *testing.T) {

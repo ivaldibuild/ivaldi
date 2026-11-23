@@ -31,6 +31,14 @@ type SecretStoreRepository interface {
 	CountActiveSecretStores(ctx context.Context, organizationID, workspaceID string) (int, error)
 }
 
+// SecretStoreGrantRepository stores grants of access to Secret Stores.
+type SecretStoreGrantRepository interface {
+	CreateSecretStoreGrants(ctx context.Context, grants []*SecretStoreGrant) error
+	// ListDeploymentGrants returns the grants made for a Deployment, oldest
+	// first.
+	ListDeploymentGrants(ctx context.Context, organizationID, deploymentID string) ([]*SecretStoreGrant, error)
+}
+
 // CreateSecretStoreInput describes a Secret Store to create.
 type CreateSecretStoreInput struct {
 	OrganizationID string

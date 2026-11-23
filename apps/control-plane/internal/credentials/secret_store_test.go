@@ -34,6 +34,16 @@ func TestNewSecretStore(t *testing.T) {
 		storeProps(secretstore.KindDoppler, Settings{}, dopplerAccess, testEnvA),
 		storeProps(secretstore.KindDoppler, Settings{Doppler: &DopplerSettings{Project: "payments", Config: "prd"}}, dopplerAccess, testEnvA),
 	}
+	federated := []NewSecretStoreProps{
+		storeProps(secretstore.KindAWSSecretsManager, Settings{AWS: &AWSSettings{Region: "eu-west-1"}}, Access{Mode: AccessFederated, RoleARN: "arn:aws:iam::1:role/ivaldi"}),
+		storeProps(secretstore.KindVault, vault, Access{Mode: AccessFederated, Role: "ivaldi-production"}),
+		storeProps(secretstore.KindDoppler, Settings{Doppler: &DopplerSettings{Project: "payments", Config: "prd"}}, Access{Mode: AccessFederated, IdentityID: "said_1"}, testEnvA),
+	}
+	for _, props := range federated {
+		s, err := NewSecretStore(props, nil)
+		require.NoError(t, err, props.Kind)
+		assert.Equal(t, AccessFederated, s.Access().Mode)
+	}
 	for _, props := range valid {
 		s, err := NewSecretStore(props, nil)
 		require.NoError(t, err, props.Kind)
@@ -57,7 +67,12 @@ func TestNewSecretStore(t *testing.T) {
 		{"doppler without a credential", storeProps(secretstore.KindDoppler, Settings{}, Access{}, testEnvA), "needs the name of the credential"},
 		{"a credential name that is not a DNS name", storeProps(secretstore.KindDoppler, Settings{}, Access{Credential: "Doppler_Prod"}, testEnvA), "lowercase letters"},
 		{"doppler for every environment", storeProps(secretstore.KindDoppler, Settings{}, dopplerAccess), "names the environments"},
-		{"another mode", storeProps(secretstore.KindKubernetes, Settings{}, Access{Mode: "brokered"}), "must be agent"},
+		{"a mode not built yet", storeProps(secretstore.KindAWSSecretsManager, Settings{AWS: &AWSSettings{Region: "eu-west-1"}}, Access{Mode: "brokered"}), "must be agent or federated"},
+		{"kubernetes federated", storeProps(secretstore.KindKubernetes, Settings{}, Access{Mode: AccessFederated}), "always in agent mode"},
+		{"federated aws without a role", storeProps(secretstore.KindAWSSecretsManager, Settings{AWS: &AWSSettings{Region: "eu-west-1"}}, Access{Mode: AccessFederated}), "needs the role_arn"},
+		{"federated doppler without an identity", storeProps(secretstore.KindDoppler, Settings{Doppler: &DopplerSettings{Project: "payments", Config: "prd"}}, Access{Mode: AccessFederated}, testEnvA), "needs the identity_id"},
+		{"federated doppler without a config", storeProps(secretstore.KindDoppler, Settings{}, Access{Mode: AccessFederated, IdentityID: "said_1"}, testEnvA), "needs the Doppler project and config"},
+		{"a credential in federated mode", storeProps(secretstore.KindDoppler, Settings{Doppler: &DopplerSettings{Project: "payments", Config: "prd"}}, Access{Mode: AccessFederated, IdentityID: "said_1", Credential: "doppler"}, testEnvA), "takes no credential"},
 		{"access another kind takes", storeProps(secretstore.KindKubernetes, Settings{}, Access{Credential: "doppler"}), "takes no credential"},
 		{"something that is not an environment", storeProps(secretstore.KindKubernetes, Settings{}, Access{}, "tgt_01BX5ZZKBKACTAV9WEVGEMMVRA"), "not an environment ID"},
 	}
@@ -108,6 +123,9 @@ func TestSecretStoreUpdate(t *testing.T) {
 	require.NoError(t, s.Update(UpdateSecretStoreProps{Access: &Access{RoleARN: "arn:aws:iam::1:role/ivaldi"}}))
 	assert.Equal(t, Access{Mode: AccessAgent, RoleARN: "arn:aws:iam::1:role/ivaldi"}, s.Access())
 	assert.Len(t, s.PullEvents(), 1, "a change of access is a change")
+
+	require.NoError(t, s.Update(UpdateSecretStoreProps{Access: &Access{Mode: AccessFederated, RoleARN: "arn:aws:iam::1:role/ivaldi"}}))
+	assert.Equal(t, AccessFederated, s.Access().Mode, "a store can move to federated mode")
 
 	s.Archive()
 	require.ErrorIs(t, s.Update(UpdateSecretStoreProps{DisplayName: new("x")}), ErrArchived)

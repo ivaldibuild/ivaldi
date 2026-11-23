@@ -356,6 +356,21 @@ func (e EnvironmentSnapshotTier) Valid() bool {
 	}
 }
 
+// Defines values for GrantViewMode.
+const (
+	GrantViewModeFederated GrantViewMode = "federated"
+)
+
+// Valid indicates whether the value is a known member of the GrantViewMode enum.
+func (e GrantViewMode) Valid() bool {
+	switch e {
+	case GrantViewModeFederated:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for HeartbeatRequestBodyWatchMode.
 const (
 	HeartbeatRequestBodyWatchModeCluster    HeartbeatRequestBodyWatchMode = "cluster"
@@ -499,13 +514,16 @@ func (e SecretVersionDeliveredAs) Valid() bool {
 
 // Defines values for StoreAccessMode.
 const (
-	StoreAccessModeAgent StoreAccessMode = "agent"
+	StoreAccessModeAgent     StoreAccessMode = "agent"
+	StoreAccessModeFederated StoreAccessMode = "federated"
 )
 
 // Valid indicates whether the value is a known member of the StoreAccessMode enum.
 func (e StoreAccessMode) Valid() bool {
 	switch e {
 	case StoreAccessModeAgent:
+		return true
+	case StoreAccessModeFederated:
 		return true
 	default:
 		return false
@@ -798,6 +816,22 @@ type ErrorModel struct {
 	Type *string `json:"type,omitempty"`
 }
 
+// GrantView defines model for GrantView.
+type GrantView struct {
+	ExpiresAt time.Time     `json:"expires_at"`
+	Jwt       *string       `json:"jwt,omitempty"`
+	Mode      GrantViewMode `json:"mode"`
+	StoreId   string        `json:"store_id"`
+}
+
+// GrantViewMode defines model for GrantView.Mode.
+type GrantViewMode string
+
+// GrantsView defines model for GrantsView.
+type GrantsView struct {
+	Grants []GrantView `json:"grants"`
+}
+
 // HeartbeatRequestBody defines model for HeartbeatRequestBody.
 type HeartbeatRequestBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -1024,6 +1058,21 @@ type ResponseDeploymentSnapshot struct {
 	Status string `json:"status"`
 }
 
+// ResponseGrantsView defines model for ResponseGrantsView.
+type ResponseGrantsView struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: https://example.com/schemas/ResponseGrantsView.json
+	Schema *string    `json:"$schema,omitempty"`
+	Data   GrantsView `json:"data"`
+
+	// Message Human-readable message
+	Message *string `json:"message,omitempty"`
+
+	// Status Request status
+	Status string `json:"status"`
+}
+
 // ResponseListDeploymentAssignment defines model for ResponseListDeploymentAssignment.
 type ResponseListDeploymentAssignment struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -1111,6 +1160,7 @@ type SecretVersionDeliveredAs string
 type StoreAccess struct {
 	AuthMount  *string         `json:"auth_mount,omitempty"`
 	Credential *string         `json:"credential,omitempty"`
+	IdentityId *string         `json:"identity_id,omitempty"`
 	Mode       StoreAccessMode `json:"mode"`
 	Role       *string         `json:"role,omitempty"`
 	RoleArn    *string         `json:"role_arn,omitempty"`
@@ -1300,6 +1350,13 @@ type ClientInterface interface {
 	// Corresponds with POST /v1/agent/credentials/renew (the `RenewWorkloadCredential` operationId).
 	RenewWorkloadCredential(ctx context.Context, body RenewWorkloadCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// AgentSecretGrants Grant the caller's Cluster's agent access to the Secret Stores an applying Deployment reads
+	//
+	// The agent names only the Deployment. Access is granted to every store its secrets are in whose mode needs a grant, or to none. A Deployment whose stores need none gets no grant.
+	//
+	// Corresponds with POST /v1/agent/deployments/{deployment_id}/secret-grants (the `AgentSecretGrants` operationId).
+	AgentSecretGrants(ctx context.Context, deploymentId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// RedeemClusterEnrolmentWithBody Redeem a Cluster enrolment token for a workload credential
 	//
 	// Takes any type of body and a specified content type.
@@ -1401,6 +1458,23 @@ func (c *Client) RenewWorkloadCredentialWithBody(ctx context.Context, contentTyp
 // Corresponds with POST /v1/agent/credentials/renew (the `RenewWorkloadCredential` operationId).
 func (c *Client) RenewWorkloadCredential(ctx context.Context, body RenewWorkloadCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewRenewWorkloadCredentialRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// AgentSecretGrants Grant the caller's Cluster's agent access to the Secret Stores an applying Deployment reads
+//
+// The agent names only the Deployment. Access is granted to every store its secrets are in whose mode needs a grant, or to none. A Deployment whose stores need none gets no grant.
+//
+// Corresponds with POST /v1/agent/deployments/{deployment_id}/secret-grants (the `AgentSecretGrants` operationId).
+func (c *Client) AgentSecretGrants(ctx context.Context, deploymentId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAgentSecretGrantsRequest(c.Server, deploymentId)
 	if err != nil {
 		return nil, err
 	}
@@ -1625,6 +1699,40 @@ func NewRenewWorkloadCredentialRequestWithBody(server string, contentType string
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewAgentSecretGrantsRequest constructs an http.Request for the AgentSecretGrants method
+func NewAgentSecretGrantsRequest(server string, deploymentId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "deployment_id", deploymentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/agent/deployments/%s/secret-grants", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -1888,6 +1996,15 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /v1/agent/credentials/renew (the `RenewWorkloadCredential` operationId).
 	RenewWorkloadCredentialWithResponse(ctx context.Context, body RenewWorkloadCredentialJSONRequestBody, reqEditors ...RequestEditorFn) (*RenewWorkloadCredentialResponse, error)
 
+	// AgentSecretGrantsWithResponse Grant the caller's Cluster's agent access to the Secret Stores an applying Deployment reads
+	//
+	// The agent names only the Deployment. Access is granted to every store its secrets are in whose mode needs a grant, or to none. A Deployment whose stores need none gets no grant.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/agent/deployments/{deployment_id}/secret-grants (the `AgentSecretGrants` operationId).
+	AgentSecretGrantsWithResponse(ctx context.Context, deploymentId string, reqEditors ...RequestEditorFn) (*AgentSecretGrantsResponse, error)
+
 	// RedeemClusterEnrolmentWithBodyWithResponse Redeem a Cluster enrolment token for a workload credential
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
@@ -2042,6 +2159,54 @@ func (r RenewWorkloadCredentialResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r RenewWorkloadCredentialResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type AgentSecretGrantsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ResponseGrantsView
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r AgentSecretGrantsResponse) GetJSON200() *ResponseGrantsView {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r AgentSecretGrantsResponse) GetApplicationproblemJSONDefault() *ErrorModel {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r AgentSecretGrantsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r AgentSecretGrantsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AgentSecretGrantsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r AgentSecretGrantsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -2320,6 +2485,21 @@ func (c *ClientWithResponses) RenewWorkloadCredentialWithResponse(ctx context.Co
 	return ParseRenewWorkloadCredentialResponse(rsp)
 }
 
+// AgentSecretGrantsWithResponse Grant the caller's Cluster's agent access to the Secret Stores an applying Deployment reads
+//
+// The agent names only the Deployment. Access is granted to every store its secrets are in whose mode needs a grant, or to none. A Deployment whose stores need none gets no grant.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/agent/deployments/{deployment_id}/secret-grants (the `AgentSecretGrants` operationId).
+func (c *ClientWithResponses) AgentSecretGrantsWithResponse(ctx context.Context, deploymentId string, reqEditors ...RequestEditorFn) (*AgentSecretGrantsResponse, error) {
+	rsp, err := c.AgentSecretGrants(ctx, deploymentId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAgentSecretGrantsResponse(rsp)
+}
+
 // RedeemClusterEnrolmentWithBodyWithResponse Redeem a Cluster enrolment token for a workload credential
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
@@ -2486,6 +2666,39 @@ func ParseRenewWorkloadCredentialResponse(rsp *http.Response) (*RenewWorkloadCre
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest ResponseRenewed
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseAgentSecretGrantsResponse parses an HTTP response from a AgentSecretGrantsWithResponse call
+func ParseAgentSecretGrantsResponse(rsp *http.Response) (*AgentSecretGrantsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AgentSecretGrantsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ResponseGrantsView
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

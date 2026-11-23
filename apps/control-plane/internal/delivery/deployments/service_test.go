@@ -849,6 +849,29 @@ func TestListClusterAssignmentsChecksTheClusterAgent(t *testing.T) {
 	assert.ErrorIs(t, err, delivery.ErrNotDeploymentAgent)
 }
 
+// One Deployment's assignment, for a grant, is the one the agent polls, and
+// only its Cluster's agent reads it while it is in flight.
+func TestGetDeploymentAssignment(t *testing.T) {
+	w := newWorld(t)
+	applying := mustDeployment(org, w.rel.ID(), w.app.ID(), envID, targetID, release.DeploymentApplying)
+	w.deployments[applying.ID()] = applying
+	finished := mustDeployment(org, w.rel.ID(), w.app.ID(), envID, targetID, release.DeploymentHealthy)
+	w.deployments[finished.ID()] = finished
+	agent := identity.Actor{PrincipalID: agentID}
+
+	got, err := w.svc.GetDeploymentAssignment(ctx, agent, org, applying.ID())
+	require.NoError(t, err)
+	listed, err := w.svc.ListClusterAssignments(ctx, agent, org, clusterID)
+	require.NoError(t, err)
+	require.Len(t, listed, 1)
+	assert.Equal(t, listed[0], *got)
+
+	_, err = w.svc.GetDeploymentAssignment(ctx, ada, org, applying.ID())
+	assert.ErrorIs(t, err, delivery.ErrNotDeploymentAgent)
+	_, err = w.svc.GetDeploymentAssignment(ctx, agent, org, finished.ID())
+	assert.ErrorIs(t, err, delivery.ErrDeploymentStatus)
+}
+
 func TestListAssignmentsAsksOnlyForInFlightDeployments(t *testing.T) {
 	w := newWorld(t)
 	finished := mustDeployment(org, w.rel.ID(), w.app.ID(), envID, targetID, release.DeploymentHealthy)

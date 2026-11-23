@@ -128,6 +128,12 @@ func (a *authorized) ListClusterAssignments(ctx context.Context, actor identity.
 	return a.next.ListClusterAssignments(ctx, actor, organizationID, clusterID)
 }
 
+// GetDeploymentAssignment is not checked by the authorizer: only the agent
+// of the Deployment's Cluster may read it, which the service enforces.
+func (a *authorized) GetDeploymentAssignment(ctx context.Context, actor identity.Actor, organizationID, deploymentID string) (*delivery.DeploymentAssignment, error) {
+	return a.next.GetDeploymentAssignment(ctx, actor, organizationID, deploymentID)
+}
+
 func (a *authorized) ReportDeployment(ctx context.Context, actor identity.Actor, in delivery.ReportDeploymentInput) (*delivery.DeploymentDetail, error) {
 	return a.next.ReportDeployment(ctx, actor, in)
 }

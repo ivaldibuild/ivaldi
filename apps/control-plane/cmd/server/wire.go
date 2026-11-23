@@ -15,6 +15,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/api"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/audit"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/config"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/credentials/federation"
 	deliverypg "github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/enrollment"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/hasher"
@@ -89,7 +90,10 @@ type app struct {
 	// provisioner sets up each new Organization's default Workspace.
 	provisioner iam.OrganizationProvisioner
 	keys        token.KeyRing
-	verifier    identity.Verifier
+	// federation signs the JWTs federated Secret Stores trust; nil when
+	// the installation has no federation keys.
+	federation federation.Issuer
+	verifier   identity.Verifier
 	// kubernetes verifies projected service-account tokens for workloads.
 	kubernetes workloadauth.KubernetesVerifier
 	// services serve the API's operations; root.go builds its routes from them.
@@ -173,6 +177,9 @@ func wire(ctx context.Context, cfg *config.Config, version string, logger loggin
 
 	a.keys, err = loadKeys(cfg, logger)
 	if err != nil {
+		return nil, nil, err
+	}
+	if err := a.wireFederation(cfg); err != nil {
 		return nil, nil, err
 	}
 	accessTokens, err := identity.NewVerifier(identity.VerifierConfig{
@@ -719,6 +726,37 @@ func loadKeys(cfg *config.Config, logger logging.Logger) (token.KeyRing, error) 
 	}
 	logger.Warn("signing tokens with an ephemeral key: they stop working on restart and other replicas cannot verify them; set auth.signing_key_files outside local development")
 	return token.NewEphemeralKeyRing()
+}
+
+// wireFederation loads the federation issuer's keys, when the installation
+// has any, and serves its discovery document and key set.
+func (a *app) wireFederation(cfg *config.Config) error {
+	files := cfg.SecretStores.Federation.SigningKeyFiles
+	if len(files) == 0 {
+		return nil
+	}
+	keys, err := token.LoadKeyRing(files)
+	if err != nil {
+		return fmt.Errorf("secret_stores.federation.signing_key_files: %w", err)
+	}
+	// The same key in another file would let a store that trusts the
+	// issuer accept an access token.
+	for _, k := range keys.PublicKeys() {
+		for _, api := range a.keys.PublicKeys() {
+			if k.KeyID == api.KeyID {
+				return fmt.Errorf("secret_stores.federation.signing_key_files: key %s also signs access tokens; give the issuer its own keys", k.KeyID)
+			}
+		}
+	}
+	if a.federation, err = federation.NewIssuer(keys, cfg.ExternalURL); err != nil {
+		return err
+	}
+	handlers, err := federation.NewHandlers(keys, cfg.ExternalURL)
+	if err != nil {
+		return err
+	}
+	a.handlers = append(a.handlers, handlers)
+	return nil
 }
 
 // openDatabase connects with the configured pool and checks the connection,

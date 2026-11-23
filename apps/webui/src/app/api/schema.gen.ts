@@ -38,6 +38,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/agent/deployments/{deployment_id}/secret-grants': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Grant the caller's Cluster's agent access to the Secret Stores an applying Deployment reads
+     * @description The agent names only the Deployment. Access is granted to every store its secrets are in whose mode needs a grant, or to none. A Deployment whose stores need none gets no grant.
+     */
+    post: operations['agent-secret-grants'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/agent/enrolments/redeem': {
     parameters: {
       query?: never;
@@ -2633,24 +2653,27 @@ export interface components {
     Access: {
       auth_mount?: string;
       credential?: string;
+      identity_id?: string;
       /** @enum {string} */
-      mode: 'agent';
+      mode: 'agent' | 'federated';
       role?: string;
       role_arn?: string;
     };
     AccessBody: {
-      /** @description For vault: the auth method's mount; kubernetes when omitted */
+      /** @description For vault: the auth method's mount; kubernetes in agent mode and jwt in federated mode when omitted */
       auth_mount?: string;
-      /** @description For doppler: the name of the credential, configured on the agent, that holds the Doppler token */
+      /** @description For doppler in agent mode: the name of the credential, configured on the agent, that holds the Doppler token */
       credential?: string;
+      /** @description For doppler in federated mode: the service account identity that trusts the federation issuer */
+      identity_id?: string;
       /**
-       * @description How the store is opened: agent, with the agent's own identity or a credential its operator configured
+       * @description How the store is opened: agent, with the agent's own identity or a credential its operator configured; or federated, with a JWT the control plane signs for each Deployment, which the store trusts
        * @enum {string}
        */
-      mode: 'agent';
+      mode: 'agent' | 'federated';
       /** @description For vault: the auth role the agent logs in as */
       role?: string;
-      /** @description For aws_secrets_manager: a role to assume on top of the agent's own AWS identity */
+      /** @description For aws_secrets_manager: the role to assume, on top of the agent's own AWS identity in agent mode, or with the JWT in federated mode, where it is required */
       role_arn?: string;
     };
     AgentDetail: {
@@ -3699,6 +3722,17 @@ export interface components {
       role: string;
       role_id: string;
     };
+    GrantView: {
+      /** Format: date-time */
+      expires_at: string;
+      jwt?: string;
+      /** @enum {string} */
+      mode: 'federated';
+      store_id: string;
+    };
+    GrantsView: {
+      grants: components['schemas']['GrantView'][];
+    };
     Group: {
       id: string;
       name: string;
@@ -4638,6 +4672,20 @@ export interface components {
       readonly $schema?: string;
       /** @description Response payload, always present: an empty list is [], not omitted */
       data: components['schemas']['Grant'];
+      /** @description Human-readable message */
+      message?: string;
+      /** @description Request status */
+      status: string;
+    };
+    ResponseGrantsView: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/ResponseGrantsView.json
+       */
+      readonly $schema?: string;
+      /** @description Response payload, always present: an empty list is [], not omitted */
+      data: components['schemas']['GrantsView'];
       /** @description Human-readable message */
       message?: string;
       /** @description Request status */
@@ -5973,8 +6021,9 @@ export interface components {
     StoreAccess: {
       auth_mount?: string;
       credential?: string;
+      identity_id?: string;
       /** @enum {string} */
-      mode: 'agent';
+      mode: 'agent' | 'federated';
       role?: string;
       role_arn?: string;
     };
@@ -6473,6 +6522,38 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ResponseRenewed'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'agent-secret-grants': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The applying Deployment whose secrets the agent is about to read */
+        deployment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseGrantsView'];
         };
       };
       /** @description Error */

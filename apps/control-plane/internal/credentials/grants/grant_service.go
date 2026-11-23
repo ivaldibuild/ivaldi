@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"time"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/audit"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/change"
@@ -19,50 +18,7 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/authorization"
 	"github.com/ivaldibuild/ivaldi/pkg/identity"
 	"github.com/ivaldibuild/ivaldi/pkg/release"
-	"github.com/ivaldibuild/ivaldi/pkg/transaction"
 )
-
-// Assignments reads one Deployment's assignment for its Cluster's agent,
-// with its stores checked again. delivery.DeploymentService provides it.
-type Assignments interface {
-	GetDeploymentAssignment(ctx context.Context, actor identity.Actor, organizationID, deploymentID string) (*delivery.DeploymentAssignment, error)
-}
-
-// Applications reads the Application a Deployment is of, for its Project.
-// delivery.ApplicationRepository provides it.
-type Applications interface {
-	GetApplication(ctx context.Context, organizationID, applicationID string) (*delivery.Application, error)
-}
-
-// Grant is access to one store, for one Deployment. JWT is a credential:
-// it goes to the agent and nowhere else.
-type Grant struct {
-	StoreID   string
-	Mode      credentials.AccessMode
-	ExpiresAt time.Time
-	JWT       string
-}
-
-// Service grants the Secret Store access a Deployment needs.
-type Service interface {
-	// Grant grants access to every store in a mode that needs a grant
-	// among those the Deployment's secrets are in, or to none: the caller
-	// must be the agent of the Cluster the Deployment's Target is in, and
-	// the Deployment applying. It returns no grant for a Deployment whose
-	// stores need none.
-	Grant(ctx context.Context, caller identity.Caller, deploymentID string) ([]Grant, error)
-}
-
-type Option func(*service)
-
-func WithAssignments(a Assignments) Option   { return func(s *service) { s.assignments = a } }
-func WithApplications(a Applications) Option { return func(s *service) { s.applications = a } }
-func WithGrantRepo(r credentials.SecretStoreGrantRepository) Option {
-	return func(s *service) { s.grants = r }
-}
-func WithIssuer(i federation.Issuer) Option           { return func(s *service) { s.issuer = i } }
-func WithTransactor(tx transaction.Transactor) Option { return func(s *service) { s.w.Tx = tx } }
-func WithAuditRecorder(r audit.Recorder) Option       { return func(s *service) { s.w.Audit = r } }
 
 // NewService returns the grants service, or an error naming a missing
 // dependency. Without an issuer, a federated store is never granted.

@@ -8,18 +8,6 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/iam/token"
 )
 
-// discovery is the issuer's OpenID Provider Metadata: only what a relying
-// party that verifies JWTs needs. The issuer signs JWTs for grants and runs
-// no OAuth flow, so it has no authorization or token endpoint.
-type discovery struct {
-	Issuer                           string   `json:"issuer"`
-	JWKSURI                          string   `json:"jwks_uri"`
-	ResponseTypesSupported           []string `json:"response_types_supported"`
-	SubjectTypesSupported            []string `json:"subject_types_supported"`
-	IDTokenSigningAlgValuesSupported []string `json:"id_token_signing_alg_values_supported"`
-	ClaimsSupported                  []string `json:"claims_supported"`
-}
-
 type handlers struct {
 	discovery []byte
 	jwks      []byte

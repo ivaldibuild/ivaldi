@@ -22,3 +22,12 @@ func OfPtr[T comparable](p *T) *T {
 	}
 	return Of(*p)
 }
+
+// Or returns *p, or fallback when p is nil, such as a stored timestamp a
+// new object does not have yet.
+func Or[T any](p *T, fallback T) T {
+	if p == nil {
+		return fallback
+	}
+	return *p
+}

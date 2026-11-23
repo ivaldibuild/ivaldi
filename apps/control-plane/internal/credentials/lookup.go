@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
+	"github.com/ivaldibuild/ivaldi/pkg/secretstore"
 )
 
 // NewStoreLookup returns delivery's view of Secret Stores: what it needs to
@@ -52,18 +53,25 @@ func (l storeLookup) lookup(ctx context.Context, organizationID string, storeIDs
 
 // assignmentSettings returns a store's settings in the shape an agent is sent.
 func assignmentSettings(s *SecretStore) delivery.StoreSettings {
-	out := delivery.StoreSettings{ID: s.ID(), Kind: delivery.StoreKind(s.Kind())}
+	access := s.Access()
+	out := delivery.StoreSettings{
+		ID: s.ID(), Kind: delivery.StoreKind(s.Kind()),
+		Access: delivery.StoreAccess{
+			Mode: delivery.StoreAccessMode(access.Mode), RoleARN: access.RoleARN, Role: access.Role,
+			AuthMount: access.AuthMount, Credential: access.Credential,
+		},
+	}
 	settings := s.Settings()
-	switch {
-	case settings.AWS != nil:
-		out.AWS = &delivery.AWSStore{Region: settings.AWS.Region, RoleARN: settings.AWS.RoleARN}
-	case settings.Vault != nil:
-		out.Vault = &delivery.VaultStore{
-			Address: settings.Vault.Address, Mount: settings.Vault.Mount, AuthRole: settings.Vault.AuthRole,
-			AuthMount: settings.Vault.AuthMount, Namespace: settings.Vault.Namespace,
+	switch s.Kind() {
+	case secretstore.KindAWSSecretsManager:
+		out.AWS = &delivery.AWSStore{Region: settings.AWS.Region}
+	case secretstore.KindVault:
+		out.Vault = &delivery.VaultStore{Address: settings.Vault.Address, Mount: settings.Vault.Mount, Namespace: settings.Vault.Namespace}
+	case secretstore.KindDoppler:
+		out.Doppler = &delivery.DopplerStore{}
+		if settings.Doppler != nil {
+			out.Doppler.Project, out.Doppler.Config = settings.Doppler.Project, settings.Doppler.Config
 		}
-	case settings.Doppler != nil:
-		out.Doppler = &delivery.DopplerStore{TokenSecretName: settings.Doppler.TokenSecretName, TokenSecretKey: settings.Doppler.TokenSecretKey}
 	default:
 		out.Kubernetes = &delivery.KubernetesStore{}
 	}

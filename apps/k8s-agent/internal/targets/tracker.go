@@ -61,7 +61,7 @@ type Set struct {
 }
 
 // HeartbeatBody is the heartbeat that reports s.
-func (s Set) HeartbeatBody(agentVersion string, deployers, secretStoreKinds []string) apiclient.HeartbeatRequestBody {
+func (s Set) HeartbeatBody(agentVersion string, deployers, secretStoreKinds, secretCredentials []string) apiclient.HeartbeatRequestBody {
 	reports := make([]apiclient.TargetHeartbeatRequest, 0, len(s.Targets))
 	for _, t := range s.Targets {
 		report := apiclient.TargetHeartbeatRequest{
@@ -78,12 +78,13 @@ func (s Set) HeartbeatBody(agentVersion string, deployers, secretStoreKinds []st
 		watchMode = WatchModeNamespaces
 	}
 	return apiclient.HeartbeatRequestBody{
-		AgentVersion:      agentVersion,
-		KubernetesVersion: s.KubernetesVersion,
-		WatchMode:         apiclient.HeartbeatRequestBodyWatchMode(watchMode),
-		Deployers:         &deployers,
-		SecretStoreKinds:  &secretStoreKinds,
-		Targets:           &reports,
+		AgentVersion:           agentVersion,
+		KubernetesVersion:      s.KubernetesVersion,
+		WatchMode:              apiclient.HeartbeatRequestBodyWatchMode(watchMode),
+		Deployers:              &deployers,
+		SecretStoreKinds:       &secretStoreKinds,
+		SecretStoreCredentials: &secretCredentials,
+		Targets:                &reports,
 	}
 }
 

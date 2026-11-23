@@ -3,7 +3,6 @@ package postgres
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -15,24 +14,6 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/database"
 	"github.com/ivaldibuild/ivaldi/pkg/secretstore"
 )
-
-// secretStoreEntity is a row of credentials.secret_stores. IDs and
-// timestamps are set by the domain, never by GORM.
-type secretStoreEntity struct {
-	ID             string             `gorm:"column:id;primaryKey"`
-	OrganizationID string             `gorm:"column:organization_id"`
-	WorkspaceID    string             `gorm:"column:workspace_id"`
-	Slug           string             `gorm:"column:slug"`
-	DisplayName    string             `gorm:"column:display_name"`
-	Kind           string             `gorm:"column:kind"`
-	Settings       []byte             `gorm:"column:settings;type:jsonb"`
-	EnvironmentIDs database.TextArray `gorm:"column:environment_ids;type:text[]"`
-	CreatedAt      time.Time          `gorm:"column:created_at;autoCreateTime:false"`
-	UpdatedAt      time.Time          `gorm:"column:updated_at;autoUpdateTime:false"`
-	ArchivedAt     *time.Time         `gorm:"column:archived_at"`
-}
-
-func (secretStoreEntity) TableName() string { return "credentials.secret_stores" }
 
 type secretStoreRepository struct {
 	db *gorm.DB
@@ -68,18 +49,22 @@ func translate(err error) error {
 	return err
 }
 
-func toEntity(s *credentials.SecretStore) (*secretStoreEntity, error) {
+func toEntity(s *credentials.SecretStore) *secretStoreEntity {
 	snap := s.Snapshot()
-	settings, err := json.Marshal(snap.Settings)
-	if err != nil {
-		return nil, fmt.Errorf("encode settings: %w", err)
-	}
 	return &secretStoreEntity{
-		ID: snap.ID, OrganizationID: snap.OrganizationID, WorkspaceID: snap.WorkspaceID,
-		Slug: snap.Slug, DisplayName: snap.DisplayName, Kind: string(snap.Kind), Settings: settings,
+		ID:             snap.ID,
+		OrganizationID: snap.OrganizationID,
+		WorkspaceID:    snap.WorkspaceID,
+		Slug:           snap.Slug,
+		DisplayName:    snap.DisplayName,
+		Kind:           string(snap.Kind),
+		Settings:       snap.Settings,
+		Access:         snap.Access,
 		EnvironmentIDs: database.TextArray(snap.EnvironmentIDs),
-		CreatedAt:      snap.CreatedAt, UpdatedAt: snap.UpdatedAt, ArchivedAt: snap.ArchivedAt,
-	}, nil
+		CreatedAt:      snap.CreatedAt,
+		UpdatedAt:      snap.UpdatedAt,
+		ArchivedAt:     snap.ArchivedAt,
+	}
 }
 
 func utc(t time.Time) *time.Time {
@@ -88,18 +73,22 @@ func utc(t time.Time) *time.Time {
 }
 
 func toDomain(e *secretStoreEntity) (*credentials.SecretStore, error) {
-	var settings credentials.Settings
-	if err := json.Unmarshal(e.Settings, &settings); err != nil {
-		return nil, fmt.Errorf("decode the settings of secret store %s: %w", e.ID, err)
-	}
 	props := credentials.NewSecretStoreProps{
-		OrganizationID: e.OrganizationID, WorkspaceID: e.WorkspaceID, Slug: e.Slug, DisplayName: e.DisplayName,
-		Kind: secretstore.Kind(e.Kind), Settings: settings, EnvironmentIDs: e.EnvironmentIDs,
-		CreatedAt: utc(e.CreatedAt), UpdatedAt: utc(e.UpdatedAt),
+		OrganizationID: e.OrganizationID,
+		WorkspaceID:    e.WorkspaceID,
+		Slug:           e.Slug,
+		DisplayName:    e.DisplayName,
+		Kind:           secretstore.Kind(e.Kind),
+		Settings:       e.Settings,
+		Access:         e.Access,
+		EnvironmentIDs: e.EnvironmentIDs,
+		CreatedAt:      utc(e.CreatedAt), UpdatedAt: utc(e.UpdatedAt),
 	}
+
 	if e.ArchivedAt != nil {
 		props.ArchivedAt = utc(*e.ArchivedAt)
 	}
+
 	return credentials.NewSecretStore(props, &e.ID)
 }
 
@@ -116,11 +105,7 @@ func toDomains(entities []secretStoreEntity) ([]*credentials.SecretStore, error)
 }
 
 func (r *secretStoreRepository) CreateSecretStore(ctx context.Context, s *credentials.SecretStore) error {
-	e, err := toEntity(s)
-	if err != nil {
-		return err
-	}
-	return translate(r.conn(ctx).Create(e).Error)
+	return translate(r.conn(ctx).Create(toEntity(s)).Error)
 }
 
 func (r *secretStoreRepository) GetSecretStore(ctx context.Context, organizationID, storeID string) (*credentials.SecretStore, error) {
@@ -174,16 +159,13 @@ func (r *secretStoreRepository) ListSecretStores(ctx context.Context, organizati
 }
 
 func (r *secretStoreRepository) UpdateSecretStore(ctx context.Context, s *credentials.SecretStore) error {
-	e, err := toEntity(s)
-	if err != nil {
-		return err
-	}
+	e := toEntity(s)
+	// A struct update runs the JSON serializer; Select writes the zero
+	// values too, such as a cleared archived_at.
 	res := r.conn(ctx).Model(&secretStoreEntity{}).
 		Where("organization_id = ? AND id = ?", e.OrganizationID, e.ID).
-		Updates(map[string]any{
-			"slug": e.Slug, "display_name": e.DisplayName, "settings": e.Settings,
-			"environment_ids": e.EnvironmentIDs, "updated_at": e.UpdatedAt, "archived_at": e.ArchivedAt,
-		})
+		Select("slug", "display_name", "settings", "access", "environment_ids", "updated_at", "archived_at").
+		Updates(e)
 	if res.Error != nil {
 		return translate(res.Error)
 	}

@@ -80,7 +80,7 @@ func (a *agent) heartbeatLoop(ctx context.Context, tracker targets.Tracker, refr
 		if verr != nil {
 			err = verr
 		} else {
-			err = a.cp.Heartbeat(ctx, set.HeartbeatBody(a.version, deployerNames(a.deployers), a.secretStoreKinds()))
+			err = a.cp.Heartbeat(ctx, set.HeartbeatBody(a.version, deployerNames(a.deployers), a.secretStoreKinds(), a.secretCredentials()))
 		}
 		switch {
 		case ctx.Err() != nil:
@@ -173,6 +173,15 @@ func (a *agent) secretStoreKinds() []string {
 		return []string{}
 	}
 	return a.storeKinds
+}
+
+// secretCredentials names the credentials the agent can use for secret
+// stores.
+func (a *agent) secretCredentials() []string {
+	if a.secrets == nil || a.credentials == nil {
+		return []string{}
+	}
+	return a.credentials
 }
 
 // handle logs a failed control-plane call, and gives up the credential when

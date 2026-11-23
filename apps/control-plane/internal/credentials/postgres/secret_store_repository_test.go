@@ -22,17 +22,17 @@ func TestSecretStoreRepository(t *testing.T) {
 	stores := NewSecretStoreRepository(db)
 	const org, ws, env = "org_a", "wsp_a", "env_01BX5ZZKBKACTAV9WEVGEMMVRA"
 
-	newStore := func(name string, kind secretstore.Kind, settings credentials.Settings, environments ...string) *credentials.SecretStore {
+	newStore := func(name string, kind secretstore.Kind, settings credentials.Settings, access credentials.Access, environments ...string) *credentials.SecretStore {
 		s, err := credentials.NewSecretStore(credentials.NewSecretStoreProps{
-			OrganizationID: org, WorkspaceID: ws, DisplayName: name, Kind: kind, Settings: settings, EnvironmentIDs: environments,
+			OrganizationID: org, WorkspaceID: ws, DisplayName: name, Kind: kind, Settings: settings, Access: access, EnvironmentIDs: environments,
 		}, nil)
 		require.NoError(t, err)
 		return s
 	}
 	vault := newStore("Vault", secretstore.KindVault, credentials.Settings{Vault: &credentials.VaultSettings{
-		Address: "https://vault.example.com", Mount: "kv", AuthRole: "ivaldi", Namespace: "payments",
-	}}, env)
-	cluster := newStore("In-cluster", secretstore.KindKubernetes, credentials.Settings{})
+		Address: "https://vault.example.com", Mount: "kv", Namespace: "payments",
+	}}, credentials.Access{Role: "ivaldi", AuthMount: "kubernetes-prod"}, env)
+	cluster := newStore("In-cluster", secretstore.KindKubernetes, credentials.Settings{}, credentials.Access{})
 	require.NoError(t, stores.CreateSecretStore(ctx, vault))
 	require.NoError(t, stores.CreateSecretStore(ctx, cluster))
 
@@ -42,23 +42,30 @@ func TestSecretStoreRepository(t *testing.T) {
 	_, err = stores.GetSecretStore(ctx, "org_b", vault.ID())
 	assert.ErrorIs(t, err, credentials.ErrNotFound, "another organization's store")
 
-	assert.ErrorIs(t, stores.CreateSecretStore(ctx, newStore("Vault", secretstore.KindKubernetes, credentials.Settings{})), credentials.ErrSlugTaken)
+	assert.ErrorIs(t, stores.CreateSecretStore(ctx, newStore("Vault", secretstore.KindKubernetes, credentials.Settings{}, credentials.Access{})), credentials.ErrSlugTaken)
 
 	listed, err := stores.ListSecretStores(ctx, org, ws, false)
 	require.NoError(t, err)
 	require.Len(t, listed, 2)
 	assert.Equal(t, "In-cluster", listed[0].DisplayName(), "by name")
 
-	require.NoError(t, vault.Update(credentials.UpdateSecretStoreProps{EnvironmentIDs: &[]string{}}))
+	require.NoError(t, vault.Update(credentials.UpdateSecretStoreProps{
+		EnvironmentIDs: &[]string{},
+		Settings:       &credentials.Settings{Vault: &credentials.VaultSettings{Address: "https://vault.example.com", Mount: "secret"}},
+		Access:         &credentials.Access{Role: "deployer"},
+	}))
 	vault.Archive()
 	require.NoError(t, stores.UpdateSecretStore(ctx, vault))
+	got, err = stores.GetSecretStore(ctx, org, vault.ID())
+	require.NoError(t, err)
+	assert.Equal(t, vault.Snapshot(), got.Snapshot(), "an update saves the whole store")
 	n, err := stores.CountActiveSecretStores(ctx, org, ws)
 	require.NoError(t, err)
 	assert.Equal(t, 1, n)
 	both, err := stores.GetSecretStores(ctx, org, []string{vault.ID(), cluster.ID(), "sst_01BX5ZZKBKACTAV9WEVGEMMVRZ"})
 	require.NoError(t, err)
 	assert.Len(t, both, 2, "archived ones included, unknown ones left out")
-	assert.NoError(t, stores.CreateSecretStore(ctx, newStore("Vault", secretstore.KindKubernetes, credentials.Settings{})), "an archived store frees its slug")
+	assert.NoError(t, stores.CreateSecretStore(ctx, newStore("Vault", secretstore.KindKubernetes, credentials.Settings{}, credentials.Access{})), "an archived store frees its slug")
 
 	t.Run("reads for share and for update hold the rows", func(t *testing.T) {
 		tx := database.NewTransactor(db)

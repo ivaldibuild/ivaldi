@@ -4,7 +4,10 @@ package credentials
 const (
 	maxDisplayNameLength = 255
 	maxSettingLength     = 512
-	maxStoreEnvironments = 50
+	// maxCredentialNameLength is a DNS subdomain's, so a Kubernetes
+	// Secret's name can serve as a credential's.
+	maxCredentialNameLength = 253
+	maxStoreEnvironments    = 50
 	// MaxSecretStoresPerWorkspace bounds a Workspace's active Secret Stores,
 	// which are listed whole.
 	MaxSecretStoresPerWorkspace = 100

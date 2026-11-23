@@ -497,6 +497,21 @@ func (e SecretVersionDeliveredAs) Valid() bool {
 	}
 }
 
+// Defines values for StoreAccessMode.
+const (
+	StoreAccessModeAgent StoreAccessMode = "agent"
+)
+
+// Valid indicates whether the value is a known member of the StoreAccessMode enum.
+func (e StoreAccessMode) Valid() bool {
+	switch e {
+	case StoreAccessModeAgent:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for StoreSettingsKind.
 const (
 	StoreSettingsKindAwsSecretsManager StoreSettingsKind = "aws_secrets_manager"
@@ -523,8 +538,7 @@ func (e StoreSettingsKind) Valid() bool {
 
 // AWSStore defines model for AWSStore.
 type AWSStore struct {
-	Region  string  `json:"region"`
-	RoleArn *string `json:"role_arn,omitempty"`
+	Region string `json:"region"`
 }
 
 // ApplicationView defines model for ApplicationView.
@@ -715,8 +729,8 @@ type DeploymentSnapshotStatus string
 
 // DopplerStore defines model for DopplerStore.
 type DopplerStore struct {
-	TokenSecretKey  string `json:"token_secret_key"`
-	TokenSecretName string `json:"token_secret_name"`
+	Config  *string `json:"config,omitempty"`
+	Project *string `json:"project,omitempty"`
 }
 
 // EnvironmentSnapshot defines model for EnvironmentSnapshot.
@@ -799,6 +813,9 @@ type HeartbeatRequestBody struct {
 
 	// KubernetesVersion The Kubernetes version the agent runs on
 	KubernetesVersion string `json:"kubernetes_version"`
+
+	// SecretStoreCredentials The names of the credentials the agent's operator configured for secret stores, never their values
+	SecretStoreCredentials *[]string `json:"secret_store_credentials,omitempty"`
 
 	// SecretStoreKinds The secret-store kinds the agent can read
 	SecretStoreKinds *[]string `json:"secret_store_kinds,omitempty"`
@@ -1090,8 +1107,21 @@ type SecretVersion struct {
 // SecretVersionDeliveredAs defines model for SecretVersion.DeliveredAs.
 type SecretVersionDeliveredAs string
 
+// StoreAccess defines model for StoreAccess.
+type StoreAccess struct {
+	AuthMount  *string         `json:"auth_mount,omitempty"`
+	Credential *string         `json:"credential,omitempty"`
+	Mode       StoreAccessMode `json:"mode"`
+	Role       *string         `json:"role,omitempty"`
+	RoleArn    *string         `json:"role_arn,omitempty"`
+}
+
+// StoreAccessMode defines model for StoreAccess.Mode.
+type StoreAccessMode string
+
 // StoreSettings defines model for StoreSettings.
 type StoreSettings struct {
+	Access     StoreAccess       `json:"access"`
 	Aws        *AWSStore         `json:"aws,omitempty"`
 	Doppler    *DopplerStore     `json:"doppler,omitempty"`
 	Id         string            `json:"id"`
@@ -1158,8 +1188,6 @@ type TargetsResponse struct {
 // VaultStore defines model for VaultStore.
 type VaultStore struct {
 	Address   string  `json:"address"`
-	AuthMount *string `json:"auth_mount,omitempty"`
-	AuthRole  string  `json:"auth_role"`
 	Mount     string  `json:"mount"`
 	Namespace *string `json:"namespace,omitempty"`
 }

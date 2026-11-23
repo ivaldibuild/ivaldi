@@ -271,6 +271,9 @@ type HeartbeatInput struct {
 	WatchMode         string
 	Deployers         []string
 	SecretStoreKinds  []string
+	// SecretCredentials name the credentials the agent's operator
+	// configured for secret stores.
+	SecretCredentials []string
 	Targets           []TargetHeartbeat
 }
 
@@ -343,11 +346,12 @@ func (s *service) Heartbeat(ctx context.Context, caller identity.Caller, in Hear
 			return err
 		}
 		capabilities := map[string]any{
-			"agent_version":      in.AgentVersion,
-			"kubernetes_version": in.KubernetesVersion,
-			"watch_mode":         in.WatchMode,
-			"deployers":          strings0(in.Deployers),
-			"secret_store_kinds": strings0(in.SecretStoreKinds),
+			"agent_version":            in.AgentVersion,
+			"kubernetes_version":       in.KubernetesVersion,
+			"watch_mode":               in.WatchMode,
+			"deployers":                strings0(in.Deployers),
+			"secret_store_kinds":       strings0(in.SecretStoreKinds),
+			"secret_store_credentials": strings0(in.SecretCredentials),
 		}
 		if err := locked.RecordHeartbeat(caller.Actor.PrincipalID, capabilities); err != nil {
 			return err

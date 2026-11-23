@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -263,6 +264,24 @@ func dopplerFixture(t *testing.T, m mode) Store {
 		API:   server.URL,
 		Token: func(context.Context) (string, error) { return "dp.st.token", nil },
 	})
+}
+
+// A token that is not a service token names the config it reads.
+func TestDoppler_NamesItsConfig(t *testing.T) {
+	var query url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query = r.URL.Query()
+		_ = json.NewEncoder(w).Encode(map[string]string{"plain": "hunter22"})
+	}))
+	t.Cleanup(server.Close)
+	store := NewDoppler(DopplerConfig{
+		API: server.URL, Project: "payments", Config: "prd",
+		Token: func(context.Context) (string, error) { return "dp.sa.token", nil },
+	})
+
+	_, err := store.Get(context.Background(), Ref{Path: "plain"})
+	require.NoError(t, err)
+	assert.Equal(t, url.Values{"format": {"json"}, "project": {"payments"}, "config": {"prd"}}, query)
 }
 
 // A login carries the service-account token, so it goes only to the address

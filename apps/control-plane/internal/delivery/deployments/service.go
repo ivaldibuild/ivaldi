@@ -723,10 +723,13 @@ func (s *service) recordSecrets(ctx context.Context, d *delivery.Deployment, det
 
 // storeKinds returns the kinds of the stores, for a check that does not
 // concern what the agent can read.
-func storeKinds(stores map[string]delivery.SecretStoreRef) []string {
-	var out []string
+// readsAll is an agent that can read every one of the stores, for checking
+// a Deployment's stores again once the request has checked its agent.
+func readsAll(stores map[string]delivery.SecretStoreRef) delivery.AgentSecrets {
+	var out delivery.AgentSecrets
 	for _, store := range stores {
-		out = append(out, string(store.Settings.Kind))
+		out.Kinds = append(out.Kinds, string(store.Settings.Kind))
+		out.Credentials = append(out.Credentials, store.Settings.Access.Credential)
 	}
 	return out
 }
@@ -1136,7 +1139,7 @@ func (s *service) checkVariables(ctx context.Context, p *plan, rel *delivery.Rel
 	if err != nil {
 		return fmt.Errorf("look up secret stores: %w", err)
 	}
-	allowed := delivery.CheckSecretStores(resolved, stores, p.target.EnvironmentID(), agentStoreKinds(p.cluster))
+	allowed := delivery.CheckSecretStores(resolved, stores, p.target.EnvironmentID(), agentSecrets(p.cluster))
 	return refusal(&p.checks, "secret_stores_allowed", allowed)
 }
 
@@ -1155,16 +1158,26 @@ func refusal(checks *[]delivery.DeploymentCheck, name string, err error) error {
 	return nil
 }
 
-// agentStoreKinds returns the secret-store kinds the Cluster's agent last
-// said it can read.
-func agentStoreKinds(cluster *delivery.Cluster) []string {
+// agentSecrets returns what the Cluster's agent last said it can read
+// secrets with.
+func agentSecrets(cluster *delivery.Cluster) delivery.AgentSecrets {
+	capabilities := cluster.AgentCapabilities()
+	return delivery.AgentSecrets{
+		Kinds:       capabilityStrings(capabilities["secret_store_kinds"]),
+		Credentials: capabilityStrings(capabilities["secret_store_credentials"]),
+	}
+}
+
+// capabilityStrings reads a list of strings from an agent's capabilities,
+// which hold []any once read back from the database.
+func capabilityStrings(value any) []string {
 	var out []string
-	switch kinds := cluster.AgentCapabilities()["secret_store_kinds"].(type) {
+	switch values := value.(type) {
 	case []string:
-		out = kinds
+		out = values
 	case []any:
-		for _, k := range kinds {
-			if s, ok := k.(string); ok {
+		for _, v := range values {
+			if s, ok := v.(string); ok {
 				out = append(out, s)
 			}
 		}
@@ -1399,7 +1412,7 @@ func (s *service) assignment(ctx context.Context, d *delivery.Deployment) (*deli
 		// agent without a way to read the secret. Once applied, the agent
 		// only watches the Deployment's health and reads no secret.
 		if d.Status() == release.DeploymentApplying {
-			if err := delivery.CheckSecretStores(resolved, stores, d.EnvironmentID(), storeKinds(stores)); err != nil {
+			if err := delivery.CheckSecretStores(resolved, stores, d.EnvironmentID(), readsAll(stores)); err != nil {
 				return nil, err
 			}
 		}

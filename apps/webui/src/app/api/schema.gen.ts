@@ -2626,10 +2626,31 @@ export interface components {
     };
     AWSSettings: {
       region: string;
-      role_arn?: string;
     };
     AWSStore: {
       region: string;
+    };
+    Access: {
+      auth_mount?: string;
+      credential?: string;
+      /** @enum {string} */
+      mode: 'agent';
+      role?: string;
+      role_arn?: string;
+    };
+    AccessBody: {
+      /** @description For vault: the auth method's mount; kubernetes when omitted */
+      auth_mount?: string;
+      /** @description For doppler: the name of the credential, configured on the agent, that holds the Doppler token */
+      credential?: string;
+      /**
+       * @description How the store is opened: agent, with the agent's own identity or a credential its operator configured
+       * @enum {string}
+       */
+      mode: 'agent';
+      /** @description For vault: the auth role the agent logs in as */
+      role?: string;
+      /** @description For aws_secrets_manager: a role to assume on top of the agent's own AWS identity */
       role_arn?: string;
     };
     AgentDetail: {
@@ -3402,6 +3423,8 @@ export interface components {
        * @example https://example.com/schemas/CreateSecretStoreRequestBody.json
        */
       readonly $schema?: string;
+      /** @description How the store is opened; agent mode with no settings when omitted */
+      access?: components['schemas']['AccessBody'];
       /** @description The display name for the store */
       display_name: string;
       /** @description The Environments whose Deployments may read the store; every Environment in the Workspace when omitted. Required for doppler */
@@ -3411,7 +3434,7 @@ export interface components {
        * @enum {string}
        */
       kind: 'kubernetes' | 'aws_secrets_manager' | 'vault' | 'doppler';
-      /** @description The kind's settings; none for kubernetes */
+      /** @description Where the store is; none for kubernetes */
       settings?: components['schemas']['SettingsBody'];
       /** @description Url slug for the store; derived from the display name when omitted */
       slug?: string;
@@ -3593,12 +3616,12 @@ export interface components {
       work_item_id: string | null;
     };
     DopplerSettings: {
-      token_secret_key: string;
-      token_secret_name: string;
+      config: string;
+      project: string;
     };
     DopplerStore: {
-      token_secret_key: string;
-      token_secret_name: string;
+      config?: string;
+      project?: string;
     };
     EnvironmentSnapshot: {
       /** Format: date-time */
@@ -3695,6 +3718,8 @@ export interface components {
       deployers?: string[];
       /** @description The Kubernetes version the agent runs on */
       kubernetes_version: string;
+      /** @description The names of the credentials the agent's operator configured for secret stores, never their values */
+      secret_store_credentials?: string[];
       /** @description The secret-store kinds the agent can read */
       secret_store_kinds?: string[];
       /** @description What the agent can do in each Target's namespace */
@@ -5746,6 +5771,7 @@ export interface components {
       version: string;
     };
     SecretStoreSnapshot: {
+      access: components['schemas']['Access'];
       /** Format: date-time */
       archived_at: string | null;
       /** Format: date-time */
@@ -5870,11 +5896,11 @@ export interface components {
       vault?: components['schemas']['VaultSettings'];
     };
     SettingsBody: {
-      /** @description For aws_secrets_manager: the region, and a role to assume on top of the agent's identity */
+      /** @description For aws_secrets_manager: the region */
       aws?: components['schemas']['AWSSettings'];
-      /** @description For doppler: the Secret in the agent's namespace that holds the service token */
+      /** @description For doppler: the project and config; optional when the store is read with a service token, which implies them */
       doppler?: components['schemas']['DopplerSettings'];
-      /** @description For vault: the address, KV v2 mount, and Kubernetes auth role */
+      /** @description For vault: the address, KV v2 mount, and Enterprise namespace */
       vault?: components['schemas']['VaultSettings'];
     };
     SignUpInputBody: {
@@ -5944,7 +5970,16 @@ export interface components {
        */
       provider: 'github';
     };
+    StoreAccess: {
+      auth_mount?: string;
+      credential?: string;
+      /** @enum {string} */
+      mode: 'agent';
+      role?: string;
+      role_arn?: string;
+    };
     StoreSettings: {
+      access: components['schemas']['StoreAccess'];
       aws?: components['schemas']['AWSStore'];
       doppler?: components['schemas']['DopplerStore'];
       id: string;
@@ -6198,6 +6233,8 @@ export interface components {
        * @example https://example.com/schemas/UpdateSecretStoreRequestBody.json
        */
       readonly $schema?: string;
+      /** @description New access, replacing the store's */
+      access?: components['schemas']['AccessBody'];
       /** @description New display name */
       display_name?: string;
       /** @description The Environments that may read the store, replacing the list; empty allows every Environment */
@@ -6345,15 +6382,11 @@ export interface components {
     };
     VaultSettings: {
       address: string;
-      auth_mount?: string;
-      auth_role: string;
       mount: string;
       namespace?: string;
     };
     VaultStore: {
       address: string;
-      auth_mount?: string;
-      auth_role: string;
       mount: string;
       namespace?: string;
     };

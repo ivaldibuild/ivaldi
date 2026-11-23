@@ -84,6 +84,20 @@ func TestConfig(t *testing.T) {
 				assert.Equal(t, []string{"registry:5000", "mirror"}, c.PlainHTTPRegistries)
 			},
 		},
+		{
+			name:     "credentials map names to Secrets and keys",
+			args:     []string{"--server-url", "https://x"},
+			env:      map[string]string{"IVALDI_SECRET_CREDENTIALS": "doppler-production=doppler/token,doppler-staging=doppler-staging/service-token"},
+			readFile: podNamespace,
+			check: func(t *testing.T, c Config) {
+				assert.Equal(t, map[string]secrets.Credential{
+					"doppler-production": {Secret: "doppler", Key: "token"},
+					"doppler-staging":    {Secret: "doppler-staging", Key: "service-token"},
+				}, c.Credentials)
+			},
+		},
+		{name: "a credential names its Secret and key", args: []string{"--server-url", "https://x", "--secret-credentials", "doppler=token"}, readFile: podNamespace, wantErr: "as name=secret/key"},
+		{name: "a credential's name is a DNS name", args: []string{"--server-url", "https://x", "--secret-credentials", "Doppler=doppler/token"}, readFile: podNamespace, wantErr: "as name=secret/key"},
 		{name: "a plain-HTTP registry is a host, not a URL", args: []string{"--server-url", "https://x", "--plain-http-registries", "http://registry:5000"}, readFile: podNamespace, wantErr: "must be a registry host"},
 		{name: "unknown method", args: []string{"--server-url", "https://x", "--authentication-method", "magic"}, readFile: podNamespace, wantErr: "must be kubernetes, bearer, or mtls"},
 		{name: "mtls needs a certificate", args: []string{"--server-url", "https://x", "--authentication-method", "mtls"}, readFile: podNamespace, wantErr: "--client-cert-file and --client-key-file are required"},
@@ -525,7 +539,7 @@ func secretAssignment(id string) apiclient.DeploymentAssignment {
 	a := applyingAssignment(id)
 	a.Apply.Secrets = []apiclient.AssignmentSecret{{
 		Name: "DB_PASSWORD", DeliverAs: apiclient.AssignmentSecretDeliverAsValue,
-		Store: apiclient.StoreSettings{Id: "sst_1", Kind: apiclient.StoreSettingsKindKubernetes},
+		Store: apiclient.StoreSettings{Id: "sst_1", Kind: apiclient.StoreSettingsKindKubernetes, Access: apiclient.StoreAccess{Mode: apiclient.StoreAccessModeAgent}},
 		Ref:   apiclient.SecretRef{Path: "db"},
 	}}
 	return a

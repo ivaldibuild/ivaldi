@@ -84,7 +84,19 @@
       "additionalProperties": false,
       "properties": {
         "kubernetesNamespaces": { "$ref": "#/definitions/namespaces" },
-        "dopplerTokenSecrets": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/definitions/name" } },
+        "credentials": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/definitions/name" },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["secretName", "key"],
+            "properties": {
+              "secretName": { "$ref": "#/definitions/name" },
+              "key": { "type": "string", "pattern": "^[-._a-zA-Z0-9]+$", "maxLength": 253 }
+            }
+          }
+        },
         "vault": {
           "type": "object",
           "additionalProperties": false,

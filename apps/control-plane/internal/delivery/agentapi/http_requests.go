@@ -14,6 +14,7 @@ type HeartbeatRequest struct {
 		WatchMode         string                   `json:"watch_mode" required:"true" enum:"cluster,namespaces" doc:"Whether the agent watches the whole cluster or only listed namespaces"`
 		Deployers         []string                 `json:"deployers,omitempty" required:"false" doc:"The deployers the agent has, such as helm"`
 		SecretStoreKinds  []string                 `json:"secret_store_kinds,omitempty" required:"false" doc:"The secret-store kinds the agent can read"`
+		SecretCredentials []string                 `json:"secret_store_credentials,omitempty" required:"false" doc:"The names of the credentials the agent's operator configured for secret stores, never their values"`
 		Targets           []TargetHeartbeatRequest `json:"targets,omitempty" required:"false" doc:"What the agent can do in each Target's namespace"`
 	}
 }
@@ -32,6 +33,7 @@ func (r *HeartbeatRequest) input() HeartbeatInput {
 		WatchMode:         r.Body.WatchMode,
 		Deployers:         r.Body.Deployers,
 		SecretStoreKinds:  r.Body.SecretStoreKinds,
+		SecretCredentials: r.Body.SecretCredentials,
 	}
 	for _, target := range r.Body.Targets {
 		in.Targets = append(in.Targets, TargetHeartbeat{

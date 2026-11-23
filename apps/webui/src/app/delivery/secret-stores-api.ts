@@ -2,11 +2,12 @@ import { inject, Service } from '@angular/core';
 import { ApiClient } from '../api/api-client';
 import { SecretStore, SecretStoreKind } from '../api/models';
 
-/** What a Secret Store is made from: its kind's settings, and who may read it. */
+/** What a Secret Store is made from: where it is, how it is opened, and who may read it. */
 export interface SecretStoreFields {
   display_name: string;
   kind: SecretStoreKind;
   settings?: SecretStore['settings'];
+  access?: SecretStore['access'];
   /** The Environments whose Deployments may read the store; all of the Workspace's when empty. */
   environment_ids: string[];
 }

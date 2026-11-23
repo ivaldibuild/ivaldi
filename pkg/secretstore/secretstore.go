@@ -1,8 +1,9 @@
 // Package secretstore reads secret values from the stores customers keep
 // them in: Kubernetes Secrets, AWS Secrets Manager, Vault, and Doppler. It
-// only fetches. The runtime agent uses it in the customer's cluster; the
-// control plane uses only the kinds, to validate store settings, and never
-// fetches (ADR 0004).
+// only fetches, and each store is given what it authenticates with rather
+// than finding it, so a runtime agent on any runtime can use it. The control
+// plane uses only the kinds, to validate store settings, and never fetches
+// (ADR 0004, ADR 0017).
 package secretstore
 
 import (

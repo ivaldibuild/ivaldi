@@ -2,7 +2,7 @@
 
 A **Secret Store** tells a Cluster's agent where to read an Application's secret variables from. Ivaldi keeps only where a secret is: the store, a path, an optional field, and an optional version. It never holds a secret or a credential for the store. The agent reads the secret inside your cluster, with its own identity, when it deploys ([ADR 0004](../adr/0004-credentials-and-keys.md), [deployment variables](../design/deployment-variables.md)).
 
-> **Changing.** [ADR 0017](../adr/0017-control-plane-grants-secret-store-access.md) has the control plane grant agents access to stores, in `federated` or `brokered` mode, and adds Infisical. What follows describes today's behaviour, which becomes the `agent` mode; Doppler stores will name a credential the agent's operator configures instead of a Kubernetes Secret ([secret-store access](../design/secret-store-access.md#migration)).
+A store has **settings**, which say where it is, and an **access**, which says how it is opened. Every store is in `agent` mode so far: the agent opens it with its own identity, or with a credential its operator configured on it under a name the store gives. [ADR 0017](../adr/0017-control-plane-grants-secret-store-access.md) adds modes in which the control plane grants access instead ([secret-store access](../design/secret-store-access.md)).
 
 Add stores under **Secret Stores** in the web app, or with `POST /v1/workspaces/{workspace_id}/secret-stores`. A store belongs to a Workspace. Reading stores needs `secret_store.read` on the Workspace and changing them needs `secret_store.manage`.
 
@@ -32,7 +32,7 @@ Use this store when another tool, such as External Secrets or the Doppler operat
 
 ### `aws_secrets_manager`
 
-Settings: the AWS `region`, and optionally a `role_arn` the agent assumes on top of its own identity. The path is the secret's name or ARN, and the field is one key of a JSON secret.
+Settings: the AWS `region`. Access: optionally a `role_arn` the agent assumes on top of its own identity. The path is the secret's name or ARN, and the field is one key of a JSON secret.
 
 Give the agent's ServiceAccount an AWS identity with EKS Pod Identity or IRSA:
 
@@ -46,7 +46,7 @@ The role needs `secretsmanager:GetSecretValue` on the secrets it should read.
 
 ### `vault`
 
-Settings: Vault's `address`, the KV v2 `mount`, and the Kubernetes `auth_role` the agent logs in with; optionally the `auth_mount` (default `kubernetes`) and an Enterprise `namespace`. The path is the secret's path within the mount, and the field is one of its keys.
+Settings: Vault's `address`, the KV v2 `mount`, and optionally an Enterprise `namespace`. Access: the Kubernetes auth `role` the agent logs in as, and optionally the `auth_mount` (default `kubernetes`). The path is the secret's path within the mount, and the field is one of its keys.
 
 Bind the role to the agent's ServiceAccount and namespace in Vault's Kubernetes auth method, with a policy that can read the paths it should.
 
@@ -66,13 +66,16 @@ secrets:
 
 ### `doppler`
 
-Settings: the name and key of a Kubernetes Secret, in the agent's namespace, that holds a Doppler service token. The path is the secret's name in Doppler.
+Settings: optionally the Doppler `project` and `config`, both or neither. Access: the name of the `credential` that holds the Doppler token. The path is the secret's name in Doppler.
 
-A service token serves one Doppler config, so a Doppler store serves one config and must list the Environments that config is for. List the token Secrets the agent may read in the chart:
+A Doppler store serves one config, so it must list the Environments that config is for. A service token implies its config; another token, such as a service account's, needs the store's `project` and `config`.
+
+A store names a credential, never where it is kept. The agent's operator maps each name to a Secret in the agent's namespace, and its key, in the chart; the agent may read only those Secrets, and a Deployment whose store names a credential the Cluster's agent does not have is refused before it starts:
 
 ```yaml
 secrets:
-  dopplerTokenSecrets: [doppler-production]
+  credentials:
+    doppler-production: { secretName: doppler-production, key: token }
 ```
 
 ## Versions and rollbacks

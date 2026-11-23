@@ -1,0 +1,71 @@
+package secretstores
+
+import "github.com/ivaldibuild/ivaldi-control-plane/internal/credentials"
+
+type ListSecretStoresRequest struct {
+	WorkspaceID     string `path:"workspace_id" doc:"The Workspace to list Secret Stores in"`
+	IncludeArchived bool   `query:"include_archived" doc:"Include archived Secret Stores"`
+}
+
+type SecretStoreRequest struct {
+	SecretStoreID string `path:"secret_store_id" doc:"The Secret Store's ID"`
+}
+
+type UpdateSecretStoreRequest struct {
+	SecretStoreID string `path:"secret_store_id" doc:"The Secret Store's ID"`
+	Body          struct {
+		DisplayName    *string       `json:"display_name,omitempty" required:"false" minLength:"1" doc:"New display name"`
+		Slug           *string       `json:"slug,omitempty" required:"false" doc:"New slug"`
+		Settings       *SettingsBody `json:"settings,omitempty" required:"false" doc:"New settings for the store's kind"`
+		Access         *AccessBody   `json:"access,omitempty" required:"false" doc:"New access, replacing the store's"`
+		EnvironmentIDs *[]string     `json:"environment_ids,omitempty" required:"false" doc:"The Environments that may read the store, replacing the list; empty allows every Environment"`
+	}
+}
+
+type CreateSecretStoreRequest struct {
+	WorkspaceID string `path:"workspace_id" doc:"The Workspace the Secret Store belongs to"`
+	Body        struct {
+		DisplayName    string        `json:"display_name" required:"true" minLength:"1" doc:"The display name for the store"`
+		Slug           *string       `json:"slug,omitempty" required:"false" doc:"Url slug for the store; derived from the display name when omitted"`
+		Kind           string        `json:"kind" required:"true" enum:"kubernetes,aws_secrets_manager,vault,doppler" doc:"The secret manager"`
+		Settings       *SettingsBody `json:"settings,omitempty" required:"false" doc:"Where the store is; none for kubernetes"`
+		Access         *AccessBody   `json:"access,omitempty" required:"false" doc:"How the store is opened; agent mode with no settings when omitted"`
+		EnvironmentIDs []string      `json:"environment_ids,omitempty" required:"false" doc:"The Environments whose Deployments may read the store; every Environment in the Workspace when omitted. Required for doppler"`
+	}
+}
+
+// SettingsBody says where a store is: only the block for its kind.
+type SettingsBody struct {
+	AWS     *credentials.AWSSettings     `json:"aws,omitempty" required:"false" doc:"For aws_secrets_manager: the region"`
+	Vault   *credentials.VaultSettings   `json:"vault,omitempty" required:"false" doc:"For vault: the address, KV v2 mount, and Enterprise namespace"`
+	Doppler *credentials.DopplerSettings `json:"doppler,omitempty" required:"false" doc:"For doppler: the project and config; optional when the store is read with a service token, which implies them"`
+}
+
+// AccessBody is how a store is opened. Only agent mode exists so far.
+type AccessBody struct {
+	Mode       string `json:"mode" required:"true" enum:"agent" doc:"How the store is opened: agent, with the agent's own identity or a credential its operator configured"`
+	RoleARN    string `json:"role_arn,omitempty" required:"false" doc:"For aws_secrets_manager: a role to assume on top of the agent's own AWS identity"`
+	Role       string `json:"role,omitempty" required:"false" doc:"For vault: the auth role the agent logs in as"`
+	AuthMount  string `json:"auth_mount,omitempty" required:"false" doc:"For vault: the auth method's mount; kubernetes when omitted"`
+	Credential string `json:"credential,omitempty" required:"false" doc:"For doppler: the name of the credential, configured on the agent, that holds the Doppler token"`
+}
+
+func (b *AccessBody) access() credentials.Access {
+	if b == nil {
+		return credentials.Access{}
+	}
+	return credentials.Access{
+		Mode:       credentials.AccessMode(b.Mode),
+		RoleARN:    b.RoleARN,
+		Role:       b.Role,
+		AuthMount:  b.AuthMount,
+		Credential: b.Credential,
+	}
+}
+
+func (b *SettingsBody) settings() credentials.Settings {
+	if b == nil {
+		return credentials.Settings{}
+	}
+	return credentials.Settings{AWS: b.AWS, Vault: b.Vault, Doppler: b.Doppler}
+}

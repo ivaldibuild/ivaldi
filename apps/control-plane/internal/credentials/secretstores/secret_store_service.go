@@ -57,15 +57,19 @@ type options struct {
 func WithSecretStoreRepo(r credentials.SecretStoreRepository) SecretStoreServiceOption {
 	return func(o *options) { o.stores = r }
 }
+
 func WithWorkspaces(w Workspaces) SecretStoreServiceOption {
 	return func(o *options) { o.workspaces = w }
 }
+
 func WithEnvironmentLookup(e EnvironmentLookup) SecretStoreServiceOption {
 	return func(o *options) { o.environments = e }
 }
+
 func WithVariableUsage(v VariableUsage) SecretStoreServiceOption {
 	return func(o *options) { o.variables = v }
 }
+
 func WithAuthorizer(a authorization.Authorizer) SecretStoreServiceOption {
 	return func(o *options) { o.authz = a }
 }
@@ -76,9 +80,11 @@ func WithAuthorizer(a authorization.Authorizer) SecretStoreServiceOption {
 func WithTransactor(tx transaction.Transactor) SecretStoreServiceOption {
 	return func(o *options) { o.writer.Tx = tx }
 }
+
 func WithOutboxRecorder(r outbox.Recorder) SecretStoreServiceOption {
 	return func(o *options) { o.writer.Outbox = r }
 }
+
 func WithAuditRecorder(r audit.Recorder) SecretStoreServiceOption {
 	return func(o *options) { o.writer.Audit = r }
 }
@@ -90,6 +96,7 @@ func NewSecretStoreService(opts ...SecretStoreServiceOption) (credentials.Secret
 	for _, opt := range opts {
 		opt(&o)
 	}
+
 	required := []struct {
 		name string
 		ok   bool
@@ -100,15 +107,19 @@ func NewSecretStoreService(opts ...SecretStoreServiceOption) (credentials.Secret
 		{"VariableUsage", o.variables != nil},
 		{"Authorizer", o.authz != nil},
 	}
+
 	for _, r := range required {
 		if !r.ok {
 			return nil, fmt.Errorf("secret store service: %s is required", r.name)
 		}
 	}
+
 	if err := o.writer.Check(); err != nil {
 		return nil, fmt.Errorf("secret store service: %w", err)
 	}
+
 	s := &service{stores: o.stores, workspaces: o.workspaces, environments: o.environments, variables: o.variables, w: o.writer}
+
 	return &authorized{next: s, authz: o.authz, stores: o.stores}, nil
 }
 
@@ -128,7 +139,7 @@ var _ credentials.SecretStoreService = (*service)(nil)
 func (s *service) CreateSecretStore(ctx context.Context, actor identity.Actor, in credentials.CreateSecretStoreInput) (*credentials.SecretStore, error) {
 	store, err := credentials.NewSecretStore(credentials.NewSecretStoreProps{
 		OrganizationID: in.OrganizationID, WorkspaceID: in.WorkspaceID, Slug: in.Slug, DisplayName: in.DisplayName,
-		Kind: in.Kind, Settings: in.Settings, EnvironmentIDs: in.EnvironmentIDs,
+		Kind: in.Kind, Settings: in.Settings, Access: in.Access, EnvironmentIDs: in.EnvironmentIDs,
 	}, nil)
 	if err != nil {
 		return nil, err

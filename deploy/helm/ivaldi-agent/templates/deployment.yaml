@@ -76,6 +76,14 @@ spec:
             - name: IVALDI_PLAIN_HTTP_REGISTRIES
               value: {{ join "," . | quote }}
             {{- end }}
+            {{- with .Values.secrets.credentials }}
+            {{- $credentials := list }}
+            {{- range $name, $credential := . }}
+            {{- $credentials = append $credentials (printf "%s=%s/%s" $name $credential.secretName $credential.key) }}
+            {{- end }}
+            - name: IVALDI_SECRET_CREDENTIALS
+              value: {{ join "," $credentials | quote }}
+            {{- end }}
             {{- with .Values.secrets.vault.addresses }}
             - name: IVALDI_VAULT_ADDRESSES
               value: {{ join "," . | quote }}

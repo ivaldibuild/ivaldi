@@ -218,6 +218,7 @@ Flags, with environment variables of the same name prefixed `IVALDI_`, and chart
 | `--kubernetes-token-file` | `/var/run/secrets/ivaldi/token` | The projected token |
 | `--client-cert-file`, `--client-key-file`, `--client-ca-file` | none | For `mtls`, and a private CA for the control plane |
 | `--registry-pull-secret` | none | Docker-config Secret for fetching charts |
+| `--secret-credentials` | none | Credentials for Secret Stores in `agent` mode, as `name=secret/key`, from the chart's `secrets.credentials` |
 | `--plain-http-registries` | none | Registry hosts, such as `registry:5000`, to fetch charts from over plain HTTP; for local development (`registry.plainHTTPHosts`) |
 | `--max-concurrent-applies` | `4` | |
 | `--health-address` | `:8080` | Liveness and readiness |

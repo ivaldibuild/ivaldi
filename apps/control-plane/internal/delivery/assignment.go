@@ -108,16 +108,39 @@ const (
 	StoreDoppler           StoreKind = "doppler"
 )
 
-// StoreSettings is a secret store's non-secret settings for one Deployment.
-// It never carries a credential: the agent authenticates with its own
-// identity, or reads a credential the customer put in its namespace.
+// StoreSettings is where a secret store is, and how the agent opens it, for
+// one Deployment. It never carries a credential.
 type StoreSettings struct {
 	ID         string           `json:"id"`
 	Kind       StoreKind        `json:"kind" enum:"kubernetes,aws_secrets_manager,vault,doppler"`
+	Access     StoreAccess      `json:"access"`
 	Kubernetes *KubernetesStore `json:"kubernetes,omitempty"`
 	AWS        *AWSStore        `json:"aws,omitempty"`
 	Vault      *VaultStore      `json:"vault,omitempty"`
 	Doppler    *DopplerStore    `json:"doppler,omitempty"`
+}
+
+// StoreAccessMode is how the agent opens a store.
+type StoreAccessMode string
+
+// StoreAccessAgent: with the agent's own identity, or a credential its
+// operator configured under the name the access gives.
+const StoreAccessAgent StoreAccessMode = "agent"
+
+// StoreAccess is how the agent opens a store, and that mode's settings.
+type StoreAccess struct {
+	Mode StoreAccessMode `json:"mode" enum:"agent"`
+	// RoleARN is, for aws_secrets_manager, assumed on top of the agent's
+	// own AWS identity.
+	RoleARN string `json:"role_arn,omitempty"`
+	// Role is, for vault, the auth role the agent logs in as.
+	Role string `json:"role,omitempty"`
+	// AuthMount is, for vault, the auth method's mount; empty means
+	// "kubernetes".
+	AuthMount string `json:"auth_mount,omitempty"`
+	// Credential is, for doppler, the name of a credential the agent's
+	// operator configured.
+	Credential string `json:"credential,omitempty"`
 }
 
 // KubernetesStore reads a Secret in the Target's namespace.
@@ -125,25 +148,20 @@ type KubernetesStore struct{}
 
 type AWSStore struct {
 	Region string `json:"region"`
-	// RoleARN is assumed on top of the agent's Pod identity.
-	RoleARN string `json:"role_arn,omitempty"`
 }
 
 type VaultStore struct {
-	Address  string `json:"address"`
-	Mount    string `json:"mount"`
-	AuthRole string `json:"auth_role"`
-	// AuthMount defaults to "kubernetes".
-	AuthMount string `json:"auth_mount,omitempty"`
+	Address string `json:"address"`
+	Mount   string `json:"mount"`
 	// Namespace is a Vault Enterprise namespace.
 	Namespace string `json:"namespace,omitempty"`
 }
 
+// DopplerStore names the config to read; both are empty when the store is
+// read with a service token, which implies them.
 type DopplerStore struct {
-	// TokenSecretName names the Secret holding the Doppler token, in the
-	// agent's namespace.
-	TokenSecretName string `json:"token_secret_name"`
-	TokenSecretKey  string `json:"token_secret_key"`
+	Project string `json:"project,omitempty"`
+	Config  string `json:"config,omitempty"`
 }
 
 // SecretRef is where a secret is, and which version to fetch.

@@ -90,10 +90,14 @@ func newTestResolver(t *testing.T, kube *fake.Clientset) (*resolver, *Masker, Fi
 	return r, masker, keys
 }
 
+func agentMode(credential *string) apiclient.StoreAccess {
+	return apiclient.StoreAccess{Mode: apiclient.StoreAccessModeAgent, Credential: credential}
+}
+
 func kubernetesSecret(name, field string, fingerprint *string) apiclient.AssignmentSecret {
 	return apiclient.AssignmentSecret{
 		Name: name, DeliverAs: apiclient.AssignmentSecretDeliverAsSecret, Fingerprint: fingerprint,
-		Store: apiclient.StoreSettings{Id: "sst_1", Kind: apiclient.StoreSettingsKindKubernetes},
+		Store: apiclient.StoreSettings{Id: "sst_1", Kind: apiclient.StoreSettingsKindKubernetes, Access: agentMode(nil)},
 		Ref:   apiclient.SecretRef{Path: "db", Field: &field},
 	}
 }
@@ -233,7 +237,8 @@ func TestResolver_OnlyLogsInToAVaultItsOperatorListed(t *testing.T) {
 	secret := apiclient.AssignmentSecret{
 		Name: "Api.Key", DeliverAs: apiclient.AssignmentSecretDeliverAsSecret,
 		Store: apiclient.StoreSettings{Id: "sst_1", Kind: apiclient.StoreSettingsKindVault,
-			Vault: &apiclient.VaultStore{Address: vault.URL, Mount: "kv", AuthRole: "ivaldi"}},
+			Access: apiclient.StoreAccess{Mode: apiclient.StoreAccessModeAgent, Role: new("ivaldi")},
+			Vault:  &apiclient.VaultStore{Address: vault.URL, Mount: "kv"}},
 		Ref: apiclient.SecretRef{Path: "api"},
 	}
 	token := filepath.Join(t.TempDir(), "token")
@@ -251,4 +256,29 @@ func TestResolver_OnlyLogsInToAVaultItsOperatorListed(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, 1, logins, "a listed address is logged in to")
 	assert.Contains(t, r.cfg.StoreKinds(), "vault")
+}
+
+// A store names a credential, never where it is kept: the agent reads only
+// the Secrets its operator mapped names to.
+func TestResolver_ReadsOnlyCredentialsItsOperatorMapped(t *testing.T) {
+	kube := fake.NewClientset(&corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "doppler", Namespace: "ivaldi-system"},
+		Data:       map[string][]byte{"other": []byte("dp.st.token")},
+	})
+	r, _, _ := newTestResolver(t, kube)
+	secret := apiclient.AssignmentSecret{
+		Name: "Api.Key", DeliverAs: apiclient.AssignmentSecretDeliverAsSecret,
+		Store: apiclient.StoreSettings{Id: "sst_1", Kind: apiclient.StoreSettingsKindDoppler,
+			Access: agentMode(new("doppler-production")), Doppler: &apiclient.DopplerStore{}},
+		Ref: apiclient.SecretRef{Path: "API_KEY"},
+	}
+
+	_, err := r.Resolve(t.Context(), "payments", []apiclient.AssignmentSecret{secret})
+	require.ErrorContains(t, err, `needs the credential "doppler-production", which this agent's operator has not configured`)
+	assert.Empty(t, r.cfg.CredentialNames())
+
+	r.cfg.Credentials = map[string]Credential{"doppler-production": {Secret: "doppler", Key: "token"}}
+	_, err = r.Resolve(t.Context(), "payments", []apiclient.AssignmentSecret{secret})
+	require.ErrorContains(t, err, "Secret doppler has no key token", "the mapped Secret and key are read")
+	assert.Equal(t, []string{"doppler-production"}, r.cfg.CredentialNames())
 }

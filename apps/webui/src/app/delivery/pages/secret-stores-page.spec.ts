@@ -17,6 +17,7 @@ const store = (changes: Partial<SecretStore>): SecretStore => ({
   display_name: 'In-cluster',
   kind: 'kubernetes',
   settings: {},
+  access: { mode: 'agent' },
   environment_ids: [],
   created_at: '2026-11-15T10:00:00Z',
   updated_at: '2026-11-15T10:00:00Z',
@@ -47,12 +48,9 @@ describe('SecretStoresPage', () => {
                   display_name: 'Vault',
                   kind: 'vault',
                   settings: {
-                    vault: {
-                      address: 'https://vault.example.com',
-                      mount: 'kv',
-                      auth_role: 'ivaldi',
-                    },
+                    vault: { address: 'https://vault.example.com', mount: 'kv' },
                   },
+                  access: { mode: 'agent', role: 'ivaldi' },
                   environment_ids: [production],
                 }),
               ]),
@@ -136,7 +134,40 @@ describe('SecretStoresPage', () => {
       {
         display_name: 'Production secrets',
         kind: 'aws_secrets_manager',
-        settings: { aws: { region: 'eu-west-1', role_arn: undefined } },
+        settings: { aws: { region: 'eu-west-1' } },
+        access: { mode: 'agent', role_arn: undefined },
+        environment_ids: [production],
+      },
+    ]);
+  });
+
+  it('creates a Doppler store with the credential the agent holds its token under', async () => {
+    const { fixture, el } = await render();
+    button(el, 'Add secret store').click();
+    fixture.detectChanges();
+
+    type(el, '#store-name', 'Doppler production');
+    const kind = el.querySelector<HTMLSelectElement>('#store-kind')!;
+    kind.value = 'doppler';
+    kind.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    type(el, '#store-credential', 'doppler-production');
+    type(el, '#store-project', 'payments');
+    el.querySelector<HTMLInputElement>('fieldset input[type="checkbox"]')!.click();
+    el.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    expect(el.querySelector('form [role="alert"]')?.textContent).toContain('project and config');
+    expect(created).toEqual([]);
+
+    type(el, '#store-config', 'prd');
+    el.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    expect(created).toEqual([
+      {
+        display_name: 'Doppler production',
+        kind: 'doppler',
+        settings: { doppler: { project: 'payments', config: 'prd' } },
+        access: { mode: 'agent', credential: 'doppler-production' },
         environment_ids: [production],
       },
     ]);

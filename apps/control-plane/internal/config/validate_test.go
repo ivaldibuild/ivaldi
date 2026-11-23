@@ -83,6 +83,9 @@ func TestValidateRefuses(t *testing.T) {
 		{"external URL with a path", func(_ *testing.T, c *Config) { c.ExternalURL = "https://example.com/ivaldi" }, "no path"},
 		{"plain http to a public host", func(_ *testing.T, c *Config) { c.ExternalURL = "http://ivaldi.example.com" }, "must use https"},
 		{"no signing key", func(_ *testing.T, c *Config) { c.Auth.SigningKeyFiles = nil }, "signing_key_files"},
+		{"a federation key that signs access tokens", func(_ *testing.T, c *Config) {
+			c.SecretStores.Federation.SigningKeyFiles = []string{"/keys/current.pem"}
+		}, "must not share a key with auth.signing_key_files"},
 		{"no login page", func(_ *testing.T, c *Config) { c.Auth.LoginURL = "" }, "auth.login_url is required"},
 		{"login page over plain http", func(_ *testing.T, c *Config) { c.Auth.LoginURL = "http://app.example.com/login" }, "auth.login_url"},
 		{"zero token lifetime", func(_ *testing.T, c *Config) { c.Auth.AccessTokenTTL = 0 }, "auth.access_token_ttl must be positive"},

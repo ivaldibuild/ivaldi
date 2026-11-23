@@ -540,6 +540,26 @@ func (s *service) ListClusterAssignments(ctx context.Context, actor identity.Act
 	}
 }
 
+// GetDeploymentAssignment returns one in-flight Deployment's assignment, for
+// the agent of the Cluster its Target is in.
+func (s *service) GetDeploymentAssignment(ctx context.Context, actor identity.Actor, organizationID, deploymentID string) (*delivery.DeploymentAssignment, error) {
+	d, err := s.deployments.GetDeployment(ctx, organizationID, deploymentID)
+	if err != nil {
+		return nil, err
+	}
+	target, err := s.targets.GetTarget(ctx, organizationID, d.TargetID())
+	if err != nil {
+		return nil, err
+	}
+	if err := s.checkTargetAgent(ctx, organizationID, target, actor.PrincipalID); err != nil {
+		return nil, err
+	}
+	if d.Status() != release.DeploymentApplying && d.Status() != release.DeploymentProgressing {
+		return nil, fmt.Errorf("%w: deployment %s is %s", delivery.ErrDeploymentStatus, d.ID(), d.Status())
+	}
+	return s.assignment(ctx, d)
+}
+
 // failUnassignable fails an in-flight Deployment whose assignment cannot be
 // built, recording why on its timeline. Ivaldi itself is the actor: the agent
 // only asked for its work. A Deployment that finished meanwhile is left alone.

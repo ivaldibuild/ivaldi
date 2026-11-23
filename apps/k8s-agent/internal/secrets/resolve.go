@@ -54,13 +54,20 @@ func (r Resolved) Pin() deploy.SecretPin {
 	}
 }
 
+// ErrNotApplying is returned when the control plane will grant nothing for
+// a Deployment because it is no longer applying: it was cancelled, or
+// another agent finished it. The apply is dropped without a report.
+var ErrNotApplying = errors.New("the deployment is no longer applying")
+
 // Resolver resolves a Deployment's secrets.
 type Resolver interface {
 	// Resolve reads secrets for a Deployment in namespace, fingerprints
-	// them, and checks pinned fingerprints. Every value is masked from then
-	// on, until Release. A failure is a *deploy.Failure naming the secret
-	// and its reference, never its value.
-	Resolve(ctx context.Context, namespace string, secrets []apiclient.AssignmentSecret) ([]Resolved, error)
+	// them, and checks pinned fingerprints. A store in federated mode is
+	// opened with access the control plane grants for the Deployment.
+	// Every value is masked from then on, until Release. A failure is a
+	// *deploy.Failure naming the secret and its reference, never its value,
+	// or ErrNotApplying.
+	Resolve(ctx context.Context, deploymentID, namespace string, secrets []apiclient.AssignmentSecret) ([]Resolved, error)
 	// Release stops masking values that are no longer in use.
 	Release(resolved []Resolved)
 }
@@ -83,31 +90,37 @@ type Config struct {
 	// never where it is kept, so the agent reads only Secrets its operator
 	// mapped.
 	Credentials map[string]Credential
-	// VaultAddresses are the Vault servers the agent's operator lets it log
-	// in to. A store's address comes from the control plane, where whoever
-	// manages a Workspace's stores sets it, and a login sends a
-	// service-account token there: a store at any other address is refused.
-	VaultAddresses []string
+	// Addresses are the servers, such as a Vault, the agent's operator lets
+	// it log in to. A store's address comes from the control plane, where
+	// whoever manages a Workspace's stores sets it, and a login sends a
+	// token or a federated JWT there: a store at any other address is
+	// refused. Doppler's API and AWS STS are always allowed, because a
+	// store cannot name another address for them.
+	Addresses []string
 	// VaultTokenFile is the token Vault's Kubernetes auth checks: one
 	// projected for Vault's audience, never the Pod's API token.
 	VaultTokenFile string
-	Masker         *Masker
-	Logger         *slog.Logger
+	// Grants asks the control plane for access to the stores in federated
+	// mode a Deployment reads. Its answer holds credentials.
+	Grants func(ctx context.Context, deploymentID string) ([]apiclient.GrantView, error)
+	Masker *Masker
+	Logger *slog.Logger
 }
 
-// allowsVault reports whether the operator listed address.
-func (c Config) allowsVault(address string) bool {
+// allows reports whether the operator listed address.
+func (c Config) allows(address string) bool {
 	normalize := func(a string) string { return strings.TrimRight(strings.TrimSpace(a), "/") }
-	return slices.ContainsFunc(c.VaultAddresses, func(allowed string) bool {
+	return slices.ContainsFunc(c.Addresses, func(allowed string) bool {
 		return normalize(allowed) != "" && normalize(allowed) == normalize(address)
 	})
 }
 
 // StoreKinds lists the kinds of secret store an agent with this
-// configuration can read: every kind, less vault when no address is allowed.
+// configuration can read: every kind, less vault when no address is
+// allowed, since a vault store always names its own.
 func (c Config) StoreKinds() []string {
 	return slices.DeleteFunc(slices.Clone(Kinds), func(kind string) bool {
-		return kind == string(secretstore.KindVault) && len(c.VaultAddresses) == 0
+		return kind == string(secretstore.KindVault) && len(c.Addresses) == 0
 	})
 }
 
@@ -120,7 +133,7 @@ func (c Config) CredentialNames() []string {
 // NewResolver returns a Resolver. The fingerprint keys are read for each
 // Deployment that uses a secret.
 func NewResolver(cfg Config) Resolver {
-	r := &resolver{cfg: cfg, retryBase: time.Second}
+	r := &resolver{cfg: cfg, retryBase: time.Second, grantRetryBase: time.Second}
 	r.store = r.newStore
 	r.loadKeys = func(ctx context.Context) (Fingerprinter, error) {
 		return LoadFingerprinter(ctx, cfg.Kube, cfg.AgentNamespace, cfg.FingerprintSecret)
@@ -129,10 +142,21 @@ func NewResolver(cfg Config) Resolver {
 }
 
 type resolver struct {
-	cfg       Config
-	retryBase time.Duration
-	store     func(ctx context.Context, settings apiclient.StoreSettings, namespace string) (secretstore.Store, error)
-	loadKeys  func(ctx context.Context) (Fingerprinter, error)
+	cfg            Config
+	retryBase      time.Duration
+	grantRetryBase time.Duration
+	store          func(ctx context.Context, settings apiclient.StoreSettings, open opening) (secretstore.Store, error)
+	loadKeys       func(ctx context.Context) (Fingerprinter, error)
+}
+
+// opening is what a store is opened for: a Deployment in a namespace, with
+// the JWT the control plane granted when the store is federated. mask masks
+// a credential the store gets in exchange, until the values are read.
+type opening struct {
+	deploymentID string
+	namespace    string
+	jwt          string
+	mask         func(string)
 }
 
 // fingerprinter reads the key ring afresh for each Deployment, so a key an
@@ -141,7 +165,7 @@ func (r *resolver) fingerprinter(ctx context.Context) (Fingerprinter, error) {
 	return r.loadKeys(ctx)
 }
 
-func (r *resolver) Resolve(ctx context.Context, namespace string, secrets []apiclient.AssignmentSecret) ([]Resolved, error) {
+func (r *resolver) Resolve(ctx context.Context, deploymentID, namespace string, secrets []apiclient.AssignmentSecret) ([]Resolved, error) {
 	if len(secrets) == 0 {
 		return nil, nil
 	}
@@ -149,6 +173,22 @@ func (r *resolver) Resolve(ctx context.Context, namespace string, secrets []apic
 	if err != nil {
 		return nil, &deploy.Failure{Reason: "could not load the fingerprint key", Err: err}
 	}
+	jwts, err := r.grants(ctx, deploymentID, secrets)
+	if err != nil {
+		return nil, err
+	}
+	// A JWT, and what a store gives in exchange for it, is used only to
+	// open its store, below, so each is masked only until the values are
+	// read.
+	var credentials []string
+	mask := func(c string) {
+		r.cfg.Masker.Add(c)
+		credentials = append(credentials, c)
+	}
+	for _, jwt := range jwts {
+		mask(jwt)
+	}
+	defer func() { r.cfg.Masker.Remove(credentials...) }()
 
 	// Each store is read once, with every reference it holds.
 	type group struct {
@@ -171,7 +211,7 @@ func (r *resolver) Resolve(ctx context.Context, namespace string, secrets []apic
 	var added []string
 	for _, id := range order {
 		g := groups[id]
-		store, err := r.store(ctx, g.settings, namespace)
+		store, err := r.store(ctx, g.settings, opening{deploymentID: deploymentID, namespace: namespace, jwt: jwts[id], mask: mask})
 		if err != nil {
 			r.cfg.Masker.Remove(added...)
 			return nil, err
@@ -220,6 +260,48 @@ func (r *resolver) Release(resolved []Resolved) {
 	}
 }
 
+// grants asks the control plane for access to the federated stores among
+// the secrets', and returns each store's JWT by its ID. It asks nothing when
+// none is federated, and retries while the control plane is unreachable.
+func (r *resolver) grants(ctx context.Context, deploymentID string, secrets []apiclient.AssignmentSecret) (map[string]string, error) {
+	if !slices.ContainsFunc(secrets, func(s apiclient.AssignmentSecret) bool {
+		return s.Store.Access.Mode == apiclient.StoreAccessModeFederated
+	}) {
+		return nil, nil
+	}
+	if r.cfg.Grants == nil {
+		return nil, deploy.Failf("this agent cannot ask for access to federated secret stores")
+	}
+	var grants []apiclient.GrantView
+	wait := r.grantRetryBase
+	for attempt := 1; ; attempt++ {
+		var err error
+		grants, err = r.cfg.Grants(ctx, deploymentID)
+		if err == nil {
+			break
+		}
+		switch {
+		case errors.Is(err, apiclient.ErrConflict):
+			return nil, fmt.Errorf("%w: %v", ErrNotApplying, err)
+		case !apiclient.Transient(err) || attempt == retries:
+			return nil, &deploy.Failure{Reason: "the control plane granted no access to the deployment's secret stores", Err: err}
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(wait):
+		}
+		wait *= 2
+	}
+	out := map[string]string{}
+	for _, g := range grants {
+		if g.Jwt != nil && *g.Jwt != "" {
+			out[g.StoreId] = *g.Jwt
+		}
+	}
+	return out, nil
+}
+
 // getMany reads refs, retrying transient failures.
 func (r *resolver) getMany(ctx context.Context, store secretstore.Store, refs []secretstore.Ref) ([]secretstore.Value, error) {
 	wait := r.retryBase
@@ -264,10 +346,22 @@ func ref(r apiclient.SecretRef) secretstore.Ref {
 
 // newStore builds the store a Deployment's secret names. Stores are built per
 // Deployment and never cached across them.
-func (r *resolver) newStore(ctx context.Context, s apiclient.StoreSettings, namespace string) (secretstore.Store, error) {
-	if s.Access.Mode != apiclient.StoreAccessModeAgent {
-		return nil, deploy.Failf("secret store %s is opened in %q mode, which this agent cannot use", s.Id, s.Access.Mode)
+func (r *resolver) newStore(ctx context.Context, s apiclient.StoreSettings, open opening) (secretstore.Store, error) {
+	switch s.Access.Mode {
+	case apiclient.StoreAccessModeAgent:
+		return r.agentStore(ctx, s, open.namespace)
+	case apiclient.StoreAccessModeFederated:
+		if open.jwt == "" {
+			return nil, deploy.Failf("the control plane granted no access to secret store %s, which is in federated mode", s.Id)
+		}
+		return r.federatedStore(ctx, s, open)
 	}
+	return nil, deploy.Failf("secret store %s is opened in %q mode, which this agent cannot use", s.Id, s.Access.Mode)
+}
+
+// agentStore opens a store with the agent's own identity, or a credential
+// its operator configured.
+func (r *resolver) agentStore(ctx context.Context, s apiclient.StoreSettings, namespace string) (secretstore.Store, error) {
 	switch s.Kind {
 	case apiclient.StoreSettingsKindKubernetes:
 		return secretstore.NewKubernetes(r.kubernetesGetter(namespace)), nil
@@ -281,21 +375,10 @@ func (r *resolver) newStore(ctx context.Context, s apiclient.StoreSettings, name
 		}
 		return secretstore.NewAWS(api), nil
 	case apiclient.StoreSettingsKindVault:
-		if s.Vault == nil {
-			return nil, deploy.Failf("secret store %s has no Vault settings", s.Id)
-		}
-		if !r.cfg.allowsVault(s.Vault.Address) {
-			return nil, deploy.Failf("secret store %s is a Vault at %s, which this agent is not set up to log in to; its operator lists the addresses it may use in the chart's secrets.vault.addresses",
-				s.Id, s.Vault.Address)
-		}
-		return secretstore.NewVault(secretstore.VaultConfig{
-			Address: s.Vault.Address, Mount: s.Vault.Mount, Namespace: deref(s.Vault.Namespace),
-			AuthRole: deref(s.Access.Role), AuthMount: deref(s.Access.AuthMount),
-			JWT: func() (string, error) {
-				raw, err := os.ReadFile(r.cfg.VaultTokenFile)
-				return strings.TrimSpace(string(raw)), err
-			},
-		}), nil
+		return r.vault(s, "kubernetes", func() (string, error) {
+			raw, err := os.ReadFile(r.cfg.VaultTokenFile)
+			return strings.TrimSpace(string(raw)), err
+		})
 	case apiclient.StoreSettingsKindDoppler:
 		if s.Doppler == nil {
 			return nil, deploy.Failf("secret store %s has no Doppler settings", s.Id)
@@ -312,6 +395,68 @@ func (r *resolver) newStore(ctx context.Context, s apiclient.StoreSettings, name
 		}), nil
 	}
 	return nil, deploy.Failf("this agent cannot read %q secret stores", s.Kind)
+}
+
+// federatedStore opens a store by exchanging the JWT the control plane
+// granted for the store's own credential. The store's configuration decides
+// what that credential may read.
+func (r *resolver) federatedStore(ctx context.Context, s apiclient.StoreSettings, open opening) (secretstore.Store, error) {
+	switch s.Kind {
+	case apiclient.StoreSettingsKindAwsSecretsManager:
+		if s.Aws == nil {
+			return nil, deploy.Failf("secret store %s has no AWS settings", s.Id)
+		}
+		// The session name is what CloudTrail records the reads under.
+		api, err := secretstore.NewAWSWebIdentityClient(ctx, s.Aws.Region, deref(s.Access.RoleArn), "ivaldi-"+open.deploymentID, open.jwt)
+		if err != nil {
+			return nil, &deploy.Failure{Reason: fmt.Sprintf("secret store %s", s.Id), Err: err}
+		}
+		return secretstore.NewAWS(api), nil
+	case apiclient.StoreSettingsKindVault:
+		return r.vault(s, "jwt", func() (string, error) { return open.jwt, nil })
+	case apiclient.StoreSettingsKindDoppler:
+		if s.Doppler == nil {
+			return nil, deploy.Failf("secret store %s has no Doppler settings", s.Id)
+		}
+		identity := deref(s.Access.IdentityId)
+		// Exchanged once, on first use: a retry reads with the same token.
+		var token string
+		return secretstore.NewDoppler(secretstore.DopplerConfig{
+			Project: deref(s.Doppler.Project), Config: deref(s.Doppler.Config),
+			Token: func(ctx context.Context) (string, error) {
+				if token != "" {
+					return token, nil
+				}
+				t, err := secretstore.DopplerOIDC(ctx, nil, "", identity, open.jwt)
+				if err == nil {
+					open.mask(t)
+					token = t
+				}
+				return t, err
+			},
+		}), nil
+	}
+	return nil, deploy.Failf("this agent cannot open %q secret stores in federated mode", s.Kind)
+}
+
+// vault opens a vault store at an address the operator allowed, logging in
+// with jwt at the store's auth mount, or defaultMount when it names none.
+func (r *resolver) vault(s apiclient.StoreSettings, defaultMount string, jwt func() (string, error)) (secretstore.Store, error) {
+	if s.Vault == nil {
+		return nil, deploy.Failf("secret store %s has no Vault settings", s.Id)
+	}
+	if !r.cfg.allows(s.Vault.Address) {
+		return nil, deploy.Failf("secret store %s is a Vault at %s, which this agent is not set up to log in to; its operator lists the addresses it may use in the chart's secrets.addresses",
+			s.Id, s.Vault.Address)
+	}
+	mount := deref(s.Access.AuthMount)
+	if mount == "" {
+		mount = defaultMount
+	}
+	return secretstore.NewVault(secretstore.VaultConfig{
+		Address: s.Vault.Address, Mount: s.Vault.Mount, Namespace: deref(s.Vault.Namespace),
+		AuthRole: deref(s.Access.Role), AuthMount: mount, JWT: jwt,
+	}), nil
 }
 
 // credential reads a named credential from its Secret in the agent's

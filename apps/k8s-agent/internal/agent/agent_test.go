@@ -245,6 +245,10 @@ func (f *fakeControlPlane) ReportDeployment(_ context.Context, _ string, body ap
 	return f.reportErr
 }
 
+func (f *fakeControlPlane) SecretGrants(context.Context, string) ([]apiclient.GrantView, error) {
+	return nil, nil
+}
+
 func (f *fakeControlPlane) Observe(_ context.Context, body apiclient.ObservationRequestBody) (*apiclient.DeploymentSnapshot, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -548,11 +552,38 @@ func secretAssignment(id string) apiclient.DeploymentAssignment {
 // failingResolver is a store that cannot be reached.
 type failingResolver struct{ calls *int }
 
-func (r failingResolver) Resolve(context.Context, string, []apiclient.AssignmentSecret) ([]secrets.Resolved, error) {
+func (r failingResolver) Resolve(context.Context, string, string, []apiclient.AssignmentSecret) ([]secrets.Resolved, error) {
 	*r.calls++
 	return nil, deploy.Failf("the store is unreachable")
 }
 func (failingResolver) Release([]secrets.Resolved) {}
+
+// droppedResolver is a control plane that will grant nothing because the
+// Deployment is no longer applying.
+type droppedResolver struct{}
+
+func (droppedResolver) Resolve(context.Context, string, string, []apiclient.AssignmentSecret) ([]secrets.Resolved, error) {
+	return nil, secrets.ErrNotApplying
+}
+func (droppedResolver) Release([]secrets.Resolved) {}
+
+// A Deployment cancelled while its agent was about to read its secrets is
+// dropped: it neither fails nor applies.
+func TestExecutor_DropsADeploymentNoLongerApplying(t *testing.T) {
+	cp := &fakeControlPlane{assignments: []apiclient.DeploymentAssignment{secretAssignment("dep_1")}}
+	log := slog.New(slog.DiscardHandler)
+	deployer := &fakeDeployer{}
+	exec := newExecutor(cp, map[string]deploy.Deployer{"helm": deployer}, report.New(cp, log), log, 1)
+	exec.withSecrets(droppedResolver{}, fakeSecretWriter{}, secrets.NewMasker())
+
+	_, err := exec.poll(t.Context(), "prod-eu")
+	require.NoError(t, err)
+	exec.wait()
+
+	assert.NotContains(t, cp.reportIDs(), "dep_1:failed")
+	assert.NotContains(t, cp.reportIDs(), "dep_1:applied")
+	assert.Zero(t, deployer.applies)
+}
 
 // A retry that finds its Deployment already applied reports what the apply
 // that committed kept, without reading a secret: a secret that rotated or a

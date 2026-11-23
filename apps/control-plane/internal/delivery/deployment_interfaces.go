@@ -194,6 +194,12 @@ type DeploymentService interface {
 	// ListClusterAssignments returns the active Deployments on any of the
 	// Cluster's Targets. Only the Cluster's assigned agent may call it.
 	ListClusterAssignments(ctx context.Context, actor identity.Actor, organizationID, clusterID string) ([]DeploymentAssignment, error)
+	// GetDeploymentAssignment returns one in-flight Deployment's assignment,
+	// as ListClusterAssignments would. Only the agent of the Cluster its
+	// Target is in may call it. A Deployment that is not in flight gets
+	// ErrDeploymentStatus, and one that can no longer be applied an
+	// ErrInvalidInput saying why.
+	GetDeploymentAssignment(ctx context.Context, actor identity.Actor, organizationID, deploymentID string) (*DeploymentAssignment, error)
 	// ReportDeployment records a progress or health report from the Cluster's
 	// assigned agent.
 	ReportDeployment(ctx context.Context, actor identity.Actor, in ReportDeploymentInput) (*DeploymentDetail, error)

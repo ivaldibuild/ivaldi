@@ -219,6 +219,8 @@ Flags, with environment variables of the same name prefixed `IVALDI_`, and chart
 | `--client-cert-file`, `--client-key-file`, `--client-ca-file` | none | For `mtls`, and a private CA for the control plane |
 | `--registry-pull-secret` | none | Docker-config Secret for fetching charts |
 | `--secret-credentials` | none | Credentials for Secret Stores in `agent` mode, as `name=secret/key`, from the chart's `secrets.credentials` |
+| `--secret-addresses` | none | Servers, such as a Vault, the agent may send a token or federated JWT to, from the chart's `secrets.addresses`; Doppler's API and AWS STS are always allowed |
+| `--vault-token-file` | `/var/run/secrets/ivaldi-vault/token` | The token projected for Vault's audience, for a `vault` store in `agent` mode |
 | `--plain-http-registries` | none | Registry hosts, such as `registry:5000`, to fetch charts from over plain HTTP; for local development (`registry.plainHTTPHosts`) |
 | `--max-concurrent-applies` | `4` | |
 | `--health-address` | `:8080` | Liveness and readiness |

@@ -95,6 +95,10 @@ func (f *fakeControlPlane) ReportDeployment(context.Context, string, apiclient.R
 	return nil
 }
 
+func (f *fakeControlPlane) SecretGrants(context.Context, string) ([]apiclient.GrantView, error) {
+	return nil, nil
+}
+
 func (f *fakeControlPlane) Observe(context.Context, apiclient.ObservationRequestBody) (*apiclient.DeploymentSnapshot, error) {
 	return &apiclient.DeploymentSnapshot{}, nil
 }

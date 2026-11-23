@@ -84,8 +84,8 @@ spec:
             - name: IVALDI_SECRET_CREDENTIALS
               value: {{ join "," $credentials | quote }}
             {{- end }}
-            {{- with .Values.secrets.vault.addresses }}
-            - name: IVALDI_VAULT_ADDRESSES
+            {{- with .Values.secrets.addresses }}
+            - name: IVALDI_SECRET_ADDRESSES
               value: {{ join "," . | quote }}
             {{- end }}
             {{- if .Values.controlPlane.caConfigMap }}
@@ -131,7 +131,7 @@ spec:
             - name: ivaldi-token
               mountPath: /var/run/secrets/ivaldi
               readOnly: true
-            {{- if .Values.secrets.vault.addresses }}
+            {{- if .Values.secrets.addresses }}
             - name: vault-token
               mountPath: /var/run/secrets/ivaldi-vault
               readOnly: true
@@ -177,8 +177,8 @@ spec:
                   path: token
                   audience: ivaldi
                   expirationSeconds: 3600
-        {{- if .Values.secrets.vault.addresses }}
-        # The token the agent logs in to Vault with. It is made for Vault's
+        {{- if .Values.secrets.addresses }}
+        # The token the agent logs in to Vault with in agent mode. It is made for Vault's
         # audience, so a Vault that receives it cannot use it on the
         # Kubernetes API.
         - name: vault-token

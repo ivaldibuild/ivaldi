@@ -6,6 +6,7 @@ import (
 	"net/mail"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 )
 
@@ -68,6 +69,13 @@ func (c *Config) validateAuth(v *validator) {
 	a := c.Auth
 	if len(a.SigningKeyFiles) == 0 && !a.EphemeralSigningKey {
 		v.addf("auth.signing_key_files needs at least one PEM private key, or set auth.ephemeral_signing_key for local development")
+	}
+	// A store that trusts the federation issuer must never accept an API
+	// access token, so the two never share a key.
+	for _, f := range c.SecretStores.Federation.SigningKeyFiles {
+		if slices.Contains(a.SigningKeyFiles, f) {
+			v.addf("secret_stores.federation.signing_key_files must not share a key with auth.signing_key_files: %s is in both", f)
+		}
 	}
 	for name, d := range map[string]int64{
 		"auth.access_token_ttl":       int64(a.AccessTokenTTL),

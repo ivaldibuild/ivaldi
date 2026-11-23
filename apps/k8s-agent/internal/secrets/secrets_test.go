@@ -3,6 +3,7 @@ package secrets
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -17,6 +18,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
+
+	"github.com/ivaldibuild/ivaldi/pkg/secretstore"
 
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/apiclient"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/deploy"
@@ -109,7 +112,7 @@ func TestResolver(t *testing.T) {
 	})
 	r, masker, keys := newTestResolver(t, kube)
 
-	resolved, err := r.Resolve(t.Context(), "payments", []apiclient.AssignmentSecret{kubernetesSecret("DB_PASSWORD", "password", nil)})
+	resolved, err := r.Resolve(t.Context(), "dpl_a", "payments", []apiclient.AssignmentSecret{kubernetesSecret("DB_PASSWORD", "password", nil)})
 	require.NoError(t, err)
 	require.Len(t, resolved, 1)
 	assert.Equal(t, "hunter22", resolved[0].Value)
@@ -125,7 +128,7 @@ func TestResolver(t *testing.T) {
 
 	t.Run("a rollback whose secret changed fails naming it", func(t *testing.T) {
 		stale := keys.Fingerprint("an-older-password")
-		_, err := r.Resolve(t.Context(), "payments", []apiclient.AssignmentSecret{kubernetesSecret("DB_PASSWORD", "password", &stale)})
+		_, err := r.Resolve(t.Context(), "dpl_a", "payments", []apiclient.AssignmentSecret{kubernetesSecret("DB_PASSWORD", "password", &stale)})
 		var failure *deploy.Failure
 		require.ErrorAs(t, err, &failure)
 		assert.Contains(t, failure.Reason, "secret DB_PASSWORD (db#password) has changed")
@@ -133,7 +136,7 @@ func TestResolver(t *testing.T) {
 	})
 
 	t.Run("a missing field fails naming the secret and reference, not the value", func(t *testing.T) {
-		_, err := r.Resolve(t.Context(), "payments", []apiclient.AssignmentSecret{kubernetesSecret("DB_USER", "user", nil)})
+		_, err := r.Resolve(t.Context(), "dpl_a", "payments", []apiclient.AssignmentSecret{kubernetesSecret("DB_USER", "user", nil)})
 		var failure *deploy.Failure
 		require.ErrorAs(t, err, &failure)
 		assert.Equal(t, "could not resolve secret DB_USER", failure.Reason)
@@ -144,7 +147,7 @@ func TestResolver(t *testing.T) {
 	t.Run("an unknown store kind fails by name", func(t *testing.T) {
 		s := kubernetesSecret("X", "password", nil)
 		s.Store.Kind = "onepassword"
-		_, err := r.Resolve(t.Context(), "payments", []apiclient.AssignmentSecret{s})
+		_, err := r.Resolve(t.Context(), "dpl_a", "payments", []apiclient.AssignmentSecret{s})
 		assert.ErrorContains(t, err, `this agent cannot read "onepassword" secret stores`)
 	})
 }
@@ -207,7 +210,7 @@ func TestResolver_ReadsTheKeysForEachDeployment(t *testing.T) {
 		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "db", Namespace: "payments"}, Data: map[string][]byte{"password": []byte("hunter22")}},
 	)
 	r := NewResolver(Config{Kube: kube, AgentNamespace: "ivaldi-system", FingerprintSecret: "fp", Masker: NewMasker(), Logger: slog.New(slog.DiscardHandler)})
-	first, err := r.Resolve(t.Context(), "payments", []apiclient.AssignmentSecret{kubernetesSecret("DB_PASSWORD", "password", nil)})
+	first, err := r.Resolve(t.Context(), "dpl_a", "payments", []apiclient.AssignmentSecret{kubernetesSecret("DB_PASSWORD", "password", nil)})
 	require.NoError(t, err)
 	assert.Regexp(t, `^hmac-sha256:v1:`, first[0].Fingerprint)
 
@@ -217,10 +220,10 @@ func TestResolver_ReadsTheKeysForEachDeployment(t *testing.T) {
 	}, metav1.UpdateOptions{})
 	require.NoError(t, err)
 
-	next, err := r.Resolve(t.Context(), "payments", []apiclient.AssignmentSecret{kubernetesSecret("DB_PASSWORD", "password", nil)})
+	next, err := r.Resolve(t.Context(), "dpl_a", "payments", []apiclient.AssignmentSecret{kubernetesSecret("DB_PASSWORD", "password", nil)})
 	require.NoError(t, err)
 	assert.Regexp(t, `^hmac-sha256:v2:`, next[0].Fingerprint, "the newest key is used at once")
-	_, err = r.Resolve(t.Context(), "payments", []apiclient.AssignmentSecret{kubernetesSecret("DB_PASSWORD", "password", &first[0].Fingerprint)})
+	_, err = r.Resolve(t.Context(), "dpl_a", "payments", []apiclient.AssignmentSecret{kubernetesSecret("DB_PASSWORD", "password", &first[0].Fingerprint)})
 	assert.ErrorContains(t, err, "fingerprint key v1 is gone", "the removed key is refused at once")
 }
 
@@ -246,13 +249,13 @@ func TestResolver_OnlyLogsInToAVaultItsOperatorListed(t *testing.T) {
 
 	r, _, _ := newTestResolver(t, fake.NewClientset())
 	r.cfg.VaultTokenFile = token
-	_, err := r.Resolve(context.Background(), "payments", []apiclient.AssignmentSecret{secret})
+	_, err := r.Resolve(context.Background(), "dpl_a", "payments", []apiclient.AssignmentSecret{secret})
 	require.ErrorContains(t, err, "not set up to log in to")
 	assert.Zero(t, logins, "nothing is sent to an address the operator did not list")
 	assert.NotContains(t, r.cfg.StoreKinds(), "vault", "and the heartbeat does not claim the agent reads Vault")
 
-	r.cfg.VaultAddresses = []string{vault.URL + "/"}
-	_, err = r.Resolve(context.Background(), "payments", []apiclient.AssignmentSecret{secret})
+	r.cfg.Addresses = []string{vault.URL + "/"}
+	_, err = r.Resolve(context.Background(), "dpl_a", "payments", []apiclient.AssignmentSecret{secret})
 	require.Error(t, err)
 	assert.Equal(t, 1, logins, "a listed address is logged in to")
 	assert.Contains(t, r.cfg.StoreKinds(), "vault")
@@ -273,12 +276,127 @@ func TestResolver_ReadsOnlyCredentialsItsOperatorMapped(t *testing.T) {
 		Ref: apiclient.SecretRef{Path: "API_KEY"},
 	}
 
-	_, err := r.Resolve(t.Context(), "payments", []apiclient.AssignmentSecret{secret})
+	_, err := r.Resolve(t.Context(), "dpl_a", "payments", []apiclient.AssignmentSecret{secret})
 	require.ErrorContains(t, err, `needs the credential "doppler-production", which this agent's operator has not configured`)
 	assert.Empty(t, r.cfg.CredentialNames())
 
 	r.cfg.Credentials = map[string]Credential{"doppler-production": {Secret: "doppler", Key: "token"}}
-	_, err = r.Resolve(t.Context(), "payments", []apiclient.AssignmentSecret{secret})
+	_, err = r.Resolve(t.Context(), "dpl_a", "payments", []apiclient.AssignmentSecret{secret})
 	require.ErrorContains(t, err, "Secret doppler has no key token", "the mapped Secret and key are read")
 	assert.Equal(t, []string{"doppler-production"}, r.cfg.CredentialNames())
+}
+
+// A federated store is opened with the JWT the control plane grants for the
+// Deployment, logged in at the JWT auth mount; the JWT is masked while it is
+// in use, and asked for only when a store needs it.
+func TestResolver_OpensFederatedStoresWithTheirGrant(t *testing.T) {
+	const jwt = "eyJhbGciOiJFUzI1NiJ9.grant.signature"
+	var login map[string]string
+	var loginPath string
+	vault := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			loginPath = r.URL.Path
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&login))
+			_ = json.NewEncoder(w).Encode(map[string]any{"auth": map[string]any{"client_token": "hvs.child"}})
+			return
+		}
+		require.Equal(t, "hvs.child", r.Header.Get("X-Vault-Token"))
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
+			"data": map[string]any{"key": "s3cret-api-key"}, "metadata": map[string]any{"version": 3},
+		}})
+	}))
+	t.Cleanup(vault.Close)
+	secret := apiclient.AssignmentSecret{
+		Name: "Api.Key", DeliverAs: apiclient.AssignmentSecretDeliverAsSecret,
+		Store: apiclient.StoreSettings{Id: "sst_vault", Kind: apiclient.StoreSettingsKindVault,
+			Access: apiclient.StoreAccess{Mode: apiclient.StoreAccessModeFederated, Role: new("payments-production")},
+			Vault:  &apiclient.VaultStore{Address: vault.URL, Mount: "kv"}},
+		Ref: apiclient.SecretRef{Path: "api", Field: new("key")},
+	}
+
+	r, masker, _ := newTestResolver(t, fake.NewClientset(&corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "db", Namespace: "payments"}, Data: map[string][]byte{"password": []byte("hunter22")},
+	}))
+	r.cfg.Addresses = []string{vault.URL}
+	var asked []string
+	var maskedDuring string
+	r.cfg.Grants = func(_ context.Context, deploymentID string) ([]apiclient.GrantView, error) {
+		asked = append(asked, deploymentID)
+		return []apiclient.GrantView{{StoreId: "sst_vault", Mode: "federated", Jwt: new(jwt)}}, nil
+	}
+	open := r.store
+	r.store = func(ctx context.Context, s apiclient.StoreSettings, o opening) (secretstore.Store, error) {
+		maskedDuring = masker.Mask(o.jwt)
+		return open(ctx, s, o)
+	}
+
+	resolved, err := r.Resolve(t.Context(), "dpl_a", "payments", []apiclient.AssignmentSecret{secret})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"dpl_a"}, asked, "the agent names only the deployment")
+	assert.Equal(t, "/v1/auth/jwt/login", loginPath, "the JWT auth method's default mount")
+	assert.Equal(t, map[string]string{"role": "payments-production", "jwt": jwt}, login)
+	assert.Equal(t, "s3cret-api-key", resolved[0].Value)
+	assert.NotContains(t, maskedDuring, jwt, "masked while it is used")
+	assert.Equal(t, jwt, masker.Mask(jwt), "and no longer once the values are read")
+
+	asked = nil
+	_, err = r.Resolve(t.Context(), "dpl_a", "payments", []apiclient.AssignmentSecret{kubernetesSecret("DB_PASSWORD", "password", nil)})
+	require.NoError(t, err)
+	assert.Empty(t, asked, "a deployment with no federated store asks for nothing")
+}
+
+func TestResolver_GrantRefusals(t *testing.T) {
+	secret := apiclient.AssignmentSecret{
+		Name: "Api.Key", DeliverAs: apiclient.AssignmentSecretDeliverAsSecret,
+		Store: apiclient.StoreSettings{Id: "sst_aws", Kind: apiclient.StoreSettingsKindAwsSecretsManager,
+			Access: apiclient.StoreAccess{Mode: apiclient.StoreAccessModeFederated, RoleArn: new("arn:aws:iam::1:role/ivaldi")},
+			Aws:    &apiclient.AWSStore{Region: "eu-west-1"}},
+		Ref: apiclient.SecretRef{Path: "api"},
+	}
+	cases := []struct {
+		name   string
+		status int
+		check  func(t *testing.T, err error)
+	}{
+		{"a deployment no longer applying is dropped", http.StatusConflict, func(t *testing.T, err error) {
+			assert.ErrorIs(t, err, ErrNotApplying)
+		}},
+		{"a refusal fails the deployment", http.StatusUnprocessableEntity, func(t *testing.T, err error) {
+			var failure *deploy.Failure
+			require.ErrorAs(t, err, &failure)
+			assert.Contains(t, failure.Error(), "granted no access")
+		}},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			r, _, _ := newTestResolver(t, fake.NewClientset())
+			calls := 0
+			r.cfg.Grants = func(context.Context, string) ([]apiclient.GrantView, error) {
+				calls++
+				return nil, &apiclient.StatusError{Operation: "secret grants", Status: tt.status}
+			}
+			_, err := r.Resolve(t.Context(), "dpl_a", "payments", []apiclient.AssignmentSecret{secret})
+			tt.check(t, err)
+			assert.Equal(t, 1, calls, "not retried")
+		})
+	}
+
+	t.Run("an unreachable control plane is retried", func(t *testing.T) {
+		r, _, _ := newTestResolver(t, fake.NewClientset())
+		r.grantRetryBase = time.Millisecond
+		calls := 0
+		r.cfg.Grants = func(context.Context, string) ([]apiclient.GrantView, error) {
+			calls++
+			return nil, &apiclient.StatusError{Operation: "secret grants", Status: http.StatusServiceUnavailable}
+		}
+		_, err := r.Resolve(t.Context(), "dpl_a", "payments", []apiclient.AssignmentSecret{secret})
+		require.Error(t, err)
+		assert.Equal(t, retries, calls)
+	})
+	t.Run("a federated store the control plane granted nothing for", func(t *testing.T) {
+		r, _, _ := newTestResolver(t, fake.NewClientset())
+		r.cfg.Grants = func(context.Context, string) ([]apiclient.GrantView, error) { return nil, nil }
+		_, err := r.Resolve(t.Context(), "dpl_a", "payments", []apiclient.AssignmentSecret{secret})
+		assert.ErrorContains(t, err, "granted no access to secret store sst_aws")
+	})
 }

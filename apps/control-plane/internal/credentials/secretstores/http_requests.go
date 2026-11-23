@@ -41,13 +41,14 @@ type SettingsBody struct {
 	Doppler *credentials.DopplerSettings `json:"doppler,omitempty" required:"false" doc:"For doppler: the project and config; optional when the store is read with a service token, which implies them"`
 }
 
-// AccessBody is how a store is opened. Only agent mode exists so far.
+// AccessBody is how a store is opened.
 type AccessBody struct {
-	Mode       string `json:"mode" required:"true" enum:"agent" doc:"How the store is opened: agent, with the agent's own identity or a credential its operator configured"`
-	RoleARN    string `json:"role_arn,omitempty" required:"false" doc:"For aws_secrets_manager: a role to assume on top of the agent's own AWS identity"`
+	Mode       string `json:"mode" required:"true" enum:"agent,federated" doc:"How the store is opened: agent, with the agent's own identity or a credential its operator configured; or federated, with a JWT the control plane signs for each Deployment, which the store trusts"`
+	RoleARN    string `json:"role_arn,omitempty" required:"false" doc:"For aws_secrets_manager: the role to assume, on top of the agent's own AWS identity in agent mode, or with the JWT in federated mode, where it is required"`
 	Role       string `json:"role,omitempty" required:"false" doc:"For vault: the auth role the agent logs in as"`
-	AuthMount  string `json:"auth_mount,omitempty" required:"false" doc:"For vault: the auth method's mount; kubernetes when omitted"`
-	Credential string `json:"credential,omitempty" required:"false" doc:"For doppler: the name of the credential, configured on the agent, that holds the Doppler token"`
+	AuthMount  string `json:"auth_mount,omitempty" required:"false" doc:"For vault: the auth method's mount; kubernetes in agent mode and jwt in federated mode when omitted"`
+	Credential string `json:"credential,omitempty" required:"false" doc:"For doppler in agent mode: the name of the credential, configured on the agent, that holds the Doppler token"`
+	IdentityID string `json:"identity_id,omitempty" required:"false" doc:"For doppler in federated mode: the service account identity that trusts the federation issuer"`
 }
 
 func (b *AccessBody) access() credentials.Access {
@@ -60,6 +61,7 @@ func (b *AccessBody) access() credentials.Access {
 		Role:       b.Role,
 		AuthMount:  b.AuthMount,
 		Credential: b.Credential,
+		IdentityID: b.IdentityID,
 	}
 }
 

@@ -125,3 +125,10 @@ version_control:
     client_secret_file: .local/github-client-secret
     private_key_file: .local/github-app.pem
     # web_url: https://ghe.example.com   # GitHub Enterprise Server only
+
+# Secret Stores in federated mode trust the control plane as an OIDC issuer
+# at <external_url>/federation (docs/self-hosting/secret-stores.md). Its keys
+# are never auth.signing_key_files. Without them, no store can be federated.
+# secret_stores:
+#   federation:
+#     signing_key_files: [.local/federation.pem]

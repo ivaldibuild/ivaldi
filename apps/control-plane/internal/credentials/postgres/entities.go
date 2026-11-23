@@ -25,3 +25,18 @@ type secretStoreEntity struct {
 }
 
 func (secretStoreEntity) TableName() string { return "credentials.secret_stores" }
+
+// secretStoreGrantEntity is a row of credentials.secret_store_grants.
+type secretStoreGrantEntity struct {
+	ID             string     `gorm:"column:id;primaryKey"`
+	OrganizationID string     `gorm:"column:organization_id"`
+	StoreID        string     `gorm:"column:secret_store_id"`
+	DeploymentID   string     `gorm:"column:deployment_id"`
+	Mode           string     `gorm:"column:mode"`
+	TokenID        string     `gorm:"column:token_id"`
+	ExpiresAt      time.Time  `gorm:"column:expires_at"`
+	RevokedAt      *time.Time `gorm:"column:revoked_at"`
+	CreatedAt      time.Time  `gorm:"column:created_at;autoCreateTime:false"`
+}
+
+func (secretStoreGrantEntity) TableName() string { return "credentials.secret_store_grants" }

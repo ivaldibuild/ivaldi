@@ -5,6 +5,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/change"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/config"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/credentials"
+	storegrants "github.com/ivaldibuild/ivaldi-control-plane/internal/credentials/grants"
 	credentialspg "github.com/ivaldibuild/ivaldi-control-plane/internal/credentials/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/credentials/secretstores"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/delivery"
@@ -111,7 +112,7 @@ func (a *app) wireDelivery(runners config.Runners) error {
 	// them through a lookup, and credentials asks delivery whether a store
 	// is still referred to.
 	storeRepo := credentialspg.NewSecretStoreRepository(a.db)
-	storeLookup, err := credentials.NewStoreLookup(storeRepo)
+	storeLookup, err := credentials.NewStoreLookup(storeRepo, a.federation != nil)
 	if err != nil {
 		return err
 	}
@@ -120,6 +121,7 @@ func (a *app) wireDelivery(runners config.Runners) error {
 		secretstores.WithWorkspaces(workspaces),
 		secretstores.WithEnvironmentLookup(envRepo),
 		secretstores.WithVariableUsage(variableRepo),
+		secretstores.WithFederation(a.federation != nil),
 		secretstores.WithAuthorizer(a.authz),
 		secretstores.WithTransactor(a.tx),
 		secretstores.WithOutboxRecorder(a.outbox),
@@ -337,6 +339,20 @@ func (a *app) wireDelivery(runners config.Runners) error {
 	a.services.agent = agentSvc
 	a.services.applications, a.services.releases = apps, rels
 	a.services.deployments = deps
+
+	// Grants are credentials': it reads the Deployment's assignment from
+	// delivery, which never imports it.
+	a.services.secretGrants, err = storegrants.NewService(
+		storegrants.WithAssignments(deps),
+		storegrants.WithApplications(applicationRepo),
+		storegrants.WithGrantRepo(credentialspg.NewSecretStoreGrantRepository(a.db)),
+		storegrants.WithIssuer(a.federation),
+		storegrants.WithTransactor(a.tx),
+		storegrants.WithAuditRecorder(a.audit),
+	)
+	if err != nil {
+		return err
+	}
 	a.services.variables = vars
 	a.services.secretStores = stores
 	return nil

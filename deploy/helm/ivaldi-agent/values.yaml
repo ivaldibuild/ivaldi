@@ -58,9 +58,12 @@ secrets:
   # -- Namespaces whose Secrets the agent may read, for the kubernetes
   # Secret Store.
   kubernetesNamespaces: []
-  # -- Secrets in the release namespace holding Doppler service tokens,
-  # one per Doppler Secret Store, which the agent may read.
-  dopplerTokenSecrets: []
+  # -- Credentials for Secret Stores the agent opens itself, by the name a
+  # store's access gives, such as a Doppler store's credential. Each maps to
+  # a Secret in the release namespace and the key that holds it; the agent
+  # may read only these Secrets. For example:
+  #   doppler-production: { secretName: doppler-production, key: token }
+  credentials: {}
   vault:
     # -- Vault servers, such as https://vault.example.com, the agent may log
     # in to for a vault Secret Store. A store names its own address in

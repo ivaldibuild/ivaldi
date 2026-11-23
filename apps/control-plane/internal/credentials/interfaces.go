@@ -39,13 +39,14 @@ type CreateSecretStoreInput struct {
 	DisplayName    string
 	Kind           secretstore.Kind
 	Settings       Settings
+	Access         Access
 	EnvironmentIDs []string
 }
 
 // SecretStoreService manages a Workspace's Secret Stores. Reading needs
 // secret_store.read and changing needs secret_store.manage, on the
 // Workspace. A store holds no credential, so reading one reveals where
-// secrets are kept, not what they are.
+// secrets are kept and how they are opened, not what they are.
 type SecretStoreService interface {
 	CreateSecretStore(ctx context.Context, actor identity.Actor, in CreateSecretStoreInput) (*SecretStore, error)
 	GetSecretStore(ctx context.Context, actor identity.Actor, organizationID, storeID string) (*SecretStore, error)

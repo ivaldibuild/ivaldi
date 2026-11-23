@@ -17,7 +17,7 @@ What does not change: Ivaldi still keeps only references to secrets ([deployment
 
 ## Store settings
 
-A Secret Store keeps `kind`, `settings` (its location), `access_mode`, and `access` (that mode's settings). `credentials.secret_stores` gains the two access columns; `settings` loses everything about authentication.
+A Secret Store keeps `kind`, `settings` (its location), and `access` (its mode and that mode's settings). `credentials.secret_stores` gains an `access` JSONB column holding both; `settings` loses everything about authentication.
 
 | Kind | Location settings |
 |---|---|
@@ -212,7 +212,9 @@ The assignment's `StoreSettings` carry the location and the mode, never a creden
 
 ## Migration
 
-`credentials` gets a migration that moves authentication out of `settings`. Every existing store goes to `agent` mode, so nothing changes for a running agent except Doppler:
+`credentials` gets a migration that only adds the `access` column, an object that defaults to `{}`. The database knows nothing about each kind's settings or access: their shape is the application's, checked by `SecretStore`'s constructor on create and on load, so a new kind such as Infisical needs no migration. An empty access is read as `agent` mode.
+
+No control plane had been released, so no stored store has the old shape and nothing converts one. Where the old shape was:
 
 | Kind | Before | After |
 |---|---|---|
@@ -221,7 +223,7 @@ The assignment's `StoreSettings` carry the location and the mode, never a creden
 | `vault` | `address`, `mount`, `namespace`, `auth_role`, `auth_mount` | `address`, `mount`, `namespace`; `agent`, `role`, `auth_mount` (default `kubernetes`) |
 | `doppler` | `token_secret_name`, `token_secret_key` | no project or config; `agent`, `credential` = `token_secret_name` |
 
-The chart's `secrets.dopplerTokenSecrets` becomes `secrets.credentials`, keyed by the old Secret name with the key the store named. The release notes say how to convert it. The assignment's `StoreSettings` change shape, so the control plane serves the new shape only to an agent whose version understands it, and the agent's release must come first.
+The chart's `secrets.dopplerTokenSecrets` becomes `secrets.credentials`, keyed by the old Secret name with the key the store named, which the agent reads from `--secret-credentials` (`name=secret/key,…`). The assignment's `StoreSettings` change shape; no agent had been released, so the control plane serves the new shape to every agent.
 
 ## Invariants
 
@@ -236,7 +238,7 @@ The chart's `secrets.dopplerTokenSecrets` becomes `secrets.credentials`, keyed b
 
 Each step is its own pull request:
 
-1. **Settings split.** Access modes on `SecretStore`, the migration, named credentials in the agent and chart, and Doppler's `project` and `config`. Every store is `agent`, so behaviour stays the same.
+1. **Settings split.** Access modes on `SecretStore`, the migration, named credentials in the agent and chart, and Doppler's `project` and `config`. Every store is `agent`, so behaviour stays the same. Built: neither the control plane nor an agent had been released, so stored stores are not converted and the assignment's new `StoreSettings` shape is served to every agent.
 2. **Grants and federated mode.** The issuer, the grant operation and records, the agent's grant step and exchanges for AWS, Vault, and Doppler, and `secrets.addresses`.
 3. **Infisical.** The kind, its reader, and its `agent` and `federated` exchanges.
 4. **Brokered mode.** `pkg/kms`, the credential API and table, the brokers, and revocation.

@@ -28,7 +28,11 @@ const kinds: { value: SecretStoreKind; label: string; reads: string }[] = [
     reads: 'secrets its AWS identity is allowed to read',
   },
   { value: 'vault', label: 'HashiCorp Vault', reads: 'a KV v2 mount, signing in with its role' },
-  { value: 'doppler', label: 'Doppler', reads: 'one config, with a token kept in its namespace' },
+  {
+    value: 'doppler',
+    label: 'Doppler',
+    reads: 'one config, with a token its operator configured on the agent',
+  },
 ];
 
 const emptyFields = () => ({
@@ -38,15 +42,16 @@ const emptyFields = () => ({
   roleArn: '',
   address: '',
   mount: '',
-  authRole: '',
-  tokenSecretName: '',
-  tokenSecretKey: 'token',
+  vaultRole: '',
+  credential: '',
+  project: '',
+  config: '',
 });
 
 /**
  * The Workspace's Secret Stores: the secret managers its Clusters' agents read secret variables
- * from. A store says where secrets are and which Environments may read them; it never holds a
- * secret or a credential.
+ * from. A store says where secrets are, how the agent opens it, and which Environments may read
+ * them; it never holds a secret or a credential.
  */
 @Component({
   selector: 'app-secret-stores-page',
@@ -106,17 +111,19 @@ export class SecretStoresPage {
     return error ? (error instanceof ApiError ? error.message : 'Something went wrong.') : null;
   });
 
-  /** Where a store's secrets are, from its settings. */
+  /** Where a store's secrets are, and how the agent opens it. */
   private where(store: SecretStore): string {
     const { aws, vault, doppler } = store.settings;
+    const access = store.access;
     if (aws) {
-      return aws.role_arn ? `${aws.region}, as ${aws.role_arn}` : aws.region;
+      return access.role_arn ? `${aws.region}, as ${access.role_arn}` : aws.region;
     }
     if (vault) {
-      return `${vault.address}, mount ${vault.mount}, role ${vault.auth_role}`;
+      return `${vault.address}, mount ${vault.mount}, role ${access.role}`;
     }
-    if (doppler) {
-      return `Token in Secret ${doppler.token_secret_name}, key ${doppler.token_secret_key}`;
+    if (store.kind === 'doppler') {
+      const config = doppler ? `${doppler.project}/${doppler.config}, ` : '';
+      return `${config}credential ${access.credential}`;
     }
     return "Secrets in each Target's namespace";
   }
@@ -159,11 +166,14 @@ export class SecretStoresPage {
     if (f.kind === 'aws_secrets_manager' && !f.region.trim()) {
       return 'Give the AWS region the secrets are in.';
     }
-    if (f.kind === 'vault' && !(f.address.trim() && f.mount.trim() && f.authRole.trim())) {
-      return "Give Vault's address, the KV v2 mount, and the Kubernetes auth role.";
+    if (f.kind === 'vault' && !(f.address.trim() && f.mount.trim() && f.vaultRole.trim())) {
+      return "Give Vault's address, the KV v2 mount, and the auth role.";
     }
-    if (f.kind === 'doppler' && !(f.tokenSecretName.trim() && f.tokenSecretKey.trim())) {
-      return 'Name the Secret and key that hold the Doppler token.';
+    if (f.kind === 'doppler' && !f.credential.trim()) {
+      return 'Name the credential, configured on the agent, that holds the Doppler token.';
+    }
+    if (f.kind === 'doppler' && !f.project.trim() !== !f.config.trim()) {
+      return 'Give both the Doppler project and config, or neither for a service token.';
     }
     if (f.kind === 'doppler' && this.chosen().length === 0) {
       return 'A Doppler token serves one config: tick the Environments that config is for.';
@@ -175,24 +185,30 @@ export class SecretStoresPage {
     const f = this.fields();
     switch (f.kind) {
       case 'aws_secrets_manager':
-        return { aws: { region: f.region.trim(), role_arn: f.roleArn.trim() || undefined } };
+        return { aws: { region: f.region.trim() } };
       case 'vault':
-        return {
-          vault: {
-            address: f.address.trim(),
-            mount: f.mount.trim(),
-            auth_role: f.authRole.trim(),
-          },
-        };
+        return { vault: { address: f.address.trim(), mount: f.mount.trim() } };
       case 'doppler':
-        return {
-          doppler: {
-            token_secret_name: f.tokenSecretName.trim(),
-            token_secret_key: f.tokenSecretKey.trim(),
-          },
-        };
+        return f.project.trim()
+          ? { doppler: { project: f.project.trim(), config: f.config.trim() } }
+          : {};
       default:
         return {};
+    }
+  }
+
+  /** How the agent opens the store: with its own identity, or a credential configured on it. */
+  private access(): SecretStore['access'] {
+    const f = this.fields();
+    switch (f.kind) {
+      case 'aws_secrets_manager':
+        return { mode: 'agent', role_arn: f.roleArn.trim() || undefined };
+      case 'vault':
+        return { mode: 'agent', role: f.vaultRole.trim() };
+      case 'doppler':
+        return { mode: 'agent', credential: f.credential.trim() };
+      default:
+        return { mode: 'agent' };
     }
   }
 
@@ -209,6 +225,7 @@ export class SecretStoresPage {
         display_name: this.fields().name.trim(),
         kind: this.fields().kind,
         settings: this.settings(),
+        access: this.access(),
         environment_ids: this.chosen(),
       }),
     );

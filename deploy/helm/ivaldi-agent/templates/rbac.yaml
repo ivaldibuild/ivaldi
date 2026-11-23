@@ -20,7 +20,11 @@ rules:
       {{- with .Values.registry.pullSecret }}
       - {{ . | quote }}
       {{- end }}
-      {{- range .Values.secrets.dopplerTokenSecrets }}
+      {{- $credentialSecrets := list }}
+      {{- range $name, $credential := .Values.secrets.credentials }}
+      {{- $credentialSecrets = append $credentialSecrets $credential.secretName }}
+      {{- end }}
+      {{- range $credentialSecrets | uniq }}
       - {{ . | quote }}
       {{- end }}
     verbs: [get]

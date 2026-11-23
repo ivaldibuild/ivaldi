@@ -223,10 +223,18 @@ func SecretStoreIDs(resolved []ResolvedVariable) []string {
 	return out
 }
 
+// AgentSecrets is what a Cluster's agent last said it can read secrets
+// with: the kinds of store, and the names of the credentials its operator
+// configured.
+type AgentSecrets struct {
+	Kinds       []string
+	Credentials []string
+}
+
 // CheckSecretStores checks that the secrets a Deployment to an Environment
 // gets are in active stores that Environment may read, of kinds its
-// Cluster's agent can read.
-func CheckSecretStores(resolved []ResolvedVariable, stores map[string]SecretStoreRef, environmentID string, agentKinds []string) error {
+// Cluster's agent can read, with the credentials they name.
+func CheckSecretStores(resolved []ResolvedVariable, stores map[string]SecretStoreRef, environmentID string, agent AgentSecrets) error {
 	for _, r := range resolved {
 		if r.Winner == nil || r.Winner.Secret == nil {
 			continue
@@ -239,8 +247,11 @@ func CheckSecretStores(resolved []ResolvedVariable, stores map[string]SecretStor
 			return NewErrInvalidInput(fmt.Sprintf("secret store %s, which holds %s, is archived", store.DisplayName, r.Name))
 		case !store.Allows(environmentID):
 			return NewErrInvalidInput(fmt.Sprintf("secret store %s, which holds %s, is not allowed for this environment", store.DisplayName, r.Name))
-		case !slices.Contains(agentKinds, string(store.Settings.Kind)):
+		case !slices.Contains(agent.Kinds, string(store.Settings.Kind)):
 			return NewErrInvalidInput(fmt.Sprintf("the cluster's agent cannot read %s secret stores, which %s needs", store.Settings.Kind, r.Name))
+		case store.Settings.Access.Credential != "" && !slices.Contains(agent.Credentials, store.Settings.Access.Credential):
+			return NewErrInvalidInput(fmt.Sprintf("the cluster's agent has no credential named %s, which secret store %s needs for %s; its operator configures credentials on the agent",
+				store.Settings.Access.Credential, store.DisplayName, r.Name))
 		}
 	}
 	return nil

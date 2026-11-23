@@ -3,6 +3,7 @@ package credentials
 import (
 	"fmt"
 	"net/url"
+	"regexp"
 	"slices"
 	"time"
 	"unicode/utf8"
@@ -10,6 +11,7 @@ import (
 	"github.com/ivaldibuild/ivaldi/pkg/aggregate"
 	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/id"
+	"github.com/ivaldibuild/ivaldi/pkg/optional"
 	"github.com/ivaldibuild/ivaldi/pkg/secretstore"
 	"github.com/ivaldibuild/ivaldi/pkg/slug"
 )
@@ -20,9 +22,10 @@ const environmentPrefix = "env"
 
 // SecretStore is a secret manager a runtime agent can read: Kubernetes
 // Secrets in a Target's namespace, AWS Secrets Manager, Vault, or Doppler.
-// It holds only what an agent needs to find the store, never a credential:
-// the agent authenticates with its own identity, or reads a token the
-// customer put in its namespace (ADR 0004).
+// Its settings say where the store is and its access how it is opened. It
+// never holds a credential: in agent mode the agent authenticates with its
+// own identity, or with a credential its operator configured under the name
+// the access gives (ADR 0004, ADR 0017).
 type SecretStore struct {
 	aggregate.Root
 	organizationID string
@@ -31,45 +34,16 @@ type SecretStore struct {
 	displayName    string
 	kind           secretstore.Kind
 	settings       Settings
+	access         Access
 	environmentIDs []string
 	createdAt      time.Time
 	updatedAt      time.Time
 	archivedAt     *time.Time
 }
 
-// Settings are a Secret Store's non-secret settings. Only the block for the
-// store's kind is set; a kubernetes store has none.
-type Settings struct {
-	AWS     *AWSSettings     `json:"aws,omitempty"`
-	Vault   *VaultSettings   `json:"vault,omitempty"`
-	Doppler *DopplerSettings `json:"doppler,omitempty"`
-}
-
-// AWSSettings locate secrets in AWS Secrets Manager.
-type AWSSettings struct {
-	Region string `json:"region"`
-	// RoleARN is assumed on top of the agent's Pod identity.
-	RoleARN string `json:"role_arn,omitempty"`
-}
-
-// VaultSettings locate secrets in a Vault KV v2 mount.
-type VaultSettings struct {
-	Address string `json:"address"`
-	Mount   string `json:"mount"`
-	// AuthRole is the Kubernetes auth role the agent logs in with.
-	AuthRole string `json:"auth_role"`
-	// AuthMount defaults to "kubernetes".
-	AuthMount string `json:"auth_mount,omitempty"`
-	// Namespace is a Vault Enterprise namespace.
-	Namespace string `json:"namespace,omitempty"`
-}
-
-// DopplerSettings name the Kubernetes Secret, in the agent's namespace, that
-// holds the Doppler service token. A token serves one Doppler config.
-type DopplerSettings struct {
-	TokenSecretName string `json:"token_secret_name"`
-	TokenSecretKey  string `json:"token_secret_key"`
-}
+// credentialName is what a credential's name may be: a DNS subdomain, so a
+// Kubernetes Secret's name can serve as one.
+var credentialName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`)
 
 // SecretStoreSnapshot is a Secret Store's state, for repositories, audit
 // records, and events. Its JSON form is part of the events' contract.
@@ -81,6 +55,7 @@ type SecretStoreSnapshot struct {
 	DisplayName    string           `json:"display_name"`
 	Kind           secretstore.Kind `json:"kind" enum:"kubernetes,aws_secrets_manager,vault,doppler"`
 	Settings       Settings         `json:"settings"`
+	Access         Access           `json:"access"`
 	// EnvironmentIDs are the Environments whose Deployments may read the
 	// store; empty means every Environment in the Workspace.
 	EnvironmentIDs []string   `json:"environment_ids"`
@@ -95,10 +70,12 @@ type NewSecretStoreProps struct {
 	OrganizationID string
 	WorkspaceID    string
 	// Slug is derived from DisplayName when empty.
-	Slug           string
-	DisplayName    string
-	Kind           secretstore.Kind
-	Settings       Settings
+	Slug        string
+	DisplayName string
+	Kind        secretstore.Kind
+	Settings    Settings
+	// Access defaults to agent mode when its mode is empty.
+	Access         Access
 	EnvironmentIDs []string
 	CreatedAt      *time.Time
 	UpdatedAt      *time.Time
@@ -111,6 +88,7 @@ type UpdateSecretStoreProps struct {
 	Slug        *string
 	DisplayName *string
 	Settings    *Settings
+	Access      *Access
 	// EnvironmentIDs replaces the list when set; an empty list allows
 	// every Environment in the Workspace.
 	EnvironmentIDs *[]string
@@ -142,6 +120,10 @@ func NewSecretStore(props NewSecretStoreProps, storeID *string) (*SecretStore, e
 	if err != nil {
 		return nil, err
 	}
+	access, err := props.Access.normalize(props.Kind)
+	if err != nil {
+		return nil, err
+	}
 	environments, err := normalizeEnvironments(props.Kind, props.EnvironmentIDs)
 	if err != nil {
 		return nil, err
@@ -156,9 +138,10 @@ func NewSecretStore(props NewSecretStoreProps, storeID *string) (*SecretStore, e
 		displayName:    props.DisplayName,
 		kind:           props.Kind,
 		settings:       settings,
+		access:         access,
 		environmentIDs: environments,
-		createdAt:      timeOr(props.CreatedAt, now),
-		updatedAt:      timeOr(props.UpdatedAt, now),
+		createdAt:      optional.Or(props.CreatedAt, now),
+		updatedAt:      optional.Or(props.UpdatedAt, now),
 		archivedAt:     clock.CopyTime(props.ArchivedAt),
 	}
 	if store.IsNew() {
@@ -179,13 +162,6 @@ func validateSlug(s string) error {
 		return NewErrInvalidInput(err.Error())
 	}
 	return nil
-}
-
-func timeOr(t *time.Time, fallback time.Time) time.Time {
-	if t == nil {
-		return fallback
-	}
-	return *t
 }
 
 // normalize checks that the settings are the ones the kind needs, and
@@ -219,19 +195,18 @@ func (s Settings) normalize(kind secretstore.Kind) (Settings, error) {
 			return Settings{}, NewErrInvalidInput("an aws_secrets_manager store needs its region")
 		}
 		aws := *s.AWS
-		if err := firstError(required("the AWS region", aws.Region), short("the role ARN", aws.RoleARN)); err != nil {
+		if err := required("the AWS region", aws.Region); err != nil {
 			return Settings{}, err
 		}
 		return Settings{AWS: &aws}, nil
 	case secretstore.KindVault:
 		if s.Vault == nil {
-			return Settings{}, NewErrInvalidInput("a vault store needs its address, mount, and auth role")
+			return Settings{}, NewErrInvalidInput("a vault store needs its address and mount")
 		}
 		vault := *s.Vault
 		err := firstError(
 			required("the Vault address", vault.Address), required("the KV v2 mount", vault.Mount),
-			required("the Kubernetes auth role", vault.AuthRole),
-			short("the auth mount", vault.AuthMount), short("the Vault namespace", vault.Namespace),
+			short("the Vault namespace", vault.Namespace),
 		)
 		if err != nil {
 			return Settings{}, err
@@ -241,14 +216,13 @@ func (s Settings) normalize(kind secretstore.Kind) (Settings, error) {
 		}
 		return Settings{Vault: &vault}, nil
 	case secretstore.KindDoppler:
+		// A service token implies its config, so the block is optional;
+		// given, it names both.
 		if s.Doppler == nil {
-			return Settings{}, NewErrInvalidInput("a doppler store needs the Secret that holds its token")
+			return Settings{}, nil
 		}
 		doppler := *s.Doppler
-		err := firstError(
-			required("the token Secret's name", doppler.TokenSecretName),
-			required("the token Secret's key", doppler.TokenSecretKey),
-		)
+		err := firstError(required("the Doppler project", doppler.Project), required("the Doppler config", doppler.Config))
 		if err != nil {
 			return Settings{}, err
 		}
@@ -264,29 +238,6 @@ func firstError(errs ...error) error {
 		}
 	}
 	return nil
-}
-
-func (s Settings) clone() Settings {
-	return Settings{AWS: copyPtr(s.AWS), Vault: copyPtr(s.Vault), Doppler: copyPtr(s.Doppler)}
-}
-
-func copyPtr[T any](p *T) *T {
-	if p == nil {
-		return nil
-	}
-	c := *p
-	return &c
-}
-
-func (s Settings) equal(o Settings) bool {
-	return ptrEqual(s.AWS, o.AWS) && ptrEqual(s.Vault, o.Vault) && ptrEqual(s.Doppler, o.Doppler)
-}
-
-func ptrEqual[T comparable](a, b *T) bool {
-	if a == nil || b == nil {
-		return a == b
-	}
-	return *a == *b
 }
 
 // normalizeEnvironments checks the Environments a store names and returns
@@ -319,6 +270,7 @@ func (s *SecretStore) Slug() string             { return s.slug }
 func (s *SecretStore) DisplayName() string      { return s.displayName }
 func (s *SecretStore) Kind() secretstore.Kind   { return s.kind }
 func (s *SecretStore) Settings() Settings       { return s.settings.clone() }
+func (s *SecretStore) Access() Access           { return s.access }
 func (s *SecretStore) EnvironmentIDs() []string { return slices.Clone(s.environmentIDs) }
 func (s *SecretStore) CreatedAt() time.Time     { return s.createdAt }
 func (s *SecretStore) UpdatedAt() time.Time     { return s.updatedAt }
@@ -340,6 +292,7 @@ func (s *SecretStore) Snapshot() SecretStoreSnapshot {
 		DisplayName:    s.displayName,
 		Kind:           s.kind,
 		Settings:       s.settings.clone(),
+		Access:         s.access,
 		EnvironmentIDs: slices.Clone(s.environmentIDs),
 		CreatedAt:      s.createdAt,
 		UpdatedAt:      s.updatedAt,
@@ -373,6 +326,13 @@ func (s *SecretStore) Update(props UpdateSecretStoreProps) error {
 		}
 		next.settings = settings
 	}
+	if props.Access != nil {
+		access, err := props.Access.normalize(s.kind)
+		if err != nil {
+			return err
+		}
+		next.access = access
+	}
 	environments := s.environmentIDs
 	if props.EnvironmentIDs != nil {
 		environments = *props.EnvironmentIDs
@@ -384,8 +344,8 @@ func (s *SecretStore) Update(props UpdateSecretStoreProps) error {
 	next.environmentIDs = environments
 
 	changed := next.slug != s.slug || next.displayName != s.displayName ||
-		!next.settings.equal(s.settings) || !slices.Equal(next.environmentIDs, s.environmentIDs)
-	s.slug, s.displayName, s.settings, s.environmentIDs = next.slug, next.displayName, next.settings, next.environmentIDs
+		!next.settings.equal(s.settings) || next.access != s.access || !slices.Equal(next.environmentIDs, s.environmentIDs)
+	s.slug, s.displayName, s.settings, s.access, s.environmentIDs = next.slug, next.displayName, next.settings, next.access, next.environmentIDs
 	s.updatedAt = clock.Now()
 	if changed {
 		s.RecordEvent(SecretStoreUpdated{s.Snapshot()})

@@ -17,20 +17,21 @@ import (
 // vaultConcurrency bounds the reads one GetMany runs at once.
 const vaultConcurrency = 8
 
-// VaultConfig addresses a Vault KV v2 mount read with Kubernetes auth.
+// VaultConfig addresses a Vault KV v2 mount read after a JWT login, through
+// Vault's Kubernetes or JWT auth method, which take the same login.
 type VaultConfig struct {
 	Address string
 	// Mount is the KV v2 mount.
 	Mount string
-	// AuthRole is the Kubernetes auth role to log in as.
+	// AuthRole is the auth role to log in as.
 	AuthRole string
-	// AuthMount is the Kubernetes auth mount; empty means "kubernetes".
+	// AuthMount is the auth method's mount; empty means "kubernetes".
 	AuthMount string
 	// Namespace is a Vault Enterprise namespace.
 	Namespace string
-	// JWT returns the service-account token to log in with. Address
-	// receives it, so both must be the operator's choice: a token made for
-	// Vault's audience, and an address they trust with it.
+	// JWT returns the token to log in with, such as a service-account
+	// token. Address receives it, so both must be the operator's choice: a
+	// token made for Vault's audience, and an address they trust with it.
 	JWT    func() (string, error)
 	Client *http.Client
 }
@@ -138,7 +139,7 @@ func (v *vaultStore) Get(ctx context.Context, ref Ref) (Value, error) {
 	return Value{Value: s, Version: version, Source: ref}, nil
 }
 
-// login logs in with Kubernetes auth once and caches the token.
+// login logs in once and caches the token.
 func (v *vaultStore) login(ctx context.Context) (string, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -161,7 +162,7 @@ func (v *vaultStore) login(ctx context.Context) (string, error) {
 		return "", err
 	}
 	if status != http.StatusOK || body.Auth.ClientToken == "" {
-		return "", fmt.Errorf("%w: kubernetes auth as role %s failed (%d)", ErrDenied, v.cfg.AuthRole, status)
+		return "", fmt.Errorf("%w: login at %s as role %s failed (%d)", ErrDenied, v.cfg.AuthMount, v.cfg.AuthRole, status)
 	}
 	v.token = body.Auth.ClientToken
 	return v.token, nil

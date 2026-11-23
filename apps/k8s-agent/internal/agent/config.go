@@ -6,16 +6,22 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/spf13/pflag"
 
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/auth"
+	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/secrets"
 )
 
 // envPrefix prefixes the environment variable that sets each flag:
 // --server-url is IVALDI_SERVER_URL.
 const envPrefix = "IVALDI_"
+
+// credentialName is what a credential's name may be, as the control plane
+// allows it: a DNS subdomain.
+var credentialName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`)
 
 // serviceAccountNamespaceFile names the Pod's namespace when the Kubernetes
 // API credentials are mounted.
@@ -62,6 +68,11 @@ type Config struct {
 	// VaultTokenFile is the service-account token, projected for Vault's
 	// audience, that the agent logs in to Vault with.
 	VaultTokenFile string
+	// SecretCredentials map a credential's name, which a Secret Store's
+	// access gives, to "secret/key" in the agent's namespace.
+	SecretCredentials map[string]string
+	// Credentials are SecretCredentials, parsed by complete.
+	Credentials map[string]secrets.Credential
 }
 
 func (c *Config) bind(flags *pflag.FlagSet) {
@@ -95,6 +106,8 @@ func (c *Config) bind(flags *pflag.FlagSet) {
 		"Vault servers, such as https://vault.example.com, the agent may log in to for a vault Secret Store; none means it reads no vault store")
 	flags.StringVar(&c.VaultTokenFile, "vault-token-file", "/var/run/secrets/ivaldi-vault/token",
 		"Service-account token projected for Vault's audience, which the agent logs in to Vault with")
+	flags.StringToStringVar(&c.SecretCredentials, "secret-credentials", nil,
+		"Credentials for secret stores, as name=secret/key: the name a Secret Store's access gives, and the Secret and key in the agent's namespace that hold it")
 	flags.IntVar(&c.MaxConcurrentApplies, "max-concurrent-applies", 4, "How many Deployments the agent applies at once")
 }
 
@@ -141,6 +154,15 @@ func (c *Config) complete(readFile func(string) ([]byte, error), hostname func()
 		if !validHostPort(host) {
 			errs = append(errs, fmt.Errorf("--plain-http-registries %q must be a registry host such as registry:5000", host))
 		}
+	}
+	c.Credentials = map[string]secrets.Credential{}
+	for name, where := range c.SecretCredentials {
+		secret, key, ok := strings.Cut(where, "/")
+		if !credentialName.MatchString(name) || !ok || secret == "" || key == "" || strings.Contains(key, "/") {
+			errs = append(errs, fmt.Errorf("--secret-credentials %s=%s must name a credential and its Secret and key, as name=secret/key", name, where))
+			continue
+		}
+		c.Credentials[name] = secrets.Credential{Secret: secret, Key: key}
 	}
 	if c.MaxConcurrentApplies < 1 {
 		errs = append(errs, errors.New("--max-concurrent-applies must be at least 1"))

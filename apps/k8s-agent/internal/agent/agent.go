@@ -106,7 +106,8 @@ func start(ctx context.Context, cfg Config, version string) error {
 	}
 	secretsCfg := secrets.Config{
 		Kube: kube, AgentNamespace: cfg.Namespace, FingerprintSecret: cfg.FingerprintSecret,
-		VaultAddresses: cfg.VaultAddresses, VaultTokenFile: cfg.VaultTokenFile, Masker: masker, Logger: log,
+		VaultAddresses: cfg.VaultAddresses, VaultTokenFile: cfg.VaultTokenFile, Credentials: cfg.Credentials,
+		Masker: masker, Logger: log,
 	}
 	a := &agent{
 		cfg:          cfg,
@@ -120,6 +121,7 @@ func start(ctx context.Context, cfg Config, version string) error {
 		reporter:     report.New(cp, log),
 		secrets:      secrets.NewResolver(secretsCfg),
 		storeKinds:   secretsCfg.StoreKinds(),
+		credentials:  secretsCfg.CredentialNames(),
 		secretWriter: secrets.NewWriter(kube),
 		masker:       masker,
 		ready:        newReadiness(conditionEnrolled, conditionLease, conditionTargets),

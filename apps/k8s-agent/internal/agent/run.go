@@ -49,7 +49,10 @@ type agent struct {
 	secrets secrets.Resolver
 	// storeKinds are the secret store kinds this agent's configuration
 	// lets it read, which the heartbeat reports.
-	storeKinds   []string
+	storeKinds []string
+	// credentials name the credentials its operator configured, which the
+	// heartbeat reports.
+	credentials  []string
 	secretWriter secrets.Writer
 	masker       *secrets.Masker
 	ready        *readiness

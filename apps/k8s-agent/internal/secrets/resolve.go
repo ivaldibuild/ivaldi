@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -64,12 +65,24 @@ type Resolver interface {
 	Release(resolved []Resolved)
 }
 
+// Credential is where a named credential is kept: a key of a Secret in the
+// agent's namespace.
+type Credential struct {
+	Secret string
+	Key    string
+}
+
 // Config configures the Resolver.
 type Config struct {
 	Kube kubernetes.Interface
-	// AgentNamespace holds the fingerprint key and Doppler token Secrets.
+	// AgentNamespace holds the fingerprint key and credential Secrets.
 	AgentNamespace    string
 	FingerprintSecret string
+	// Credentials are the credentials the agent's operator configured, by
+	// the name a Secret Store's access gives. A store names a credential,
+	// never where it is kept, so the agent reads only Secrets its operator
+	// mapped.
+	Credentials map[string]Credential
 	// VaultAddresses are the Vault servers the agent's operator lets it log
 	// in to. A store's address comes from the control plane, where whoever
 	// manages a Workspace's stores sets it, and a login sends a
@@ -96,6 +109,12 @@ func (c Config) StoreKinds() []string {
 	return slices.DeleteFunc(slices.Clone(Kinds), func(kind string) bool {
 		return kind == string(secretstore.KindVault) && len(c.VaultAddresses) == 0
 	})
+}
+
+// CredentialNames lists the configured credentials' names, for the
+// heartbeat: never where they are kept or what they hold.
+func (c Config) CredentialNames() []string {
+	return slices.Sorted(maps.Keys(c.Credentials))
 }
 
 // NewResolver returns a Resolver. The fingerprint keys are read for each
@@ -246,6 +265,9 @@ func ref(r apiclient.SecretRef) secretstore.Ref {
 // newStore builds the store a Deployment's secret names. Stores are built per
 // Deployment and never cached across them.
 func (r *resolver) newStore(ctx context.Context, s apiclient.StoreSettings, namespace string) (secretstore.Store, error) {
+	if s.Access.Mode != apiclient.StoreAccessModeAgent {
+		return nil, deploy.Failf("secret store %s is opened in %q mode, which this agent cannot use", s.Id, s.Access.Mode)
+	}
 	switch s.Kind {
 	case apiclient.StoreSettingsKindKubernetes:
 		return secretstore.NewKubernetes(r.kubernetesGetter(namespace)), nil
@@ -253,11 +275,7 @@ func (r *resolver) newStore(ctx context.Context, s apiclient.StoreSettings, name
 		if s.Aws == nil {
 			return nil, deploy.Failf("secret store %s has no AWS settings", s.Id)
 		}
-		roleARN := ""
-		if s.Aws.RoleArn != nil {
-			roleARN = *s.Aws.RoleArn
-		}
-		api, err := secretstore.NewAWSClient(ctx, s.Aws.Region, roleARN)
+		api, err := secretstore.NewAWSClient(ctx, s.Aws.Region, deref(s.Access.RoleArn))
 		if err != nil {
 			return nil, &deploy.Failure{Reason: fmt.Sprintf("secret store %s", s.Id), Err: err}
 		}
@@ -270,38 +288,51 @@ func (r *resolver) newStore(ctx context.Context, s apiclient.StoreSettings, name
 			return nil, deploy.Failf("secret store %s is a Vault at %s, which this agent is not set up to log in to; its operator lists the addresses it may use in the chart's secrets.vault.addresses",
 				s.Id, s.Vault.Address)
 		}
-		cfg := secretstore.VaultConfig{
-			Address: s.Vault.Address, Mount: s.Vault.Mount, AuthRole: s.Vault.AuthRole,
+		return secretstore.NewVault(secretstore.VaultConfig{
+			Address: s.Vault.Address, Mount: s.Vault.Mount, Namespace: deref(s.Vault.Namespace),
+			AuthRole: deref(s.Access.Role), AuthMount: deref(s.Access.AuthMount),
 			JWT: func() (string, error) {
 				raw, err := os.ReadFile(r.cfg.VaultTokenFile)
 				return strings.TrimSpace(string(raw)), err
 			},
-		}
-		if s.Vault.AuthMount != nil {
-			cfg.AuthMount = *s.Vault.AuthMount
-		}
-		if s.Vault.Namespace != nil {
-			cfg.Namespace = *s.Vault.Namespace
-		}
-		return secretstore.NewVault(cfg), nil
+		}), nil
 	case apiclient.StoreSettingsKindDoppler:
 		if s.Doppler == nil {
 			return nil, deploy.Failf("secret store %s has no Doppler settings", s.Id)
 		}
-		name, key := s.Doppler.TokenSecretName, s.Doppler.TokenSecretKey
-		return secretstore.NewDoppler(secretstore.DopplerConfig{Token: func(ctx context.Context) (string, error) {
-			data, _, err := r.kubernetesGetter(r.cfg.AgentNamespace)(ctx, name)
-			if err != nil {
-				return "", fmt.Errorf("the Doppler token Secret %s: %w", name, err)
-			}
-			token := strings.TrimSpace(string(data[key]))
-			if token == "" {
-				return "", fmt.Errorf("the Doppler token Secret %s has no key %s", name, key)
-			}
-			return token, nil
-		}}), nil
+		name := deref(s.Access.Credential)
+		credential, ok := r.cfg.Credentials[name]
+		if !ok {
+			return nil, deploy.Failf("secret store %s needs the credential %q, which this agent's operator has not configured; credentials are mapped to Secrets in the chart's secrets.credentials",
+				s.Id, name)
+		}
+		return secretstore.NewDoppler(secretstore.DopplerConfig{
+			Project: deref(s.Doppler.Project), Config: deref(s.Doppler.Config),
+			Token: func(ctx context.Context) (string, error) { return r.credential(ctx, name, credential) },
+		}), nil
 	}
 	return nil, deploy.Failf("this agent cannot read %q secret stores", s.Kind)
+}
+
+// credential reads a named credential from its Secret in the agent's
+// namespace, each time it is needed, so a rotated one is used at once.
+func (r *resolver) credential(ctx context.Context, name string, c Credential) (string, error) {
+	data, _, err := r.kubernetesGetter(r.cfg.AgentNamespace)(ctx, c.Secret)
+	if err != nil {
+		return "", fmt.Errorf("credential %s, in Secret %s: %w", name, c.Secret, err)
+	}
+	value := strings.TrimSpace(string(data[c.Key]))
+	if value == "" {
+		return "", fmt.Errorf("credential %s: Secret %s has no key %s", name, c.Secret, c.Key)
+	}
+	return value, nil
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // kubernetesGetter reads Secrets in namespace with the agent's own RBAC.

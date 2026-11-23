@@ -46,62 +46,6 @@ func register[I, O any](h huma.API, id, method, path, summary string, status int
 	}, handler)
 }
 
-// SettingsBody is a store's non-secret settings: only the block for its kind.
-type SettingsBody struct {
-	AWS     *credentials.AWSSettings     `json:"aws,omitempty" required:"false" doc:"For aws_secrets_manager: the region, and a role to assume on top of the agent's identity"`
-	Vault   *credentials.VaultSettings   `json:"vault,omitempty" required:"false" doc:"For vault: the address, KV v2 mount, and Kubernetes auth role"`
-	Doppler *credentials.DopplerSettings `json:"doppler,omitempty" required:"false" doc:"For doppler: the Secret in the agent's namespace that holds the service token"`
-}
-
-func (b *SettingsBody) settings() credentials.Settings {
-	if b == nil {
-		return credentials.Settings{}
-	}
-	return credentials.Settings{AWS: b.AWS, Vault: b.Vault, Doppler: b.Doppler}
-}
-
-type CreateSecretStoreRequest struct {
-	WorkspaceID string `path:"workspace_id" doc:"The Workspace the Secret Store belongs to"`
-	Body        struct {
-		DisplayName    string        `json:"display_name" required:"true" minLength:"1" doc:"The display name for the store"`
-		Slug           *string       `json:"slug,omitempty" required:"false" doc:"Url slug for the store; derived from the display name when omitted"`
-		Kind           string        `json:"kind" required:"true" enum:"kubernetes,aws_secrets_manager,vault,doppler" doc:"The secret manager"`
-		Settings       *SettingsBody `json:"settings,omitempty" required:"false" doc:"The kind's settings; none for kubernetes"`
-		EnvironmentIDs []string      `json:"environment_ids,omitempty" required:"false" doc:"The Environments whose Deployments may read the store; every Environment in the Workspace when omitted. Required for doppler"`
-	}
-}
-
-type ListSecretStoresRequest struct {
-	WorkspaceID     string `path:"workspace_id" doc:"The Workspace to list Secret Stores in"`
-	IncludeArchived bool   `query:"include_archived" doc:"Include archived Secret Stores"`
-}
-
-type SecretStoreRequest struct {
-	SecretStoreID string `path:"secret_store_id" doc:"The Secret Store's ID"`
-}
-
-type UpdateSecretStoreRequest struct {
-	SecretStoreID string `path:"secret_store_id" doc:"The Secret Store's ID"`
-	Body          struct {
-		DisplayName    *string       `json:"display_name,omitempty" required:"false" minLength:"1" doc:"New display name"`
-		Slug           *string       `json:"slug,omitempty" required:"false" doc:"New slug"`
-		Settings       *SettingsBody `json:"settings,omitempty" required:"false" doc:"New settings for the store's kind"`
-		EnvironmentIDs *[]string     `json:"environment_ids,omitempty" required:"false" doc:"The Environments that may read the store, replacing the list; empty allows every Environment"`
-	}
-}
-
-type SecretStoreResponse struct {
-	Body api.Response[credentials.SecretStoreSnapshot]
-}
-
-type SecretStoreListResponse struct {
-	Body api.Response[[]credentials.SecretStoreSnapshot]
-}
-
-func storeResponse(s *credentials.SecretStore) *SecretStoreResponse {
-	return &SecretStoreResponse{Body: api.SuccessResponse(nil, s.Snapshot())}
-}
-
 // caller returns the authenticated caller. The API refuses a secured
 // operation without a valid token, so a missing caller is a wiring bug.
 func caller(ctx context.Context) (identity.Caller, error) {
@@ -119,7 +63,8 @@ func (c *SecretStoreController) CreateSecretStore(ctx context.Context, req *Crea
 	}
 	in := credentials.CreateSecretStoreInput{
 		OrganizationID: who.OrganizationID, WorkspaceID: req.WorkspaceID, DisplayName: req.Body.DisplayName,
-		Kind: secretstore.Kind(req.Body.Kind), Settings: req.Body.Settings.settings(), EnvironmentIDs: req.Body.EnvironmentIDs,
+		Kind: secretstore.Kind(req.Body.Kind), Settings: req.Body.Settings.settings(), Access: req.Body.Access.access(),
+		EnvironmentIDs: req.Body.EnvironmentIDs,
 	}
 	if req.Body.Slug != nil {
 		in.Slug = *req.Body.Slug
@@ -156,6 +101,9 @@ func (c *SecretStoreController) UpdateSecretStore(ctx context.Context, req *Upda
 		props := credentials.UpdateSecretStoreProps{Slug: req.Body.Slug, DisplayName: req.Body.DisplayName, EnvironmentIDs: req.Body.EnvironmentIDs}
 		if req.Body.Settings != nil {
 			props.Settings = new(req.Body.Settings.settings())
+		}
+		if req.Body.Access != nil {
+			props.Access = new(req.Body.Access.access())
 		}
 		return c.service.UpdateSecretStore(ctx, actor, organizationID, storeID, props)
 	})

@@ -6,16 +6,21 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
 // DefaultDopplerAPI is Doppler's API.
 const DefaultDopplerAPI = "https://api.doppler.com"
 
-// DopplerConfig reads one Doppler config with a service token scoped to it.
+// DopplerConfig reads one Doppler config.
 type DopplerConfig struct {
-	// Token returns the service token, read from the customer's
-	// Kubernetes Secret; Ivaldi never holds it.
+	// Project and Config name the config. Both are empty for a service
+	// token, which implies its config; another token needs them.
+	Project string
+	Config  string
+	// Token returns a token that can read the config. The reader supplies
+	// it, from wherever its operator keeps it.
 	Token func(ctx context.Context) (string, error)
 	// API is Doppler's API address; empty means DefaultDopplerAPI.
 	API    string
@@ -87,7 +92,12 @@ func (d *dopplerStore) download(ctx context.Context) (map[string]string, error) 
 		}
 		return nil, fmt.Errorf("%w: read the Doppler token: %v", ErrDenied, err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, d.cfg.API+"/v3/configs/config/secrets/download?format=json", nil)
+	query := url.Values{"format": {"json"}}
+	if d.cfg.Project != "" {
+		query.Set("project", d.cfg.Project)
+		query.Set("config", d.cfg.Config)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, d.cfg.API+"/v3/configs/config/secrets/download?"+query.Encode(), nil)
 	if err != nil {
 		return nil, err
 	}

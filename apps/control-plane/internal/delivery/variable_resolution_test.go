@@ -111,11 +111,17 @@ func TestCheckBindings(t *testing.T) {
 }
 
 func TestSecretsForADeployment(t *testing.T) {
-	const kubernetes, vault = "sst_01BX5ZZKBKACTAV9WEVGEMMVRZ", "sst_01BX5ZZKBKACTAV9WEVGEMMVR0"
+	const kubernetes, vault, doppler = "sst_01BX5ZZKBKACTAV9WEVGEMMVRZ", "sst_01BX5ZZKBKACTAV9WEVGEMMVR0", "sst_01BX5ZZKBKACTAV9WEVGEMMVR1"
+	agentMode := StoreAccess{Mode: StoreAccessAgent}
 	stores := map[string]SecretStoreRef{
-		kubernetes: {ID: kubernetes, DisplayName: "In-cluster", Settings: StoreSettings{ID: kubernetes, Kind: StoreKubernetes, Kubernetes: &KubernetesStore{}}},
+		kubernetes: {ID: kubernetes, DisplayName: "In-cluster",
+			Settings: StoreSettings{ID: kubernetes, Kind: StoreKubernetes, Access: agentMode, Kubernetes: &KubernetesStore{}}},
 		vault: {ID: vault, DisplayName: "Vault", EnvironmentIDs: []string{"staging"},
-			Settings: StoreSettings{ID: vault, Kind: StoreVault, Vault: &VaultStore{Address: "https://vault.example.com", Mount: "kv", AuthRole: "ivaldi"}}},
+			Settings: StoreSettings{ID: vault, Kind: StoreVault, Access: StoreAccess{Mode: StoreAccessAgent, Role: "ivaldi"},
+				Vault: &VaultStore{Address: "https://vault.example.com", Mount: "kv"}}},
+		doppler: {ID: doppler, DisplayName: "Doppler",
+			Settings: StoreSettings{ID: doppler, Kind: StoreDoppler, Access: StoreAccess{Mode: StoreAccessAgent, Credential: "doppler-prd"},
+				Doppler: &DopplerStore{}}},
 	}
 	secret := func(name, store, path string, deliverAs VariableDeliverAs, valuesPath *string) SnapshotVariable {
 		return SnapshotVariable{
@@ -132,7 +138,7 @@ func TestSecretsForADeployment(t *testing.T) {
 	t.Run("the agent is sent the reference and how to reach its store", func(t *testing.T) {
 		resolved := resolve(password, region, secret("Api.Key", kubernetes, "api", VariableDeliverAsValue, new("api.key")))
 		require.NoError(t, CheckBindings(resolved))
-		require.NoError(t, CheckSecretStores(resolved, stores, "prod", []string{"kubernetes"}))
+		require.NoError(t, CheckSecretStores(resolved, stores, "prod", AgentSecrets{Kinds: []string{"kubernetes"}}))
 		assert.Equal(t, []string{kubernetes}, SecretStoreIDs(resolved))
 		assert.Equal(t, []AssignmentSecret{
 			{Name: "Api.Key", Source: VariableSourceApplication, ValuesPath: "api.key", DeliverAs: VariableDeliverAsValue,
@@ -144,6 +150,11 @@ func TestSecretsForADeployment(t *testing.T) {
 			AssignmentVariables(resolved), "a secret is never sent as a variable")
 	})
 
+	t.Run("a store read with a named credential needs the agent to have it", func(t *testing.T) {
+		resolved := resolve(secret("Api.Key", doppler, "API_KEY", VariableDeliverAsSecret, nil))
+		require.NoError(t, CheckSecretStores(resolved, stores, "prod", AgentSecrets{Kinds: []string{"doppler"}, Credentials: []string{"doppler-prd"}}))
+	})
+
 	t.Run("a path may bind only what has a value", func(t *testing.T) {
 		err := CheckBindings(resolve(password))
 		require.ErrorIs(t, err, ErrInvalid)
@@ -151,20 +162,22 @@ func TestSecretsForADeployment(t *testing.T) {
 	})
 
 	refusals := []struct {
-		name   string
-		stores map[string]SecretStoreRef
-		store  string
-		kinds  []string
-		reason string
+		name        string
+		stores      map[string]SecretStoreRef
+		store       string
+		kinds       []string
+		credentials []string
+		reason      string
 	}{
-		{"a store not allowed for the environment", stores, vault, []string{"vault"}, "not allowed for this environment"},
-		{"a kind the agent cannot read", stores, kubernetes, []string{"vault"}, "cannot read kubernetes secret stores"},
-		{"an archived store", map[string]SecretStoreRef{kubernetes: {DisplayName: "In-cluster", Archived: true}}, kubernetes, []string{"kubernetes"}, "is archived"},
-		{"a store that is gone", map[string]SecretStoreRef{}, kubernetes, []string{"kubernetes"}, "no longer exists"},
+		{"a store not allowed for the environment", stores, vault, []string{"vault"}, nil, "not allowed for this environment"},
+		{"a kind the agent cannot read", stores, kubernetes, []string{"vault"}, nil, "cannot read kubernetes secret stores"},
+		{"a credential the agent was not given", stores, doppler, []string{"doppler"}, []string{"doppler-dev"}, "has no credential named doppler-prd"},
+		{"an archived store", map[string]SecretStoreRef{kubernetes: {DisplayName: "In-cluster", Archived: true}}, kubernetes, []string{"kubernetes"}, nil, "is archived"},
+		{"a store that is gone", map[string]SecretStoreRef{}, kubernetes, []string{"kubernetes"}, nil, "no longer exists"},
 	}
 	for _, tt := range refusals {
 		t.Run(tt.name, func(t *testing.T) {
-			err := CheckSecretStores(resolve(secret("Api.Key", tt.store, "api", VariableDeliverAsSecret, nil)), tt.stores, "prod", tt.kinds)
+			err := CheckSecretStores(resolve(secret("Api.Key", tt.store, "api", VariableDeliverAsSecret, nil)), tt.stores, "prod", AgentSecrets{Kinds: tt.kinds, Credentials: tt.credentials})
 			require.ErrorIs(t, err, ErrInvalid)
 			assert.Contains(t, err.Error(), tt.reason)
 		})

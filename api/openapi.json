@@ -57,9 +57,6 @@
         "properties": {
           "region": {
             "type": "string"
-          },
-          "role_arn": {
-            "type": "string"
           }
         },
         "required": [
@@ -72,13 +69,69 @@
         "properties": {
           "region": {
             "type": "string"
+          }
+        },
+        "required": [
+          "region"
+        ],
+        "type": "object"
+      },
+      "Access": {
+        "additionalProperties": false,
+        "properties": {
+          "auth_mount": {
+            "type": "string"
+          },
+          "credential": {
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "agent"
+            ],
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
           },
           "role_arn": {
             "type": "string"
           }
         },
         "required": [
-          "region"
+          "mode"
+        ],
+        "type": "object"
+      },
+      "AccessBody": {
+        "additionalProperties": false,
+        "properties": {
+          "auth_mount": {
+            "description": "For vault: the auth method's mount; kubernetes when omitted",
+            "type": "string"
+          },
+          "credential": {
+            "description": "For doppler: the name of the credential, configured on the agent, that holds the Doppler token",
+            "type": "string"
+          },
+          "mode": {
+            "description": "How the store is opened: agent, with the agent's own identity or a credential its operator configured",
+            "enum": [
+              "agent"
+            ],
+            "type": "string"
+          },
+          "role": {
+            "description": "For vault: the auth role the agent logs in as",
+            "type": "string"
+          },
+          "role_arn": {
+            "description": "For aws_secrets_manager: a role to assume on top of the agent's own AWS identity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
         ],
         "type": "object"
       },
@@ -2254,6 +2307,10 @@
             "readOnly": true,
             "type": "string"
           },
+          "access": {
+            "$ref": "#/components/schemas/AccessBody",
+            "description": "How the store is opened; agent mode with no settings when omitted"
+          },
           "display_name": {
             "description": "The display name for the store",
             "minLength": 1,
@@ -2278,7 +2335,7 @@
           },
           "settings": {
             "$ref": "#/components/schemas/SettingsBody",
-            "description": "The kind's settings; none for kubernetes"
+            "description": "Where the store is; none for kubernetes"
           },
           "slug": {
             "description": "Url slug for the store; derived from the display name when omitted",
@@ -2811,33 +2868,29 @@
       "DopplerSettings": {
         "additionalProperties": false,
         "properties": {
-          "token_secret_key": {
+          "config": {
             "type": "string"
           },
-          "token_secret_name": {
+          "project": {
             "type": "string"
           }
         },
         "required": [
-          "token_secret_name",
-          "token_secret_key"
+          "project",
+          "config"
         ],
         "type": "object"
       },
       "DopplerStore": {
         "additionalProperties": false,
         "properties": {
-          "token_secret_key": {
+          "config": {
             "type": "string"
           },
-          "token_secret_name": {
+          "project": {
             "type": "string"
           }
         },
-        "required": [
-          "token_secret_name",
-          "token_secret_key"
-        ],
         "type": "object"
       },
       "EnvironmentSnapshot": {
@@ -3064,6 +3117,13 @@
             "maxLength": 255,
             "minLength": 1,
             "type": "string"
+          },
+          "secret_store_credentials": {
+            "description": "The names of the credentials the agent's operator configured for secret stores, never their values",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "secret_store_kinds": {
             "description": "The secret-store kinds the agent can read",
@@ -8523,6 +8583,9 @@
       "SecretStoreSnapshot": {
         "additionalProperties": false,
         "properties": {
+          "access": {
+            "$ref": "#/components/schemas/Access"
+          },
           "archived_at": {
             "format": "date-time",
             "nullable": true,
@@ -8578,6 +8641,7 @@
           "display_name",
           "kind",
           "settings",
+          "access",
           "environment_ids",
           "created_at",
           "updated_at",
@@ -8873,15 +8937,15 @@
         "properties": {
           "aws": {
             "$ref": "#/components/schemas/AWSSettings",
-            "description": "For aws_secrets_manager: the region, and a role to assume on top of the agent's identity"
+            "description": "For aws_secrets_manager: the region"
           },
           "doppler": {
             "$ref": "#/components/schemas/DopplerSettings",
-            "description": "For doppler: the Secret in the agent's namespace that holds the service token"
+            "description": "For doppler: the project and config; optional when the store is read with a service token, which implies them"
           },
           "vault": {
             "$ref": "#/components/schemas/VaultSettings",
-            "description": "For vault: the address, KV v2 mount, and Kubernetes auth role"
+            "description": "For vault: the address, KV v2 mount, and Enterprise namespace"
           }
         },
         "type": "object"
@@ -9101,9 +9165,39 @@
         ],
         "type": "object"
       },
+      "StoreAccess": {
+        "additionalProperties": false,
+        "properties": {
+          "auth_mount": {
+            "type": "string"
+          },
+          "credential": {
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "agent"
+            ],
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "role_arn": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "type": "object"
+      },
       "StoreSettings": {
         "additionalProperties": false,
         "properties": {
+          "access": {
+            "$ref": "#/components/schemas/StoreAccess"
+          },
           "aws": {
             "$ref": "#/components/schemas/AWSStore"
           },
@@ -9131,7 +9225,8 @@
         },
         "required": [
           "id",
-          "kind"
+          "kind",
+          "access"
         ],
         "type": "object"
       },
@@ -9724,6 +9819,10 @@
             "readOnly": true,
             "type": "string"
           },
+          "access": {
+            "$ref": "#/components/schemas/AccessBody",
+            "description": "New access, replacing the store's"
+          },
           "display_name": {
             "description": "New display name",
             "minLength": 1,
@@ -10085,12 +10184,6 @@
           "address": {
             "type": "string"
           },
-          "auth_mount": {
-            "type": "string"
-          },
-          "auth_role": {
-            "type": "string"
-          },
           "mount": {
             "type": "string"
           },
@@ -10100,8 +10193,7 @@
         },
         "required": [
           "address",
-          "mount",
-          "auth_role"
+          "mount"
         ],
         "type": "object"
       },
@@ -10111,12 +10203,6 @@
           "address": {
             "type": "string"
           },
-          "auth_mount": {
-            "type": "string"
-          },
-          "auth_role": {
-            "type": "string"
-          },
           "mount": {
             "type": "string"
           },
@@ -10126,8 +10212,7 @@
         },
         "required": [
           "address",
-          "mount",
-          "auth_role"
+          "mount"
         ],
         "type": "object"
       },

@@ -104,6 +104,14 @@
           "properties": {
             "audience": { "type": "string", "minLength": 1 }
           }
+        },
+        "infisical": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kubernetesAuth": { "type": "boolean" },
+            "audience": { "type": "string", "minLength": 1 }
+          }
         }
       }
     },

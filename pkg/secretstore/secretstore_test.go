@@ -44,6 +44,7 @@ func providers() []provider {
 		{name: "aws_secrets_manager", new: awsFixture, plain: Ref{Path: "plain"}},
 		{name: "vault", new: vaultFixture, plain: Ref{Path: "plain"}},
 		{name: "doppler", new: dopplerFixture, plain: Ref{Path: "plain"}},
+		{name: "infisical", new: infisicalFixture, plain: Ref{Path: "plain"}},
 	}
 }
 

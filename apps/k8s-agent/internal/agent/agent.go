@@ -106,7 +106,7 @@ func start(ctx context.Context, cfg Config, version string) error {
 	}
 	secretsCfg := secrets.Config{
 		Kube: kube, AgentNamespace: cfg.Namespace, FingerprintSecret: cfg.FingerprintSecret,
-		Addresses: cfg.SecretAddresses, VaultTokenFile: cfg.VaultTokenFile, Credentials: cfg.Credentials,
+		Addresses: cfg.SecretAddresses, VaultTokenFile: cfg.VaultTokenFile, InfisicalTokenFile: cfg.InfisicalTokenFile, Credentials: cfg.Credentials,
 		Grants: cp.SecretGrants, Masker: masker, Logger: log,
 	}
 	a := &agent{

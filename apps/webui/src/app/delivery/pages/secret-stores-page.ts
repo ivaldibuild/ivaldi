@@ -113,7 +113,7 @@ export class SecretStoresPage {
 
   /** Where a store's secrets are, and how the agent opens it. */
   private where(store: SecretStore): string {
-    const { aws, vault, doppler } = store.settings;
+    const { aws, vault, doppler, infisical } = store.settings;
     const access = store.access;
     if (aws) {
       return access.role_arn ? `${aws.region}, as ${access.role_arn}` : aws.region;
@@ -124,6 +124,12 @@ export class SecretStoresPage {
     if (store.kind === 'doppler') {
       const config = doppler ? `${doppler.project}/${doppler.config}, ` : '';
       return `${config}credential ${access.credential}`;
+    }
+    if (infisical) {
+      const login = access.credential
+        ? `credential ${access.credential}`
+        : `identity ${access.identity_id}`;
+      return `${infisical.site_url}, project ${infisical.project_id}, ${infisical.environment}:${infisical.secret_path}, ${login}`;
     }
     return "Secrets in each Target's namespace";
   }

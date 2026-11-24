@@ -81,6 +81,31 @@ secrets:
     doppler-production: { secretName: doppler-production, key: token }
 ```
 
+### `infisical`
+
+Settings: the `project_id`, the `environment` slug, optionally the `site_url` (Infisical Cloud's US site, `https://app.infisical.com`, by default), and optionally the `secret_path` folder (`/` by default). Access: a `method`, which in `agent` mode is one of:
+
+- `universal_auth`, with the name of the `credential` that holds a machine identity's Universal Auth client ID and secret, as a JSON object:
+
+  ```yaml
+  secrets:
+    credentials:
+      infisical-production: { secretName: infisical-production, key: universal-auth }
+  ```
+
+  ```sh
+  kubectl -n ivaldi-system create secret generic infisical-production \
+    --from-literal=universal-auth='{"client_id":"…","client_secret":"…"}'
+  ```
+
+- `kubernetes`, with the `identity_id` of a machine identity whose Kubernetes auth accepts the agent's ServiceAccount. The chart mounts a token for it with `secrets.infisical.kubernetesAuth: true`, made for the audience `secrets.infisical.audience` (default `infisical`); set the same Allowed Audience on the identity. Infisical checks the token with your cluster's TokenReview API, so it must reach the cluster's API server.
+
+The path is the secret's name, or `folder/NAME` relative to the store's folder; it cannot leave that folder. The field is one key of a JSON value, and the version is Infisical's version number. Secret references in values are expanded, and secrets the folder imports are read, as Infisical does by default.
+
+The agent logs in to Infisical Cloud (`app.infisical.com`, `us.infisical.com`, `eu.infisical.com`) without being told to. A self-hosted Infisical must be listed in `secrets.addresses`, because a login sends it a credential.
+
+A store reads one Infisical environment, so it should list the Ivaldi Environments that environment is for.
+
 ## Federated mode
 
 In `federated` mode the control plane is an OIDC issuer for your stores. Before an agent reads a Deployment's secrets, it asks the control plane for access (`POST /v1/agent/deployments/{id}/secret-grants`). The control plane checks the Deployment is applying on that agent's Cluster, and that each store is active and allowed for its Environment. It then signs one JWT per store, records the grant, and writes an audit record (`secret_store.access_granted`) on the Deployment. The agent exchanges each JWT at its store and never stores, logs, or reports it.
@@ -150,13 +175,22 @@ Settings: the `project` and `config`, which are required, because a service acco
 
 On the service account, add an identity with the issuer as its discovery URL, the store's audience, and the subject. Give the service account read access to the config only. The agent exchanges the JWT at `https://api.doppler.com/v3/auth/oidc`, which is always allowed, and reads the config with the token it gets.
 
+### Infisical
+
+Access: the `identity_id` of a machine identity, and the `method` it logs in with:
+
+- `oidc` when Infisical can reach the control plane: give the identity OIDC auth with the issuer as its discovery URL.
+- `jwt` when it cannot: give the identity JWT auth with static keys, the keys at `<external_url>/federation/jwks.json` as PEM, and update them when the keys rotate.
+
+Either way, set the issuer, the store's audience as the bound audience, and the subject as the bound subject. Bound claims can also match `application`, `target`, or `environment_tier`. Give the identity read access to the store's environment and folder only, and keep its access token TTL short: the agent uses the token only while it reads one Deployment's secrets.
+
 ## Versions and rollbacks
 
 A secret value may pin a version. Without one, each Deployment reads the latest, which is how a redeploy picks up a rotated secret.
 
 The agent reports the version it read and a keyed fingerprint of the value, and the Deployment records both; never the value. The fingerprint's key stays in the cluster, in the Secret `fingerprint.secretName` names. Back that Secret up with the cluster's others: a rollback compares against fingerprints made with it.
 
-A rollback reads the versions the Deployment it restores recorded, so keep enough history in the store. Vault's KV v2 keeps ten versions by default, and AWS Secrets Manager removes versions that have no staging label.
+A rollback reads the versions the Deployment it restores recorded, so keep enough history in the store. Vault's KV v2 keeps ten versions by default, AWS Secrets Manager removes versions that have no staging label, and Infisical keeps versions for as long as its settings say. Doppler has no per-secret versions, so a rollback checks the value against the fingerprint it recorded instead.
 
 ## How the chart receives a secret
 

@@ -201,7 +201,7 @@ The assignment's `StoreSettings` carry the location and the mode, never a creden
 
 - A reference's `path` is the secret's name, or `folder/NAME` relative to the store's `secret_path`, and its `field` is a key of a JSON value.
 - `GetMany` lists the folder once when every reference is in it, and reads by name otherwise.
-- Versions: whether the secrets API reads a past version by number is an [open question](#open-questions). If it does, Infisical pins versions like Vault; if not, it pins by fingerprint like Doppler.
+- Versions: the v4 secrets API reads a past version by number (`GET /api/v4/secrets/{name}?version=`), so Infisical pins versions like Vault.
 
 ## Package layout
 
@@ -240,13 +240,12 @@ Each step is its own pull request:
 
 1. **Settings split.** Access modes on `SecretStore`, the migration, named credentials in the agent and chart, and Doppler's `project` and `config`. Every store is `agent`, so behaviour stays the same. Built: neither the control plane nor an agent had been released, so stored stores are not converted and the assignment's new `StoreSettings` shape is served to every agent.
 2. **Grants and federated mode.** The issuer, the grant operation and records, the agent's grant step and exchanges for AWS, Vault, and Doppler, and `secrets.addresses`. Built: a federated store on an installation without federation keys fails the plan's `secret_stores_allowed` check through `SecretStoreRef.Unusable`, so delivery never learns what federation is.
-3. **Infisical.** The kind, its reader, and its `agent` and `federated` exchanges.
+3. **Infisical.** The kind, its reader, and its `agent` and `federated` exchanges. Built: an Infisical store's access names its `method`, and the access rules hold one rule per method. The agent reads with Infisical's v4 secrets API, and `secrets.infisical.kubernetesAuth` in the chart mounts the token for Kubernetes auth.
 4. **Brokered mode.** `pkg/kms`, the credential API and table, the brokers, and revocation.
 5. **The web app.** Store forms for modes and credentials, and the self-hosting guide for each kind and mode.
 
 ## Open questions
 
-- **Infisical versions.** Whether a past version can be read by number through the secrets API.
 - **Doppler's shortest token lifetime.** Whether a config service token can expire in 15 minutes, or only later.
 - **A policy rule for production grants.** Whether a grant for a production Environment needs a rule beyond the Deployment's approval ([ADR 0017](../adr/0017-control-plane-grants-secret-store-access.md#open-questions)).
 - **Session credentials.** Whether ADR 0004's broker for Sessions reuses grants, with a Session in place of a Deployment.

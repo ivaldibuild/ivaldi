@@ -106,18 +106,20 @@ const (
 	StoreAWSSecretsManager StoreKind = "aws_secrets_manager"
 	StoreVault             StoreKind = "vault"
 	StoreDoppler           StoreKind = "doppler"
+	StoreInfisical         StoreKind = "infisical"
 )
 
 // StoreSettings is where a secret store is, and how the agent opens it, for
 // one Deployment. It never carries a credential.
 type StoreSettings struct {
 	ID         string           `json:"id"`
-	Kind       StoreKind        `json:"kind" enum:"kubernetes,aws_secrets_manager,vault,doppler"`
+	Kind       StoreKind        `json:"kind" enum:"kubernetes,aws_secrets_manager,vault,doppler,infisical"`
 	Access     StoreAccess      `json:"access"`
 	Kubernetes *KubernetesStore `json:"kubernetes,omitempty"`
 	AWS        *AWSStore        `json:"aws,omitempty"`
 	Vault      *VaultStore      `json:"vault,omitempty"`
 	Doppler    *DopplerStore    `json:"doppler,omitempty"`
+	Infisical  *InfisicalStore  `json:"infisical,omitempty"`
 }
 
 // StoreAccessMode is how the agent opens a store.
@@ -132,9 +134,26 @@ const (
 	StoreAccessFederated StoreAccessMode = "federated"
 )
 
+// StoreAuthMethod is how the agent logs in to a store whose kind has
+// several ways to, in its mode. Only infisical has several.
+type StoreAuthMethod string
+
+const (
+	// StoreAuthKubernetes: with the agent's service-account token.
+	StoreAuthKubernetes StoreAuthMethod = "kubernetes"
+	// StoreAuthUniversal: with the client ID and secret in a named
+	// credential.
+	StoreAuthUniversal StoreAuthMethod = "universal_auth"
+	// StoreAuthOIDC and StoreAuthJWT: with the federated JWT.
+	StoreAuthOIDC StoreAuthMethod = "oidc"
+	StoreAuthJWT  StoreAuthMethod = "jwt"
+)
+
 // StoreAccess is how the agent opens a store, and that mode's settings.
 type StoreAccess struct {
 	Mode StoreAccessMode `json:"mode" enum:"agent,federated"`
+	// Method is, for infisical, how the agent logs in.
+	Method StoreAuthMethod `json:"method,omitempty" enum:"kubernetes,universal_auth,oidc,jwt"`
 	// RoleARN is, for aws_secrets_manager, assumed on top of the agent's
 	// own AWS identity, or with the federated JWT.
 	RoleARN string `json:"role_arn,omitempty"`
@@ -143,11 +162,13 @@ type StoreAccess struct {
 	// AuthMount is, for vault, the auth method's mount; empty means
 	// "kubernetes" in agent mode and "jwt" in federated mode.
 	AuthMount string `json:"auth_mount,omitempty"`
-	// Credential is, for doppler in agent mode, the name of a credential
-	// the agent's operator configured.
+	// Credential is, for doppler in agent mode and infisical with
+	// universal_auth, the name of a credential the agent's operator
+	// configured.
 	Credential string `json:"credential,omitempty"`
 	// IdentityID is, for doppler in federated mode, the service account
-	// identity the agent exchanges the JWT with.
+	// identity the agent exchanges the JWT with; for infisical, the machine
+	// identity it logs in as.
 	IdentityID string `json:"identity_id,omitempty"`
 }
 
@@ -172,9 +193,20 @@ type DopplerStore struct {
 	Config  string `json:"config,omitempty"`
 }
 
+// InfisicalStore is one environment of an Infisical project, under one
+// folder.
+type InfisicalStore struct {
+	SiteURL     string `json:"site_url"`
+	ProjectID   string `json:"project_id"`
+	Environment string `json:"environment"`
+	// SecretPath is the folder a reference's path is relative to.
+	SecretPath string `json:"secret_path"`
+}
+
 // SecretRef is where a secret is, and which version to fetch.
 type SecretRef struct {
-	// Path is a Secret name, AWS secret ID or ARN, Vault path, or Doppler name.
+	// Path is a Secret name, AWS secret ID or ARN, Vault path, Doppler name,
+	// or Infisical name or folder/NAME.
 	Path string `json:"path"`
 	// Field is the key inside a map or JSON secret.
 	Field string `json:"field,omitempty"`

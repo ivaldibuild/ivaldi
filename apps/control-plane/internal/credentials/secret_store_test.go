@@ -26,6 +26,7 @@ func TestNewSecretStore(t *testing.T) {
 	vault := Settings{Vault: &VaultSettings{Address: "https://vault.example.com", Mount: "kv"}}
 	vaultAccess := Access{Role: "ivaldi"}
 	dopplerAccess := Access{Credential: "doppler-production"}
+	infisical := Settings{Infisical: &InfisicalSettings{ProjectID: "prj_1", Environment: "prod"}}
 
 	valid := []NewSecretStoreProps{
 		storeProps(secretstore.KindKubernetes, Settings{}, Access{}),
@@ -33,11 +34,15 @@ func TestNewSecretStore(t *testing.T) {
 		storeProps(secretstore.KindVault, vault, vaultAccess),
 		storeProps(secretstore.KindDoppler, Settings{}, dopplerAccess, testEnvA),
 		storeProps(secretstore.KindDoppler, Settings{Doppler: &DopplerSettings{Project: "payments", Config: "prd"}}, dopplerAccess, testEnvA),
+		storeProps(secretstore.KindInfisical, infisical, Access{Method: AuthKubernetes, IdentityID: "idt_1"}),
+		storeProps(secretstore.KindInfisical, infisical, Access{Method: AuthUniversal, Credential: "infisical-production"}),
 	}
 	federated := []NewSecretStoreProps{
 		storeProps(secretstore.KindAWSSecretsManager, Settings{AWS: &AWSSettings{Region: "eu-west-1"}}, Access{Mode: AccessFederated, RoleARN: "arn:aws:iam::1:role/ivaldi"}),
 		storeProps(secretstore.KindVault, vault, Access{Mode: AccessFederated, Role: "ivaldi-production"}),
 		storeProps(secretstore.KindDoppler, Settings{Doppler: &DopplerSettings{Project: "payments", Config: "prd"}}, Access{Mode: AccessFederated, IdentityID: "said_1"}, testEnvA),
+		storeProps(secretstore.KindInfisical, infisical, Access{Mode: AccessFederated, Method: AuthOIDC, IdentityID: "idt_1"}),
+		storeProps(secretstore.KindInfisical, infisical, Access{Mode: AccessFederated, Method: AuthJWT, IdentityID: "idt_1"}),
 	}
 	for _, props := range federated {
 		s, err := NewSecretStore(props, nil)
@@ -73,6 +78,13 @@ func TestNewSecretStore(t *testing.T) {
 		{"federated doppler without an identity", storeProps(secretstore.KindDoppler, Settings{Doppler: &DopplerSettings{Project: "payments", Config: "prd"}}, Access{Mode: AccessFederated}, testEnvA), "needs the identity_id"},
 		{"federated doppler without a config", storeProps(secretstore.KindDoppler, Settings{}, Access{Mode: AccessFederated, IdentityID: "said_1"}, testEnvA), "needs the Doppler project and config"},
 		{"a credential in federated mode", storeProps(secretstore.KindDoppler, Settings{Doppler: &DopplerSettings{Project: "payments", Config: "prd"}}, Access{Mode: AccessFederated, IdentityID: "said_1", Credential: "doppler"}, testEnvA), "takes no credential"},
+		{"infisical without a project", storeProps(secretstore.KindInfisical, Settings{Infisical: &InfisicalSettings{Environment: "prod"}}, Access{Method: AuthKubernetes, IdentityID: "idt_1"}), "the Infisical project ID"},
+		{"an infisical folder that is not absolute", storeProps(secretstore.KindInfisical, Settings{Infisical: &InfisicalSettings{ProjectID: "prj_1", Environment: "prod", SecretPath: "app"}}, Access{Method: AuthKubernetes, IdentityID: "idt_1"}), "must start with /"},
+		{"infisical without a method", storeProps(secretstore.KindInfisical, infisical, Access{IdentityID: "idt_1"}), "logs in with method kubernetes or universal_auth"},
+		{"an infisical method of the other mode", storeProps(secretstore.KindInfisical, infisical, Access{Mode: AccessFederated, Method: AuthKubernetes, IdentityID: "idt_1"}), "logs in with method jwt or oidc"},
+		{"universal auth without a credential", storeProps(secretstore.KindInfisical, infisical, Access{Method: AuthUniversal}), "needs the name of the credential that holds its Universal Auth"},
+		{"universal auth with an identity", storeProps(secretstore.KindInfisical, infisical, Access{Method: AuthUniversal, Credential: "infisical", IdentityID: "idt_1"}), "takes no identity_id"},
+		{"a method for a kind with one way to log in", storeProps(secretstore.KindVault, vault, Access{Role: "ivaldi", Method: AuthKubernetes}), "takes no method"},
 		{"access another kind takes", storeProps(secretstore.KindKubernetes, Settings{}, Access{Credential: "doppler"}), "takes no credential"},
 		{"something that is not an environment", storeProps(secretstore.KindKubernetes, Settings{}, Access{}, "tgt_01BX5ZZKBKACTAV9WEVGEMMVRA"), "not an environment ID"},
 	}
@@ -129,4 +141,22 @@ func TestSecretStoreUpdate(t *testing.T) {
 
 	s.Archive()
 	require.ErrorIs(t, s.Update(UpdateSecretStoreProps{DisplayName: new("x")}), ErrArchived)
+}
+
+// An infisical store is on Infisical Cloud, at its project's root folder,
+// unless it says otherwise, so the agent is always sent both.
+func TestInfisicalSettingsDefaults(t *testing.T) {
+	s, err := NewSecretStore(storeProps(secretstore.KindInfisical,
+		Settings{Infisical: &InfisicalSettings{ProjectID: "prj_1", Environment: "prod"}},
+		Access{Method: AuthKubernetes, IdentityID: "idt_1"}), nil)
+	require.NoError(t, err)
+	assert.Equal(t, InfisicalSettings{SiteURL: secretstore.DefaultInfisicalSite, ProjectID: "prj_1", Environment: "prod", SecretPath: "/"},
+		*s.Settings().Infisical)
+
+	s, err = NewSecretStore(storeProps(secretstore.KindInfisical,
+		Settings{Infisical: &InfisicalSettings{SiteURL: "https://infisical.example.com/", ProjectID: "prj_1", Environment: "prod", SecretPath: "/app/"}},
+		Access{Method: AuthKubernetes, IdentityID: "idt_1"}), nil)
+	require.NoError(t, err)
+	assert.Equal(t, "https://infisical.example.com", s.Settings().Infisical.SiteURL)
+	assert.Equal(t, "/app", s.Settings().Infisical.SecretPath)
 }

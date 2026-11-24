@@ -1,6 +1,6 @@
 // Package secretstore reads secret values from the stores customers keep
-// them in: Kubernetes Secrets, AWS Secrets Manager, Vault, and Doppler. It
-// only fetches, and each store is given what it authenticates with rather
+// them in: Kubernetes Secrets, AWS Secrets Manager, Vault, Doppler, and
+// Infisical. It only fetches, and each store is given what it authenticates with rather
 // than finding it, so a runtime agent on any runtime can use it. The control
 // plane uses only the kinds, to validate store settings, and never fetches
 // (ADR 0004, ADR 0017).
@@ -8,8 +8,8 @@
 // A store is opened in one of the access modes ADR 0017 describes. In agent
 // mode the reader uses its own identity or a credential its operator
 // configured. In federated mode it exchanges a JWT the control plane signed
-// for the store's own credential, through the exchanges in federation.go;
-// the control plane never makes the exchange.
+// for the store's own credential, through the exchanges in federation.go
+// and infisical_auth.go; the control plane never makes the exchange.
 package secretstore
 
 import (
@@ -28,15 +28,17 @@ const (
 	KindAWSSecretsManager Kind = "aws_secrets_manager"
 	KindVault             Kind = "vault"
 	KindDoppler           Kind = "doppler"
+	KindInfisical         Kind = "infisical"
 )
 
 // Kinds lists every supported kind.
-var Kinds = []Kind{KindKubernetes, KindAWSSecretsManager, KindVault, KindDoppler}
+var Kinds = []Kind{KindKubernetes, KindAWSSecretsManager, KindVault, KindDoppler, KindInfisical}
 
 // Ref addresses one secret value.
 type Ref struct {
 	// Path is the Kubernetes Secret's name, the AWS secret's name or ARN,
-	// the path within the Vault mount, or the Doppler secret's name.
+	// the path within the Vault mount, the Doppler secret's name, or the
+	// Infisical secret's name, or folder/NAME under the store's folder.
 	Path string
 	// Field is the key inside a map or JSON secret; empty for the whole
 	// value.

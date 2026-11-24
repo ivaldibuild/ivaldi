@@ -2655,6 +2655,8 @@ export interface components {
       credential?: string;
       identity_id?: string;
       /** @enum {string} */
+      method?: 'kubernetes' | 'universal_auth' | 'oidc' | 'jwt';
+      /** @enum {string} */
       mode: 'agent' | 'federated';
       role?: string;
       role_arn?: string;
@@ -2662,10 +2664,15 @@ export interface components {
     AccessBody: {
       /** @description For vault: the auth method's mount; kubernetes in agent mode and jwt in federated mode when omitted */
       auth_mount?: string;
-      /** @description For doppler in agent mode: the name of the credential, configured on the agent, that holds the Doppler token */
+      /** @description For doppler in agent mode, or infisical with universal_auth: the name of the credential, configured on the agent, that holds the Doppler token or the Universal Auth client ID and secret */
       credential?: string;
-      /** @description For doppler in federated mode: the service account identity that trusts the federation issuer */
+      /** @description For doppler in federated mode: the service account identity that trusts the federation issuer. For infisical with kubernetes, oidc, or jwt: the machine identity the agent logs in as */
       identity_id?: string;
+      /**
+       * @description For infisical: how the agent logs in; kubernetes (with identity_id) or universal_auth (with credential) in agent mode, and oidc or jwt (with identity_id) in federated mode
+       * @enum {string}
+       */
+      method?: 'kubernetes' | 'universal_auth' | 'oidc' | 'jwt';
       /**
        * @description How the store is opened: agent, with the agent's own identity or a credential its operator configured; or federated, with a JWT the control plane signs for each Deployment, which the store trusts
        * @enum {string}
@@ -3456,7 +3463,7 @@ export interface components {
        * @description The secret manager
        * @enum {string}
        */
-      kind: 'kubernetes' | 'aws_secrets_manager' | 'vault' | 'doppler';
+      kind: 'kubernetes' | 'aws_secrets_manager' | 'vault' | 'doppler' | 'infisical';
       /** @description Where the store is; none for kubernetes */
       settings?: components['schemas']['SettingsBody'];
       /** @description Url slug for the store; derived from the display name when omitted */
@@ -3766,6 +3773,18 @@ export interface components {
     };
     HelmApply: {
       release_name: string;
+    };
+    InfisicalSettings: {
+      environment: string;
+      project_id: string;
+      secret_path: string;
+      site_url: string;
+    };
+    InfisicalStore: {
+      environment: string;
+      project_id: string;
+      secret_path: string;
+      site_url: string;
     };
     InstallDetails: {
       chart: string;
@@ -5941,6 +5960,7 @@ export interface components {
     Settings: {
       aws?: components['schemas']['AWSSettings'];
       doppler?: components['schemas']['DopplerSettings'];
+      infisical?: components['schemas']['InfisicalSettings'];
       vault?: components['schemas']['VaultSettings'];
     };
     SettingsBody: {
@@ -5948,6 +5968,8 @@ export interface components {
       aws?: components['schemas']['AWSSettings'];
       /** @description For doppler: the project and config; optional when the store is read with a service token, which implies them */
       doppler?: components['schemas']['DopplerSettings'];
+      /** @description For infisical: the site URL (Infisical Cloud's when omitted), project ID, environment slug, and the folder references are relative to (/ when omitted) */
+      infisical?: components['schemas']['InfisicalSettings'];
       /** @description For vault: the address, KV v2 mount, and Enterprise namespace */
       vault?: components['schemas']['VaultSettings'];
     };
@@ -6023,6 +6045,8 @@ export interface components {
       credential?: string;
       identity_id?: string;
       /** @enum {string} */
+      method?: 'kubernetes' | 'universal_auth' | 'oidc' | 'jwt';
+      /** @enum {string} */
       mode: 'agent' | 'federated';
       role?: string;
       role_arn?: string;
@@ -6032,8 +6056,9 @@ export interface components {
       aws?: components['schemas']['AWSStore'];
       doppler?: components['schemas']['DopplerStore'];
       id: string;
+      infisical?: components['schemas']['InfisicalStore'];
       /** @enum {string} */
-      kind: 'kubernetes' | 'aws_secrets_manager' | 'vault' | 'doppler';
+      kind: 'kubernetes' | 'aws_secrets_manager' | 'vault' | 'doppler' | 'infisical';
       kubernetes?: components['schemas']['KubernetesStore'];
       vault?: components['schemas']['VaultStore'];
     };

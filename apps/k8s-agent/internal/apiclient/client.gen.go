@@ -512,6 +512,30 @@ func (e SecretVersionDeliveredAs) Valid() bool {
 	}
 }
 
+// Defines values for StoreAccessMethod.
+const (
+	StoreAccessMethodJwt           StoreAccessMethod = "jwt"
+	StoreAccessMethodKubernetes    StoreAccessMethod = "kubernetes"
+	StoreAccessMethodOidc          StoreAccessMethod = "oidc"
+	StoreAccessMethodUniversalAuth StoreAccessMethod = "universal_auth"
+)
+
+// Valid indicates whether the value is a known member of the StoreAccessMethod enum.
+func (e StoreAccessMethod) Valid() bool {
+	switch e {
+	case StoreAccessMethodJwt:
+		return true
+	case StoreAccessMethodKubernetes:
+		return true
+	case StoreAccessMethodOidc:
+		return true
+	case StoreAccessMethodUniversalAuth:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for StoreAccessMode.
 const (
 	StoreAccessModeAgent     StoreAccessMode = "agent"
@@ -534,6 +558,7 @@ func (e StoreAccessMode) Valid() bool {
 const (
 	StoreSettingsKindAwsSecretsManager StoreSettingsKind = "aws_secrets_manager"
 	StoreSettingsKindDoppler           StoreSettingsKind = "doppler"
+	StoreSettingsKindInfisical         StoreSettingsKind = "infisical"
 	StoreSettingsKindKubernetes        StoreSettingsKind = "kubernetes"
 	StoreSettingsKindVault             StoreSettingsKind = "vault"
 )
@@ -544,6 +569,8 @@ func (e StoreSettingsKind) Valid() bool {
 	case StoreSettingsKindAwsSecretsManager:
 		return true
 	case StoreSettingsKindDoppler:
+		return true
+	case StoreSettingsKindInfisical:
 		return true
 	case StoreSettingsKindKubernetes:
 		return true
@@ -869,6 +896,14 @@ type HelmApply struct {
 	ReleaseName string `json:"release_name"`
 }
 
+// InfisicalStore defines model for InfisicalStore.
+type InfisicalStore struct {
+	Environment string `json:"environment"`
+	ProjectId   string `json:"project_id"`
+	SecretPath  string `json:"secret_path"`
+	SiteUrl     string `json:"site_url"`
+}
+
 // KubernetesStore defines model for KubernetesStore.
 type KubernetesStore = map[string]interface{}
 
@@ -1158,13 +1193,17 @@ type SecretVersionDeliveredAs string
 
 // StoreAccess defines model for StoreAccess.
 type StoreAccess struct {
-	AuthMount  *string         `json:"auth_mount,omitempty"`
-	Credential *string         `json:"credential,omitempty"`
-	IdentityId *string         `json:"identity_id,omitempty"`
-	Mode       StoreAccessMode `json:"mode"`
-	Role       *string         `json:"role,omitempty"`
-	RoleArn    *string         `json:"role_arn,omitempty"`
+	AuthMount  *string            `json:"auth_mount,omitempty"`
+	Credential *string            `json:"credential,omitempty"`
+	IdentityId *string            `json:"identity_id,omitempty"`
+	Method     *StoreAccessMethod `json:"method,omitempty"`
+	Mode       StoreAccessMode    `json:"mode"`
+	Role       *string            `json:"role,omitempty"`
+	RoleArn    *string            `json:"role_arn,omitempty"`
 }
+
+// StoreAccessMethod defines model for StoreAccess.Method.
+type StoreAccessMethod string
 
 // StoreAccessMode defines model for StoreAccess.Mode.
 type StoreAccessMode string
@@ -1175,6 +1214,7 @@ type StoreSettings struct {
 	Aws        *AWSStore         `json:"aws,omitempty"`
 	Doppler    *DopplerStore     `json:"doppler,omitempty"`
 	Id         string            `json:"id"`
+	Infisical  *InfisicalStore   `json:"infisical,omitempty"`
 	Kind       StoreSettingsKind `json:"kind"`
 	Kubernetes *KubernetesStore  `json:"kubernetes,omitempty"`
 	Vault      *VaultStore       `json:"vault,omitempty"`

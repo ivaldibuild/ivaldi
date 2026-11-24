@@ -17,7 +17,7 @@ import (
 // The kinds this agent can read, for the heartbeat.
 var Kinds = []string{
 	string(secretstore.KindKubernetes), string(secretstore.KindAWSSecretsManager),
-	string(secretstore.KindVault), string(secretstore.KindDoppler),
+	string(secretstore.KindVault), string(secretstore.KindDoppler), string(secretstore.KindInfisical),
 }
 
 // Config configures the Resolver.
@@ -36,11 +36,15 @@ type Config struct {
 	// whoever manages a Workspace's stores sets it, and a login sends a
 	// token or a federated JWT there: a store at any other address is
 	// refused. Doppler's API and AWS STS are always allowed, because a
-	// store cannot name another address for them.
+	// store cannot name another address for them, and so is Infisical
+	// Cloud.
 	Addresses []string
 	// VaultTokenFile is the token Vault's Kubernetes auth checks: one
 	// projected for Vault's audience, never the Pod's API token.
 	VaultTokenFile string
+	// InfisicalTokenFile is the token Infisical's Kubernetes auth checks,
+	// projected for Infisical's audience.
+	InfisicalTokenFile string
 	// Grants asks the control plane for access to the stores in federated
 	// mode a Deployment reads. Its answer holds credentials.
 	Grants func(ctx context.Context, deploymentID string) ([]apiclient.GrantView, error)
@@ -54,6 +58,12 @@ func (c Config) allows(address string) bool {
 	return slices.ContainsFunc(c.Addresses, func(allowed string) bool {
 		return normalize(allowed) != "" && normalize(allowed) == normalize(address)
 	})
+}
+
+// allowsInfisical reports whether the agent may log in to an Infisical at
+// site: Infisical Cloud, or a self-hosted one the operator listed.
+func (c Config) allowsInfisical(site string) bool {
+	return slices.Contains(secretstore.InfisicalSites, strings.TrimRight(strings.TrimSpace(site), "/")) || c.allows(site)
 }
 
 // StoreKinds lists the kinds of secret store an agent with this

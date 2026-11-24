@@ -61,19 +61,30 @@ secrets:
   # -- Credentials for Secret Stores the agent opens itself, by the name a
   # store's access gives, such as a Doppler store's credential. Each maps to
   # a Secret in the release namespace and the key that holds it; the agent
-  # may read only these Secrets. For example:
+  # may read only these Secrets. An Infisical Universal Auth credential is
+  # a JSON object with client_id and client_secret. For example:
   #   doppler-production: { secretName: doppler-production, key: token }
+  #   infisical-production: { secretName: infisical-production, key: universal-auth }
   credentials: {}
   # -- Servers, such as https://vault.example.com, the agent may log in to
   # for a Secret Store. A store names its own address in Ivaldi, and the
   # agent sends a service-account token or a federated JWT there, so it uses
-  # only the addresses listed here. Doppler's API and AWS STS are always
+  # only the addresses listed here, such as a Vault's or a self-hosted
+  # Infisical's. Doppler's API, Infisical Cloud, and AWS STS are always
   # allowed. Empty means it reads no vault store.
   addresses: []
   vault:
     # -- The audience of the service-account token the agent logs in to
     # Vault with. Set the same audience on the Kubernetes auth role.
     audience: vault
+  infisical:
+    # -- Mount a service-account token for Infisical stores that log in
+    # with Kubernetes auth in agent mode. Infisical checks it with this
+    # cluster's TokenReview API.
+    kubernetesAuth: false
+    # -- The token's audience. Set the same Allowed Audience on the machine
+    # identity's Kubernetes auth.
+    audience: infisical
 
 registry:
   # -- A docker-config Secret in the release namespace with credentials for

@@ -64,7 +64,8 @@ func assignmentSettings(s *SecretStore) delivery.StoreSettings {
 	out := delivery.StoreSettings{
 		ID: s.ID(), Kind: delivery.StoreKind(s.Kind()),
 		Access: delivery.StoreAccess{
-			Mode: delivery.StoreAccessMode(access.Mode), RoleARN: access.RoleARN, Role: access.Role,
+			Mode: delivery.StoreAccessMode(access.Mode), Method: delivery.StoreAuthMethod(access.Method),
+			RoleARN: access.RoleARN, Role: access.Role,
 			AuthMount: access.AuthMount, Credential: access.Credential, IdentityID: access.IdentityID,
 		},
 	}
@@ -78,6 +79,11 @@ func assignmentSettings(s *SecretStore) delivery.StoreSettings {
 		out.Doppler = &delivery.DopplerStore{}
 		if settings.Doppler != nil {
 			out.Doppler.Project, out.Doppler.Config = settings.Doppler.Project, settings.Doppler.Config
+		}
+	case secretstore.KindInfisical:
+		i := settings.Infisical
+		out.Infisical = &delivery.InfisicalStore{
+			SiteURL: i.SiteURL, ProjectID: i.ProjectID, Environment: i.Environment, SecretPath: i.SecretPath,
 		}
 	default:
 		out.Kubernetes = &delivery.KubernetesStore{}

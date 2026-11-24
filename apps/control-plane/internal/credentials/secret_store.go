@@ -3,8 +3,10 @@ package credentials
 import (
 	"fmt"
 	"net/url"
+	"path"
 	"regexp"
 	"slices"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -171,6 +173,7 @@ func (s Settings) normalize(kind secretstore.Kind) (Settings, error) {
 		secretstore.KindAWSSecretsManager: s.AWS != nil,
 		secretstore.KindVault:             s.Vault != nil,
 		secretstore.KindDoppler:           s.Doppler != nil,
+		secretstore.KindInfisical:         s.Infisical != nil,
 	}
 	for other, given := range set {
 		if given && other != kind {
@@ -227,6 +230,33 @@ func (s Settings) normalize(kind secretstore.Kind) (Settings, error) {
 			return Settings{}, err
 		}
 		return Settings{Doppler: &doppler}, nil
+	case secretstore.KindInfisical:
+		if s.Infisical == nil {
+			return Settings{}, NewErrInvalidInput("an infisical store needs its project and environment")
+		}
+		infisical := *s.Infisical
+		infisical.SiteURL = strings.TrimRight(infisical.SiteURL, "/")
+		if infisical.SiteURL == "" {
+			infisical.SiteURL = secretstore.DefaultInfisicalSite
+		}
+		if infisical.SecretPath == "" {
+			infisical.SecretPath = "/"
+		}
+		err := firstError(
+			required("the Infisical site URL", infisical.SiteURL), required("the Infisical project ID", infisical.ProjectID),
+			required("the Infisical environment", infisical.Environment), required("the secret path", infisical.SecretPath),
+		)
+		if err != nil {
+			return Settings{}, err
+		}
+		if u, err := url.Parse(infisical.SiteURL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+			return Settings{}, NewErrInvalidInput("the Infisical site URL must be an http or https URL")
+		}
+		if !strings.HasPrefix(infisical.SecretPath, "/") {
+			return Settings{}, NewErrInvalidInput("the secret path must start with /")
+		}
+		infisical.SecretPath = path.Clean(infisical.SecretPath)
+		return Settings{Infisical: &infisical}, nil
 	}
 	return Settings{}, nil
 }

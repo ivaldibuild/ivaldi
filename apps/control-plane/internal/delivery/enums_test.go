@@ -58,9 +58,11 @@ func TestAssignmentEnumTagsMatchTheDomain(t *testing.T) {
 	deliverAs := []string{string(VariableDeliverAsSecret), string(VariableDeliverAsValue)}
 	assert.ElementsMatch(t, deliverAs, enumTag(t, AssignmentVariable{}, "DeliverAs"))
 	assert.ElementsMatch(t, deliverAs, enumTag(t, AssignmentSecret{}, "DeliverAs"))
-	assert.ElementsMatch(t, []string{string(StoreKubernetes), string(StoreAWSSecretsManager), string(StoreVault), string(StoreDoppler)},
+	assert.ElementsMatch(t, []string{string(StoreKubernetes), string(StoreAWSSecretsManager), string(StoreVault), string(StoreDoppler), string(StoreInfisical)},
 		enumTag(t, StoreSettings{}, "Kind"))
 	assert.ElementsMatch(t, []string{string(StoreAccessAgent), string(StoreAccessFederated)}, enumTag(t, StoreAccess{}, "Mode"))
+	assert.ElementsMatch(t, []string{string(StoreAuthKubernetes), string(StoreAuthUniversal), string(StoreAuthOIDC), string(StoreAuthJWT)},
+		enumTag(t, StoreAccess{}, "Method"))
 }
 
 func toTier(s []string) []Tier {

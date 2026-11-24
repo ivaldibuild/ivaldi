@@ -20,7 +20,7 @@ import (
 func (r *resolver) newStore(ctx context.Context, s apiclient.StoreSettings, open opening) (secretstore.Store, error) {
 	switch s.Access.Mode {
 	case apiclient.StoreAccessModeAgent:
-		return r.agentStore(ctx, s, open.namespace)
+		return r.agentStore(ctx, s, open)
 	case apiclient.StoreAccessModeFederated:
 		if open.jwt == "" {
 			return nil, deploy.Failf("the control plane granted no access to secret store %s, which is in federated mode", s.Id)
@@ -32,10 +32,10 @@ func (r *resolver) newStore(ctx context.Context, s apiclient.StoreSettings, open
 
 // agentStore opens a store with the agent's own identity, or a credential
 // its operator configured.
-func (r *resolver) agentStore(ctx context.Context, s apiclient.StoreSettings, namespace string) (secretstore.Store, error) {
+func (r *resolver) agentStore(ctx context.Context, s apiclient.StoreSettings, open opening) (secretstore.Store, error) {
 	switch s.Kind {
 	case apiclient.StoreSettingsKindKubernetes:
-		return secretstore.NewKubernetes(r.kubernetesGetter(namespace)), nil
+		return secretstore.NewKubernetes(r.kubernetesGetter(open.namespace)), nil
 	case apiclient.StoreSettingsKindAwsSecretsManager:
 		if s.Aws == nil {
 			return nil, deploy.Failf("secret store %s has no AWS settings", s.Id)
@@ -64,6 +64,8 @@ func (r *resolver) agentStore(ctx context.Context, s apiclient.StoreSettings, na
 			Project: deref(s.Doppler.Project), Config: deref(s.Doppler.Config),
 			Token: func(ctx context.Context) (string, error) { return r.credential(ctx, name, credential) },
 		}), nil
+	case apiclient.StoreSettingsKindInfisical:
+		return r.agentInfisical(s, open)
 	}
 	return nil, deploy.Failf("this agent cannot read %q secret stores", s.Kind)
 }
@@ -106,6 +108,8 @@ func (r *resolver) federatedStore(ctx context.Context, s apiclient.StoreSettings
 				return t, err
 			},
 		}), nil
+	case apiclient.StoreSettingsKindInfisical:
+		return r.federatedInfisical(s, open)
 	}
 	return nil, deploy.Failf("this agent cannot open %q secret stores in federated mode", s.Kind)
 }

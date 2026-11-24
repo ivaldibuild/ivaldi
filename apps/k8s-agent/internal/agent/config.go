@@ -68,6 +68,10 @@ type Config struct {
 	// VaultTokenFile is the service-account token, projected for Vault's
 	// audience, that the agent logs in to Vault with.
 	VaultTokenFile string
+	// InfisicalTokenFile is the service-account token, projected for
+	// Infisical's audience, that the agent logs in to Infisical's
+	// Kubernetes auth with.
+	InfisicalTokenFile string
 	// SecretCredentials map a credential's name, which a Secret Store's
 	// access gives, to "secret/key" in the agent's namespace.
 	SecretCredentials map[string]string
@@ -103,9 +107,11 @@ func (c *Config) bind(flags *pflag.FlagSet) {
 	flags.StringVar(&c.FingerprintSecret, "fingerprint-secret", "ivaldi-fingerprint-key",
 		"Secret in the agent's namespace holding the key secret fingerprints are made with")
 	flags.StringSliceVar(&c.SecretAddresses, "secret-addresses", nil,
-		"Servers, such as https://vault.example.com, the agent may send a token or federated JWT to for a Secret Store; Doppler's API and AWS STS are always allowed; none means it reads no vault store")
+		"Servers, such as https://vault.example.com, the agent may send a token or federated JWT to for a Secret Store; Doppler's API, Infisical Cloud, and AWS STS are always allowed; none means it reads no vault store")
 	flags.StringVar(&c.VaultTokenFile, "vault-token-file", "/var/run/secrets/ivaldi-vault/token",
 		"Service-account token projected for Vault's audience, which the agent logs in to Vault with")
+	flags.StringVar(&c.InfisicalTokenFile, "infisical-token-file", "/var/run/secrets/ivaldi-infisical/token",
+		"Service-account token projected for Infisical's audience, which the agent logs in to Infisical's Kubernetes auth with")
 	flags.StringToStringVar(&c.SecretCredentials, "secret-credentials", nil,
 		"Credentials for secret stores, as name=secret/key: the name a Secret Store's access gives, and the Secret and key in the agent's namespace that hold it")
 	flags.IntVar(&c.MaxConcurrentApplies, "max-concurrent-applies", 4, "How many Deployments the agent applies at once")

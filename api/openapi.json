@@ -88,6 +88,15 @@
           "identity_id": {
             "type": "string"
           },
+          "method": {
+            "enum": [
+              "kubernetes",
+              "universal_auth",
+              "oidc",
+              "jwt"
+            ],
+            "type": "string"
+          },
           "mode": {
             "enum": [
               "agent",
@@ -115,11 +124,21 @@
             "type": "string"
           },
           "credential": {
-            "description": "For doppler in agent mode: the name of the credential, configured on the agent, that holds the Doppler token",
+            "description": "For doppler in agent mode, or infisical with universal_auth: the name of the credential, configured on the agent, that holds the Doppler token or the Universal Auth client ID and secret",
             "type": "string"
           },
           "identity_id": {
-            "description": "For doppler in federated mode: the service account identity that trusts the federation issuer",
+            "description": "For doppler in federated mode: the service account identity that trusts the federation issuer. For infisical with kubernetes, oidc, or jwt: the machine identity the agent logs in as",
+            "type": "string"
+          },
+          "method": {
+            "description": "For infisical: how the agent logs in; kubernetes (with identity_id) or universal_auth (with credential) in agent mode, and oidc or jwt (with identity_id) in federated mode",
+            "enum": [
+              "kubernetes",
+              "universal_auth",
+              "oidc",
+              "jwt"
+            ],
             "type": "string"
           },
           "mode": {
@@ -2338,7 +2357,8 @@
               "kubernetes",
               "aws_secrets_manager",
               "vault",
-              "doppler"
+              "doppler",
+              "infisical"
             ],
             "type": "string"
           },
@@ -3215,6 +3235,54 @@
         },
         "required": [
           "release_name"
+        ],
+        "type": "object"
+      },
+      "InfisicalSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "environment": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "secret_path": {
+            "type": "string"
+          },
+          "site_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "site_url",
+          "project_id",
+          "environment",
+          "secret_path"
+        ],
+        "type": "object"
+      },
+      "InfisicalStore": {
+        "additionalProperties": false,
+        "properties": {
+          "environment": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "secret_path": {
+            "type": "string"
+          },
+          "site_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "site_url",
+          "project_id",
+          "environment",
+          "secret_path"
         ],
         "type": "object"
       },
@@ -9006,6 +9074,9 @@
           "doppler": {
             "$ref": "#/components/schemas/DopplerSettings"
           },
+          "infisical": {
+            "$ref": "#/components/schemas/InfisicalSettings"
+          },
           "vault": {
             "$ref": "#/components/schemas/VaultSettings"
           }
@@ -9022,6 +9093,10 @@
           "doppler": {
             "$ref": "#/components/schemas/DopplerSettings",
             "description": "For doppler: the project and config; optional when the store is read with a service token, which implies them"
+          },
+          "infisical": {
+            "$ref": "#/components/schemas/InfisicalSettings",
+            "description": "For infisical: the site URL (Infisical Cloud's when omitted), project ID, environment slug, and the folder references are relative to (/ when omitted)"
           },
           "vault": {
             "$ref": "#/components/schemas/VaultSettings",
@@ -9257,6 +9332,15 @@
           "identity_id": {
             "type": "string"
           },
+          "method": {
+            "enum": [
+              "kubernetes",
+              "universal_auth",
+              "oidc",
+              "jwt"
+            ],
+            "type": "string"
+          },
           "mode": {
             "enum": [
               "agent",
@@ -9291,12 +9375,16 @@
           "id": {
             "type": "string"
           },
+          "infisical": {
+            "$ref": "#/components/schemas/InfisicalStore"
+          },
           "kind": {
             "enum": [
               "kubernetes",
               "aws_secrets_manager",
               "vault",
-              "doppler"
+              "doppler",
+              "infisical"
             ],
             "type": "string"
           },

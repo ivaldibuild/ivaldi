@@ -10,19 +10,37 @@ import (
 
 // NewStoreLookup returns delivery's view of Secret Stores: what it needs to
 // check a secret variable's value may use a store, and to tell an agent how
-// to read it. It does not authorize; delivery's own services do. federation
-// says whether this installation can sign federated JWTs: without it, a
-// federated store cannot be read.
-func NewStoreLookup(stores SecretStoreRepository, federation bool) (delivery.SecretStores, error) {
+// to read it. It does not authorize; delivery's own services do. Without
+// WithFederation, a federated store cannot be read, and without
+// WithBrokering, a brokered one cannot.
+func NewStoreLookup(stores SecretStoreRepository, opts ...LookupOption) (delivery.SecretStores, error) {
 	if stores == nil {
 		return nil, errors.New("secret store lookup: a SecretStoreRepository is required")
 	}
-	return storeLookup{stores: stores, federation: federation}, nil
+	l := storeLookup{stores: stores}
+	for _, opt := range opts {
+		opt(&l)
+	}
+	return l, nil
+}
+
+// LookupOption says what this installation can grant.
+type LookupOption func(*storeLookup)
+
+// WithFederation says this installation can sign federated JWTs.
+func WithFederation(enabled bool) LookupOption {
+	return func(l *storeLookup) { l.federation = enabled }
+}
+
+// WithBrokering says this installation can keep minting credentials.
+func WithBrokering(enabled bool) LookupOption {
+	return func(l *storeLookup) { l.brokering = enabled }
 }
 
 type storeLookup struct {
 	stores     SecretStoreRepository
 	federation bool
+	brokering  bool
 }
 
 func (l storeLookup) LookupSecretStores(ctx context.Context, organizationID string, storeIDs []string) (map[string]delivery.SecretStoreRef, error) {
@@ -50,8 +68,13 @@ func (l storeLookup) lookup(ctx context.Context, organizationID string, storeIDs
 			ID: s.ID(), WorkspaceID: s.WorkspaceID(), DisplayName: s.DisplayName(),
 			Settings: assignmentSettings(s), EnvironmentIDs: s.EnvironmentIDs(), Archived: s.Archived(),
 		}
-		if s.Access().Mode == AccessFederated && !l.federation {
+		switch {
+		case s.Access().Mode == AccessFederated && !l.federation:
 			ref.Unusable = ErrNoFederation.Error()
+		case s.Access().Mode == AccessBrokered && !l.brokering:
+			ref.Unusable = ErrNoBrokering.Error()
+		case s.NeedsCredential() && !s.CredentialSet():
+			ref.Unusable = ErrNoCredential.Error()
 		}
 		out[s.ID()] = ref
 	}

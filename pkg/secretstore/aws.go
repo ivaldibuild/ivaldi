@@ -9,6 +9,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -60,6 +61,18 @@ func NewAWSClient(ctx context.Context, region, roleARN string) (SecretsManagerAP
 	}
 	if roleARN != "" {
 		cfg.Credentials = aws.NewCredentialsCache(stscreds.NewAssumeRoleProvider(sts.NewFromConfig(cfg), roleARN))
+	}
+	return secretsmanager.NewFromConfig(cfg), nil
+}
+
+// NewAWSSessionClient returns a Secrets Manager client in region with
+// session credentials given to the reader, such as ones the control plane
+// minted for a brokered store. It uses no AWS identity of the reader's own.
+func NewAWSSessionClient(ctx context.Context, region, accessKeyID, secretAccessKey, sessionToken string) (SecretsManagerAPI, error) {
+	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(region),
+		awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKeyID, secretAccessKey, sessionToken)))
+	if err != nil {
+		return nil, fmt.Errorf("aws configuration: %w", err)
 	}
 	return secretsmanager.NewFromConfig(cfg), nil
 }

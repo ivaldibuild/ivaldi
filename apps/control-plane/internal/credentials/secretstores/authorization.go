@@ -85,3 +85,21 @@ func (a *authorized) ArchiveSecretStore(ctx context.Context, actor identity.Acto
 	}
 	return a.next.ArchiveSecretStore(ctx, actor, organizationID, storeID)
 }
+
+// SetSecretStoreCredential is authorized as a change to the store; the
+// authorizer is never shown the credential.
+func (a *authorized) SetSecretStoreCredential(ctx context.Context, actor identity.Actor, organizationID, storeID string, c credentials.MintingCredential) (*credentials.SecretStore, error) {
+	ctx, err := a.manageStore(ctx, actor, organizationID, storeID, credentials.ActionSecretStoreSetCredential, nil)
+	if err != nil {
+		return nil, err
+	}
+	return a.next.SetSecretStoreCredential(ctx, actor, organizationID, storeID, c)
+}
+
+func (a *authorized) RemoveSecretStoreCredential(ctx context.Context, actor identity.Actor, organizationID, storeID string) (*credentials.SecretStore, error) {
+	ctx, err := a.manageStore(ctx, actor, organizationID, storeID, credentials.ActionSecretStoreRemoveCredential, nil)
+	if err != nil {
+		return nil, err
+	}
+	return a.next.RemoveSecretStoreCredential(ctx, actor, organizationID, storeID)
+}

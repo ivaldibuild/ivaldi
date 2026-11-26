@@ -51,8 +51,26 @@ type Config struct {
 }
 
 // SecretStores configures the control plane's access to Secret Stores.
+// Brokered stores also need a key-encryption key, from Encryption, to keep
+// their minting credentials with.
 type SecretStores struct {
 	Federation Federation `yaml:"federation"`
+	Revocation Revocation `yaml:"revocation"`
+}
+
+// Revocation configures the consumer that revokes brokered stores'
+// credentials when the Deployment they were minted for leaves applying. It
+// reads the outbox stream with its own consumer group; the rest of its
+// tuning follows Events. It runs only on an installation with a
+// key-encryption key.
+type Revocation struct {
+	// ConsumerGroup is shared by every control-plane replica, so each event
+	// is handled by one of them.
+	ConsumerGroup string `yaml:"consumer_group" env:"IVALDI_SECRET_STORES_REVOCATION_CONSUMER_GROUP" envDefault:"secret-store-revocation"`
+	// Concurrency is how many events this replica handles at once.
+	Concurrency int `yaml:"concurrency" env:"IVALDI_SECRET_STORES_REVOCATION_CONCURRENCY" envDefault:"4"`
+	// DeadLetterStream receives events the consumer gave up on.
+	DeadLetterStream string `yaml:"dead_letter_stream" env:"IVALDI_SECRET_STORES_REVOCATION_DEAD_LETTER_STREAM" envDefault:"ivaldi:control-plane:events:secret-store-revocation:dead"`
 }
 
 // Federation makes the control plane an OIDC issuer for Secret Stores in
@@ -394,7 +412,9 @@ const (
 // override it in IAM.
 type Encryption struct {
 	Provider EncryptionProvider `yaml:"provider" env:"IVALDI_ENCRYPTION_PROVIDER" envDefault:"local"`
-	// LocalKeyFile holds the 32-byte key-encryption key for EncryptionLocal.
+	// LocalKeyFile holds the 32-byte key-encryption key for EncryptionLocal,
+	// raw or as base64 or hex. Without it, nothing is encrypted with
+	// envelope encryption, and no Secret Store can be in brokered mode.
 	LocalKeyFile string `yaml:"local_key_file" env:"IVALDI_ENCRYPTION_LOCAL_KEY_FILE"`
 	// AWSKMSKeyID is the key ID or ARN for EncryptionAWSKMS. Credentials come
 	// from the AWS default chain, such as the pod's IAM role.

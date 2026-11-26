@@ -26,6 +26,11 @@ func (r *resolver) newStore(ctx context.Context, s apiclient.StoreSettings, open
 			return nil, deploy.Failf("the control plane granted no access to secret store %s, which is in federated mode", s.Id)
 		}
 		return r.federatedStore(ctx, s, open)
+	case apiclient.StoreAccessModeBrokered:
+		if open.credential == nil {
+			return nil, deploy.Failf("the control plane granted no access to secret store %s, which is in brokered mode", s.Id)
+		}
+		return r.brokeredStore(ctx, s, open)
 	}
 	return nil, deploy.Failf("secret store %s is opened in %q mode, which this agent cannot use", s.Id, s.Access.Mode)
 }

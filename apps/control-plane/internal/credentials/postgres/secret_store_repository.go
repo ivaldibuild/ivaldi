@@ -52,18 +52,20 @@ func translate(err error) error {
 func toEntity(s *credentials.SecretStore) *secretStoreEntity {
 	snap := s.Snapshot()
 	return &secretStoreEntity{
-		ID:             snap.ID,
-		OrganizationID: snap.OrganizationID,
-		WorkspaceID:    snap.WorkspaceID,
-		Slug:           snap.Slug,
-		DisplayName:    snap.DisplayName,
-		Kind:           string(snap.Kind),
-		Settings:       snap.Settings,
-		Access:         snap.Access,
-		EnvironmentIDs: database.TextArray(snap.EnvironmentIDs),
-		CreatedAt:      snap.CreatedAt,
-		UpdatedAt:      snap.UpdatedAt,
-		ArchivedAt:     snap.ArchivedAt,
+		ID:              snap.ID,
+		OrganizationID:  snap.OrganizationID,
+		WorkspaceID:     snap.WorkspaceID,
+		Slug:            snap.Slug,
+		DisplayName:     snap.DisplayName,
+		Kind:            string(snap.Kind),
+		Settings:        snap.Settings,
+		Access:          snap.Access,
+		EnvironmentIDs:  database.TextArray(snap.EnvironmentIDs),
+		CredentialSetAt: snap.CredentialSetAt,
+		CredentialSetBy: snap.CredentialSetBy,
+		CreatedAt:       snap.CreatedAt,
+		UpdatedAt:       snap.UpdatedAt,
+		ArchivedAt:      snap.ArchivedAt,
 	}
 }
 
@@ -74,15 +76,16 @@ func utc(t time.Time) *time.Time {
 
 func toDomain(e *secretStoreEntity) (*credentials.SecretStore, error) {
 	props := credentials.NewSecretStoreProps{
-		OrganizationID: e.OrganizationID,
-		WorkspaceID:    e.WorkspaceID,
-		Slug:           e.Slug,
-		DisplayName:    e.DisplayName,
-		Kind:           secretstore.Kind(e.Kind),
-		Settings:       e.Settings,
-		Access:         e.Access,
-		EnvironmentIDs: e.EnvironmentIDs,
-		CreatedAt:      utc(e.CreatedAt), UpdatedAt: utc(e.UpdatedAt),
+		OrganizationID:  e.OrganizationID,
+		WorkspaceID:     e.WorkspaceID,
+		Slug:            e.Slug,
+		DisplayName:     e.DisplayName,
+		Kind:            secretstore.Kind(e.Kind),
+		Settings:        e.Settings,
+		Access:          e.Access,
+		EnvironmentIDs:  e.EnvironmentIDs,
+		CredentialSetAt: utcPtr(e.CredentialSetAt), CredentialSetBy: e.CredentialSetBy,
+		CreatedAt: utc(e.CreatedAt), UpdatedAt: utc(e.UpdatedAt),
 	}
 
 	if e.ArchivedAt != nil {
@@ -164,7 +167,7 @@ func (r *secretStoreRepository) UpdateSecretStore(ctx context.Context, s *creden
 	// values too, such as a cleared archived_at.
 	res := r.conn(ctx).Model(&secretStoreEntity{}).
 		Where("organization_id = ? AND id = ?", e.OrganizationID, e.ID).
-		Select("slug", "display_name", "settings", "access", "environment_ids", "updated_at", "archived_at").
+		Select("slug", "display_name", "settings", "access", "environment_ids", "credential_set_at", "credential_set_by", "updated_at", "archived_at").
 		Updates(e)
 	if res.Error != nil {
 		return translate(res.Error)

@@ -60,6 +60,20 @@ func (r *secretStoreGrantRepository) ListDeploymentGrants(ctx context.Context, o
 	return out, nil
 }
 
+func (r *secretStoreGrantRepository) UpdateSecretStoreGrant(ctx context.Context, g *credentials.SecretStoreGrant) error {
+	snap := g.Snapshot()
+	res := database.Conn(ctx, r.db).Model(&secretStoreGrantEntity{}).
+		Where("organization_id = ? AND id = ?", snap.OrganizationID, snap.ID).
+		Update("revoked_at", snap.RevokedAt)
+	if res.Error != nil {
+		return translate(res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return credentials.ErrNotFound
+	}
+	return nil
+}
+
 func utcPtr(t *time.Time) *time.Time {
 	if t == nil {
 		return nil

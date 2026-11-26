@@ -19,6 +19,8 @@ const store = (changes: Partial<SecretStore>): SecretStore => ({
   settings: {},
   access: { mode: 'agent' },
   environment_ids: [],
+  credential_set_at: null,
+  credential_set_by: null,
   created_at: '2026-11-15T10:00:00Z',
   updated_at: '2026-11-15T10:00:00Z',
   archived_at: null,

@@ -32,6 +32,10 @@ func (c *SecretStoreController) RegisterRoutes(h huma.API) {
 	register(h, "get-secret-store", http.MethodGet, "/secret-stores/{secret_store_id}", "Get a Secret Store", 0, c.GetSecretStore)
 	register(h, "update-secret-store", http.MethodPatch, "/secret-stores/{secret_store_id}", "Change a Secret Store", 0, c.UpdateSecretStore)
 	register(h, "archive-secret-store", http.MethodPost, "/secret-stores/{secret_store_id}/archive", "Archive a Secret Store no variable refers to", 0, c.ArchiveSecretStore)
+	register(h, "set-secret-store-credential", http.MethodPut, "/secret-stores/{secret_store_id}/credential",
+		"Set or replace a brokered Secret Store's minting credential, which is never read back", 0, c.SetSecretStoreCredential)
+	register(h, "remove-secret-store-credential", http.MethodDelete, "/secret-stores/{secret_store_id}/credential",
+		"Remove a brokered Secret Store's minting credential", 0, c.RemoveSecretStoreCredential)
 }
 
 func register[I, O any](h huma.API, id, method, path, summary string, status int, handler func(context.Context, *I) (*O, error)) {
@@ -111,6 +115,16 @@ func (c *SecretStoreController) UpdateSecretStore(ctx context.Context, req *Upda
 
 func (c *SecretStoreController) ArchiveSecretStore(ctx context.Context, req *SecretStoreRequest) (*SecretStoreResponse, error) {
 	return c.store(ctx, req.SecretStoreID, c.service.ArchiveSecretStore)
+}
+
+func (c *SecretStoreController) SetSecretStoreCredential(ctx context.Context, req *SetSecretStoreCredentialRequest) (*SecretStoreResponse, error) {
+	return c.store(ctx, req.SecretStoreID, func(ctx context.Context, actor identity.Actor, organizationID, storeID string) (*credentials.SecretStore, error) {
+		return c.service.SetSecretStoreCredential(ctx, actor, organizationID, storeID, req.Body.credential())
+	})
+}
+
+func (c *SecretStoreController) RemoveSecretStoreCredential(ctx context.Context, req *SecretStoreRequest) (*SecretStoreResponse, error) {
+	return c.store(ctx, req.SecretStoreID, c.service.RemoveSecretStoreCredential)
 }
 
 // store calls an operation on one Secret Store.

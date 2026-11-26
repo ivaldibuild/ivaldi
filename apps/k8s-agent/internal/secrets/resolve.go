@@ -48,20 +48,27 @@ func (r *resolver) Resolve(ctx context.Context, deploymentID, namespace string, 
 	if err != nil {
 		return nil, &deploy.Failure{Reason: "could not load the fingerprint key", Err: err}
 	}
-	jwts, err := r.grants(ctx, deploymentID, secrets)
+	grants, err := r.grants(ctx, deploymentID, secrets)
 	if err != nil {
 		return nil, err
 	}
-	// A JWT, and what a store gives in exchange for it, is used only to
-	// open its store, below, so each is masked only until the values are
+	// A grant, and what a store gives in exchange for a JWT, is used only
+	// to open its store, below, so each is masked only until the values are
 	// read.
 	var credentials []string
 	mask := func(c string) {
-		r.cfg.Masker.Add(c)
-		credentials = append(credentials, c)
+		if c != "" {
+			r.cfg.Masker.Add(c)
+			credentials = append(credentials, c)
+		}
 	}
-	for _, jwt := range jwts {
-		mask(jwt)
+	for _, g := range grants {
+		mask(deref(g.Jwt))
+		if c := g.Credential; c != nil {
+			mask(deref(c.Token))
+			mask(deref(c.SecretAccessKey))
+			mask(deref(c.SessionToken))
+		}
 	}
 	defer func() { r.cfg.Masker.Remove(credentials...) }()
 
@@ -86,7 +93,9 @@ func (r *resolver) Resolve(ctx context.Context, deploymentID, namespace string, 
 	var added []string
 	for _, id := range order {
 		g := groups[id]
-		store, err := r.store(ctx, g.settings, opening{deploymentID: deploymentID, namespace: namespace, jwt: jwts[id], mask: mask})
+		store, err := r.store(ctx, g.settings, opening{
+			deploymentID: deploymentID, namespace: namespace, jwt: deref(grants[id].Jwt), credential: grants[id].Credential, mask: mask,
+		})
 		if err != nil {
 			r.cfg.Masker.Remove(added...)
 			return nil, err

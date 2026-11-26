@@ -112,7 +112,8 @@ func (a *app) wireDelivery(runners config.Runners) error {
 	// them through a lookup, and credentials asks delivery whether a store
 	// is still referred to.
 	storeRepo := credentialspg.NewSecretStoreRepository(a.db)
-	storeLookup, err := credentials.NewStoreLookup(storeRepo, a.federation != nil)
+	storeLookup, err := credentials.NewStoreLookup(storeRepo,
+		credentials.WithFederation(a.federation != nil), credentials.WithBrokering(a.keeper != nil))
 	if err != nil {
 		return err
 	}
@@ -122,6 +123,7 @@ func (a *app) wireDelivery(runners config.Runners) error {
 		secretstores.WithEnvironmentLookup(envRepo),
 		secretstores.WithVariableUsage(variableRepo),
 		secretstores.WithFederation(a.federation != nil),
+		secretstores.WithCredentialKeeper(a.keeper),
 		secretstores.WithAuthorizer(a.authz),
 		secretstores.WithTransactor(a.tx),
 		secretstores.WithOutboxRecorder(a.outbox),
@@ -346,7 +348,9 @@ func (a *app) wireDelivery(runners config.Runners) error {
 		storegrants.WithAssignments(deps),
 		storegrants.WithApplications(applicationRepo),
 		storegrants.WithGrantRepo(credentialspg.NewSecretStoreGrantRepository(a.db)),
+		storegrants.WithStoreRepo(storeRepo),
 		storegrants.WithIssuer(a.federation),
+		storegrants.WithBroker(a.broker, a.keeper),
 		storegrants.WithTransactor(a.tx),
 		storegrants.WithAuditRecorder(a.audit),
 	)

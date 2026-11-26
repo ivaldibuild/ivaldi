@@ -44,11 +44,12 @@ type SettingsBody struct {
 
 // AccessBody is how a store is opened.
 type AccessBody struct {
-	Mode       string `json:"mode" required:"true" enum:"agent,federated" doc:"How the store is opened: agent, with the agent's own identity or a credential its operator configured; or federated, with a JWT the control plane signs for each Deployment, which the store trusts"`
+	Mode       string `json:"mode" required:"true" enum:"agent,federated,brokered" doc:"How the store is opened: agent, with the agent's own identity or a credential its operator configured; federated, with a JWT the control plane signs for each Deployment, which the store trusts; or brokered, with a short-lived credential the control plane mints for each Deployment with the store's minting credential"`
 	Method     string `json:"method,omitempty" required:"false" enum:"kubernetes,universal_auth,oidc,jwt" doc:"For infisical: how the agent logs in; kubernetes (with identity_id) or universal_auth (with credential) in agent mode, and oidc or jwt (with identity_id) in federated mode"`
-	RoleARN    string `json:"role_arn,omitempty" required:"false" doc:"For aws_secrets_manager: the role to assume, on top of the agent's own AWS identity in agent mode, or with the JWT in federated mode, where it is required"`
+	RoleARN    string `json:"role_arn,omitempty" required:"false" doc:"For aws_secrets_manager: the role to assume, on top of the agent's own AWS identity in agent mode, with the JWT in federated mode, or by the control plane in brokered mode, where it is required"`
 	Role       string `json:"role,omitempty" required:"false" doc:"For vault: the auth role the agent logs in as"`
-	AuthMount  string `json:"auth_mount,omitempty" required:"false" doc:"For vault: the auth method's mount; kubernetes in agent mode and jwt in federated mode when omitted"`
+	AuthMount  string `json:"auth_mount,omitempty" required:"false" doc:"For vault: the auth method's mount; kubernetes in agent mode, jwt in federated mode, and approle in brokered mode when omitted"`
+	TokenRole  string `json:"token_role,omitempty" required:"false" doc:"For vault in brokered mode: the token role the control plane creates each Deployment's token from"`
 	Credential string `json:"credential,omitempty" required:"false" doc:"For doppler in agent mode, or infisical with universal_auth: the name of the credential, configured on the agent, that holds the Doppler token or the Universal Auth client ID and secret"`
 	IdentityID string `json:"identity_id,omitempty" required:"false" doc:"For doppler in federated mode: the service account identity that trusts the federation issuer. For infisical with kubernetes, oidc, or jwt: the machine identity the agent logs in as"`
 }
@@ -63,6 +64,7 @@ func (b *AccessBody) access() credentials.Access {
 		RoleARN:    b.RoleARN,
 		Role:       b.Role,
 		AuthMount:  b.AuthMount,
+		TokenRole:  b.TokenRole,
 		Credential: b.Credential,
 		IdentityID: b.IdentityID,
 	}
@@ -73,4 +75,25 @@ func (b *SettingsBody) settings() credentials.Settings {
 		return credentials.Settings{}
 	}
 	return credentials.Settings{AWS: b.AWS, Vault: b.Vault, Doppler: b.Doppler, Infisical: b.Infisical}
+}
+
+type SetSecretStoreCredentialRequest struct {
+	SecretStoreID string `path:"secret_store_id" doc:"The Secret Store's ID"`
+	Body          MintingCredentialBody
+}
+
+// MintingCredentialBody is a brokered store's minting credential: only the
+// fields its kind takes. It is kept encrypted and never read back.
+type MintingCredentialBody struct {
+	Token        string `json:"token,omitempty" required:"false" doc:"For doppler: a service account token that can manage the config's service tokens"`
+	RoleID       string `json:"role_id,omitempty" required:"false" doc:"For vault: the AppRole's role ID"`
+	SecretID     string `json:"secret_id,omitempty" required:"false" doc:"For vault: the AppRole's secret ID"`
+	ClientID     string `json:"client_id,omitempty" required:"false" doc:"For infisical: the machine identity's Universal Auth client ID"`
+	ClientSecret string `json:"client_secret,omitempty" required:"false" doc:"For infisical: the machine identity's Universal Auth client secret"`
+}
+
+func (b MintingCredentialBody) credential() credentials.MintingCredential {
+	return credentials.MintingCredential{
+		Token: b.Token, RoleID: b.RoleID, SecretID: b.SecretID, ClientID: b.ClientID, ClientSecret: b.ClientSecret,
+	}
 }

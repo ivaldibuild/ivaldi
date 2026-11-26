@@ -1,11 +1,14 @@
 package credentials
 
 import (
+	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ivaldibuild/ivaldi/pkg/clock"
 	"github.com/ivaldibuild/ivaldi/pkg/secretstore"
 )
 
@@ -49,6 +52,18 @@ func TestNewSecretStore(t *testing.T) {
 		require.NoError(t, err, props.Kind)
 		assert.Equal(t, AccessFederated, s.Access().Mode)
 	}
+	brokered := []NewSecretStoreProps{
+		storeProps(secretstore.KindAWSSecretsManager, Settings{AWS: &AWSSettings{Region: "eu-west-1"}}, Access{Mode: AccessBrokered, RoleARN: "arn:aws:iam::1:role/ivaldi"}),
+		storeProps(secretstore.KindVault, vault, Access{Mode: AccessBrokered, TokenRole: "payments-production"}),
+		storeProps(secretstore.KindDoppler, Settings{Doppler: &DopplerSettings{Project: "payments", Config: "prd"}}, Access{Mode: AccessBrokered}, testEnvA),
+		storeProps(secretstore.KindInfisical, infisical, Access{Mode: AccessBrokered}),
+	}
+	for _, props := range brokered {
+		s, err := NewSecretStore(props, nil)
+		require.NoError(t, err, props.Kind)
+		assert.Equal(t, props.Kind != secretstore.KindAWSSecretsManager, s.NeedsCredential(), props.Kind)
+		assert.False(t, s.CredentialSet())
+	}
 	for _, props := range valid {
 		s, err := NewSecretStore(props, nil)
 		require.NoError(t, err, props.Kind)
@@ -72,7 +87,11 @@ func TestNewSecretStore(t *testing.T) {
 		{"doppler without a credential", storeProps(secretstore.KindDoppler, Settings{}, Access{}, testEnvA), "needs the name of the credential"},
 		{"a credential name that is not a DNS name", storeProps(secretstore.KindDoppler, Settings{}, Access{Credential: "Doppler_Prod"}, testEnvA), "lowercase letters"},
 		{"doppler for every environment", storeProps(secretstore.KindDoppler, Settings{}, dopplerAccess), "names the environments"},
-		{"a mode not built yet", storeProps(secretstore.KindAWSSecretsManager, Settings{AWS: &AWSSettings{Region: "eu-west-1"}}, Access{Mode: "brokered"}), "must be agent or federated"},
+		{"an unknown mode", storeProps(secretstore.KindAWSSecretsManager, Settings{AWS: &AWSSettings{Region: "eu-west-1"}}, Access{Mode: "sealed"}), "must be agent, federated, or brokered"},
+		{"brokered kubernetes", storeProps(secretstore.KindKubernetes, Settings{}, Access{Mode: AccessBrokered}), "always in agent mode"},
+		{"brokered vault without a token role", storeProps(secretstore.KindVault, vault, Access{Mode: AccessBrokered}), "needs the token_role"},
+		{"brokered doppler without a config", storeProps(secretstore.KindDoppler, Settings{}, Access{Mode: AccessBrokered}, testEnvA), "needs the Doppler project and config"},
+		{"brokered infisical with a method", storeProps(secretstore.KindInfisical, infisical, Access{Mode: AccessBrokered, Method: AuthUniversal}), "takes no method"},
 		{"kubernetes federated", storeProps(secretstore.KindKubernetes, Settings{}, Access{Mode: AccessFederated}), "always in agent mode"},
 		{"federated aws without a role", storeProps(secretstore.KindAWSSecretsManager, Settings{AWS: &AWSSettings{Region: "eu-west-1"}}, Access{Mode: AccessFederated}), "needs the role_arn"},
 		{"federated doppler without an identity", storeProps(secretstore.KindDoppler, Settings{Doppler: &DopplerSettings{Project: "payments", Config: "prd"}}, Access{Mode: AccessFederated}, testEnvA), "needs the identity_id"},
@@ -159,4 +178,71 @@ func TestInfisicalSettingsDefaults(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "https://infisical.example.com", s.Settings().Infisical.SiteURL)
 	assert.Equal(t, "/app", s.Settings().Infisical.SecretPath)
+}
+
+// A brokered store records when and by whom its minting credential was set,
+// never the credential, and drops it when the store's mode or where it is
+// changes, or it is archived.
+func TestSecretStoreMintingCredential(t *testing.T) {
+	clock.Fix(t, time.Date(2026, 11, 25, 10, 0, 0, 0, time.UTC))
+	vault := Settings{Vault: &VaultSettings{Address: "https://vault.example.com", Mount: "kv"}}
+	newStore := func(t *testing.T) *SecretStore {
+		s, err := NewSecretStore(storeProps(secretstore.KindVault, vault, Access{Mode: AccessBrokered, TokenRole: "payments"}), nil)
+		require.NoError(t, err)
+		s.PullEvents()
+		return s
+	}
+	credential := MintingCredential{RoleID: "role", SecretID: "secret"}
+
+	s := newStore(t)
+	_, err := s.SetCredential("prn_ada", MintingCredential{RoleID: "role"})
+	assert.ErrorContains(t, err, "needs secret_id")
+	_, err = s.SetCredential("prn_ada", MintingCredential{RoleID: "role", SecretID: "secret", Token: "dp.st"})
+	assert.ErrorContains(t, err, "takes no token")
+	kept, err := s.SetCredential("prn_ada", credential)
+	require.NoError(t, err)
+	assert.Equal(t, credential, kept)
+	snap := s.Snapshot()
+	assert.Equal(t, "prn_ada", *snap.CredentialSetBy)
+	assert.NotNil(t, snap.CredentialSetAt)
+	recorded, err := json.Marshal(s.PullEvents())
+	require.NoError(t, err)
+	assert.NotContains(t, string(recorded), "secret\"", "never the credential")
+
+	cases := []struct {
+		name   string
+		change func(s *SecretStore) error
+		drops  bool
+	}{
+		{"renamed", func(s *SecretStore) error { return s.Update(UpdateSecretStoreProps{DisplayName: new("Vault")}) }, false},
+		{"another token role", func(s *SecretStore) error {
+			return s.Update(UpdateSecretStoreProps{Access: &Access{Mode: AccessBrokered, TokenRole: "other"}})
+		}, false},
+		{"another address", func(s *SecretStore) error {
+			return s.Update(UpdateSecretStoreProps{Settings: &Settings{Vault: &VaultSettings{Address: "https://elsewhere.example.com", Mount: "kv"}}})
+		}, true},
+		{"another mode", func(s *SecretStore) error {
+			return s.Update(UpdateSecretStoreProps{Access: &Access{Mode: AccessAgent, Role: "ivaldi"}})
+		}, true},
+		{"archived", func(s *SecretStore) error { s.Archive(); return nil }, true},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			s := newStore(t)
+			_, err := s.SetCredential("prn_ada", credential)
+			require.NoError(t, err)
+			require.NoError(t, tt.change(s))
+			assert.Equal(t, !tt.drops, s.CredentialSet())
+		})
+	}
+
+	aws, err := NewSecretStore(storeProps(secretstore.KindAWSSecretsManager, Settings{AWS: &AWSSettings{Region: "eu-west-1"}},
+		Access{Mode: AccessBrokered, RoleARN: "arn:aws:iam::1:role/ivaldi"}), nil)
+	require.NoError(t, err)
+	_, err = aws.SetCredential("prn_ada", MintingCredential{Token: "x"})
+	assert.ErrorContains(t, err, "takes no credential")
+	agent, err := NewSecretStore(storeProps(secretstore.KindVault, vault, Access{Role: "ivaldi"}), nil)
+	require.NoError(t, err)
+	_, err = agent.SetCredential("prn_ada", credential)
+	assert.ErrorContains(t, err, "only in brokered mode")
 }

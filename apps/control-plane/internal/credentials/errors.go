@@ -20,6 +20,19 @@ var (
 	// ErrNoFederation means a store is, or would be, in federated mode on an
 	// installation with no federation signing keys.
 	ErrNoFederation = errors.New("this installation has no federation signing keys")
+	// ErrNoBrokering means a store is, or would be, in brokered mode on an
+	// installation with no key-encryption key to keep minting credentials
+	// with.
+	ErrNoBrokering = errors.New("this installation has no key-encryption key")
+	// ErrNoCredential means a brokered store's minting credential has not
+	// been set.
+	ErrNoCredential = errors.New("the store's minting credential has not been set")
+	// ErrStoreRefused means a store refused its minting credential, or the
+	// request made with it.
+	ErrStoreRefused = errors.New("the store refused the request")
+	// ErrStoreUnavailable means a store could not be reached, or is
+	// throttling or failing: worth retrying.
+	ErrStoreUnavailable = errors.New("the store is unavailable")
 )
 
 // ErrInvalidInput describes why input failed validation. It matches ErrInvalid.

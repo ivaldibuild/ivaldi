@@ -11,8 +11,9 @@ import (
 
 // SecretStoreGrant records access the control plane granted to a Secret
 // Store, for one Deployment (ADR 0017). It never holds what was granted:
-// for a federated grant, it names the JWT by its ID. Grants raise no domain
-// event; each has an audit record.
+// for a federated grant, it names the JWT by its ID, and for a brokered one,
+// what was minted by the store's name for it. Grants raise no domain event;
+// each has an audit record.
 type SecretStoreGrant struct {
 	aggregate.Root
 	organizationID string
@@ -31,9 +32,9 @@ type SecretStoreGrantSnapshot struct {
 	OrganizationID string     `json:"organization_id"`
 	StoreID        string     `json:"secret_store_id"`
 	DeploymentID   string     `json:"deployment_id"`
-	Mode           AccessMode `json:"mode" enum:"agent,federated"`
-	// TokenID identifies what was granted, such as a federated JWT's jti,
-	// never the credential itself.
+	Mode           AccessMode `json:"mode" enum:"federated,brokered"`
+	// TokenID identifies what was granted, such as a federated JWT's jti
+	// or a brokered Doppler token's slug, never the credential itself.
 	TokenID   string     `json:"token_id"`
 	ExpiresAt time.Time  `json:"expires_at"`
 	RevokedAt *time.Time `json:"revoked_at"`
@@ -58,7 +59,7 @@ func NewSecretStoreGrant(props NewSecretStoreGrantProps, grantID *string) (*Secr
 	switch {
 	case props.OrganizationID == "", props.StoreID == "", props.DeploymentID == "":
 		return nil, NewErrInvalidInput("a grant names its organization, secret store, and deployment")
-	case props.Mode != AccessFederated:
+	case props.Mode != AccessFederated && props.Mode != AccessBrokered:
 		return nil, NewErrInvalidInput(fmt.Sprintf("access in %q mode is not granted", props.Mode))
 	case props.TokenID == "":
 		return nil, NewErrInvalidInput("a grant names what it granted")
@@ -89,6 +90,17 @@ func (g *SecretStoreGrant) StoreID() string        { return g.storeID }
 func (g *SecretStoreGrant) DeploymentID() string   { return g.deploymentID }
 func (g *SecretStoreGrant) Mode() AccessMode       { return g.mode }
 func (g *SecretStoreGrant) ExpiresAt() time.Time   { return g.expiresAt }
+func (g *SecretStoreGrant) TokenID() string        { return g.tokenID }
+func (g *SecretStoreGrant) Revoked() bool          { return g.revokedAt != nil }
+
+// Revoke records that what was granted was revoked. Revoking a revoked
+// grant does nothing.
+func (g *SecretStoreGrant) Revoke() {
+	if g.revokedAt == nil {
+		now := clock.Now()
+		g.revokedAt = &now
+	}
+}
 
 func (g *SecretStoreGrant) Snapshot() SecretStoreGrantSnapshot {
 	return SecretStoreGrantSnapshot{

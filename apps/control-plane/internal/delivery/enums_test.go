@@ -60,7 +60,7 @@ func TestAssignmentEnumTagsMatchTheDomain(t *testing.T) {
 	assert.ElementsMatch(t, deliverAs, enumTag(t, AssignmentSecret{}, "DeliverAs"))
 	assert.ElementsMatch(t, []string{string(StoreKubernetes), string(StoreAWSSecretsManager), string(StoreVault), string(StoreDoppler), string(StoreInfisical)},
 		enumTag(t, StoreSettings{}, "Kind"))
-	assert.ElementsMatch(t, []string{string(StoreAccessAgent), string(StoreAccessFederated)}, enumTag(t, StoreAccess{}, "Mode"))
+	assert.ElementsMatch(t, []string{string(StoreAccessAgent), string(StoreAccessFederated), string(StoreAccessBrokered)}, enumTag(t, StoreAccess{}, "Mode"))
 	assert.ElementsMatch(t, []string{string(StoreAuthKubernetes), string(StoreAuthUniversal), string(StoreAuthOIDC), string(StoreAuthJWT)},
 		enumTag(t, StoreAccess{}, "Method"))
 }

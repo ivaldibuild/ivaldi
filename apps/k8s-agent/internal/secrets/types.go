@@ -1,6 +1,7 @@
 package secrets
 
 import (
+	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/apiclient"
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/deploy"
 )
 
@@ -36,11 +37,13 @@ type Credential struct {
 }
 
 // opening is what a store is opened for: a Deployment in a namespace, with
-// the JWT the control plane granted when the store is federated. mask masks
-// a credential the store gets in exchange, until the values are read.
+// the JWT the control plane granted when the store is federated, or the
+// credential it minted when the store is brokered. mask masks a credential
+// the store gets in exchange, until the values are read.
 type opening struct {
 	deploymentID string
 	namespace    string
 	jwt          string
+	credential   *apiclient.BrokeredCredentialView
 	mask         func(string)
 }

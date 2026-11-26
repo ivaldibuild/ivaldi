@@ -19,6 +19,25 @@ type SecretStoreArchived struct {
 	SecretStore SecretStoreSnapshot `json:"secret_store"`
 }
 
+// SecretStoreCredentialSet is recorded when a brokered store's minting
+// credential is set or replaced. It carries the store, never the credential.
+type SecretStoreCredentialSet struct {
+	SecretStore SecretStoreSnapshot `json:"secret_store"`
+}
+
+// SecretStoreCredentialRemoved is recorded when a brokered store's minting
+// credential is removed: by request, or because the store's mode or where it
+// is changed, or it was archived.
+type SecretStoreCredentialRemoved struct {
+	SecretStore SecretStoreSnapshot `json:"secret_store"`
+}
+
 func (SecretStoreCreated) EventName() string  { return "credentials.v1.secret_store.created" }
 func (SecretStoreUpdated) EventName() string  { return "credentials.v1.secret_store.updated" }
 func (SecretStoreArchived) EventName() string { return "credentials.v1.secret_store.archived" }
+func (SecretStoreCredentialSet) EventName() string {
+	return "credentials.v1.secret_store.credential_set"
+}
+func (SecretStoreCredentialRemoved) EventName() string {
+	return "credentials.v1.secret_store.credential_removed"
+}

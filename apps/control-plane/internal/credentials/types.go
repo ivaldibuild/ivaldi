@@ -81,6 +81,9 @@ const (
 	// Deployment, which the agent exchanges at the store, whose own
 	// configuration trusts the control plane's federation issuer.
 	AccessFederated AccessMode = "federated"
+	// AccessBrokered has the control plane mint a short-lived credential
+	// for each Deployment, with a minting credential the store gives it.
+	AccessBrokered AccessMode = "brokered"
 )
 
 // AuthMethod is how a store whose kind has several ways to log in is
@@ -105,7 +108,7 @@ const (
 // Access is how a Secret Store is opened: its mode, and the settings that
 // mode needs for the store's kind. It never holds a credential.
 type Access struct {
-	Mode AccessMode `json:"mode" enum:"agent,federated"`
+	Mode AccessMode `json:"mode" enum:"agent,federated,brokered"`
 	// Method is, for infisical, how the agent logs in: kubernetes or
 	// universal_auth in agent mode, and oidc or jwt in federated mode.
 	Method AuthMethod `json:"method,omitempty" enum:"kubernetes,universal_auth,oidc,jwt"`
@@ -115,8 +118,12 @@ type Access struct {
 	// Role is, for vault, the auth role the agent logs in as.
 	Role string `json:"role,omitempty"`
 	// AuthMount is, for vault, the auth method's mount; empty means
-	// "kubernetes" in agent mode and "jwt" in federated mode.
+	// "kubernetes" in agent mode, "jwt" in federated mode, and "approle" in
+	// brokered mode.
 	AuthMount string `json:"auth_mount,omitempty"`
+	// TokenRole is, for vault in brokered mode, the token role the control
+	// plane creates each Deployment's token from.
+	TokenRole string `json:"token_role,omitempty"`
 	// Credential is the name of the credential the agent's operator
 	// configured: for doppler in agent mode, holding a Doppler token; for
 	// infisical with universal_auth, a Universal Auth client ID and secret.
@@ -167,6 +174,14 @@ var accessRules = map[AccessMode]map[secretstore.Kind]accessRule{
 				needs: map[string]string{"identity_id": "the identity_id of the machine identity whose JWT auth holds the federation issuer's keys"}},
 		}},
 	},
+	AccessBrokered: {
+		secretstore.KindAWSSecretsManager: {takes: []string{"role_arn"},
+			needs: map[string]string{"role_arn": "the role_arn of the role the control plane assumes, with the store's ID as its external ID"}},
+		secretstore.KindVault: {takes: []string{"token_role", "auth_mount"},
+			needs: map[string]string{"token_role": "the token_role the control plane creates each deployment's token from"}},
+		secretstore.KindDoppler:   {},
+		secretstore.KindInfisical: {},
+	},
 }
 
 // normalize checks that an access has a mode the kind can use, the
@@ -177,7 +192,7 @@ func (a Access) normalize(kind secretstore.Kind, settings Settings) (Access, err
 	}
 	kinds, ok := accessRules[a.Mode]
 	if !ok {
-		return Access{}, NewErrInvalidInput(fmt.Sprintf("access mode %q must be agent or federated", a.Mode))
+		return Access{}, NewErrInvalidInput(fmt.Sprintf("access mode %q must be agent, federated, or brokered", a.Mode))
 	}
 	rule, ok := kinds[kind]
 	if !ok {
@@ -204,7 +219,7 @@ func (a Access) normalize(kind secretstore.Kind, settings Settings) (Access, err
 	// setting is never silently ignored.
 	given := map[string]string{
 		"role_arn": a.RoleARN, "role": a.Role, "auth_mount": a.AuthMount,
-		"credential": a.Credential, "identity_id": a.IdentityID, "method": string(a.Method),
+		"credential": a.Credential, "identity_id": a.IdentityID, "method": string(a.Method), "token_role": a.TokenRole,
 	}
 	for _, name := range slices.Sorted(maps.Keys(given)) {
 		if given[name] != "" && !slices.Contains(rule.takes, name) {
@@ -225,10 +240,27 @@ func (a Access) normalize(kind secretstore.Kind, settings Settings) (Access, err
 			"credential %q must be at most %d lowercase letters, digits, '-', and '.', starting and ending with a letter or digit",
 			a.Credential, maxCredentialNameLength))
 	}
-	// A service account identity's token reads any config its account may,
-	// so the store must name the one it serves.
-	if kind == secretstore.KindDoppler && a.Mode == AccessFederated && settings.Doppler == nil {
-		return Access{}, NewErrInvalidInput("a doppler store in federated mode needs the Doppler project and config it reads")
+	// A service account's token reads any config its account may, and a
+	// minted token is for one config, so the store must name the one it
+	// serves.
+	if kind == secretstore.KindDoppler && a.Mode != AccessAgent && settings.Doppler == nil {
+		return Access{}, NewErrInvalidInput(fmt.Sprintf("a doppler store in %s mode needs the Doppler project and config it reads", a.Mode))
 	}
 	return a, nil
+}
+
+// SealedCredential is a brokered store's minting credential, encrypted with
+// its Organization's data key and bound to the store.
+type SealedCredential struct {
+	OrganizationID string
+	StoreID        string
+	Ciphertext     []byte
+}
+
+// DataKey is an Organization's data key, wrapped by the key-encryption key
+// KeyID names.
+type DataKey struct {
+	OrganizationID string
+	KeyID          string
+	Wrapped        []byte
 }

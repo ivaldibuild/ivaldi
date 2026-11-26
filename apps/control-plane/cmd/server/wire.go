@@ -15,6 +15,7 @@ import (
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/api"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/audit"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/config"
+	"github.com/ivaldibuild/ivaldi-control-plane/internal/credentials"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/credentials/federation"
 	deliverypg "github.com/ivaldibuild/ivaldi-control-plane/internal/delivery/postgres"
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/enrollment"
@@ -93,7 +94,15 @@ type app struct {
 	// federation signs the JWTs federated Secret Stores trust; nil when
 	// the installation has no federation keys.
 	federation federation.Issuer
-	verifier   identity.Verifier
+	// keeper keeps brokered Secret Stores' minting credentials and broker
+	// mints with them; both are nil when the installation has no
+	// key-encryption key.
+	keeper credentials.CredentialKeeper
+	broker credentials.Broker
+	// revocationEvents reads the outbox stream to revoke brokered grants;
+	// nil without a key-encryption key.
+	revocationEvents events.Consumer
+	verifier         identity.Verifier
 	// kubernetes verifies projected service-account tokens for workloads.
 	kubernetes workloadauth.KubernetesVerifier
 	// services serve the API's operations; root.go builds its routes from them.
@@ -293,10 +302,16 @@ func wire(ctx context.Context, cfg *config.Config, version string, logger loggin
 	if err := a.wireAgents(); err != nil {
 		return nil, nil, err
 	}
+	if err := a.wireBrokering(cfg); err != nil {
+		return nil, nil, err
+	}
 	if err := a.wireDelivery(cfg.Runners); err != nil {
 		return nil, nil, err
 	}
 	if err := a.wireApprovals(); err != nil {
+		return nil, nil, err
+	}
+	if err := a.wireRevocation(cfg, logger); err != nil {
 		return nil, nil, err
 	}
 	if err := a.wireNotifications(cfg, logger); err != nil {

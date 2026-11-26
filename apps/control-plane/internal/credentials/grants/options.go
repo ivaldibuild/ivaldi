@@ -27,6 +27,17 @@ func WithIssuer(i federation.Issuer) Option {
 	return func(s *service) { s.issuer = i }
 }
 
+// WithStoreRepo reads the brokered stores a Deployment reads, to mint for.
+func WithStoreRepo(r credentials.SecretStoreRepository) Option {
+	return func(s *service) { s.stores = r }
+}
+
+// WithBroker mints brokered stores' credentials, with the minting
+// credentials keeper opens. Without both, a brokered store is never granted.
+func WithBroker(b credentials.Broker, keeper credentials.CredentialKeeper) Option {
+	return func(s *service) { s.broker, s.keeper = b, keeper }
+}
+
 func WithTransactor(tx transaction.Transactor) Option {
 	return func(s *service) { s.w.Tx = tx }
 }

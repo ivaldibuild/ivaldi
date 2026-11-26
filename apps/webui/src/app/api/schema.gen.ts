@@ -1893,6 +1893,24 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/v1/secret-stores/{secret_store_id}/credential': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** Set or replace a brokered Secret Store's minting credential, which is never read back */
+    put: operations['set-secret-store-credential'];
+    post?: never;
+    /** Remove a brokered Secret Store's minting credential */
+    delete: operations['remove-secret-store-credential'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/v1/service-accounts': {
     parameters: {
       query?: never;
@@ -2657,12 +2675,13 @@ export interface components {
       /** @enum {string} */
       method?: 'kubernetes' | 'universal_auth' | 'oidc' | 'jwt';
       /** @enum {string} */
-      mode: 'agent' | 'federated';
+      mode: 'agent' | 'federated' | 'brokered';
       role?: string;
       role_arn?: string;
+      token_role?: string;
     };
     AccessBody: {
-      /** @description For vault: the auth method's mount; kubernetes in agent mode and jwt in federated mode when omitted */
+      /** @description For vault: the auth method's mount; kubernetes in agent mode, jwt in federated mode, and approle in brokered mode when omitted */
       auth_mount?: string;
       /** @description For doppler in agent mode, or infisical with universal_auth: the name of the credential, configured on the agent, that holds the Doppler token or the Universal Auth client ID and secret */
       credential?: string;
@@ -2674,14 +2693,16 @@ export interface components {
        */
       method?: 'kubernetes' | 'universal_auth' | 'oidc' | 'jwt';
       /**
-       * @description How the store is opened: agent, with the agent's own identity or a credential its operator configured; or federated, with a JWT the control plane signs for each Deployment, which the store trusts
+       * @description How the store is opened: agent, with the agent's own identity or a credential its operator configured; federated, with a JWT the control plane signs for each Deployment, which the store trusts; or brokered, with a short-lived credential the control plane mints for each Deployment with the store's minting credential
        * @enum {string}
        */
-      mode: 'agent' | 'federated';
+      mode: 'agent' | 'federated' | 'brokered';
       /** @description For vault: the auth role the agent logs in as */
       role?: string;
-      /** @description For aws_secrets_manager: the role to assume, on top of the agent's own AWS identity in agent mode, or with the JWT in federated mode, where it is required */
+      /** @description For aws_secrets_manager: the role to assume, on top of the agent's own AWS identity in agent mode, with the JWT in federated mode, or by the control plane in brokered mode, where it is required */
       role_arn?: string;
+      /** @description For vault in brokered mode: the token role the control plane creates each Deployment's token from */
+      token_role?: string;
     };
     AgentDetail: {
       /** Format: date-time */
@@ -2936,6 +2957,12 @@ export interface components {
       source: 'project' | 'application';
       value: string;
       values_path?: string;
+    };
+    BrokeredCredentialView: {
+      access_key_id?: string;
+      secret_access_key?: string;
+      session_token?: string;
+      token?: string;
     };
     BuildBody: {
       /**
@@ -3730,11 +3757,12 @@ export interface components {
       role_id: string;
     };
     GrantView: {
+      credential?: components['schemas']['BrokeredCredentialView'];
       /** Format: date-time */
       expires_at: string;
       jwt?: string;
       /** @enum {string} */
-      mode: 'federated';
+      mode: 'federated' | 'brokered';
       store_id: string;
     };
     GrantsView: {
@@ -3915,6 +3943,24 @@ export interface components {
       role: 'lead' | 'member';
       slug: string;
       team_id: string;
+    };
+    MintingCredentialBody: {
+      /**
+       * Format: uri
+       * @description A URL to the JSON Schema for this object.
+       * @example https://example.com/schemas/MintingCredentialBody.json
+       */
+      readonly $schema?: string;
+      /** @description For infisical: the machine identity's Universal Auth client ID */
+      client_id?: string;
+      /** @description For infisical: the machine identity's Universal Auth client secret */
+      client_secret?: string;
+      /** @description For vault: the AppRole's role ID */
+      role_id?: string;
+      /** @description For vault: the AppRole's secret ID */
+      secret_id?: string;
+      /** @description For doppler: a service account token that can manage the config's service tokens */
+      token?: string;
     };
     MoveLifecyclePhaseRequestBody: {
       /**
@@ -5843,11 +5889,14 @@ export interface components {
       archived_at: string | null;
       /** Format: date-time */
       created_at: string;
+      /** Format: date-time */
+      credential_set_at: string | null;
+      credential_set_by: string | null;
       display_name: string;
       environment_ids: string[];
       id: string;
       /** @enum {string} */
-      kind: 'kubernetes' | 'aws_secrets_manager' | 'vault' | 'doppler';
+      kind: 'kubernetes' | 'aws_secrets_manager' | 'vault' | 'doppler' | 'infisical';
       organization_id: string;
       settings: components['schemas']['Settings'];
       slug: string;
@@ -6047,7 +6096,7 @@ export interface components {
       /** @enum {string} */
       method?: 'kubernetes' | 'universal_auth' | 'oidc' | 'jwt';
       /** @enum {string} */
-      mode: 'agent' | 'federated';
+      mode: 'agent' | 'federated' | 'brokered';
       role?: string;
       role_arn?: string;
     };
@@ -11080,6 +11129,74 @@ export interface operations {
     };
   };
   'archive-secret-store': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Secret Store's ID */
+        secret_store_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseSecretStoreSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'set-secret-store-credential': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The Secret Store's ID */
+        secret_store_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['MintingCredentialBody'];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResponseSecretStoreSnapshot'];
+        };
+      };
+      /** @description Error */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/problem+json': components['schemas']['ErrorModel'];
+        };
+      };
+    };
+  };
+  'remove-secret-store-credential': {
     parameters: {
       query?: never;
       header?: never;

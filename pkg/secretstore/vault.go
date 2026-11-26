@@ -32,7 +32,11 @@ type VaultConfig struct {
 	// JWT returns the token to log in with, such as a service-account
 	// token. Address receives it, so both must be the operator's choice: a
 	// token made for Vault's audience, and an address they trust with it.
-	JWT    func() (string, error)
+	JWT func() (string, error)
+	// Token is a Vault token to read with as it is, such as one the
+	// control plane minted for a brokered store; with it, the store does not
+	// log in, and AuthRole, AuthMount, and JWT are unused.
+	Token  string
 	Client *http.Client
 }
 
@@ -144,6 +148,10 @@ func (v *vaultStore) login(ctx context.Context) (string, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if v.token != "" {
+		return v.token, nil
+	}
+	if v.cfg.Token != "" {
+		v.token = v.cfg.Token
 		return v.token, nil
 	}
 	jwt, err := v.cfg.JWT()

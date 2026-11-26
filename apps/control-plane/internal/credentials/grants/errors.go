@@ -27,6 +27,12 @@ func httpError(ctx context.Context, err error) error {
 		return huma.Error404NotFound("not found")
 	case errors.Is(err, delivery.ErrDeploymentStatus):
 		return huma.Error409Conflict(err.Error())
+	case errors.Is(err, credentials.ErrStoreRefused), errors.Is(err, credentials.ErrNoCredential):
+		// The message names the store and what it answered, never a
+		// credential.
+		return huma.Error422UnprocessableEntity(err.Error())
+	case errors.Is(err, credentials.ErrStoreUnavailable):
+		return huma.Error503ServiceUnavailable(err.Error())
 	}
 	return api.InternalError(ctx, err)
 }

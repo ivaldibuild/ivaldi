@@ -358,12 +358,15 @@ func (e EnvironmentSnapshotTier) Valid() bool {
 
 // Defines values for GrantViewMode.
 const (
+	GrantViewModeBrokered  GrantViewMode = "brokered"
 	GrantViewModeFederated GrantViewMode = "federated"
 )
 
 // Valid indicates whether the value is a known member of the GrantViewMode enum.
 func (e GrantViewMode) Valid() bool {
 	switch e {
+	case GrantViewModeBrokered:
+		return true
 	case GrantViewModeFederated:
 		return true
 	default:
@@ -539,6 +542,7 @@ func (e StoreAccessMethod) Valid() bool {
 // Defines values for StoreAccessMode.
 const (
 	StoreAccessModeAgent     StoreAccessMode = "agent"
+	StoreAccessModeBrokered  StoreAccessMode = "brokered"
 	StoreAccessModeFederated StoreAccessMode = "federated"
 )
 
@@ -546,6 +550,8 @@ const (
 func (e StoreAccessMode) Valid() bool {
 	switch e {
 	case StoreAccessModeAgent:
+		return true
+	case StoreAccessModeBrokered:
 		return true
 	case StoreAccessModeFederated:
 		return true
@@ -681,6 +687,14 @@ type AssignmentVariableKind string
 
 // AssignmentVariableSource defines model for AssignmentVariable.Source.
 type AssignmentVariableSource string
+
+// BrokeredCredentialView defines model for BrokeredCredentialView.
+type BrokeredCredentialView struct {
+	AccessKeyId     *string `json:"access_key_id,omitempty"`
+	SecretAccessKey *string `json:"secret_access_key,omitempty"`
+	SessionToken    *string `json:"session_token,omitempty"`
+	Token           *string `json:"token,omitempty"`
+}
 
 // CapabilityView defines model for CapabilityView.
 type CapabilityView struct {
@@ -845,10 +859,11 @@ type ErrorModel struct {
 
 // GrantView defines model for GrantView.
 type GrantView struct {
-	ExpiresAt time.Time     `json:"expires_at"`
-	Jwt       *string       `json:"jwt,omitempty"`
-	Mode      GrantViewMode `json:"mode"`
-	StoreId   string        `json:"store_id"`
+	Credential *BrokeredCredentialView `json:"credential,omitempty"`
+	ExpiresAt  time.Time               `json:"expires_at"`
+	Jwt        *string                 `json:"jwt,omitempty"`
+	Mode       GrantViewMode           `json:"mode"`
+	StoreId    string                  `json:"store_id"`
 }
 
 // GrantViewMode defines model for GrantView.Mode.

@@ -132,6 +132,9 @@ const (
 	// StoreAccessFederated: with a JWT the control plane grants for the
 	// Deployment, which the agent exchanges at the store.
 	StoreAccessFederated StoreAccessMode = "federated"
+	// StoreAccessBrokered: with a credential the control plane mints for
+	// the Deployment, which the agent uses as it is.
+	StoreAccessBrokered StoreAccessMode = "brokered"
 )
 
 // StoreAuthMethod is how the agent logs in to a store whose kind has
@@ -151,7 +154,7 @@ const (
 
 // StoreAccess is how the agent opens a store, and that mode's settings.
 type StoreAccess struct {
-	Mode StoreAccessMode `json:"mode" enum:"agent,federated"`
+	Mode StoreAccessMode `json:"mode" enum:"agent,federated,brokered"`
 	// Method is, for infisical, how the agent logs in.
 	Method StoreAuthMethod `json:"method,omitempty" enum:"kubernetes,universal_auth,oidc,jwt"`
 	// RoleARN is, for aws_secrets_manager, assumed on top of the agent's

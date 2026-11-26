@@ -132,3 +132,10 @@ version_control:
 # secret_stores:
 #   federation:
 #     signing_key_files: [.local/federation.pem]
+
+# A key-encryption key lets Secret Stores be in brokered mode: it wraps each
+# Organization's data key, which seals the stores' minting credentials. Make
+# one with `head -c 32 /dev/urandom | base64 > .local/kek`.
+# encryption:
+#   provider: local
+#   local_key_file: .local/kek

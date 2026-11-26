@@ -53,6 +53,7 @@ type options struct {
 	authz        authorization.Authorizer
 	writer       change.Writer
 	federation   bool
+	keeper       credentials.CredentialKeeper
 }
 
 func WithSecretStoreRepo(r credentials.SecretStoreRepository) SecretStoreServiceOption {
@@ -76,6 +77,13 @@ func WithVariableUsage(v VariableUsage) SecretStoreServiceOption {
 // mode.
 func WithFederation(enabled bool) SecretStoreServiceOption {
 	return func(o *options) { o.federation = enabled }
+}
+
+// WithCredentialKeeper keeps brokered stores' minting credentials. Without
+// it, the installation has no key-encryption key, and a store cannot be set
+// to brokered mode.
+func WithCredentialKeeper(k credentials.CredentialKeeper) SecretStoreServiceOption {
+	return func(o *options) { o.keeper = k }
 }
 
 func WithAuthorizer(a authorization.Authorizer) SecretStoreServiceOption {
@@ -126,7 +134,7 @@ func NewSecretStoreService(opts ...SecretStoreServiceOption) (credentials.Secret
 		return nil, fmt.Errorf("secret store service: %w", err)
 	}
 
-	s := &service{stores: o.stores, workspaces: o.workspaces, environments: o.environments, variables: o.variables, w: o.writer, federation: o.federation}
+	s := &service{stores: o.stores, workspaces: o.workspaces, environments: o.environments, variables: o.variables, w: o.writer, federation: o.federation, keeper: o.keeper}
 
 	return &authorized{next: s, authz: o.authz, stores: o.stores}, nil
 }
@@ -139,16 +147,22 @@ type service struct {
 	variables    VariableUsage
 	w            change.Writer
 	federation   bool
+	keeper       credentials.CredentialKeeper
 }
 
 var _ credentials.SecretStoreService = (*service)(nil)
 
 // checkMode refuses federated mode on an installation that cannot sign the
-// JWTs it needs.
+// JWTs it needs, and brokered mode on one that cannot keep minting
+// credentials.
 func (s *service) checkMode(access credentials.Access) error {
-	if access.Mode == credentials.AccessFederated && !s.federation {
+	switch {
+	case access.Mode == credentials.AccessFederated && !s.federation:
 		return credentials.NewErrInvalidInput("a store cannot be in federated mode: " + credentials.ErrNoFederation.Error() +
 			"; the installation's operator sets secret_stores.federation.signing_key_files")
+	case access.Mode == credentials.AccessBrokered && s.keeper == nil:
+		return credentials.NewErrInvalidInput("a store cannot be in brokered mode: " + credentials.ErrNoBrokering.Error() +
+			"; the installation's operator sets encryption.local_key_file")
 	}
 	return nil
 }
@@ -248,7 +262,18 @@ func (s *service) changeStore(ctx context.Context, actor identity.Actor, organiz
 		Load: func(ctx context.Context) (*credentials.SecretStore, error) {
 			return s.stores.GetSecretStoreForUpdate(ctx, organizationID, storeID)
 		},
-		Apply:    apply,
+		Apply: func(ctx context.Context, store *credentials.SecretStore) error {
+			had := store.CredentialSet()
+			if err := apply(ctx, store); err != nil {
+				return err
+			}
+			// A change that drops the credential, such as moving the store,
+			// deletes it with the change.
+			if had && !store.CredentialSet() && s.keeper != nil {
+				return s.keeper.Delete(ctx, organizationID, store.ID())
+			}
+			return nil
+		},
 		Save:     s.stores.UpdateSecretStore,
 		Snapshot: func(store *credentials.SecretStore) any { return store.Snapshot() },
 		Event: func(store *credentials.SecretStore) audit.Event {

@@ -48,4 +48,10 @@ func TestSecretStoreGrantRepository(t *testing.T) {
 	none, err := grants.ListDeploymentGrants(ctx, "org_b", "dpl_a")
 	require.NoError(t, err)
 	assert.Empty(t, none, "another organization's grants")
+
+	first.Revoke()
+	require.NoError(t, grants.UpdateSecretStoreGrant(ctx, first))
+	got, err = grants.ListDeploymentGrants(ctx, org, "dpl_a")
+	require.NoError(t, err)
+	assert.True(t, got[0].Revoked())
 }

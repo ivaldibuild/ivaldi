@@ -352,3 +352,59 @@ export function federationAudience(store: SecretStore): string {
 export function federationSubject(store: SecretStore, environmentId: string): string {
   return `org:${store.organization_id}:store:${store.id}:env:${environmentId}`;
 }
+
+/** The form's fields for an existing store, to change it. */
+export function fieldsOf(store: SecretStore): StoreFields {
+  const { aws, vault, doppler, infisical } = store.settings;
+  const a = store.access;
+  return withChange(emptyStore(), {
+    name: store.display_name,
+    kind: store.kind,
+    mode: a.mode,
+    method: a.method ?? '',
+    region: aws?.region ?? '',
+    roleArn: a.role_arn ?? '',
+    address: vault?.address ?? '',
+    mount: vault?.mount ?? '',
+    role: a.role ?? '',
+    authMount: a.auth_mount ?? '',
+    tokenRole: a.token_role ?? '',
+    credential: a.credential ?? '',
+    identityId: a.identity_id ?? '',
+    project: doppler?.project ?? '',
+    config: doppler?.config ?? '',
+    siteUrl: infisical?.site_url ?? '',
+    projectId: infisical?.project_id ?? '',
+    environment: infisical?.environment ?? '',
+    secretPath: infisical?.secret_path ?? '',
+  });
+}
+
+/**
+ * Where a store's minting credential is sent, or what it is for, as the control plane decides it:
+ * changing it removes the credential.
+ */
+function destination(store: SecretStore['settings'], kind: SecretStore['kind']): string {
+  const trim = (url = '') => url.trim().replace(/\/+$/, '');
+  switch (kind) {
+    case 'vault':
+      return trim(store.vault?.address);
+    case 'doppler':
+      return `${store.doppler?.project ?? ''}/${store.doppler?.config ?? ''}`;
+    case 'infisical':
+      return `${trim(store.infisical?.site_url) || 'https://app.infisical.com'}/${store.infisical?.project_id ?? ''}`;
+    case 'aws_secrets_manager':
+      return store.aws?.region ?? '';
+    default:
+      return '';
+  }
+}
+
+/** Whether saving the fields removes the store's minting credential: a new mode, or destination. */
+export function credentialDropped(store: SecretStore, f: StoreFields): boolean {
+  return (
+    store.credential_set_at !== null &&
+    (f.mode !== store.access.mode ||
+      destination(storeSettings(f), store.kind) !== destination(store.settings, store.kind))
+  );
+}

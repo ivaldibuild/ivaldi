@@ -1,4 +1,4 @@
-import { Component, computed, inject, input, output, signal } from '@angular/core';
+import { Component, computed, inject, input, linkedSignal, output, signal } from '@angular/core';
 import { form, FormField, submit } from '@angular/forms/signals';
 import { HlmAlertImports } from '@spartan-ng/helm/alert';
 import { HlmButtonImports } from '@spartan-ng/helm/button';
@@ -10,7 +10,9 @@ import { RequestStatus } from '../../shared/request-status';
 import { WorkspaceContext } from '../workspace-context';
 import { SecretStoresApi } from './secret-stores-api';
 import {
+  credentialDropped,
   emptyStore,
+  fieldsOf,
   infisicalMethods,
   kinds,
   modes,
@@ -22,9 +24,9 @@ import {
 } from './store-access';
 
 /**
- * Adds a Secret Store: the secret manager, where it is, how it is opened, and which Environments
- * may read it. Each mode asks only what its kind needs; a brokered store's minting credential is
- * set once the store exists.
+ * Adds a Secret Store, or changes one: the secret manager, where it is, how it is opened, and
+ * which Environments may read it. Each mode asks only what its kind needs; a brokered store's
+ * minting credential is set once the store exists. A store's kind never changes.
  */
 @Component({
   selector: 'app-secret-store-form',
@@ -43,11 +45,16 @@ export class SecretStoreForm {
   private readonly context = inject(WorkspaceContext);
 
   readonly environments = input.required<Environment[]>();
-  readonly created = output<SecretStore>();
+  /** The store to change; a new one is added without it. */
+  readonly existing = input<SecretStore | null>(null);
+  readonly saved = output<SecretStore>();
   readonly cancelled = output<void>();
 
   protected readonly kinds = kinds;
-  private readonly model = signal(emptyStore());
+  private readonly model = linkedSignal(() => {
+    const store = this.existing();
+    return store ? fieldsOf(store) : emptyStore();
+  });
   protected readonly store = form(this.model);
   /** The fields, with the mode and method kept to ones the kind can use. */
   protected readonly fields = computed(() => withChange(this.model(), {}));
@@ -59,7 +66,14 @@ export class SecretStoreForm {
     this.fields().kind === 'infisical' ? infisicalMethods[this.fields().mode] : [],
   );
 
-  protected readonly chosen = signal<string[]>([]);
+  protected readonly chosen = linkedSignal(() => this.existing()?.environment_ids ?? []);
+  /** Ids are per form, since one store's form can be open beside another's. */
+  protected readonly headingId = computed(() => `store-form-${this.existing()?.id ?? 'new'}`);
+  /** Whether saving removes the store's minting credential, which must then be set again. */
+  protected readonly dropsCredential = computed(() => {
+    const store = this.existing();
+    return store !== null && credentialDropped(store, this.fields());
+  });
   protected readonly status = new RequestStatus();
   protected readonly invalid = signal<string | null>(null);
 
@@ -73,7 +87,7 @@ export class SecretStoreForm {
     this.chosen.update((ids) => (checked ? [...ids, id] : ids.filter((other) => other !== id)));
   }
 
-  protected async add(event: Event): Promise<void> {
+  protected async save(event: Event): Promise<void> {
     event.preventDefault();
     await submit(this.store, async () => {
       const fields = this.fields();
@@ -83,18 +97,21 @@ export class SecretStoreForm {
       if (problem || !workspaceId) {
         return undefined;
       }
-      let made: SecretStore | undefined;
+      const changes = {
+        display_name: fields.name.trim(),
+        settings: storeSettings(fields),
+        access: storeAccess(fields),
+        environment_ids: this.chosen(),
+      };
+      const existing = this.existing();
+      let done: SecretStore | undefined;
       await this.status.run(async () => {
-        made = await this.api.create(workspaceId, {
-          display_name: fields.name.trim(),
-          kind: fields.kind,
-          settings: storeSettings(fields),
-          access: storeAccess(fields),
-          environment_ids: this.chosen(),
-        });
+        done = existing
+          ? await this.api.update(existing.id, changes)
+          : await this.api.create(workspaceId, { ...changes, kind: fields.kind });
       });
-      if (made) {
-        this.created.emit(made);
+      if (done) {
+        this.saved.emit(done);
       }
       return undefined;
     });

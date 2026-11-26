@@ -31,6 +31,7 @@ const store = (changes: Partial<SecretStore>): SecretStore => ({
 describe('SecretStoresPage', () => {
   let created: SecretStoreFields[];
   let credentials: { id: string; credential: MintingCredential }[];
+  let updated: { id: string; changes: unknown }[];
   let archive: (id: string) => Promise<SecretStore>;
 
   async function render(
@@ -38,6 +39,7 @@ describe('SecretStoresPage', () => {
   ): Promise<{ fixture: ComponentFixture<SecretStoresPage>; el: HTMLElement }> {
     created = [];
     credentials = [];
+    updated = [];
     archive = () => Promise.resolve(store({}));
     TestBed.configureTestingModule({
       imports: [SecretStoresPage],
@@ -67,6 +69,16 @@ describe('SecretStoresPage', () => {
                   environment_ids: [production],
                 }),
                 store({
+                  id: 'sst_5',
+                  display_name: 'Doppler set',
+                  kind: 'doppler',
+                  settings: { doppler: { project: 'payments', config: 'prd' } },
+                  access: { mode: 'brokered' },
+                  environment_ids: [production],
+                  credential_set_at: '2026-11-26T10:00:00Z',
+                  credential_set_by: 'prn_ada',
+                }),
+                store({
                   id: 'sst_4',
                   display_name: 'AWS',
                   kind: 'aws_secrets_manager',
@@ -80,6 +92,10 @@ describe('SecretStoresPage', () => {
               return Promise.resolve(store({}));
             },
             archive: (id: string) => archive(id),
+            update: (id: string, changes: unknown) => {
+              updated.push({ id, changes });
+              return Promise.resolve(store({ id }));
+            },
             setCredential: (id: string, credential: MintingCredential) => {
               credentials.push({ id, credential });
               return Promise.resolve(store({ id }));
@@ -145,9 +161,9 @@ describe('SecretStoresPage', () => {
     expect(items[1]).toContain('Read by Production');
     expect(items[2]).toContain('Brokered');
     expect(items[2]).toContain('No minting credential yet');
-    expect(items[3]).toContain('Federated: arn:aws:iam::1:role/ivaldi');
-    expect(items[3]).toContain('ivaldi:sst_4');
-    expect(items[3]).toContain(`org:org_1:store:sst_4:env:${production}`);
+    expect(items[4]).toContain('Federated: arn:aws:iam::1:role/ivaldi');
+    expect(items[4]).toContain('ivaldi:sst_4');
+    expect(items[4]).toContain(`org:org_1:store:sst_4:env:${production}`);
   });
 
   it("sets a brokered store's minting credential, and keeps nothing of it", async () => {
@@ -170,6 +186,37 @@ describe('SecretStoresPage', () => {
     await settle(fixture);
     expect(credentials).toEqual([{ id: 'sst_3', credential: { token: 'dp.sa.s3cret' } }]);
     expect(el.innerHTML).not.toContain('dp.sa.s3cret');
+  });
+
+  it('changes a store, keeping its kind, and says when that removes its credential', async () => {
+    const { fixture, el } = await render();
+    button(el, 'Change Vault').click();
+    fixture.detectChanges();
+    expect(el.querySelector('#store-kind')).toBeNull();
+    expect(el.querySelector<HTMLInputElement>('#store-auth-role')!.value).toBe('ivaldi');
+    type(el, '#store-auth-role', 'ivaldi-production');
+    el.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    expect(updated).toEqual([
+      {
+        id: 'sst_2',
+        changes: {
+          display_name: 'Vault',
+          settings: { vault: { address: 'https://vault.example.com', mount: 'kv' } },
+          access: { mode: 'agent', role: 'ivaldi-production', auth_mount: undefined },
+          environment_ids: [production],
+        },
+      },
+    ]);
+
+    button(el, 'Change Doppler set').click();
+    fixture.detectChanges();
+    expect(el.querySelector('form')!.textContent).not.toContain('removes the store');
+    type(el, '#store-config', 'stg');
+    fixture.detectChanges();
+    expect(el.querySelector('form')!.textContent).toContain(
+      "Saving removes the store's minting credential",
+    );
   });
 
   it('creates a store in the mode chosen, asking what that mode needs', async () => {

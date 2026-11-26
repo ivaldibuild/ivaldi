@@ -1,4 +1,14 @@
-import { emptyStore, storeAccess, storeProblem, StoreFields, withChange } from './store-access';
+import { SecretStore } from '../../api/models';
+import {
+  credentialDropped,
+  emptyStore,
+  fieldsOf,
+  storeAccess,
+  storeProblem,
+  StoreFields,
+  storeSettings,
+  withChange,
+} from './store-access';
 
 const fields = (change: Partial<StoreFields>): StoreFields => withChange(emptyStore(), change);
 
@@ -91,5 +101,70 @@ describe('store access', () => {
         [],
       ),
     ).toBeNull();
+  });
+});
+
+const stored = (changes: Partial<SecretStore>): SecretStore => ({
+  id: 'sst_1',
+  organization_id: 'org_1',
+  workspace_id: 'wsp_1',
+  slug: 'store',
+  display_name: 'Store',
+  kind: 'vault',
+  settings: { vault: { address: 'https://vault.example.com', mount: 'kv' } },
+  access: { mode: 'brokered', token_role: 'payments' },
+  environment_ids: [],
+  credential_set_at: '2026-11-26T10:00:00Z',
+  credential_set_by: 'prn_ada',
+  created_at: '2026-11-26T10:00:00Z',
+  updated_at: '2026-11-26T10:00:00Z',
+  archived_at: null,
+  ...changes,
+});
+
+describe('changing a store', () => {
+  it('fills the form from the store, and saves it as it was', () => {
+    const stores = [
+      stored({}),
+      stored({
+        kind: 'infisical',
+        settings: {
+          infisical: {
+            site_url: 'https://app.infisical.com',
+            project_id: 'p',
+            environment: 'prod',
+            secret_path: '/app',
+          },
+        },
+        access: { mode: 'agent', method: 'kubernetes', identity_id: 'idt_1' },
+      }),
+      stored({
+        kind: 'doppler',
+        settings: { doppler: { project: 'payments', config: 'prd' } },
+        access: { mode: 'federated', identity_id: 'said_1' },
+      }),
+    ];
+    for (const store of stores) {
+      const fields = fieldsOf(store);
+      expect(storeSettings(fields)).toEqual(store.settings);
+      expect(JSON.parse(JSON.stringify(storeAccess(fields)))).toEqual(store.access);
+    }
+  });
+
+  it('knows which changes remove the minting credential', () => {
+    const store = stored({});
+    expect(
+      credentialDropped(store, { ...fieldsOf(store), name: 'Renamed', tokenRole: 'other' }),
+    ).toBe(false);
+    expect(
+      credentialDropped(store, { ...fieldsOf(store), address: 'https://vault.example.com/' }),
+    ).toBe(false);
+    expect(
+      credentialDropped(store, { ...fieldsOf(store), address: 'https://elsewhere.example.com' }),
+    ).toBe(true);
+    expect(credentialDropped(store, { ...fieldsOf(store), mode: 'agent' })).toBe(true);
+    expect(
+      credentialDropped(stored({ credential_set_at: null }), { ...fieldsOf(store), mode: 'agent' }),
+    ).toBe(false);
   });
 });

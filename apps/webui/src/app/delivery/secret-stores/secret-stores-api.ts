@@ -25,6 +25,11 @@ export class SecretStoresApi {
     return this.api.send('POST', `/workspaces/${workspaceId}/secret-stores`, store);
   }
 
+  /** Changes a store's name, settings, access, or Environments; its kind never changes. */
+  update(id: string, changes: Omit<SecretStoreFields, 'kind'>): Promise<SecretStore> {
+    return this.api.send('PATCH', `/secret-stores/${id}`, changes);
+  }
+
   archive(id: string): Promise<SecretStore> {
     return this.api.send('POST', `/secret-stores/${id}/archive`);
   }

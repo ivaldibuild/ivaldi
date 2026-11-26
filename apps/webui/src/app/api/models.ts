@@ -56,6 +56,9 @@ export type Placement = Schemas['PlacementSnapshot'];
 /** A secret manager a runtime agent reads secret variables from; it holds no credential. */
 export type SecretStore = Schemas['SecretStoreSnapshot'];
 export type SecretStoreKind = SecretStore['kind'];
+export type SecretStoreMode = SecretStore['access']['mode'];
+export type SecretStoreMethod = NonNullable<SecretStore['access']['method']>;
+export type MintingCredential = Schemas['MintingCredentialBody'];
 /** Where a secret variable's value is kept: never the secret itself. */
 export type SecretReference = Schemas['SecretReference'];
 

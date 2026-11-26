@@ -10,7 +10,7 @@ import {
   VariableScope,
 } from '../../api/models';
 import { DeliveryApi } from '../delivery-api';
-import { SecretStoresApi } from '../secret-stores-api';
+import { SecretStoresApi } from '../secret-stores/secret-stores-api';
 
 /** The Project or the Application that owns variables. */
 export type VariableOwner = { projectId: string } | { applicationId: string };

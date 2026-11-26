@@ -1,0 +1,329 @@
+<form
+  class="border-border grid max-w-205 gap-4 border p-5 md:grid-cols-2"
+  novalidate
+  aria-labelledby="add-store-heading"
+  (submit)="add($event)"
+>
+  <h2 id="add-store-heading" class="text-heading font-semibold md:col-span-2">
+    Add a secret store
+  </h2>
+  @if (invalid() || status.error(); as message) {
+    <div hlmAlert variant="destructive" role="alert" class="md:col-span-2">
+      <p hlmAlertDescription>{{ message }}</p>
+    </div>
+  }
+  <div hlmField>
+    <label hlmFieldLabel for="store-name">Name</label>
+    <input hlmInput id="store-name" placeholder="Production secrets" [formField]="store.name" />
+  </div>
+  <div hlmField>
+    <label hlmFieldLabel for="store-kind">Secret manager</label>
+    <select
+      id="store-kind"
+      class="border-input bg-background text-foreground h-9 border px-2"
+      aria-describedby="store-kind-hint"
+      [formField]="store.kind"
+    >
+      @for (kind of kinds; track kind.value) {
+        <option [value]="kind.value">{{ kind.label }}</option>
+      }
+    </select>
+    <p id="store-kind-hint" class="text-muted-foreground text-[13px]">
+      The agent reads {{ kind().reads }}. It can't be changed later.
+    </p>
+  </div>
+
+  @switch (fields().kind) {
+    @case ('aws_secrets_manager') {
+      <div hlmField class="md:col-span-2">
+        <label hlmFieldLabel for="store-region">AWS region</label>
+        <input hlmInput id="store-region" placeholder="eu-west-1" [formField]="store.region" />
+      </div>
+    }
+    @case ('vault') {
+      <div hlmField>
+        <label hlmFieldLabel for="store-address">Vault address</label>
+        <input
+          hlmInput
+          id="store-address"
+          placeholder="https://vault.example.com"
+          [formField]="store.address"
+        />
+      </div>
+      <div hlmField>
+        <label hlmFieldLabel for="store-mount">KV v2 mount</label>
+        <input hlmInput id="store-mount" placeholder="secret" [formField]="store.mount" />
+      </div>
+    }
+    @case ('doppler') {
+      <div hlmField>
+        <label hlmFieldLabel for="store-project">
+          Project{{ fields().mode === 'agent' ? ' (optional)' : '' }}
+        </label>
+        <input
+          hlmInput
+          id="store-project"
+          placeholder="payments"
+          aria-describedby="store-config-hint"
+          [formField]="store.project"
+        />
+      </div>
+      <div hlmField>
+        <label hlmFieldLabel for="store-config">
+          Config{{ fields().mode === 'agent' ? ' (optional)' : '' }}
+        </label>
+        <input
+          hlmInput
+          id="store-config"
+          placeholder="prd"
+          aria-describedby="store-config-hint"
+          [formField]="store.config"
+        />
+        <p id="store-config-hint" class="text-muted-foreground text-[13px]">
+          @if (fields().mode === 'agent') {
+            A service token implies its config; another token needs both.
+          } @else {
+            The config the store reads.
+          }
+        </p>
+      </div>
+    }
+    @case ('infisical') {
+      <div hlmField>
+        <label hlmFieldLabel for="store-project-id">Project ID</label>
+        <input hlmInput id="store-project-id" [formField]="store.projectId" />
+      </div>
+      <div hlmField>
+        <label hlmFieldLabel for="store-environment">Environment slug</label>
+        <input hlmInput id="store-environment" placeholder="prod" [formField]="store.environment" />
+      </div>
+      <div hlmField>
+        <label hlmFieldLabel for="store-site">Site (optional)</label>
+        <input
+          hlmInput
+          id="store-site"
+          placeholder="https://app.infisical.com"
+          aria-describedby="store-site-hint"
+          [formField]="store.siteUrl"
+        />
+        <p id="store-site-hint" class="text-muted-foreground text-[13px]">
+          Infisical Cloud's US site when empty. A self-hosted Infisical must be listed in the agent
+          chart's <code>secrets.addresses</code>.
+        </p>
+      </div>
+      <div hlmField>
+        <label hlmFieldLabel for="store-folder">Folder (optional)</label>
+        <input
+          hlmInput
+          id="store-folder"
+          placeholder="/"
+          aria-describedby="store-folder-hint"
+          [formField]="store.secretPath"
+        />
+        <p id="store-folder-hint" class="text-muted-foreground text-[13px]">
+          Secret paths are relative to it; the root when empty.
+        </p>
+      </div>
+    }
+  }
+
+  @if (modes().length > 1) {
+    <fieldset class="flex flex-col gap-2 md:col-span-2">
+      <legend class="text-sm font-semibold">How the agent opens it</legend>
+      @for (mode of modes(); track mode.value) {
+        <label class="flex items-start gap-2 text-sm">
+          <input
+            type="radio"
+            class="accent-primary mt-1 size-4"
+            [value]="mode.value"
+            [formField]="store.mode"
+          />
+          <span>
+            <span class="font-semibold">{{ mode.label }}.</span>
+            <span class="text-muted-foreground"> {{ mode.description }}</span>
+          </span>
+        </label>
+      }
+    </fieldset>
+  }
+
+  @if (methods().length > 0) {
+    <div hlmField class="md:col-span-2">
+      <label hlmFieldLabel for="store-method">Logs in with</label>
+      <select
+        id="store-method"
+        class="border-input bg-background text-foreground h-9 border px-2"
+        (change)="setMethod($event)"
+      >
+        @for (method of methods(); track method.value) {
+          <option [value]="method.value" [selected]="fields().method === method.value">
+            {{ method.label }}
+          </option>
+        }
+      </select>
+    </div>
+  }
+
+  @switch (fields().kind) {
+    @case ('aws_secrets_manager') {
+      <div hlmField class="md:col-span-2">
+        <label hlmFieldLabel for="store-role">
+          Role{{ fields().mode === 'agent' ? ' to assume (optional)' : '' }}
+        </label>
+        <input
+          hlmInput
+          id="store-role"
+          placeholder="arn:aws:iam::123456789012:role/ivaldi-secrets"
+          aria-describedby="store-role-hint"
+          [formField]="store.roleArn"
+        />
+        <p id="store-role-hint" class="text-muted-foreground text-[13px]">
+          @switch (fields().mode) {
+            @case ('agent') {
+              Assumed on top of the agent's own AWS identity.
+            }
+            @case ('federated') {
+              It trusts the federation issuer, with the store's audience and subject.
+            }
+            @case ('brokered') {
+              The control plane assumes it with its own AWS identity, with the store's ID as the
+              external ID.
+            }
+          }
+        </p>
+      </div>
+    }
+    @case ('vault') {
+      @if (fields().mode === 'brokered') {
+        <div hlmField>
+          <label hlmFieldLabel for="store-token-role">Token role</label>
+          <input
+            hlmInput
+            id="store-token-role"
+            placeholder="payments-production"
+            aria-describedby="store-token-role-hint"
+            [formField]="store.tokenRole"
+          />
+          <p id="store-token-role-hint" class="text-muted-foreground text-[13px]">
+            Each Deployment's token is created from it. Make it orphan.
+          </p>
+        </div>
+      } @else {
+        <div hlmField>
+          <label hlmFieldLabel for="store-auth-role">Auth role</label>
+          <input
+            hlmInput
+            id="store-auth-role"
+            placeholder="ivaldi-agent"
+            aria-describedby="store-auth-role-hint"
+            [formField]="store.role"
+          />
+          <p id="store-auth-role-hint" class="text-muted-foreground text-[13px]">
+            The {{ fields().mode === 'agent' ? 'Kubernetes' : 'JWT' }} auth role the agent logs in
+            as.
+          </p>
+        </div>
+      }
+      <div hlmField>
+        <label hlmFieldLabel for="store-auth-mount">Auth mount (optional)</label>
+        <input
+          hlmInput
+          id="store-auth-mount"
+          aria-describedby="store-auth-mount-hint"
+          [formField]="store.authMount"
+        />
+        <p id="store-auth-mount-hint" class="text-muted-foreground text-[13px]">
+          <code>{{
+            fields().mode === 'agent'
+              ? 'kubernetes'
+              : fields().mode === 'federated'
+                ? 'jwt'
+                : 'approle'
+          }}</code>
+          when empty.
+        </p>
+      </div>
+    }
+  }
+
+  @if (
+    (fields().kind === 'doppler' && fields().mode === 'agent') ||
+    fields().method === 'universal_auth'
+  ) {
+    <div hlmField class="md:col-span-2">
+      <label hlmFieldLabel for="store-credential">Credential on the agent</label>
+      <input
+        hlmInput
+        id="store-credential"
+        [placeholder]="fields().kind + '-production'"
+        aria-describedby="store-credential-hint"
+        [formField]="store.credential"
+      />
+      <p id="store-credential-hint" class="text-muted-foreground text-[13px]">
+        The name the agent's operator maps to a Secret in the chart's
+        <code>secrets.credentials</code>. Ivaldi never sees what it holds.
+      </p>
+    </div>
+  }
+  @if (
+    (fields().kind === 'doppler' && fields().mode === 'federated') ||
+    (fields().kind === 'infisical' &&
+      fields().mode !== 'brokered' &&
+      fields().method !== 'universal_auth')
+  ) {
+    <div hlmField class="md:col-span-2">
+      <label hlmFieldLabel for="store-identity">Identity ID</label>
+      <input
+        hlmInput
+        id="store-identity"
+        aria-describedby="store-identity-hint"
+        [formField]="store.identityId"
+      />
+      <p id="store-identity-hint" class="text-muted-foreground text-[13px]">
+        @if (fields().kind === 'doppler') {
+          The service account identity that trusts the federation issuer.
+        } @else {
+          The machine identity the agent logs in as.
+        }
+      </p>
+    </div>
+  }
+  @if (fields().mode === 'brokered' && fields().kind !== 'aws_secrets_manager') {
+    <p class="text-muted-foreground text-sm md:col-span-2">
+      Once the store is added, give it the credential the control plane mints with. Until then,
+      Deployments that read it are refused.
+    </p>
+  }
+
+  <fieldset class="flex flex-col gap-2 md:col-span-2">
+    <legend class="text-sm font-semibold">Environments that may read it</legend>
+    <p class="text-muted-foreground text-[13px]">
+      Tick none to allow every Environment in the Workspace. Keeping production's store to
+      production stops a staging Deployment from reading production's secrets.
+    </p>
+    @for (environment of environments(); track environment.id) {
+      <label class="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          class="accent-primary size-4"
+          [checked]="chosen().includes(environment.id)"
+          (change)="toggleEnvironment(environment.id, $event)"
+        />
+        {{ environment.display_name }}
+      </label>
+    } @empty {
+      <p class="text-muted-foreground text-sm">The Workspace has no Environments yet.</p>
+    }
+  </fieldset>
+
+  <div class="flex flex-wrap gap-2 md:col-span-2">
+    <button hlmBtn type="submit" [disabled]="status.saving()">
+      @if (status.saving()) {
+        <hlm-spinner aria-hidden="true" /> Adding…
+      } @else {
+        Add secret store
+      }
+    </button>
+    <button hlmBtn variant="outline" type="button" (click)="cancelled.emit()">Cancel</button>
+  </div>
+</form>

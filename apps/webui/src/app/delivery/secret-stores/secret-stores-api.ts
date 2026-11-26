@@ -1,6 +1,6 @@
 import { inject, Service } from '@angular/core';
-import { ApiClient } from '../api/api-client';
-import { SecretStore, SecretStoreKind } from '../api/models';
+import { ApiClient } from '../../api/api-client';
+import { MintingCredential, SecretStore, SecretStoreKind } from '../../api/models';
 
 /** What a Secret Store is made from: where it is, how it is opened, and who may read it. */
 export interface SecretStoreFields {
@@ -27,5 +27,14 @@ export class SecretStoresApi {
 
   archive(id: string): Promise<SecretStore> {
     return this.api.send('POST', `/secret-stores/${id}/archive`);
+  }
+
+  /** Sets or replaces a brokered store's minting credential, which is never read back. */
+  setCredential(id: string, credential: MintingCredential): Promise<SecretStore> {
+    return this.api.send('PUT', `/secret-stores/${id}/credential`, credential);
+  }
+
+  removeCredential(id: string): Promise<SecretStore> {
+    return this.api.send('DELETE', `/secret-stores/${id}/credential`);
   }
 }

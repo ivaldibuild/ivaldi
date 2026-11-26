@@ -227,7 +227,7 @@ export const routes: Routes = [
         path: 'secret-stores',
         title: 'Secret Stores · Ivaldi',
         loadComponent: () =>
-          import('./delivery/pages/secret-stores-page').then((m) => m.SecretStoresPage),
+          import('./delivery/secret-stores/secret-stores-page').then((m) => m.SecretStoresPage),
       },
       {
         path: 'lifecycles',

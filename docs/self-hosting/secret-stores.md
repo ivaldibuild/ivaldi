@@ -134,7 +134,7 @@ secret_stores:
 
 The first key signs and every key is published. To rotate, put a new key first, and remove the old one five minutes after the control plane stops signing with it. A store that copied the keys rather than fetching them must be given the new key first.
 
-Every store must check the audience **and** the subject, or the Environment claims it binds. One issuer serves every Organization on Ivaldi's managed cloud. The audience already keeps one tenant's JWT out of another's store, and the subject keeps staging's Deployments out of production's secrets.
+The web app shows each federated store's issuer, audience, and subjects under **Set-up for the store**. Every store must check the audience **and** the subject, or the Environment claims it binds. One issuer serves every Organization on Ivaldi's managed cloud. The audience already keeps one tenant's JWT out of another's store, and the subject keeps staging's Deployments out of production's secrets.
 
 ### AWS Secrets Manager
 
@@ -209,7 +209,7 @@ encryption:
 
 ### The minting credential
 
-Set it with `PUT /v1/secret-stores/{id}/credential`, under `secret_store.manage` on the Workspace, and remove it with `DELETE`. It is never read back: the store shows only `credential_set_at` and `credential_set_by`. Setting and removing it are audited, without the credential.
+Set it with **Set credential** on the store under **Secret Stores** in the web app, or with `PUT /v1/secret-stores/{id}/credential`, under `secret_store.manage` on the Workspace; remove it there or with `DELETE`. It is never read back: the store shows only `credential_set_at` and `credential_set_by`. Setting and removing it are audited, without the credential.
 
 Changing the store's mode, or where its credential is sent (the Vault `address`, the Doppler `project` or `config`, the Infisical `site_url` or `project_id`, or the AWS `region`), or archiving the store, removes the credential, so it must be set again. Nobody who manages stores can point one at their own server and have the control plane send it there.
 

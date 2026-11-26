@@ -247,7 +247,7 @@ Each step is its own pull request:
    - The Vault broker leaves its AppRole login token to expire, so the token role should be orphan.
    - Doppler's API reference gives `expire_at` as a date-time and as a Unix timestamp; the broker sends an ISO 8601 date-time, not yet tried against Doppler.
    - Revocation runs on the outbox stream in its own consumer group (`secret_stores.revocation`), only on an installation with a key-encryption key, and records `secret_store.access_revoked` by the system. A grant minted while its Deployment leaves `applying` can miss the event, and expires.
-5. **The web app.** Store forms for modes and credentials, and the self-hosting guide for each kind and mode. Built: the Secret Stores page (`delivery/secret-stores`) adds a store in any mode its kind allows, sets, replaces, and removes a brokered store's minting credential (write-only, and cleared from the page once saved), and shows a federated store's issuer, audience, and subject for each Environment. Changing an existing store's settings or access is still only through the API.
+5. **The web app.** Store forms for modes and credentials, and the self-hosting guide for each kind and mode. Built: the Secret Stores page (`delivery/secret-stores`) adds a store in any mode its kind allows, sets, replaces, and removes a brokered store's minting credential (write-only, and cleared from the page once saved), and shows a federated store's issuer, audience, and subject for each Environment. Changing a store reuses the form, with its kind fixed, and warns before a change of mode or destination removes a brokered store's credential.
 
 ## Open questions
 

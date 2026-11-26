@@ -115,11 +115,28 @@ export class SecretStoresPage {
     return this.environments().find((e) => e.id === id)?.display_name ?? id;
   }
 
-  // Adding a store.
+  // Adding a store, or changing one: one form is open at a time.
   protected readonly adding = signal(false);
+  protected readonly editing = signal<string | null>(null);
+
+  protected startAdding(): void {
+    this.editing.set(null);
+    this.adding.set(true);
+  }
+
+  protected startEditing(id: string): void {
+    this.adding.set(false);
+    this.confirming.set(null);
+    this.editing.set(id);
+  }
 
   protected added(): void {
     this.adding.set(false);
+    this.data.reload();
+  }
+
+  protected edited(): void {
+    this.editing.set(null);
     this.data.reload();
   }
 

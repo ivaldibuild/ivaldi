@@ -1,11 +1,15 @@
 <form
   class="border-border grid max-w-205 gap-4 border p-5 md:grid-cols-2"
   novalidate
-  aria-labelledby="add-store-heading"
-  (submit)="add($event)"
+  [attr.aria-labelledby]="headingId()"
+  (submit)="save($event)"
 >
-  <h2 id="add-store-heading" class="text-heading font-semibold md:col-span-2">
-    Add a secret store
+  <h2 [id]="headingId()" class="text-heading font-semibold md:col-span-2">
+    @if (existing(); as store) {
+      Change {{ store.display_name }}
+    } @else {
+      Add a secret store
+    }
   </h2>
   @if (invalid() || status.error(); as message) {
     <div hlmAlert variant="destructive" role="alert" class="md:col-span-2">
@@ -16,22 +20,30 @@
     <label hlmFieldLabel for="store-name">Name</label>
     <input hlmInput id="store-name" placeholder="Production secrets" [formField]="store.name" />
   </div>
-  <div hlmField>
-    <label hlmFieldLabel for="store-kind">Secret manager</label>
-    <select
-      id="store-kind"
-      class="border-input bg-background text-foreground h-9 border px-2"
-      aria-describedby="store-kind-hint"
-      [formField]="store.kind"
-    >
-      @for (kind of kinds; track kind.value) {
-        <option [value]="kind.value">{{ kind.label }}</option>
-      }
-    </select>
-    <p id="store-kind-hint" class="text-muted-foreground text-[13px]">
-      The agent reads {{ kind().reads }}. It can't be changed later.
-    </p>
-  </div>
+  @if (existing()) {
+    <div hlmField>
+      <span hlmFieldLabel>Secret manager</span>
+      <p class="text-sm">{{ kind().label }}</p>
+      <p class="text-muted-foreground text-[13px]">The agent reads {{ kind().reads }}.</p>
+    </div>
+  } @else {
+    <div hlmField>
+      <label hlmFieldLabel for="store-kind">Secret manager</label>
+      <select
+        id="store-kind"
+        class="border-input bg-background text-foreground h-9 border px-2"
+        aria-describedby="store-kind-hint"
+        [formField]="store.kind"
+      >
+        @for (kind of kinds; track kind.value) {
+          <option [value]="kind.value">{{ kind.label }}</option>
+        }
+      </select>
+      <p id="store-kind-hint" class="text-muted-foreground text-[13px]">
+        The agent reads {{ kind().reads }}. It can't be changed later.
+      </p>
+    </div>
+  }
 
   @switch (fields().kind) {
     @case ('aws_secrets_manager') {
@@ -288,7 +300,15 @@
       </p>
     </div>
   }
-  @if (fields().mode === 'brokered' && fields().kind !== 'aws_secrets_manager') {
+  @if (dropsCredential()) {
+    <div hlmAlert role="status" class="md:col-span-2">
+      <p hlmAlertDescription>
+        Saving removes the store's minting credential, because its mode or where the credential is
+        sent changes. Deployments that read the store are refused until it is set again.
+      </p>
+    </div>
+  }
+  @if (!existing() && fields().mode === 'brokered' && fields().kind !== 'aws_secrets_manager') {
     <p class="text-muted-foreground text-sm md:col-span-2">
       Once the store is added, give it the credential the control plane mints with. Until then,
       Deployments that read it are refused.
@@ -319,7 +339,9 @@
   <div class="flex flex-wrap gap-2 md:col-span-2">
     <button hlmBtn type="submit" [disabled]="status.saving()">
       @if (status.saving()) {
-        <hlm-spinner aria-hidden="true" /> Adding…
+        <hlm-spinner aria-hidden="true" /> Saving…
+      } @else if (existing()) {
+        Save changes
       } @else {
         Add secret store
       }

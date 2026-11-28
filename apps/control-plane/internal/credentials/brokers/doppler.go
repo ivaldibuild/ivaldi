@@ -2,8 +2,11 @@ package brokers
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/credentials"
@@ -34,9 +37,11 @@ func (d *dopplerBroker) Mint(ctx context.Context, r credentials.MintRequest) (cr
 			Slug string `json:"slug"`
 		} `json:"token"`
 	}
-	_, err := call(ctx, d.client, http.MethodPost, strings.TrimRight(d.api, "/")+"/v3/configs/config/tokens", d.header(r.Credential), map[string]string{
+	_, err := call(ctx, d.client, http.MethodPost, strings.TrimRight(d.api, "/")+"/v3/configs/config/tokens", d.header(r.Credential), map[string]any{
 		"project": settings.Project, "config": settings.Config, "name": "ivaldi-" + r.DeploymentID,
-		"access": "read", "expire_at": expires.Format("2006-01-02T15:04:05Z07:00"),
+		// Unix seconds, as Doppler's CLI sends it: the API reference calls
+		// it a Unix timestamp but types it as a date-time string.
+		"access": "read", "expire_at": expires.Unix(),
 	}, &out)
 	if err != nil {
 		return credentials.Minted{}, fmt.Errorf("doppler service token: %w", err)
@@ -52,14 +57,28 @@ func (d *dopplerBroker) Revoke(ctx context.Context, r credentials.RevokeRequest)
 	if settings == nil {
 		return false, credentials.NewErrInvalidInput("a brokered doppler store names its project and config")
 	}
-	status, err := call(ctx, d.client, http.MethodDelete, strings.TrimRight(d.api, "/")+"/v3/configs/config/tokens/token", d.header(r.Credential),
+	_, err := call(ctx, d.client, http.MethodDelete, strings.TrimRight(d.api, "/")+"/v3/configs/config/tokens/token", d.header(r.Credential),
 		map[string]string{"project": settings.Project, "config": settings.Config, "slug": r.ProviderID}, nil)
-	if status == http.StatusNotFound {
-		// Expired, and deleted by Doppler.
+	if dopplerTokenGone(err) {
+		// Expired and deleted by Doppler, or revoked before.
 		return true, nil
 	}
 	if err != nil {
 		return false, fmt.Errorf("delete doppler service token: %w", err)
 	}
 	return true, nil
+}
+
+// dopplerTokenGone reports whether Doppler refused a deletion because the
+// service token no longer exists: it answers 400 "Invalid service token.",
+// and 404 only for a project or config it cannot find.
+func dopplerTokenGone(err error) bool {
+	var answer *answerError
+	if !errors.As(err, &answer) || answer.status != http.StatusBadRequest {
+		return false
+	}
+	var body struct {
+		Messages []string `json:"messages"`
+	}
+	return json.Unmarshal(answer.body, &body) == nil && slices.Contains(body.Messages, "Invalid service token.")
 }

@@ -245,12 +245,12 @@ Each step is its own pull request:
    - The key-encryption key is the existing `encryption.local_key_file` (provider `local`), not `credentials.key_encryption_key_files`. It holds one key, so rotating it needs re-wrapping each data key, which is not built. `aws-kms` and `vault-transit` refuse to start.
    - Infisical's API revokes an access token only given the token, which the control plane does not keep, so a brokered Infisical token is not revoked: it expires on the identity's TTL, like an AWS session. Its grant names it by a digest of the token.
    - The Vault broker leaves its AppRole login token to expire, so the token role should be orphan.
-   - Doppler's API reference gives `expire_at` as a date-time and as a Unix timestamp; the broker sends an ISO 8601 date-time, not yet tried against Doppler.
+   - Doppler's API reference gives `expire_at` as a date-time and as a Unix timestamp; the broker sends Unix seconds, as Doppler's CLI does. Tried against Doppler (`TestDopplerBrokerLive`, which runs when `IVALDI_TEST_DOPPLER_*` are set): the token expires when asked, reads the config, and stops reading once deleted. Doppler answers a deletion of a token already gone with 400 `Invalid service token.`, which the broker counts as revoked, and a missing project or config with 404, which it does not.
    - Revocation runs on the outbox stream in its own consumer group (`secret_stores.revocation`), only on an installation with a key-encryption key, and records `secret_store.access_revoked` by the system. A grant minted while its Deployment leaves `applying` can miss the event, and expires.
 5. **The web app.** Store forms for modes and credentials, and the self-hosting guide for each kind and mode. Built: the Secret Stores page (`delivery/secret-stores`) adds a store in any mode its kind allows, sets, replaces, and removes a brokered store's minting credential (write-only, and cleared from the page once saved), and shows a federated store's issuer, audience, and subject for each Environment. Changing a store reuses the form, with its kind fixed, and warns before a change of mode or destination removes a brokered store's credential.
 
-## Open questions
+## Resolved questions
 
-- **Doppler's shortest token lifetime.** Whether a config service token can expire in 15 minutes. Doppler's CLI makes one-minute tokens, which suggests it can; untested against the API.
-- **A policy rule for production grants.** Whether a grant for a production Environment needs a rule beyond the Deployment's approval ([ADR 0017](../adr/0017-control-plane-grants-secret-store-access.md#open-questions)).
-- **Session credentials.** Whether ADR 0004's broker for Sessions reuses grants, with a Session in place of a Deployment.
+- **Doppler's shortest token lifetime.** A config service token can expire in 15 minutes: Doppler's own guide makes one-minute tokens (`--max-age 1m`). The broker sends `expire_at` in Unix seconds, as Doppler's CLI does.
+- **A policy rule for production grants.** None: a grant inherits the Deployment's authorization ([ADR 0017](../adr/0017-control-plane-grants-secret-store-access.md#resolved-questions)).
+- **Session credentials.** ADR 0004's broker for Sessions will reuse the brokers, keeper, and issuer, but not grants: a Session gets its own grant record, authorization, revocation, and subject ([ADR 0017](../adr/0017-control-plane-grants-secret-store-access.md#resolved-questions)).

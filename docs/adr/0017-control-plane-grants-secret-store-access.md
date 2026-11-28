@@ -73,7 +73,7 @@ Infisical becomes a Secret Store kind (`infisical`), in all three modes: OIDC or
 - **Brokered only.** Rejected. It puts a credential that can create credentials in the control plane for every store, and it cannot reach stores inside a customer's network.
 - **The control plane exchanges federated JWTs itself and hands the agent the store's token.** Rejected for federated mode. It would need the control plane to reach the store, and that need is what separates brokered from federated.
 
-## Open questions
+## Resolved questions
 
-- Whether a grant for a production Environment should pass a policy rule of its own, beyond the Deployment's approval.
-- Whether Sessions use the same grants when the credential broker for Sessions is built.
+- **A policy rule for production grants.** None. A grant inherits the Deployment's authorization: it carries out a Deployment already allowed, whose secrets were fixed when it was requested, so a rule at grant time could only stall an apply already running. Production is protected where the decisions are made: who may deploy to a production Environment, who may change a secret variable's values scoped to it (`variable.manage` on that Environment), and which Environments a store serves. People's Deployments to production need no approval yet; that is a gap in Deployment policy, not in grants, and closing it protects grants too.
+- **Sessions and grants.** Sessions share the minting layer, not the grants. When ADR 0004's broker for Sessions is built, it reuses the brokers, the minting credentials the keeper holds, and the federation issuer, so the code that holds credentials able to create credentials exists once. A Session gets its own grant path: its own record, authorization (its delegated access and policy, not a Cluster's agent and fixed secret references), revocation (when the Session ends or is revoked, not when a Deployment leaves `applying`), and federated subject (which has no Environment unless the Session names one). Nothing changes until then; `MintRequest`'s `DeploymentID`, which only names what is minted, becomes a neutral name then.

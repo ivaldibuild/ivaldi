@@ -47,17 +47,15 @@ type agent struct {
 	reporter   report.Reporter
 	// secrets is nil in tests that use no secrets.
 	secrets secrets.Resolver
-	// storeKinds are the secret store kinds this agent's configuration
-	// lets it read, which the heartbeat reports.
-	storeKinds []string
-	// credentials name the credentials its operator configured, which the
-	// heartbeat reports.
-	credentials  []string
-	secretWriter secrets.Writer
-	masker       *secrets.Masker
-	ready        *readiness
-	enrolRetry   time.Duration
-	retryBase    time.Duration
+	// secretCapabilities are the secret store kinds and modes this agent's
+	// configuration lets it use, and the credentials its operator
+	// configured, which the heartbeat reports.
+	secretCapabilities targets.SecretCapabilities
+	secretWriter       secrets.Writer
+	masker             *secrets.Masker
+	ready              *readiness
+	enrolRetry         time.Duration
+	retryBase          time.Duration
 }
 
 // run takes the Lease, enrols, and works until ctx ends. Credentials are

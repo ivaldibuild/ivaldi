@@ -259,6 +259,9 @@ func TestResolver_OnlyLogsInToAVaultItsOperatorListed(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, 1, logins, "a listed address is logged in to")
 	assert.Contains(t, r.cfg.StoreKinds(), "vault")
+	assert.Equal(t, []string{"agent"}, r.cfg.StoreModes(), "without a way to ask for grants, agent mode only")
+	r.cfg.Grants = func(context.Context, string) ([]apiclient.GrantView, error) { return nil, nil }
+	assert.Equal(t, []string{"agent", "federated", "brokered"}, r.cfg.StoreModes())
 }
 
 // A store names a credential, never where it is kept: the agent reads only

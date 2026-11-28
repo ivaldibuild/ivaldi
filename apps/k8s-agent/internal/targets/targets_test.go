@@ -132,10 +132,13 @@ func TestTracker_RefreshChecksAccessAndWatchesTheNamespacesItCanRead(t *testing.
 	assert.False(t, set.Targets[2].Capabilities.Observe)
 	assert.Equal(t, []string{"payments", "reporting"}, tr.(*tracker).informers.Watched())
 
-	body := set.HeartbeatBody("1.0.0", []string{"helm"}, []string{"kubernetes"}, []string{"doppler-production"})
+	body := set.HeartbeatBody("1.0.0", []string{"helm"}, SecretCapabilities{
+		StoreKinds: []string{"kubernetes"}, StoreModes: []string{"agent", "federated"}, Credentials: []string{"doppler-production"},
+	})
 	assert.Equal(t, "v1.31.4", body.KubernetesVersion)
 	assert.Equal(t, []string{"helm"}, *body.Deployers)
 	assert.Equal(t, []string{"doppler-production"}, *body.SecretStoreCredentials)
+	assert.Equal(t, []string{"agent", "federated"}, *body.SecretStoreModes)
 	require.Len(t, *body.Targets, 3)
 	assert.Equal(t, apiclient.TargetHeartbeatRequest{TargetId: "tgt_1", Observe: true, Execute: true}, (*body.Targets)[0])
 

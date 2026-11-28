@@ -114,7 +114,7 @@ export class ClusterPage {
       return [];
     }
     const out: string[] = [];
-    for (const key of ['deployers', 'secret_store_kinds']) {
+    for (const key of ['deployers', 'secret_store_kinds', 'secret_store_modes']) {
       const value = capabilities[key];
       if (Array.isArray(value) && value.length > 0) {
         out.push(`${key.replace(/_/g, ' ')}: ${value.join(', ')}`);

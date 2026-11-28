@@ -268,7 +268,7 @@ Implemented, and what the agent is built against:
 3. **Agent-scoped operations**, for the caller's Cluster only:
    - `GET /v1/agent/targets`: the Cluster, the intervals, and its Targets with namespaces, capabilities, and the placed Applications;
    - `GET /v1/agent/assignments`: in-flight Deployments across its Targets, with the `apply` block;
-   - `POST /v1/agent/heartbeat`: the agent's version, the Kubernetes version, and what it can do in each Target's namespace;
+   - `POST /v1/agent/heartbeat`: the agent's version, the Kubernetes version, the secret-store kinds and access modes it can use and the names of its credentials, and what it can do in each Target's namespace;
    - `POST /v1/agent/observations`: the observed-Deployment flow.
    `POST /v1/deployments/{id}/events` stays per Deployment, with the agent check moved to the Cluster.
 4. **Refuse what cannot run.** A Deployment request is refused when the Target's Cluster has no agent, when the agent last reported longer ago than three heartbeat intervals, or when it reported it cannot execute in the Target's namespace.

@@ -228,16 +228,30 @@ func SecretStoreIDs(resolved []ResolvedVariable) []string {
 }
 
 // AgentSecrets is what a Cluster's agent last said it can read secrets
-// with: the kinds of store, and the names of the credentials its operator
-// configured.
+// with: the kinds of store, the access modes it can open them in, and the
+// names of the credentials its operator configured. An agent that named no
+// mode opens stores in agent mode only.
 type AgentSecrets struct {
 	Kinds       []string
+	Modes       []string
 	Credentials []string
 }
 
+// opens reports whether the agent can open stores in mode. An empty mode
+// is agent mode, as an empty access is.
+func (a AgentSecrets) opens(mode StoreAccessMode) bool {
+	if mode == "" {
+		mode = StoreAccessAgent
+	}
+	if len(a.Modes) == 0 {
+		return mode == StoreAccessAgent
+	}
+	return slices.Contains(a.Modes, string(mode))
+}
+
 // CheckSecretStores checks that the secrets a Deployment to an Environment
-// gets are in active stores that Environment may read, of kinds its
-// Cluster's agent can read, with the credentials they name.
+// gets are in active stores that Environment may read, of kinds and modes
+// its Cluster's agent can use, with the credentials they name.
 func CheckSecretStores(resolved []ResolvedVariable, stores map[string]SecretStoreRef, environmentID string, agent AgentSecrets) error {
 	for _, r := range resolved {
 		if r.Winner == nil || r.Winner.Secret == nil {
@@ -255,6 +269,9 @@ func CheckSecretStores(resolved []ResolvedVariable, stores map[string]SecretStor
 			return NewErrInvalidInput(fmt.Sprintf("secret store %s, which holds %s, cannot be read: %s", store.DisplayName, r.Name, store.Unusable))
 		case !slices.Contains(agent.Kinds, string(store.Settings.Kind)):
 			return NewErrInvalidInput(fmt.Sprintf("the cluster's agent cannot read %s secret stores, which %s needs", store.Settings.Kind, r.Name))
+		case !agent.opens(store.Settings.Access.Mode):
+			return NewErrInvalidInput(fmt.Sprintf("the cluster's agent cannot open secret stores in %s mode, which secret store %s needs for %s; upgrade the agent",
+				store.Settings.Access.Mode, store.DisplayName, r.Name))
 		case store.Settings.Access.Credential != "" && !slices.Contains(agent.Credentials, store.Settings.Access.Credential):
 			return NewErrInvalidInput(fmt.Sprintf("the cluster's agent has no credential named %s, which secret store %s needs for %s; its operator configures credentials on the agent",
 				store.Settings.Access.Credential, store.DisplayName, r.Name))

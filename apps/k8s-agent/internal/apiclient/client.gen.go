@@ -896,6 +896,9 @@ type HeartbeatRequestBody struct {
 	// SecretStoreKinds The secret-store kinds the agent can read
 	SecretStoreKinds *[]string `json:"secret_store_kinds,omitempty"`
 
+	// SecretStoreModes The access modes the agent can open secret stores in: agent, federated, brokered. An agent that reports none opens stores in agent mode only
+	SecretStoreModes *[]string `json:"secret_store_modes,omitempty"`
+
 	// Targets What the agent can do in each Target's namespace
 	Targets *[]TargetHeartbeatRequest `json:"targets,omitempty"`
 

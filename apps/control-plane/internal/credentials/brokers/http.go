@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/ivaldibuild/ivaldi-control-plane/internal/credentials"
@@ -14,7 +15,8 @@ import (
 // when out is set. It maps a transport failure, 429, and 5xx to
 // ErrStoreUnavailable and other refusals to ErrStoreRefused, and returns the
 // status for the caller to tell more apart. Its errors name the store's
-// answer, never the request.
+// answer, never the request; a refusal or outage is an *answerError holding
+// the start of the answer's body.
 func call(ctx context.Context, client *http.Client, method, url string, header http.Header, body, out any) (int, error) {
 	var payload []byte
 	if body != nil {
@@ -39,11 +41,13 @@ func call(ctx context.Context, client *http.Client, method, url string, header h
 		return 0, fmt.Errorf("%w: %v", credentials.ErrStoreUnavailable, err)
 	}
 	defer resp.Body.Close()
-	switch {
-	case resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500:
-		return resp.StatusCode, fmt.Errorf("%w: answered %d", credentials.ErrStoreUnavailable, resp.StatusCode)
-	case resp.StatusCode >= 300:
-		return resp.StatusCode, fmt.Errorf("%w: answered %d", credentials.ErrStoreRefused, resp.StatusCode)
+	if resp.StatusCode >= 300 {
+		sentinel := credentials.ErrStoreRefused
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+			sentinel = credentials.ErrStoreUnavailable
+		}
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+		return resp.StatusCode, &answerError{status: resp.StatusCode, body: body, err: fmt.Errorf("%w: answered %d", sentinel, resp.StatusCode)}
 	}
 	if out != nil && resp.StatusCode != http.StatusNoContent {
 		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {

@@ -66,6 +66,13 @@ func json200(v any) func(w http.ResponseWriter) {
 	return func(w http.ResponseWriter) { _ = json.NewEncoder(w).Encode(v) }
 }
 
+func answer(status int, v any) func(w http.ResponseWriter) {
+	return func(w http.ResponseWriter) {
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(v)
+	}
+}
+
 // Doppler mints a read-only token for the config, named after the
 // Deployment and expiring with the grant, and deletes it by slug.
 func TestDopplerBroker(t *testing.T) {
@@ -82,12 +89,29 @@ func TestDopplerBroker(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, credentials.Minted{Credential: credentials.BrokeredCredential{Token: "dp.st.prd.minted"}, ExpiresAt: now.Add(15 * time.Minute), ProviderID: "slug-1"}, m)
 	assert.Equal(t, "Bearer dp.sa.minting", rec.got[0].Header.Get("Authorization"))
-	assert.Equal(t, map[string]any{"project": "payments", "config": "prd", "name": "ivaldi-dpl_a", "access": "read", "expire_at": "2026-11-25T10:15:00Z"}, rec.got[0].Body)
+	assert.Equal(t, map[string]any{"project": "payments", "config": "prd", "name": "ivaldi-dpl_a", "access": "read", "expire_at": float64(now.Add(15 * time.Minute).Unix())}, rec.got[0].Body)
 
 	revoked, err := b.Revoke(context.Background(), credentials.RevokeRequest{Store: store, Credential: minting, ProviderID: "slug-1"})
 	require.NoError(t, err)
 	assert.True(t, revoked)
 	assert.Equal(t, map[string]any{"project": "payments", "config": "prd", "slug": "slug-1"}, rec.got[1].Body)
+
+	t.Run("a token already gone is revoked", func(t *testing.T) {
+		_, api := serve(t, map[string]func(w http.ResponseWriter){
+			"DELETE /v3/configs/config/tokens/token": answer(http.StatusBadRequest, map[string]any{"messages": []string{"Invalid service token."}, "success": false}),
+		})
+		revoked, err := New(WithDopplerAPI(api)).Revoke(context.Background(), credentials.RevokeRequest{Store: store, Credential: minting, ProviderID: "slug-1"})
+		require.NoError(t, err)
+		assert.True(t, revoked)
+	})
+
+	t.Run("a config doppler cannot find is an error", func(t *testing.T) {
+		_, api := serve(t, map[string]func(w http.ResponseWriter){
+			"DELETE /v3/configs/config/tokens/token": answer(http.StatusNotFound, map[string]any{"messages": []string{"Could not find requested config 'prd'"}, "success": false}),
+		})
+		_, err := New(WithDopplerAPI(api)).Revoke(context.Background(), credentials.RevokeRequest{Store: store, Credential: minting, ProviderID: "slug-1"})
+		assert.ErrorIs(t, err, credentials.ErrStoreRefused)
+	})
 }
 
 // Vault logs in with the AppRole, creates a non-renewable token from the

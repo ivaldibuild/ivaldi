@@ -182,7 +182,7 @@ secrets:
 
 A VM agent maps them to files, and a platform agent to files or environment variables. An Infisical Universal Auth credential is a JSON object with `client_id` and `client_secret`.
 
-The heartbeat reports, besides `secret_store_kinds`, the credential names the agent has (`secret_store_credentials`), never their values. The deploy plan's `secret_stores_allowed` check refuses an `agent`-mode store whose credential the Cluster's agent did not report.
+The heartbeat reports, besides `secret_store_kinds`, the access modes the agent can open stores in (`secret_store_modes`: `agent`, `federated`, `brokered`) and the credential names it has (`secret_store_credentials`), never their values. The deploy plan's `secret_stores_allowed` check refuses a store in a mode the Cluster's agent did not report, so an agent too old to ask for grants is not sent a federated or brokered store, and an `agent`-mode store whose credential the agent did not report. An agent that reports no modes, as one built before they were reported, opens stores in `agent` mode only.
 
 ## The agent
 

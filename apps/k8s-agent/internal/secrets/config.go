@@ -14,6 +14,9 @@ import (
 	"github.com/ivaldibuild/ivaldi-k8s-agent/internal/apiclient"
 )
 
+// The access modes this agent can open stores in, for the heartbeat.
+var Modes = []string{"agent", "federated", "brokered"}
+
 // The kinds this agent can read, for the heartbeat.
 var Kinds = []string{
 	string(secretstore.KindKubernetes), string(secretstore.KindAWSSecretsManager),
@@ -73,6 +76,16 @@ func (c Config) StoreKinds() []string {
 	return slices.DeleteFunc(slices.Clone(Kinds), func(kind string) bool {
 		return kind == string(secretstore.KindVault) && len(c.Addresses) == 0
 	})
+}
+
+// StoreModes lists the access modes an agent with this configuration can
+// open stores in: agent mode always, and federated and brokered when it can
+// ask the control plane for grants.
+func (c Config) StoreModes() []string {
+	if c.Grants == nil {
+		return []string{"agent"}
+	}
+	return slices.Clone(Modes)
 }
 
 // CredentialNames lists the configured credentials' names, for the

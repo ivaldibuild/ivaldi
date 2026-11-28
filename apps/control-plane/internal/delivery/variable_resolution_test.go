@@ -184,4 +184,19 @@ func TestSecretsForADeployment(t *testing.T) {
 			assert.Contains(t, err.Error(), tt.reason)
 		})
 	}
+
+	// An agent opens stores only in the modes it reported, and in agent
+	// mode only when it reported none, as one built before modes did.
+	t.Run("a mode the agent cannot open", func(t *testing.T) {
+		federated := map[string]SecretStoreRef{vault: {ID: vault, DisplayName: "Vault",
+			Settings: StoreSettings{ID: vault, Kind: StoreVault, Access: StoreAccess{Mode: StoreAccessFederated, Role: "ivaldi"},
+				Vault: &VaultStore{Address: "https://vault.example.com", Mount: "kv"}}}}
+		resolved := resolve(secret("Api.Key", vault, "api", VariableDeliverAsSecret, nil))
+		err := CheckSecretStores(resolved, federated, "prod", AgentSecrets{Kinds: []string{"vault"}})
+		require.ErrorIs(t, err, ErrInvalid)
+		assert.Contains(t, err.Error(), "cannot open secret stores in federated mode, which secret store Vault needs for Api.Key")
+		err = CheckSecretStores(resolved, federated, "prod", AgentSecrets{Kinds: []string{"vault"}, Modes: []string{"agent", "brokered"}})
+		assert.ErrorIs(t, err, ErrInvalid)
+		require.NoError(t, CheckSecretStores(resolved, federated, "prod", AgentSecrets{Kinds: []string{"vault"}, Modes: []string{"agent", "federated"}}))
+	})
 }

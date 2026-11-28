@@ -3234,6 +3234,14 @@
             },
             "type": "array"
           },
+          "secret_store_modes": {
+            "description": "The access modes the agent can open secret stores in: agent, federated, brokered. An agent that reports none opens stores in agent mode only",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "type": "array"
+          },
           "targets": {
             "description": "What the agent can do in each Target's namespace",
             "items": {

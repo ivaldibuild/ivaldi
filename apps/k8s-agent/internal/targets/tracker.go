@@ -60,8 +60,22 @@ type Set struct {
 	Unsynced []string
 }
 
+// SecretCapabilities is what the agent can read secrets with, for the
+// heartbeat: never a credential, only credentials' names.
+type SecretCapabilities struct {
+	StoreKinds  []string
+	StoreModes  []string
+	Credentials []string
+}
+
 // HeartbeatBody is the heartbeat that reports s.
-func (s Set) HeartbeatBody(agentVersion string, deployers, secretStoreKinds, secretCredentials []string) apiclient.HeartbeatRequestBody {
+func (s Set) HeartbeatBody(agentVersion string, deployers []string, secrets SecretCapabilities) apiclient.HeartbeatRequestBody {
+	list := func(values []string) *[]string {
+		if values == nil {
+			values = []string{}
+		}
+		return &values
+	}
 	reports := make([]apiclient.TargetHeartbeatRequest, 0, len(s.Targets))
 	for _, t := range s.Targets {
 		report := apiclient.TargetHeartbeatRequest{
@@ -82,8 +96,9 @@ func (s Set) HeartbeatBody(agentVersion string, deployers, secretStoreKinds, sec
 		KubernetesVersion:      s.KubernetesVersion,
 		WatchMode:              apiclient.HeartbeatRequestBodyWatchMode(watchMode),
 		Deployers:              &deployers,
-		SecretStoreKinds:       &secretStoreKinds,
-		SecretStoreCredentials: &secretCredentials,
+		SecretStoreKinds:       list(secrets.StoreKinds),
+		SecretStoreModes:       list(secrets.StoreModes),
+		SecretStoreCredentials: list(secrets.Credentials),
 		Targets:                &reports,
 	}
 }

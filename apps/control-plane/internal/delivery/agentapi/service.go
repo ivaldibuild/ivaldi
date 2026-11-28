@@ -271,6 +271,8 @@ type HeartbeatInput struct {
 	WatchMode         string
 	Deployers         []string
 	SecretStoreKinds  []string
+	// SecretStoreModes are the access modes the agent can open stores in.
+	SecretStoreModes []string
 	// SecretCredentials name the credentials the agent's operator
 	// configured for secret stores.
 	SecretCredentials []string
@@ -351,6 +353,7 @@ func (s *service) Heartbeat(ctx context.Context, caller identity.Caller, in Hear
 			"watch_mode":               in.WatchMode,
 			"deployers":                strings0(in.Deployers),
 			"secret_store_kinds":       strings0(in.SecretStoreKinds),
+			"secret_store_modes":       strings0(in.SecretStoreModes),
 			"secret_store_credentials": strings0(in.SecretCredentials),
 		}
 		if err := locked.RecordHeartbeat(caller.Actor.PrincipalID, capabilities); err != nil {

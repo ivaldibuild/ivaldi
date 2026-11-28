@@ -92,7 +92,7 @@ func TestHeartbeat(t *testing.T) {
 	w := newWorld(t)
 	in := HeartbeatInput{
 		AgentVersion: "1.4.0", KubernetesVersion: "v1.31.4", WatchMode: "cluster",
-		Deployers: []string{"helm"}, SecretStoreKinds: []string{"kubernetes"},
+		Deployers: []string{"helm"}, SecretStoreKinds: []string{"kubernetes"}, SecretStoreModes: []string{"agent", "federated"},
 		Targets: []TargetHeartbeat{{TargetID: targetID, Observe: true, Reason: "RBAC denies create on pods"}},
 	}
 	require.NoError(t, w.svc.Heartbeat(ctx, agentCaller(), in))
@@ -100,6 +100,7 @@ func TestHeartbeat(t *testing.T) {
 	cluster := w.clusters[clusterID]
 	assert.Equal(t, "1.4.0", cluster.AgentCapabilities()["agent_version"])
 	assert.Equal(t, "v1.31.4", cluster.AgentCapabilities()["kubernetes_version"])
+	assert.Equal(t, []any{"agent", "federated"}, cluster.AgentCapabilities()["secret_store_modes"])
 	assert.NotNil(t, cluster.LastReportedAt())
 	assert.True(t, w.clusterSaved)
 	assert.Equal(t, []string{targetID}, w.updated, "a changed capability is written")

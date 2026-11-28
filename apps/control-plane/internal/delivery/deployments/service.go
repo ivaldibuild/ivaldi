@@ -1184,6 +1184,7 @@ func agentSecrets(cluster *delivery.Cluster) delivery.AgentSecrets {
 	capabilities := cluster.AgentCapabilities()
 	return delivery.AgentSecrets{
 		Kinds:       capabilityStrings(capabilities["secret_store_kinds"]),
+		Modes:       capabilityStrings(capabilities["secret_store_modes"]),
 		Credentials: capabilityStrings(capabilities["secret_store_credentials"]),
 	}
 }

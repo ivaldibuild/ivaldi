@@ -3791,6 +3791,8 @@ export interface components {
       secret_store_credentials?: string[];
       /** @description The secret-store kinds the agent can read */
       secret_store_kinds?: string[];
+      /** @description The access modes the agent can open secret stores in: agent, federated, brokered. An agent that reports none opens stores in agent mode only */
+      secret_store_modes?: string[];
       /** @description What the agent can do in each Target's namespace */
       targets?: components['schemas']['TargetHeartbeatRequest'][];
       /**
